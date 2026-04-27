@@ -1,0 +1,150 @@
+const trackingService = require('../services/trackingService');
+
+exports.startTrackingSession = async (req, res) => {
+    try {
+        const result = await trackingService.startTrackingSession(req.body);
+
+        return res.status(200).json({
+            success: true,
+            message: result.alreadyActive
+                ? 'Tracking session already active'
+                : 'Tracking session started successfully',
+            sessionId: result.sessionId,
+            alreadyActive: result.alreadyActive
+        });
+    } catch (error) {
+        console.error('startTrackingSession error:', error);
+        return res.status(400).json({
+            success: false,
+            message: error.message || 'Failed to start tracking session'
+        });
+    }
+};
+
+exports.stopTrackingSession = async (req, res) => {
+    try {
+        const { sessionId } = req.params;
+        const result = await trackingService.stopTrackingSession(sessionId, req.body);
+
+        return res.status(200).json({
+            success: true,
+            message: result.message,
+            truck_id: result.truck_id
+        });
+    } catch (error) {
+        console.error('stopTrackingSession error:', error);
+        return res.status(400).json({
+            success: false,
+            message: error.message || 'Failed to stop tracking session'
+        });
+    }
+};
+
+exports.addLocationLog = async (req, res) => {
+    try {
+        const { sessionId } = req.params;
+        const result = await trackingService.addLocationLog(sessionId, req.body);
+
+        return res.status(200).json({
+            success: true,
+            message: result.message
+        });
+    } catch (error) {
+        console.error('addLocationLog error:', error);
+        return res.status(400).json({
+            success: false,
+            message: error.message || 'Failed to record location'
+        });
+    }
+};
+
+exports.getActiveTrucks = async (req, res) => {
+    try {
+        const rows = await trackingService.getActiveTrucks();
+
+        return res.status(200).json({
+            success: true,
+            count: rows.length,
+            data: rows
+        });
+    } catch (error) {
+        console.error('getActiveTrucks error:', error);
+        return res.status(500).json({
+            success: false,
+            message: error.message || 'Failed to fetch active trucks'
+        });
+    }
+};
+
+exports.getRouteHistoryBySession = async (req, res) => {
+    try {
+        const { sessionId } = req.params;
+        const result = await trackingService.getRouteHistoryBySession(sessionId);
+
+        return res.status(200).json({
+            success: true,
+            data: result
+        });
+    } catch (error) {
+        console.error('getRouteHistoryBySession error:', error);
+        return res.status(400).json({
+            success: false,
+            message: error.message || 'Failed to fetch route history'
+        });
+    }
+};
+
+exports.getTruckLatestSession = async (req, res) => {
+    try {
+        const { truckId } = req.params;
+        const result = await trackingService.getTruckLatestSession(truckId);
+
+        return res.status(200).json({
+            success: true,
+            data: result
+        });
+    } catch (error) {
+        console.error('getTruckLatestSession error:', error);
+        return res.status(400).json({
+            success: false,
+            message: error.message || 'Failed to fetch truck latest session'
+        });
+    }
+};
+
+exports.getTrackingReports = async (req, res) => {
+    try {
+        const rows = await trackingService.getTrackingReports();
+
+        return res.status(200).json({
+            success: true,
+            count: rows.length,
+            data: rows
+        });
+    } catch (error) {
+        console.error("getTrackingReports error:", error);
+        return res.status(500).json({
+            success: false,
+            message: error.message || "Failed to fetch tracking reports"
+        });
+    }
+};
+
+exports.getTrackingReportDetails = async (req, res) => {
+    try {
+        const { sessionId } = req.params;
+
+        const result = await trackingService.getTrackingReportDetails(sessionId);
+
+        return res.status(200).json({
+            success: true,
+            data: result
+        });
+    } catch (error) {
+        console.error("getTrackingReportDetails error:", error);
+        return res.status(400).json({
+            success: false,
+            message: error.message || "Failed to fetch tracking report details"
+        });
+    }
+};
