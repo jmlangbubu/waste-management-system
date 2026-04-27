@@ -1,0 +1,559 @@
+body {
+  background: linear-gradient(180deg, #f5f8f4 0%, #edf4ee 100%);
+  color: #1f2a23;
+  font-family: "Inter", sans-serif;
+}
+
+.navbar-custom {
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+}
+
+.logo-box {
+  width: 50px;
+  height: 50px;
+  border-radius: 14px;
+  background: #7faa6f;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.brand-title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #1b241d;
+}
+
+.brand-subtitle {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #6a786f;
+}
+
+.hero-section {
+  min-height: 88vh;
+  display: flex;
+  align-items: center;
+  padding: 3rem 0 4rem;
+}
+
+.hero-badge {
+  display: inline-block;
+  padding: 0.55rem 1rem;
+  border-radius: 999px;
+  background: #e8f1e4;
+  color: #5e8b55;
+  font-size: 0.82rem;
+  font-weight: 700;
+  margin-bottom: 1.4rem;
+}
+
+.hero-title {
+  font-size: clamp(3rem, 5.4vw, 5.2rem);
+  line-height: 0.98;
+  font-weight: 800;
+  letter-spacing: -0.045em;
+  color: #162018;
+  margin-bottom: 1.25rem;
+  max-width: 11ch;
+}
+
+.hero-title .accent {
+  color: #7faa6f;
+}
+
+.hero-description {
+  max-width: 620px;
+  color: #607067;
+  font-size: 1.08rem;
+  line-height: 1.8;
+  margin-bottom: 1.8rem;
+}
+
+.hero-actions {
+  margin-top: 1.5rem;
+}
+
+.btn-wmo {
+  background: #7faa6f;
+  color: #fff;
+  border: none;
+  border-radius: 14px;
+  font-weight: 700;
+  box-shadow: 0 10px 24px rgba(127, 170, 111, 0.18);
+}
+
+.btn-wmo:hover {
+  background: #6d985f;
+  color: #fff;
+}
+
+.btn-wmo-outline {
+  background: #ffffff;
+  color: #1f2a23;
+  border: 1px solid #d8e3d4;
+  border-radius: 14px;
+  font-weight: 700;
+}
+
+.btn-wmo-outline:hover {
+  background: #f8faf8;
+  color: #1f2a23;
+  border-color: #cbd8c7;
+}
+
+.hero-visual-wrap {
+  position: relative;
+  min-height: 620px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hero-glow {
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(75px);
+  opacity: 0.45;
+  z-index: 0;
+}
+
+.hero-glow-one {
+  width: 280px;
+  height: 280px;
+  background: rgba(127, 170, 111, 0.22);
+  top: 50px;
+  right: 70px;
+}
+
+.hero-glow-two {
+  width: 240px;
+  height: 240px;
+  background: rgba(170, 214, 167, 0.24);
+  bottom: 60px;
+  left: 40px;
+}
+
+.phone-showcase {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 560px;
+}
+
+.hero-phone-image {
+  width: min(100%, 440px);
+  max-height: 560px;
+  object-fit: contain;
+  display: block;
+  filter: drop-shadow(0 22px 38px rgba(24, 40, 25, 0.14));
+}
+
+.phone-promo-block {
+  margin-top: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.platform-note {
+  max-width: 320px;
+  padding: 1rem 1.1rem;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(127, 170, 111, 0.14);
+  text-align: center;
+}
+
+.platform-note small {
+  display: block;
+  font-size: 0.76rem;
+  font-weight: 800;
+  color: #7faa6f;
+  margin-bottom: 0.4rem;
+}
+
+.platform-note strong {
+  color: #263229;
+  line-height: 1.45;
+  font-size: 0.96rem;
+}
+
+.playstore-badge-link {
+  text-decoration: none;
+}
+
+.playstore-badge-custom {
+  min-width: 200px;
+  padding: 0.85rem 1.1rem;
+  border-radius: 16px;
+  background: #101010;
+  color: #ffffff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.2;
+  box-shadow: 0 12px 26px rgba(16, 16, 16, 0.18);
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.playstore-badge-custom:hover {
+  transform: translateY(-2px);
+  opacity: 0.96;
+}
+
+.playstore-small {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  opacity: 0.75;
+}
+
+.playstore-big {
+  font-size: 1.08rem;
+  font-weight: 800;
+}
+
+.portal-section {
+  padding-top: 1rem;
+  padding-bottom: 4rem;
+}
+
+.portal-item {
+  padding: 0.5rem 0.25rem;
+}
+
+.portal-number {
+  display: inline-block;
+  margin-bottom: 0.7rem;
+  color: #7faa6f;
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.portal-item h3 {
+  font-size: 1.08rem;
+  font-weight: 700;
+  color: #1f2a23;
+  margin-bottom: 0.45rem;
+}
+
+.portal-item p {
+  color: #64746b;
+  line-height: 1.7;
+  margin-bottom: 0;
+}
+
+.footer-custom {
+  border-top: 1px solid rgba(0, 0, 0, 0.05);
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.footer-link {
+  color: #6f9a60;
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.footer-link:hover {
+  color: #5f8752;
+}
+
+.modal-content {
+  border: none;
+  border-radius: 22px;
+  max-height: 90vh;
+overflow-y: auto;
+}
+
+.modal-header {
+  border-bottom: 1px solid #edf2ed;
+}
+
+.modal-footer {
+  border-top: 1px solid #edf2ed;
+}
+
+.form-control,
+.form-select {
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+  border-color: #dbe4db;
+}
+
+.form-control:focus,
+.form-select:focus {
+  border-color: #7faa6f;
+  box-shadow: 0 0 0 0.2rem rgba(127, 170, 111, 0.15);
+}
+
+@media (max-width: 991.98px) {
+  .hero-section {
+    min-height: auto;
+    padding-top: 2rem;
+  }
+
+  .hero-title {
+    max-width: none;
+  }
+
+  .hero-visual-wrap {
+    min-height: auto;
+    padding-top: 1rem;
+  }
+
+  .phone-showcase {
+    min-height: auto;
+  }
+
+  .hero-phone-image {
+    max-height: 440px;
+  }
+
+  .platform-note {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 575.98px) {
+  .hero-title {
+    font-size: 2.55rem;
+  }
+
+  .hero-description {
+    font-size: 1rem;
+  }
+
+  .playstore-badge-custom {
+    min-width: 180px;
+  }
+
+  .brand-title {
+    font-size: 1rem;
+  }
+
+  .brand-subtitle {
+    font-size: 0.82rem;
+  }
+}
+
+.playstore-trigger-btn {
+  border: none;
+  background: transparent;
+  padding: 0;
+}
+
+.playstore-trigger-btn:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+.playstore-modal-content {
+  border-radius: 22px;
+}
+
+.playstore-modal-icon {
+  width: 68px;
+  height: 68px;
+  margin: 0 auto 1rem;
+  border-radius: 18px;
+  background: #101010;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+  font-weight: 800;
+}
+
+.playstore-modal-title {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #1f2a23;
+  margin-bottom: 0.75rem;
+}
+
+.playstore-modal-text {
+  max-width: 360px;
+  margin: 0 auto;
+  color: #64746b;
+  line-height: 1.7;
+}
+.dashboard-lower-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 768px) {
+  .dashboard-lower-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* =========================
+   APPOINTMENT STATUS SECTION
+========================= */
+.appointment-status-section {
+  background: #f9fafb;
+}
+
+.status-check-card {
+  background: #ffffff;
+  padding: 32px;
+  border-radius: 16px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+}
+
+/* FORM INPUTS */
+.status-check-card input {
+  height: 48px;
+  border-radius: 10px;
+}
+
+.status-check-card button {
+  height: 48px;
+  border-radius: 10px;
+  font-weight: 500;
+}
+
+/* =========================
+   STATUS RESULT CARD
+========================= */
+.status-result-card {
+  margin-top: 16px;
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 24px;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.05);
+}
+
+/* LABELS */
+.status-result-card strong {
+  font-size: 13px;
+  color: #6b7280;
+  display: block;
+  margin-bottom: 2px;
+}
+
+.status-result-card p {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+  color: #111827;
+}
+
+/* =========================
+   STATUS PILL
+========================= */
+.status-pill {
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  background: #e5e7eb;
+  color: #374151;
+}
+
+/* COLORS BASED ON STATUS */
+.status-pill.approved {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.status-pill.pending {
+  background: #fef9c3;
+  color: #92400e;
+}
+
+.status-pill.rescheduled {
+  background: #e0f2fe;
+  color: #075985;
+}
+
+.status-pill.cancelled {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.status-pill.rejected {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.status-pill.completed {
+  background: #ede9fe;
+  color: #5b21b6;
+}
+
+/* =========================
+   APPOINTMENT TIME FIX
+========================= */
+
+.custom-time-dropdown {
+  position: relative;
+  width: 100%;
+}
+
+.custom-time-selected {
+  width: 100%;
+  min-height: 66px;
+  border: 1px solid #d9e3d6;
+  border-radius: 14px;
+  background: #fff;
+  padding: 0 20px;
+  font-size: 16px;
+  color: #26332b;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.custom-time-menu {
+  display: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1px solid #d9e3d6;
+  border-radius: 14px;
+  box-shadow: 0 12px 30px rgba(0,0,0,0.12);
+  z-index: 99999;
+  overflow: hidden;
+}
+
+.custom-time-dropdown.open .custom-time-menu {
+  display: block;
+}
+
+.custom-time-menu button {
+  width: 100%;
+  border: none;
+  background: #fff;
+  padding: 13px 18px;
+  text-align: left;
+  font-size: 15px;
+  color: #26332b;
+}
+
+.custom-time-menu button:hover {
+  background: #f3faef;
+  color: #2f7d32;
+}

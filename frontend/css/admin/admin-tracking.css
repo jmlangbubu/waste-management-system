@@ -1,0 +1,125 @@
+/* =========================
+   TRACKING
+========================= */
+.tracking-summary-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.tracking-mini-card {
+  flex: 1;
+  min-width: 180px;
+  background: #f9fafb;
+  border: 1px solid #edf0f2;
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+
+.tracking-mini-card span {
+  font-size: 12px;
+  color: #667085;
+}
+
+.tracking-mini-card strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 16px;
+  color: #163d2d;
+}
+
+.tracking-layout {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 20px;
+}
+
+.tracking-map-wrap {
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+#truckMap {
+  width: 100%;
+  height: 460px;
+}
+
+.tracking-side-panel {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 16px;
+}
+
+.active-truck-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.active-truck-item {
+  padding: 12px;
+  border-radius: 10px;
+  background: #f9fafb;
+  border: 1px solid #edf0f2;
+  cursor: pointer;
+}
+
+.active-truck-item.active {
+  background: #dff7e6;
+  border-color: #34c759;
+}
+
+.active-truck-item.offline {
+  opacity: 0.65;
+}
+
+.danger-stop-btn {
+  border: none;
+  background: #d92d20;
+  color: #ffffff;
+  border-radius: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+
+.danger-stop-btn:disabled {
+  background: #e5e7eb;
+  color: #98a2b3;
+  cursor: not-allowed;
+}
+
+/* truck analytics */
+.truck-analytics-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.truck-analytics-summary-card,
+.truck-analytics-panel,
+.truck-analytics-feed-item {
+  background: #f9fafb;
+  border: 1px solid #edf0f2;
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.truck-distance-track {
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  background: #e5e7eb;
+  overflow: hidden;
+}
+
+.truck-distance-fill {
+  height: 100%;
+  background: #2f8a34;
+}

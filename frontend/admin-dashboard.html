@@ -1,0 +1,1534 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Admin Panel</title>
+<link rel="stylesheet" href="css/admin/admin-base.css">
+<link rel="stylesheet" href="css/admin/admin-layout.css">
+<link rel="stylesheet" href="css/admin/admin-sidebar.css">
+<link rel="stylesheet" href="css/admin/admin-topbar.css">
+<link rel="stylesheet" href="css/admin/admin-dashboard.css">
+<link rel="stylesheet" href="css/admin/admin-tables.css">
+<link rel="stylesheet" href="css/admin/admin-waste-records.css">
+<link rel="stylesheet" href="css/admin/admin-appointments.css">
+<link rel="stylesheet" href="css/admin/admin-complaints.css">
+<link rel="stylesheet" href="css/admin/admin-tracking.css">
+<link rel="stylesheet" href="css/admin/admin-users.css">
+<link rel="stylesheet" href="css/admin/admin-modals.css">
+<link rel="stylesheet" href="css/admin/admin-responsive.css">
+<link rel="stylesheet" href="css/admin/admin-overrides.css">
+<link rel="stylesheet" href="css/admin/admin-orientation.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+
+</head>
+<body>
+  <div class="admin-layout">
+    <aside class="dashboard-sidebar" id="dashboardSidebar">
+      <div class="sidebar-top">
+        <div class="sidebar-brand">
+          <div class="brand-mark">W</div>
+          <div class="brand-text">
+            <h2>WMO Admin</h2>
+            <p>Management Panel</p>
+          </div>
+        </div>
+
+        <nav class="sidebar-nav">
+          <button class="nav-btn active" data-section="dashboardSection" type="button">
+            <span>Dashboard Overview</span>
+          </button>
+
+          <button class="nav-btn" data-section="recordsSection" type="button">
+            <span>Waste Records</span>
+          </button>
+
+          <button class="nav-btn" data-section="appointmentsSection" type="button">
+            <span>Appointments</span>
+          </button>
+
+          <button class="nav-btn" data-section="complaintsSection" type="button">
+            <span>Complaints</span>
+          </button>
+
+          <button class="nav-btn" data-section="trackingSection" type="button">
+            <span>Live Tracking</span>
+          </button>
+
+          <button class="nav-btn" data-section="orientationSection" type="button">
+            <span>Orientation</span>
+          </button>
+
+          <button id="navUserManagement" class="nav-btn" data-section="userManagementSection" type="button">
+            <span>User Management</span>
+          </button>
+        </nav>
+      </div>
+
+      <div class="sidebar-bottom">
+        <div class="sidebar-user-card">
+          <div class="sidebar-user-name" id="sidebarName">-</div>
+          <div class="sidebar-user-role" id="sidebarRole">-</div>
+        </div>
+
+        <button class="logout-btn" id="logoutBtn" type="button">Logout</button>
+      </div>
+    </aside>
+
+    <div id="sidebarBackdrop" class="sidebar-backdrop hidden"></div>
+
+    <main class="main-content">
+      <div class="topbar">
+        <div class="topbar-left">
+          <button id="sidebarToggleBtn" class="sidebar-toggle-btn" type="button">☰</button>
+          <div>
+            <h1 id="pageTitle">Dashboard Overview</h1>
+            <p class="topbar-subtitle">Centralized monitoring and administration panel.</p>
+          </div>
+        </div>
+
+        <div class="topbar-actions">
+          <div class="notification-wrapper">
+            <button id="notificationBtn" class="notification-btn" type="button" aria-label="Notifications">
+              🔔
+              <span id="notificationCount" class="notif-badge">0</span>
+            </button>
+
+            <div id="notificationDropdown" class="notification-dropdown hidden">
+              <div class="notif-header">Notifications</div>
+              <div id="notificationList" class="notif-list">
+                <div class="notif-empty">No notifications</div>
+              </div>
+            </div>
+          </div>
+
+          <button class="refresh-btn" id="refreshBtn" type="button">Refresh Data</button>
+        </div>
+      </div>
+
+ <section id="dashboardSection" class="content-section active">
+
+  <div class="dashboard-main-grid">
+
+    <!-- LEFT: WASTE MONITORING -->
+    <div class="page-card dashboard-primary-card">
+      <div class="page-card-header dashboard-header-row">
+        <div class="dashboard-title-with-icon">
+          <div class="dashboard-card-icon">📈</div>
+          <div>
+            <h2>Waste Monitoring Overview</h2>
+            <p>Visual summary of waste activity and collection performance.</p>
+          </div>
+        </div>
+
+        <div class="dashboard-header-actions">
+          <div class="segmented-filter">
+            <button type="button" class="segment-btn active" data-range="day">Day</button>
+            <button type="button" class="segment-btn" data-range="month">Month</button>
+            <button type="button" class="segment-btn" data-range="year">Year</button>
+          </div>
+          <button type="button" class="view-all-btn" id="viewAllAnalyticsBtn">View All</button>
+        </div>
+      </div>
+
+      <div class="chart-card modern-trend-card">
+        <div class="chart-card-top">
+          <h3>Waste Trend</h3>
+          <p>Total monitored waste across selected period.</p>
+        </div>
+
+        <div id="wasteTrendChart" class="waste-trend-box">
+          <canvas id="wasteTrendCanvas"></canvas>
+        </div>
+      </div>
+
+      <div class="waste-summary-cards">
+        <div class="waste-summary-card biodegradable">
+          <div class="waste-summary-icon">🍃</div>
+          <div>
+            <strong id="totalBiodegradable">0</strong>
+            <span>Biodegradable</span>
+            <small>Total Waste</small>
+          </div>
+        </div>
+
+        <div class="waste-summary-card recyclable">
+          <div class="waste-summary-icon">♻️</div>
+          <div>
+            <strong id="totalRecyclable">0</strong>
+            <span>Recyclable</span>
+            <small>Total Waste</small>
+          </div>
+        </div>
+
+        <div class="waste-summary-card residual">
+          <div class="waste-summary-icon">🗑️</div>
+          <div>
+            <strong id="totalResidual">0</strong>
+            <span>Residual</span>
+            <small>Total Waste</small>
+          </div>
+        </div>
+
+        <div class="waste-summary-card special">
+          <div class="waste-summary-icon">⚠️</div>
+          <div>
+            <strong id="totalHazardous">0</strong>
+            <span>Special Waste</span>
+            <small>Total Waste</small>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT STACK -->
+    <div class="dashboard-side-stack">
+
+      <div class="page-card recent-records-card">
+        <div class="page-card-header compact-header">
+          <div class="dashboard-title-with-icon">
+            <div class="dashboard-card-icon">📋</div>
+            <div>
+              <h2>Recent Waste Records</h2>
+              <p>Latest submitted waste monitoring records.</p>
+            </div>
+          </div>
+
+          <button type="button" class="view-all-btn small" onclick="openSection('recordsSection')">
+            View All
+          </button>
+        </div>
+
+        <div class="recent-records-preview">
+          <table>
+            <thead>
+              <tr>
+                <th>Control No.</th>
+                <th>Source</th>
+                <th>Type</th>
+                <th>Grand Total</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="dashboardRecentRecordsBody">
+              <tr>
+                <td colspan="5" class="empty-state">No recent records available.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="page-card latest-summary-card">
+        <div class="page-card-header">
+          <div class="dashboard-title-with-icon">
+            <div class="dashboard-card-icon">🛡️</div>
+            <div>
+              <h2>Latest Submission</h2>
+              <p>Most recent validated waste record.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="session-box">
+          <div class="session-row"><span class="session-label">Barangay</span><span class="session-value" id="latestSubmissionBarangay">-</span></div>
+          <div class="session-row"><span class="session-label">Personnel</span><span class="session-value" id="latestSubmissionPersonnel">-</span></div>
+          <div class="session-row"><span class="session-label">Validated By</span><span class="session-value" id="latestSubmissionEnforcer">-</span></div>
+          <div class="session-row"><span class="session-label">Submitted At</span><span class="session-value" id="latestSubmissionDate">-</span></div>
+          <div class="session-row"><span class="session-label">Records Today</span><span class="session-value" id="recordsToday">0</span></div>
+          <div class="session-row"><span class="session-label">Current Role</span><span class="session-value" id="loggedInRole">-</span></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- WASTE CATEGORY FULL WIDTH -->
+  <div class="page-card dashboard-category-card">
+    <div class="page-card-header dashboard-header-row">
+      <div class="dashboard-title-with-icon">
+        <div class="dashboard-card-icon">♻️</div>
+        <div>
+          <h2>Waste Category Analytics</h2>
+          <p>Distribution of biodegradable, recyclable, residual, and special waste.</p>
+        </div>
+      </div>
+
+      <div class="dashboard-header-actions">
+        <div class="segmented-filter">
+          <button type="button" class="segment-btn active" data-category-range="day">Day</button>
+          <button type="button" class="segment-btn" data-category-range="month">Month</button>
+          <button type="button" class="segment-btn" data-category-range="year">Year</button>
+        </div>
+        <button type="button" class="view-all-btn" id="viewAllWasteMixBtn">View All</button>
+      </div>
+    </div>
+
+    <div class="chart-card medium-chart-card">
+      <div class="chart-placeholder" id="wasteCategoryChart">Chart area</div>
+    </div>
+  </div>
+
+  <!-- BOTTOM GRID -->
+  <div class="dashboard-bottom-grid">
+
+    <div class="page-card compact-recommendation-card">
+      <div class="page-card-header">
+        <div class="dashboard-title-with-icon">
+          <div class="dashboard-card-icon">⚠️</div>
+          <div>
+            <h2>System Recommendations</h2>
+            <p>Smart operational guidance preview.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="summary-list" id="recommendationList">
+        <div class="summary-item">
+          <span>No recommendations available yet.</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="page-card monitoring-alert-card">
+      <div class="page-card-header compact-header">
+        <div class="dashboard-title-with-icon">
+          <div class="dashboard-card-icon">🚛</div>
+          <div>
+            <h2>Truck Monitoring</h2>
+            <p>Maintenance alerts and distance monitoring preview.</p>
+          </div>
+        </div>
+
+        <button type="button" class="view-all-btn small" id="viewAllTruckAnalyticsBtn">View All</button>
+      </div>
+
+      <div class="monitoring-summary-row">
+        <div class="monitoring-mini-box">
+          <span>Active</span>
+          <strong id="monitoringActiveTruckCount">0</strong>
+        </div>
+
+        <div class="monitoring-mini-box warning">
+          <span>Maintenance</span>
+          <strong id="monitoringMaintenanceCount">0</strong>
+        </div>
+      </div>
+
+      <div class="summary-list monitoring-alert-list" id="monitoringAlertList">
+        <div class="summary-item">
+          <span>No truck monitoring alerts yet.</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="legacy-metrics-hidden" aria-hidden="true">
+    <span id="totalWasteVolume">0</span>
+    <span id="totalRecords">0</span>
+    <span id="activeBarangaysCount">0</span>
+    <span id="totalUsersCount">0</span>
+    <span id="activeWebUsersCount">0</span>
+    <span id="inactiveUsersCount">0</span>
+    <span id="superAdminUsersCount">0</span>
+    <span id="dominantWasteType">-</span>
+    <span id="dominantWasteValue">-</span>
+    <span id="highestWasteBarangay">-</span>
+    <span id="highestWasteVolume">-</span>
+    <span id="recordsThisWeek">0</span>
+    <span id="lastRefreshTime">-</span>
+    <span id="loggedInName">-</span>
+    <span id="sessionRoleMirror">-</span>
+  </div>
+
+</section>
+
+      <!-- RECORDS -->
+      <section id="recordsSection" class="content-section">
+        <div class="page-card">
+          <div class="page-card-header">
+            <div>
+              <h2>Waste Records</h2>
+              <p>Validated waste records submitted by the field workflow.</p>
+            </div>
+          </div>
+
+          <div class="filter-bar">
+
+  <div class="filter-group wide">
+    <label for="wasteSearchInput">Search</label>
+    <input
+      id="wasteSearchInput"
+      type="text"
+      placeholder="Search barangay, establishment, validated by..." />
+  </div>
+
+  <div class="filter-group">
+    <label for="wasteBarangayFilter">Barangay</label>
+    <select id="wasteBarangayFilter">
+      <option value="">All Barangays</option>
+    </select>
+  </div>
+
+  <div class="filter-group">
+    <label for="wasteTypeFilter">Entry Type</label>
+    <select id="wasteTypeFilter">
+      <option value="">All Types</option>
+      <option value="Barangay">Barangay</option>
+      <option value="Establishment">Establishment</option>
+    </select>
+  </div>
+
+  <div class="filter-group">
+    <label for="wasteValidationFilter">Validation Status</label>
+    <select id="wasteValidationFilter">
+      <option value="">All Validation</option>
+      <option value="Validated">Validated</option>
+    </select>
+  </div>
+
+  <!-- ✅ NEW: MONTH -->
+  <div class="filter-group">
+    <label for="wasteMonthFilter">Month</label>
+    <select id="wasteMonthFilter">
+      <option value="">All Months</option>
+      <option value="1">January</option>
+      <option value="2">February</option>
+      <option value="3">March</option>
+      <option value="4">April</option>
+      <option value="5">May</option>
+      <option value="6">June</option>
+      <option value="7">July</option>
+      <option value="8">August</option>
+      <option value="9">September</option>
+      <option value="10">October</option>
+      <option value="11">November</option>
+      <option value="12">December</option>
+    </select>
+  </div>
+
+  <!-- ✅ NEW: YEAR -->
+  <div class="filter-group">
+    <label for="wasteYearFilter">Year</label>
+    <select id="wasteYearFilter">
+      <option value="">All Years</option>
+    </select>
+  </div>
+
+  <!-- ✅ NEW: REPORT -->
+  <div class="filter-group">
+    <label>&nbsp;</label>
+    <button type="button" id="generateWasteReportBtn" class="view-all-btn">
+      Generate Report
+    </button>
+  </div>
+
+</div>
+
+          <div class="table-shell waste-records-table-wrapper">
+            <table class="waste-records-table">
+              <thead>
+                <tr>
+                  <th>Control No.</th>
+                  <th>Name</th>
+                  <th>Type</th>
+                  <th>Period</th>
+                  <th>Biodegradable</th>
+                  <th>Recyclable</th>
+                  <th>Residual</th>
+                  <th>Special</th>
+                  <th>Grand Total</th>
+                  <th>Status</th>
+                  <th>Validated By</th>
+                </tr>
+              </thead>
+              <tbody id="wasteRecordsTableBody">
+                <tr>
+                  <td colspan="11" class="loading-state">Loading validated waste records...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- APPOINTMENTS -->
+      <section id="appointmentsSection" class="content-section">
+        <div class="page-card">
+          <div class="page-card-header appointment-header">
+            <div>
+              <h2>Active Appointments</h2>
+             <p>Review pending appointment requests and decide whether to accept or reject them.</p>
+            </div>
+
+            <div class="appointment-toolbar">
+              <button type="button" class="view-all-btn small" id="openAppointmentHistoryBtn">
+                View History
+              </button>
+            </div>
+          </div>
+
+          <div class="table-shell">
+           <table class="appointments-table">
+              <thead>
+                <tr>
+                  <th>Reference Code</th>
+                  <th>Name</th>
+                  <th>Barangay</th>
+                  <th>Contact</th>
+                  <th>Purpose</th>
+                  <th>Date</th>
+                  <th>Status</th>
+                  <th>Assigned Personnel</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="appointmentsTableBody">
+                <tr>
+                  <td colspan="9" class="loading-state">Loading active appointments...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ORIENTATION -->
+<section id="orientationSection" class="content-section">
+  <div class="page-card">
+    <div class="page-card-header">
+      <div>
+        <h2>Orientation Management</h2>
+        <p>Manage approved SWM orientation requests and QR access.</p>
+      </div>
+    </div>
+
+    <div id="orientationCardList" class="orientation-card-list">
+      <div class="empty-state">Loading orientation records...</div>
+    </div>
+  </div>
+</section>
+
+      <!-- BARANGAY COMPLAINTS -->
+<section id="barangayComplaintsSection" class="content-section">
+  <div class="page-card">
+    <div class="page-card-header appointment-header">
+      <div>
+        <h2>Assigned Barangay Complaints</h2>
+        <p>View complaints forwarded to your barangay and respond to waste issues using the pinned location.</p>
+      </div>
+
+      <div class="appointment-toolbar">
+        <button type="button" class="view-all-btn small" id="btnRefreshBarangayComplaints">
+          Refresh
+        </button>
+      </div>
+    </div>
+
+    <div class="complaints-summary-grid">
+      <div class="complaint-summary-card">
+        <span class="summary-label">Total Assigned</span>
+        <strong id="barangayComplaintsTotalCount">0</strong>
+      </div>
+
+      <div class="complaint-summary-card">
+        <span class="summary-label">Validated</span>
+        <strong id="barangayComplaintsValidatedCount">0</strong>
+      </div>
+
+      <div class="complaint-summary-card">
+        <span class="summary-label">Forwarded</span>
+        <strong id="barangayComplaintsForwardedCount">0</strong>
+      </div>
+
+      <div class="complaint-summary-card">
+        <span class="summary-label">Resolved</span>
+        <strong id="barangayComplaintsResolvedCount">0</strong>
+      </div>
+    </div>
+
+    <div class="filter-bar">
+      <div class="filter-group wide">
+        <label for="barangayComplaintsSearchInput">Search</label>
+        <input
+          id="barangayComplaintsSearchInput"
+          type="text"
+          placeholder="Search subject, citizen, status, or barangay" />
+      </div>
+
+      <div class="filter-group">
+        <label for="barangayComplaintsStatusFilter">Status</label>
+        <select id="barangayComplaintsStatusFilter">
+          <option value="all">All Status</option>
+          <option value="validated">Validated</option>
+          <option value="forwarded">Forwarded</option>
+          <option value="resolved">Resolved</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="table-shell">
+      <table class="complaints-table">
+        <thead>
+          <tr>
+            <th>Subject</th>
+            <th>Citizen</th>
+            <th>Barangay</th>
+            <th>Status</th>
+            <th>Date</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="barangayComplaintsTableBody">
+          <tr>
+            <td colspan="6" class="loading-state">Loading assigned complaints...</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+      <!-- COMPLAINTS -->
+<section id="complaintsSection" class="content-section">
+  <div class="page-card complaints-page-card">
+    <div class="page-card-header complaints-header">
+      <div class="complaints-header-copy">
+        <h2>Complaints Management</h2>
+        <p>
+          Review submitted citizen complaints, inspect evidence, and validate reports
+          before forwarding them to the assigned barangay.
+        </p>
+      </div>
+
+      <div class="complaints-header-actions">
+  <button type="button" class="view-all-btn small" id="btnOpenComplaintHistory">
+    View History
+  </button>
+
+  <button type="button" class="view-all-btn small" id="btnRefreshComplaints">
+    Refresh
+  </button>
+</div>
+    </div>
+
+    <div class="complaints-summary-grid">
+      <div class="complaint-summary-card">
+        <span class="summary-label">Total Complaints</span>
+        <strong id="complaintsTotalCount">0</strong>
+      </div>
+
+      <div class="complaint-summary-card">
+        <span class="summary-label">Pending</span>
+        <strong id="complaintsPendingCount">0</strong>
+      </div>
+
+      <div class="complaint-summary-card">
+        <span class="summary-label">Resolved</span>
+        <strong id="complaintsResolvedCount">0</strong>
+      </div>
+    </div>
+
+    <div class="complaints-toolbar">
+      <div class="complaints-search-wrap">
+        <label for="complaintsSearchInput">Search</label>
+        <input
+          id="complaintsSearchInput"
+          class="complaints-search-input"
+          type="text"
+          placeholder="Search subject, barangay, citizen, or status" />
+      </div>
+
+      <div class="complaints-filter-wrap">
+        <label for="complaintsStatusFilter">Status</label>
+        <select id="complaintsStatusFilter" class="complaints-filter-select">
+          <option value="all">All Status</option>
+          <option value="pending">Pending</option>
+          <option value="validated">Validated</option>
+          <option value="forwarded">Forwarded</option>
+          <option value="resolved">Resolved</option>
+          <option value="rejected">Rejected</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="complaints-table-shell">
+      <table class="complaints-table">
+        <thead>
+  <tr>
+    <th>Subject</th>
+    <th>Description</th>
+    <th>Citizen</th>
+    <th>Assigned Barangay</th>
+    <th>Status</th>
+    <th>Date</th>
+    <th class="th-action">Action</th>
+  </tr>
+</thead>
+<tbody id="complaintsTableBody">
+  <tr>
+    <td colspan="7" class="loading-state">Loading complaints...</td>
+  </tr>
+</tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- TRACKING -->
+<section id="trackingSection" class="content-section">
+        <div class="page-card live-tracking-card">
+          <div class="page-card-header dashboard-header-row">
+  <div>
+    <h2>Live Truck Tracking</h2>
+    <p>Real-time GPS monitoring of active garbage trucks.</p>
+  </div>
+
+  <div class="dashboard-header-actions">
+    <button type="button" class="view-all-btn small" onclick="openTrackingReportsModal()">
+  View Tracking Reports
+</button>
+  </div>
+</div>
+
+          <div class="tracking-summary-row">
+            <div class="tracking-mini-card">
+              <span>Active Trucks</span>
+              <strong id="activeTruckCount">0</strong>
+            </div>
+
+            <div class="tracking-mini-card">
+              <span>Selected Truck</span>
+              <strong id="selectedTruckLabel">None</strong>
+            </div>
+
+            <div class="tracking-mini-card">
+              <span>Last Updated</span>
+              <strong id="trackingLastUpdated">--</strong>
+            </div>
+
+            <div class="dashboard-header-actions">
+              <button type="button" class="view-all-btn small" id="resetTrackingViewBtn">
+                Reset View
+              </button>
+
+              <button type="button" class="danger-stop-btn" id="forceStopTruckBtn" disabled>
+                Stop Selected Truck
+              </button>
+            </div>
+          </div>
+
+          <div class="tracking-layout">
+            <div class="tracking-map-wrap">
+              <div id="truckMap"></div>
+            </div>
+
+            <div class="tracking-side-panel">
+              <h4>Active Trucks</h4>
+              <div id="activeTruckList" class="active-truck-list">
+                <p class="empty-state">No active trucks yet.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+  
+
+    
+      <!-- USER MANAGEMENT -->
+   <section id="userManagementSection" class="content-section">
+  <div id="restrictedUserMessage" class="page-card hidden">
+    <div class="page-card-header">
+      <div>
+        <h2>User Management</h2>
+        <p>This module is only available for the super admin account.</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="superAdminContent" class="users-layout">
+
+    <div class="page-card">
+      <div class="page-card-header">
+        <div>
+          <h2>Create Web Account</h2>
+          <p>Only the super admin can create division admin and personnel accounts.</p>
+        </div>
+      </div>
+
+      <form id="createAccountForm" class="account-form">
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="accountPlatform">Platform</label>
+            <select id="accountPlatform" required>
+              <option value="">Select platform</option>
+              <option value="web">Web</option>
+              <option value="mobile">Mobile</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="fullName">Full Name</label>
+            <input type="text" id="fullName" placeholder="Enter full name" required />
+          </div>
+
+          <div class="form-group">
+            <label for="newUsername">Username</label>
+            <input type="text" id="newUsername" placeholder="Enter username" required />
+          </div>
+
+          <div class="form-group">
+            <label for="newPassword">Password</label>
+            <input type="password" id="newPassword" placeholder="Enter password" required />
+          </div>
+
+          <div class="form-group" id="roleGroup">
+            <label for="accountRole">Role</label>
+            <select id="accountRole" required>
+              <option value="">Select role</option>
+            </select>
+          </div>
+
+          <div class="form-group" id="assignmentGroup">
+            <label for="assignmentName" id="assignmentLabel">Division Name</label>
+            <input type="text" id="assignmentName" placeholder="Enter division name" />
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="create-btn" id="createAccountBtn">Create Account</button>
+        </div>
+
+        <div id="accountMessageBox" class="module-message"></div>
+      </form>
+    </div>
+
+    <div class="page-card">
+      <div class="page-card-header">
+        <div>
+          <h2>All Accounts</h2>
+          <p>Manage both web admin and mobile user accounts.</p>
+        </div>
+      </div>
+
+      <div class="accounts-toolbar">
+        <input
+          type="text"
+          id="accountSearchInput"
+          class="account-search-input"
+          placeholder="Search by name, username, role, source, division, or status"
+        >
+
+        <button
+          type="button"
+          class="view-all-btn small"
+          onclick="openDeactivatedAccountsModal()">
+          View History
+        </button>
+      </div>
+
+      <div class="table-shell">
+        <table>
+          <thead>
+            <tr>
+              <th>Full Name</th>
+              <th>Username / Email</th>
+              <th>Source</th>
+              <th>Role</th>
+              <th>Division / Barangay</th>
+              <th>Status</th>
+              <th>Created At</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="webUsersTableBody">
+            <tr>
+              <td colspan="8" class="loading-state">Loading accounts...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+      <!-- APPOINTMENT HISTORY MODAL -->
+      <div id="appointmentHistoryModal" class="history-modal hidden">
+        <div class="history-modal-overlay" id="historyModalOverlay"></div>
+        <div class="history-modal-content">
+          <div class="history-modal-header">
+            <div>
+              <h2>Appointment History</h2>
+              <p>Approved, completed, and rejected appointments.</p>
+            </div>
+            <button type="button" class="history-close-btn" id="closeAppointmentHistoryBtn">✕</button>
+          </div>
+
+          <div class="table-shell">
+            <table>
+              <thead>
+                <tr>
+                  <th>Reference Code</th>
+                  <th>Name</th>
+                  <th>Barangay</th>
+                  <th>Contact</th>
+                  <th>Purpose</th>
+                  <th>Date</th>
+                  <th>Status</th>
+                  <th>Assigned Personnel</th>
+                  <th>Updated At</th>
+                </tr>
+              </thead>
+              <tbody id="appointmentHistoryTableBody">
+                <tr>
+                  <td colspan="9" class="loading-state">Loading appointment history...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- RESCHEDULE APPOINTMENT MODAL -->
+<div id="rescheduleAppointmentModal" class="custom-modal hidden">
+  <div class="custom-modal-overlay" id="rescheduleAppointmentOverlay"></div>
+
+  <div class="custom-modal-content">
+    <div class="custom-modal-header">
+      <div>
+        <h3>Reschedule Appointment</h3>
+        <p>Select a new appointment date for the citizen request.</p>
+      </div>
+      <button type="button" id="closeRescheduleAppointmentBtn" class="modal-close-btn">&times;</button>
+    </div>
+
+    <div class="custom-modal-body">
+  <div class="form-grid">
+    <div class="form-group">
+      <label for="rescheduleAppointmentDate">New Appointment Date</label>
+      <input type="date" id="rescheduleAppointmentDate" />
+    </div>
+
+    <div class="form-group">
+      <label for="rescheduleAppointmentTime">New Appointment Time</label>
+      <select id="rescheduleAppointmentTime">
+        <option value="">Select time</option>
+        <option value="09:00">9:00 AM</option>
+        <option value="10:00">10:00 AM</option>
+        <option value="11:00">11:00 AM</option>
+        <option value="13:00">1:00 PM</option>
+        <option value="14:00">2:00 PM</option>
+        <option value="15:00">3:00 PM</option>
+        <option value="16:00">4:00 PM</option>
+      </select>
+    </div>
+  </div>
+
+      <div class="complaint-modal-actions">
+        <button
+        type="button"
+        id="confirmRescheduleAppointmentBtn"
+        class="view-all-btn"
+        onclick="confirmRescheduleAppointment()">
+        Save Reschedule
+        </button>
+        <button type="button" id="cancelRescheduleAppointmentBtn" class="logout-btn">
+          Cancel
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+      <!-- TRUCK ANALYTICS MODAL -->
+      <div id="truckAnalyticsModal" class="history-modal hidden">
+        <div class="history-modal-overlay" id="truckAnalyticsOverlay"></div>
+        <div class="history-modal-content truck-analytics-modal-content">
+          <div class="history-modal-header">
+            <div>
+              <h2>Truck Monitoring Analytics</h2>
+              <p>Expanded monitoring view for fleet alerts, truck activity, and distance insights.</p>
+            </div>
+            <button type="button" class="history-close-btn" id="closeTruckAnalyticsBtn">✕</button>
+          </div>
+
+          <div class="truck-analytics-summary-grid">
+            <div class="truck-analytics-summary-card">
+              <span>Total Alerts</span>
+              <strong id="modalTotalAlerts">0</strong>
+            </div>
+
+            <div class="truck-analytics-summary-card">
+              <span>Active Trucks</span>
+              <strong id="modalActiveTrucks">0</strong>
+            </div>
+
+            <div class="truck-analytics-summary-card warning">
+              <span>Maintenance Alerts</span>
+              <strong id="modalMaintenanceAlerts">0</strong>
+            </div>
+          </div>
+
+          <div class="truck-analytics-grid">
+            <div class="truck-analytics-panel">
+              <div class="page-card-header compact-header">
+                <div>
+                  <h2>Alert Feed</h2>
+                  <p>Latest monitoring and maintenance notifications.</p>
+                </div>
+              </div>
+
+              <div id="modalMonitoringAlertList" class="truck-analytics-feed-list">
+                <div class="summary-item">
+                  <span>No monitoring alerts yet.</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="truck-analytics-panel">
+              <div class="page-card-header compact-header">
+                <div>
+                  <h2>Truck Status Overview</h2>
+                  <p>Current active trucks from live tracking.</p>
+                </div>
+              </div>
+
+              <div id="modalTruckStatusList" class="truck-analytics-feed-list">
+                <div class="summary-item">
+                  <span>No active trucks available.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="truck-analytics-panel">
+            <div class="page-card-header compact-header">
+              <div>
+                <h2>Distance Monitoring</h2>
+                <p>Visual ranking of truck movement and maintenance readiness.</p>
+              </div>
+            </div>
+
+            <div id="modalTruckDistanceChart" class="truck-distance-chart-box">
+              <div class="summary-item">
+                <span>No truck distance data available yet.</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="truck-analytics-panel">
+            <div class="page-card-header compact-header">
+              <div>
+                <h2>System Recommendations</h2>
+                <p>Operational guidance based on monitoring results.</p>
+              </div>
+            </div>
+
+            <div id="modalTruckRecommendationList" class="truck-analytics-feed-list">
+              <div class="summary-item">
+                <span>No recommendations available yet.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- DEACTIVATED ACCOUNTS HISTORY MODAL -->
+<div id="deactivatedAccountsModal" class="history-modal hidden">
+  <div class="history-modal-overlay" onclick="closeDeactivatedAccountsModal()"></div>
+
+  <div class="history-modal-content">
+    <div class="history-modal-header">
+      <div>
+        <h2>Deactivated Account History</h2>
+        <p>List of deactivated user accounts.</p>
+      </div>
+      <button type="button" class="history-close-btn" onclick="closeDeactivatedAccountsModal()">✕</button>
+    </div>
+
+    <div class="table-shell">
+      <table>
+        <thead>
+          <tr>
+            <th>Full Name</th>
+            <th>Username / Email</th>
+            <th>Source</th>
+            <th>Role</th>
+            <th>Division / Barangay</th>
+            <th>Status</th>
+            <th>Created At</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="deactivatedAccountsTableBody">
+          <tr>
+            <td colspan="8" class="loading-state">Loading deactivated accounts...</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+  <!-- Waste Breakdown Modal -->
+  <div id="wasteBreakdownModal" class="custom-modal hidden">
+    <div class="custom-modal-overlay" id="wasteBreakdownOverlay"></div>
+
+    <div class="custom-modal-content waste-breakdown-modal">
+      <div class="custom-modal-header">
+        <div>
+          <h3 id="wasteBreakdownTitle">Waste Breakdown</h3>
+          <p id="wasteBreakdownSubtitle">Detailed waste inputs</p>
+        </div>
+        <button id="closeWasteBreakdownModal" class="modal-close-btn" type="button">&times;</button>
+      </div>
+
+      <div class="custom-modal-body">
+        <div class="breakdown-summary-strip">
+          <div class="breakdown-summary-item">
+            <span>Source</span>
+            <strong id="breakdownSourceName">-</strong>
+          </div>
+          <div class="breakdown-summary-item">
+            <span>Category</span>
+            <strong id="breakdownCategoryName">-</strong>
+          </div>
+          <div class="breakdown-summary-item">
+            <span>Subtotal</span>
+            <strong id="breakdownSubtotalValue">0</strong>
+          </div>
+        </div>
+
+        <div id="wasteBreakdownList" class="breakdown-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="validationDetailsModal" class="custom-modal hidden">
+    <div id="validationDetailsOverlay" class="custom-modal-overlay"></div>
+
+    <div class="custom-modal-content report-modal">
+
+      <div class="report-header">
+        <div>
+          <h2>Waste Management Office</h2>
+          <p>General Santos City</p>
+        </div>
+
+        <div class="report-actions">
+          <button id="printReportBtn" class="print-btn">Print</button>
+          <button id="closeValidationDetailsModal" class="modal-close-btn">&times;</button>
+        </div>
+      </div>
+
+      <div class="report-body" id="printableReportArea">
+        <div class="report-title">
+          <h3>Waste Validation Report</h3>
+          <p id="reportDate"></p>
+        </div>
+
+        <div class="report-section">
+          <h4>Record Information</h4>
+          <div id="reportBasicInfo" class="report-grid"></div>
+        </div>
+
+        <div class="report-section">
+          <h4>Waste Summary</h4>
+          <div id="reportWasteSummary" class="report-grid"></div>
+        </div>
+
+        <div class="report-section">
+          <h4>Validation Details</h4>
+          <div id="reportValidationInfo" class="report-grid"></div>
+        </div>
+
+        <div class="report-footer">
+          <div id="reportFooterValidator"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="complaintDetailsModal" class="custom-modal hidden">
+  <div class="custom-modal-overlay" id="complaintDetailsOverlay"></div>
+
+  <div class="custom-modal-content complaint-modal-content">
+    <div class="custom-modal-header">
+      <div>
+        <h3>Complaint Details</h3>
+        <p>Review complaint information and evidence before validation.</p>
+      </div>
+      <button type="button" id="closeComplaintDetailsModal" class="modal-close-btn">&times;</button>
+    </div>
+
+    <div class="custom-modal-body complaint-modal-body">
+      <div class="complaint-modal-grid">
+        <div class="complaint-modal-left">
+          <div class="complaint-field-group">
+            <label>Subject</label>
+            <div id="complaintModalSubject" class="complaint-field-value">-</div>
+          </div>
+
+          <div class="complaint-field-group">
+            <label>Description</label>
+            <div id="complaintModalDescription" class="complaint-field-value">-</div>
+          </div>
+
+          <div class="complaint-field-group">
+            <label>Citizen Name</label>
+            <div id="complaintModalCitizenName" class="complaint-field-value">-</div>
+          </div>
+
+          <div class="complaint-field-group">
+            <label>Username</label>
+            <div id="complaintModalUsername" class="complaint-field-value">-</div>
+          </div>
+
+          <div class="complaint-field-group">
+            <label>Assigned Barangay</label>
+            <div id="complaintModalBarangay" class="complaint-field-value">-</div>
+          </div>
+
+          <div class="complaint-field-group">
+            <label>Status</label>
+            <div id="complaintModalStatus" class="complaint-field-value">-</div>
+          </div>
+
+          <div class="complaint-field-group">
+            <label>Coordinates</label>
+            <div id="complaintModalCoordinates" class="complaint-field-value">-</div>
+          </div>
+
+          <div class="complaint-field-group">
+            <label>Submitted At</label>
+            <div id="complaintModalCreatedAt" class="complaint-field-value">-</div>
+          </div>
+        </div>
+
+        <div class="complaint-modal-right">
+          <div class="complaint-evidence-wrapper">
+            <img id="complaintModalImage" class="complaint-evidence-image" src="" alt="Complaint evidence" />
+          </div>
+        </div>
+      </div>
+
+      <div id="manualBarangayContainer" style="display:none; margin-bottom:10px;">
+        <label>Select Barangay:</label>
+        <select id="manualBarangaySelect">
+          <option value="">-- Select Barangay --</option>
+          <option value="Bula">Bula</option>
+          <option value="Lagao">Lagao</option>
+          <option value="San Isidro">San Isidro</option>
+          <option value="Calumpang">Calumpang</option>
+        </select>
+      </div>
+
+      <div class="complaint-modal-actions">
+        <button type="button" id="btnOpenComplaintMap" class="view-all-btn">Open Map</button>
+        <button type="button" id="btnCloseComplaintModalFooter" class="logout-btn">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="complaintMapModal" class="custom-modal hidden">
+  <div class="custom-modal-overlay" id="complaintMapOverlay"></div>
+
+  <div class="custom-modal-content complaint-map-modal-content">
+    <div class="custom-modal-header">
+      <div>
+        <h3>Complaint Location</h3>
+        <p>Mapped location of the reported issue.</p>
+      </div>
+      <button type="button" id="closeComplaintMapModal" class="modal-close-btn">&times;</button>
+    </div>
+
+    <div class="custom-modal-body complaint-map-modal-body">
+  <div class="complaint-map-summary">
+    <div class="complaint-map-summary-item">
+      <span>Subject</span>
+      <strong id="complaintMapSubject">-</strong>
+    </div>
+
+    <div class="complaint-map-summary-item">
+      <span>Barangay</span>
+      <strong id="complaintMapBarangay">-</strong>
+    </div>
+
+    <div class="complaint-map-summary-item">
+      <span>Coordinates</span>
+      <strong id="complaintMapCoordinates">-</strong>
+    </div>
+  </div>
+
+  <div class="complaint-map-layout">
+    <div class="complaint-map-panel">
+      <div id="complaintLeafletMap" class="complaint-leaflet-map"></div>
+    </div>
+
+    <div class="complaint-side-panel">
+      <div class="chosen-barangay-box">
+        <div class="label">Chosen Barangay</div>
+        <div id="chosenBarangayText" class="chosen-barangay-text">None selected</div>
+        <div id="chosenBarangayMeta" class="chosen-barangay-meta"></div>
+      </div>
+
+      <div class="nearby-list-box">
+        <div class="label">Nearby Barangay Candidates</div>
+        <div id="nearbyBarangayList" class="nearby-barangay-list">
+          <div class="nearby-empty">No nearby barangays loaded yet.</div>
+        </div>
+      </div>
+
+      <div class="complaint-map-footer-actions">
+        <button type="button" id="btnValidateForwardComplaint" class="view-all-btn">
+          Validate &amp; Forward
+        </button>
+      </div>
+    </div>
+  </div>
+    </div>
+  </div>
+</div>
+
+<div id="complaintHistoryModal" class="history-modal hidden">
+  <div class="history-modal-overlay" id="complaintHistoryOverlay"></div>
+
+  <div class="history-modal-content">
+    <div class="history-modal-header">
+      <div>
+        <h2>Complaint History</h2>
+        <p>Forwarded, accepted, and resolved complaint records.</p>
+      </div>
+      <button type="button" class="history-close-btn" id="closeComplaintHistoryBtn">✕</button>
+    </div>
+
+    <div class="table-shell">
+      <table>
+        <thead>
+          <tr>
+            <th>Subject</th>
+            <th>Citizen</th>
+            <th>Assigned Barangay</th>
+            <th>Status</th>
+            <th>Date</th>
+             <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="complaintHistoryTableBody">
+          <tr>
+            <td colspan="6" class="loading-state">Loading complaint history...</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div id="complaintResolutionModal" class="custom-modal hidden">
+  <div class="custom-modal-overlay" id="complaintResolutionOverlay"></div>
+
+  <div class="custom-modal-content complaint-resolution-modal-content resolution-pro-modal">
+    <div class="custom-modal-header resolution-pro-header">
+      <div>
+        <span class="resolution-kicker">Resolved Complaint</span>
+        <h3 id="resolutionModalSubject">Resolution Report</h3>
+        <p>Barangay personnel submitted resolution details and evidence.</p>
+      </div>
+
+      <button type="button" id="closeComplaintResolutionModal" class="modal-close-btn">&times;</button>
+    </div>
+
+    <div class="custom-modal-body complaint-resolution-modal-body resolution-pro-body">
+      <div class="resolution-summary-row">
+        <div class="resolution-summary-card">
+          <span>Assigned Barangay</span>
+          <strong id="resolutionModalAssignedBarangay">-</strong>
+        </div>
+
+        <div class="resolution-summary-card">
+          <span>Handled By</span>
+          <strong id="resolutionModalHandledBy">-</strong>
+        </div>
+
+        <div class="resolution-summary-card">
+          <span>Reporter Barangay</span>
+          <strong id="resolutionModalReporterBarangay">-</strong>
+        </div>
+
+        <div class="resolution-summary-card">
+          <span>Resolved At</span>
+          <strong id="resolutionModalResolvedAt">-</strong>
+        </div>
+      </div>
+
+      <div class="resolution-main-grid">
+        <div class="resolution-left-panel">
+          <div class="resolution-status-line">
+            <span>Status</span>
+            <strong id="resolutionModalStatus" class="resolution-status-pill">-</strong>
+          </div>
+
+          <div class="resolution-detail-card">
+            <h4>Description</h4>
+            <p id="resolutionModalDescription">-</p>
+          </div>
+
+          <div class="resolution-detail-card">
+            <h4>Resolution Report</h4>
+            <p id="resolutionModalReport">-</p>
+          </div>
+
+          <div class="resolution-detail-card">
+            <h4>Coordinates</h4>
+            <p id="resolutionModalCoordinates">-</p>
+          </div>
+        </div>
+
+        <div class="resolution-evidence-panel">
+          <div class="resolution-evidence-heading">
+            <div>
+              <h4>Evidence Image</h4>
+              <p>Submitted proof for the resolved complaint.</p>
+            </div>
+          </div>
+
+          <div class="resolved-evidence-wrap">
+            <div class="resolved-evidence-frame" id="resolutionEvidenceFrame">
+              <img
+                id="resolutionModalEvidenceImage"
+                class="resolved-evidence-image hidden"
+                alt="Resolution evidence" />
+            </div>
+
+            <p id="resolutionModalNoEvidence" class="muted-text">No evidence image submitted.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="orientationQrModal" class="qr-modal hidden">
+  <div class="qr-overlay" id="orientationQrOverlay"></div>
+
+  <div class="qr-modal-content">
+    <div class="qr-header">
+      <h2>Orientation QR Access</h2>
+      <button type="button" id="closeOrientationQrBtn">✕</button>
+    </div>
+
+    <div class="qr-body">
+      <div id="orientationQrContainer"></div>
+
+      <div class="qr-info">
+        <p id="orientationQrNameText">Name: -</p>
+        <p id="orientationQrBarangayText">Barangay: -</p>
+        <p id="orientationQrDateText">Date: -</p>
+        <p id="orientationQrTokenText">Token: -</p>
+      </div>
+
+      <div class="qr-note">
+        Scan this QR using the mobile app to start the orientation quiz.
+      </div>
+    </div>
+  </div>
+</div>
+
+  </div>
+</div>
+
+<div id="trackingReportsModal" class="custom-modal hidden">
+  <div class="custom-modal-overlay" onclick="closeTrackingReportsModal()"></div>
+
+  <div class="custom-modal-content" style="max-width: 1100px; width: 92%;">
+    <div class="custom-modal-header">
+      <div>
+        <h3>Daily Tracking Reports</h3>
+        <p>Truck start point, end point, enforcer, and route history.</p>
+      </div>
+
+      <button class="modal-close-btn" onclick="closeTrackingReportsModal()">
+        &times;
+      </button>
+    </div>
+
+    <div class="custom-modal-body">
+      <div class="table-shell">
+        <table>
+          <thead>
+            <tr>
+              <th>Truck</th>
+              <th>Enforcer</th>
+              <th>Start Time</th>
+              <th>End Time</th>
+              <th>Status</th>
+              <th>Distance</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+
+          <tbody id="trackingReportsTableBody">
+            <tr>
+              <td colspan="7" class="loading-state">Loading reports...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="trackingReportModal" class="custom-modal hidden">
+  <div class="custom-modal-overlay" onclick="closeTrackingReportModal()"></div>
+
+  <div class="custom-modal-content">
+    <div class="custom-modal-header">
+      <h3>Tracking Route</h3>
+      <button onclick="closeTrackingReportModal()" class="modal-close-btn">&times;</button>
+    </div>
+
+    <div class="custom-modal-body">
+      <div id="trackingReportMap" style="height:400px;"></div>
+    </div>
+  </div>
+</div>
+
+
+
+<div id="toastContainer" style="
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 9999;
+"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="js/config.js"></script>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script src="js/admin/admin-state.js"></script>
+<script src="js/admin/admin-api.js"></script>
+<script src="js/admin/admin-utils.js"></script>
+<script src="js/admin/admin-session.js"></script>
+<script src="js/admin/admin-navigation.js"></script>
+<script src="js/admin/admin-notifications.js"></script>
+<script src="js/admin/admin-waste-records.js"></script>
+<script src="js/admin/admin-dashboard-analytics.js"></script>
+<script src="js/admin/admin-complaints.js"></script>
+<script src="js/admin/admin-appointments.js"></script>
+<script src="js/admin/admin-orientation.js"></script>
+<script src="js/admin/admin-tracking.js"></script>
+<script src="js/admin/admin-users.js"></script>
+<script src="js/admin/admin-init.js"></script>
+</body>
+</html>

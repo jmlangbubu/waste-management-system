@@ -1,0 +1,25 @@
+
+/* =========================
+   MAIN LAYOUT
+========================= */
+.admin-layout {
+  display: flex;
+  min-height: 100vh;
+}
+
+.main-content {
+  margin-left: 280px;
+  width: calc(100% - 280px);
+  padding: 18px 22px 28px;
+}
+
+/* =========================
+   SECTION VISIBILITY
+========================= */
+.content-section {
+  display: none;
+}
+
+.content-section.active {
+  display: block;
+}

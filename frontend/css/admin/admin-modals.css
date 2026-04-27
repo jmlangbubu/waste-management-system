@@ -1,0 +1,404 @@
+/* =========================
+   GLOBAL MODALS
+========================= */
+.custom-modal,
+.history-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+}
+
+.custom-modal.hidden,
+.history-modal.hidden {
+  display: none !important;
+}
+
+.custom-modal-overlay,
+.history-modal-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(3px);
+}
+
+.custom-modal-content,
+.history-modal-content {
+  position: relative;
+  z-index: 1;
+  width: min(900px, calc(100% - 32px));
+  max-height: 90vh;
+  overflow: hidden;
+  margin: 48px auto;
+  background: #ffffff;
+  border-radius: 20px;
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.18);
+}
+
+.custom-modal-header,
+.history-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 22px 24px 16px;
+  border-bottom: 1px solid #edf0f5;
+}
+
+.custom-modal-header h3,
+.history-modal-header h2 {
+  margin: 0;
+  font-size: 20px;
+  color: #173126;
+}
+
+.custom-modal-header p,
+.history-modal-header p {
+  margin-top: 4px;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.custom-modal-body {
+  padding: 20px 24px 24px;
+  overflow: auto;
+  max-height: calc(90vh - 90px);
+}
+
+.modal-close-btn,
+.history-close-btn {
+  border: none;
+  background: #eef2f6;
+  color: #475569;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  font-size: 20px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* =========================
+   HISTORY MODAL
+========================= */
+.history-modal {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.history-modal-content {
+  margin: 0;
+  width: min(1180px, 96vw);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px;
+}
+
+.history-modal .table-shell {
+  flex: 1;
+  overflow: auto;
+}
+
+.history-modal table {
+  min-width: 980px;
+}
+
+/* =========================
+   IMAGE PREVIEW
+========================= */
+.image-preview-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 12000;
+  background: rgba(15, 23, 42, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.image-preview-modal img {
+  max-width: 95vw;
+  max-height: 90vh;
+  border-radius: 14px;
+  background: #fff;
+}
+
+/* =========================
+   VALIDATION REPORT MODAL UI FIX
+========================= */
+
+#validationDetailsModal {
+  align-items: center;
+  justify-content: center;
+}
+
+#validationDetailsModal .report-modal {
+  width: min(900px, 92vw);
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 0;
+  border-radius: 22px;
+  background: #ffffff;
+}
+
+/* HEADER */
+.report-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+
+  padding: 22px 26px;
+  border-bottom: 1px solid #e5e7eb;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.report-header h2 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 900;
+  color: #064e3b;
+}
+
+.report-header p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.report-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.print-btn {
+  height: 38px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 12px;
+  background: #15803d;
+  color: #ffffff;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.report-actions .modal-close-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+/* BODY */
+.report-body {
+  padding: 26px;
+}
+
+.report-title {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.report-title h3 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 900;
+  color: #0f172a;
+}
+
+.report-title p {
+  margin-top: 6px;
+  font-size: 13px;
+  color: #64748b;
+}
+
+/* SECTIONS */
+.report-section {
+  margin-bottom: 22px;
+}
+
+.report-section h4 {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 900;
+  color: #064e3b;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+/* dynamic report content */
+.report-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.report-grid > div {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 14px 16px;
+}
+
+.report-grid strong,
+.report-grid b {
+  display: block;
+  font-size: 12px;
+  font-weight: 800;
+  color: #64748b;
+  margin-bottom: 5px;
+}
+
+.report-grid span,
+.report-grid p,
+.report-grid div {
+  font-size: 14px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+/* FOOTER */
+.report-footer {
+  margin-top: 28px;
+  padding-top: 18px;
+  border-top: 1px solid #e5e7eb;
+  font-size: 13px;
+  color: #334155;
+}
+
+/* PRINT CLEAN */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  #printableReportArea,
+  #printableReportArea * {
+    visibility: visible;
+  }
+
+  #printableReportArea {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 24px;
+  }
+
+  .report-actions,
+  .modal-close-btn,
+  .print-btn {
+    display: none !important;
+  }
+}
+
+/* RESPONSIVE */
+@media (max-width: 700px) {
+  .report-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .report-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .report-body {
+    padding: 20px;
+  }
+}
+
+/* =========================
+   REPORT SIGNATURE FINAL FIX
+========================= */
+
+.report-footer {
+  margin-top: 32px;
+  padding-top: 18px;
+  border-top: 1px solid #e5e7eb;
+}
+
+/* wrapper ng whole signature */
+#reportFooterValidator,
+.report-signature-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  width: 100%;
+}
+
+/* text label */
+.report-signature-caption {
+  width: 220px;
+  text-align: left;
+  font-size: 12px;
+  color: #334155;
+  margin-bottom: 4px;
+}
+
+/* signature area */
+.report-signature-box {
+  width: 220px;
+  height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.report-signature-image {
+  max-width: 150px;
+  max-height: 54px;
+  object-fit: contain;
+  display: block;
+}
+
+/* line should only match signature width */
+.report-signature-line {
+  width: 220px;
+  height: 1px;
+  background: #0f172a;
+  margin-top: 2px;
+}
+
+/* name under signature */
+.report-signature-name {
+  width: 220px;
+  text-align: center;
+  margin-top: 5px;
+  font-size: 13px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.toast {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  background: #1e293b;
+  color: #fff;
+  padding: 14px 18px;
+  border-radius: 8px;
+  font-size: 14px;
+  z-index: 9999;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+  animation: fadeIn 0.3s ease;
+}
+
+.toast.success {
+  background: #16a34a;
+}
+
+.toast.error {
+  background: #dc2626;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}

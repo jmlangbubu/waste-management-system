@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SWM Orientation Quiz</title>
+  <link rel="stylesheet" href="css/orientation-quiz.css" />
+</head>
+<body>
+  <div class="quiz-page">
+    <div class="quiz-shell">
+      <div class="quiz-header">
+        <h1>SWM Orientation Web Exam</h1>
+        <p>Complete the orientation exam and print the certificate after passing.</p>
+      </div>
+
+      <div id="quizLoadingState" class="quiz-panel">
+        Loading orientation record...
+      </div>
+
+      <div id="quizErrorState" class="quiz-panel hidden"></div>
+
+      <div id="participantPanel" class="quiz-panel hidden">
+        <h2>Participant Details</h2>
+        <div class="info-grid">
+          <div class="info-item">
+            <span>Name</span>
+            <strong id="participantName">-</strong>
+          </div>
+          <div class="info-item">
+            <span>Barangay</span>
+            <strong id="participantBarangay">-</strong>
+          </div>
+          <div class="info-item">
+            <span>Purpose</span>
+            <strong id="participantPurpose">-</strong>
+          </div>
+          <div class="info-item">
+            <span>Date</span>
+            <strong id="participantDate">-</strong>
+          </div>
+          <div class="info-item">
+            <span>Token</span>
+            <strong id="participantToken">-</strong>
+          </div>
+        </div>
+
+        <div class="participant-actions">
+          <button id="btnStartQuiz" type="button">Start Exam</button>
+        </div>
+      </div>
+
+      <div id="quizPanel" class="quiz-panel hidden">
+        <h2>Orientation Questions</h2>
+        <form id="orientationQuizForm" class="quiz-form"></form>
+        <div class="quiz-actions">
+          <button id="btnSubmitQuiz" type="button">Submit Exam</button>
+        </div>
+      </div>
+
+      <div id="quizResultPanel" class="quiz-panel hidden">
+        <h2>Exam Result</h2>
+        <p id="quizResultText">-</p>
+        <div class="quiz-actions">
+          <button id="btnRetryQuiz" type="button" class="secondary-btn hidden">Retry Exam</button>
+        </div>
+      </div>
+
+      <div id="certificatePanel" class="quiz-panel hidden">
+        <div id="printableCertificate" class="certificate-card">
+          <div class="certificate-header">
+            <h2>Solid Waste Management Clearance</h2>
+            <p>Waste Management Office - General Santos City</p>
+          </div>
+
+          <div class="certificate-body">
+            <p>This certifies that</p>
+            <h3 id="certificateFullName">-</h3>
+            <p>from</p>
+            <h4 id="certificateBarangay">-</h4>
+            <p>has successfully passed the SWM Orientation Web Exam.</p>
+
+            <div class="certificate-meta">
+              <div><span>Date Completed:</span> <strong id="certificateDate">-</strong></div>
+              <div><span>Certificate No.:</span> <strong id="certificateToken">-</strong></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="quiz-actions">
+          <button id="btnPrintCertificate" type="button">Print Certificate</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/orientation-quiz.js"></script>
+</body>
+</html>

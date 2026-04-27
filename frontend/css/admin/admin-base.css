@@ -1,0 +1,57 @@
+/* =========================
+   RESET + GLOBAL BASE
+========================= */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: "Inter", Arial, sans-serif;
+  background: #f4f6f3;
+  color: #1f3a2e;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* =========================
+   GLOBAL UTILITIES
+========================= */
+.loading-state,
+.empty-state,
+.error-state {
+  text-align: center;
+  padding: 22px !important;
+  font-size: 13px;
+}
+
+.loading-state {
+  color: #667085;
+}
+
+.empty-state {
+  color: #667085;
+}
+
+.error-state {
+  color: #d92d20;
+}
+
+/* =========================
+   SCROLLBAR GLOBAL
+========================= */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}

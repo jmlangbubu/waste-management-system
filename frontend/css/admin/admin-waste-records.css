@@ -1,0 +1,95 @@
+/* =========================
+   WASTE RECORDS
+========================= */
+#recordsSection table {
+  min-width: 1250px;
+}
+
+#recordsSection .table-shell {
+  overflow-x: auto;
+  border: 1px solid #e8edf3;
+  border-radius: 20px;
+  background: #ffffff;
+}
+
+#recordsSection thead th {
+  background: linear-gradient(180deg, #f8fbfd 0%, #eef3f7 100%);
+  color: #183247;
+  font-size: 15px;
+  font-weight: 800;
+  padding: 20px 18px;
+  text-align: center;
+}
+
+#recordsSection tbody td {
+  padding: 18px 16px;
+  font-size: 15px;
+  color: #243746;
+  text-align: center;
+}
+
+#recordsSection tbody td:nth-child(2) {
+  text-align: left;
+  font-weight: 700;
+  color: #173126;
+}
+
+.control-number-cell {
+  font-weight: 800;
+  color: #0f2f57;
+}
+
+.waste-cell-trigger,
+.clickable-cell {
+  cursor: pointer;
+  font-weight: 800;
+  color: #146c43;
+}
+
+.waste-cell-trigger:hover,
+.clickable-cell:hover {
+  background: #ecf8f0 !important;
+  text-decoration: underline;
+}
+
+.details-arrow-btn {
+  width: 38px;
+  height: 38px;
+  border: none;
+  border-radius: 12px;
+  background: #e8f5ea;
+  color: #146c43;
+  cursor: pointer;
+}
+
+.breakdown-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.breakdown-summary-item,
+.breakdown-row {
+  background: #f8fafc;
+  border: 1px solid #e8edf3;
+  border-radius: 14px;
+  padding: 14px 16px;
+}
+
+.breakdown-list {
+  display: grid;
+  gap: 10px;
+}
+
+.breakdown-row {
+  display: flex;
+  justify-content: space-between;
+}
+
+.breakdown-empty {
+  padding: 18px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 14px;
+  color: #64748b;
+}

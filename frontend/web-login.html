@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Web Admin Login</title>
+  <link rel="stylesheet" href="css/web-login.css" />
+
+</head>
+<body>
+  <div class="login-page">
+    <div class="login-card">
+      <div class="login-header">
+        <h1>Waste Management Office</h1>
+  
+      </div>
+
+      <form id="loginForm" class="login-form">
+        <div class="input-group">
+          <label for="username">Username</label>
+          <input type="text" id="username" placeholder="Enter username" required />
+        </div>
+
+        <div class="input-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" placeholder="Enter password" required />
+        </div>
+
+        <button type="submit" id="loginBtn">Login</button>
+        <button class="back-btn" onclick="goBackToHome()">
+           ← Back to Home
+          </button>
+
+        <div id="messageBox" class="message-box"></div>
+      </form>
+    </div>
+  </div>
+
+<script src="js/config.js"></script>
+<script src="js/web-login.js"></script>
+</body>
+</html>

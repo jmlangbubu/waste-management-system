@@ -1,0 +1,263 @@
+/* =========================
+   APPOINTMENTS
+========================= */
+
+#appointmentsSection .page-card {
+  padding: 26px;
+  border-radius: 24px;
+}
+
+#appointmentsSection .page-card-header,
+#appointmentsSection .appointment-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+#appointmentsSection .appointment-toolbar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* TABLE */
+#appointmentsSection .table-shell {
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  background: #ffffff;
+}
+
+#appointmentsSection table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+#appointmentsSection th,
+#appointmentsSection td {
+  padding: 14px 16px;
+  vertical-align: middle;
+  font-size: 13px;
+  color: #111827;
+}
+
+#appointmentsSection th {
+  background: #f5f7fa;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+#appointmentsSection td {
+  background: #ffffff;
+  border-top: 1px solid #edf0f2;
+}
+
+/* COLUMNS */
+#appointmentsSection th:nth-child(1),
+#appointmentsSection td:nth-child(1) {
+  width: 120px;
+}
+
+#appointmentsSection th:nth-child(2),
+#appointmentsSection td:nth-child(2) {
+  width: 75px;
+}
+
+#appointmentsSection th:nth-child(3),
+#appointmentsSection td:nth-child(3) {
+  width: 110px;
+}
+
+#appointmentsSection th:nth-child(4),
+#appointmentsSection td:nth-child(4) {
+  width: 125px;
+}
+
+#appointmentsSection th:nth-child(5),
+#appointmentsSection td:nth-child(5) {
+  width: 190px;
+  line-height: 1.35;
+}
+
+#appointmentsSection th:nth-child(6),
+#appointmentsSection td:nth-child(6) {
+  width: 185px;
+}
+
+#appointmentsSection th:nth-child(7),
+#appointmentsSection td:nth-child(7) {
+  width: 120px;
+  text-align: center;
+}
+
+#appointmentsSection th:nth-child(8),
+#appointmentsSection td:nth-child(8) {
+  width: 145px;
+  text-align: center;
+}
+
+#appointmentsSection th:nth-child(9),
+#appointmentsSection td:nth-child(9) {
+  width: 190px;
+  text-align: center;
+}
+
+
+/* STATUS */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 92px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.status-badge.resolved {
+  background: #dcfce7;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+
+.status-badge.rejected {
+  background: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+.status-badge.forwarded {
+  background: #dbeafe;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+.status-badge.pending {
+  background: #fef3c7;
+  color: #b45309;
+  border: 1px solid #fde68a;
+}
+
+.rescheduled-note {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #111827;
+}
+
+/* ACTION BUTTONS */
+.appointment-action-buttons {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
+.inline-action-btn {
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: 0.2s ease;
+}
+
+.inline-action-btn:hover {
+  transform: translateY(-1px);
+}
+
+.inline-action-btn.assign-btn,
+.inline-action-btn.success-btn {
+  background: #2f8a34;
+  color: #ffffff;
+}
+
+.inline-action-btn.delete-btn {
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+.inline-action-btn.warning-btn,
+.inline-action-btn.danger-btn {
+  background: #f3f4f6;
+  color: #111827;
+}
+
+/* EMPTY / LOADING */
+#appointmentsSection .empty-state,
+#appointmentsSection .loading-state {
+  text-align: center;
+  padding: 22px;
+  color: #667085;
+  font-weight: 700;
+}
+
+/* RESPONSIVE */
+@media (max-width: 1200px) {
+  #appointmentsSection .table-shell {
+    overflow-x: auto;
+  }
+
+  #appointmentsSection table {
+    min-width: 1180px;
+  }
+}
+
+/* FORCE CENTER ACTIONS HEADER */
+#appointmentsSection table thead tr th:nth-child(9),
+#appointmentsSection .appointments-table thead tr th:nth-child(9) {
+  text-align: center !important;
+  justify-content: center !important;
+}
+
+/* =========================
+   ACTION BUTTON COLORS
+========================= */
+
+/* APPROVE / ACCEPT */
+.inline-action-btn.assign-btn,
+.inline-action-btn.success-btn {
+  background: #16a34a;
+  color: #ffffff;
+  border: none;
+}
+
+.inline-action-btn.assign-btn:hover {
+  background: #15803d;
+}
+
+/* RESCHEDULE */
+.inline-action-btn.warning-btn {
+  background: #e0f2fe;
+  color: #0369a1;
+  border: 1px solid #bae6fd;
+}
+
+.inline-action-btn.warning-btn:hover {
+  background: #bae6fd;
+}
+
+/* CANCEL / REJECT */
+.inline-action-btn.delete-btn,
+.inline-action-btn.danger-btn {
+  background: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+.inline-action-btn.delete-btn:hover,
+.inline-action-btn.danger-btn:hover {
+  background: #fecaca;
+}

@@ -1,0 +1,255 @@
+/* =========================
+   ORIENTATION PAGE
+========================= */
+
+#orientationSection .page-card {
+  padding: 28px;
+  border-radius: 24px;
+}
+
+#orientationSection .page-card-header {
+  margin-bottom: 26px;
+}
+
+.orientation-card-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+  gap: 24px;
+}
+
+.orientation-card {
+  min-height: 285px;
+  padding: 22px;
+  border-radius: 22px;
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
+  display: flex;
+  flex-direction: column;
+  transition: 0.2s ease;
+}
+
+.orientation-card:hover {
+  transform: translateY(-3px);
+  border-color: #bbf7d0;
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.09);
+}
+
+.orientation-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.orientation-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: #dcfce7;
+  color: #15803d;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+}
+
+.orientation-status {
+  padding: 6px 13px;
+  border-radius: 999px;
+  background: #dcfce7;
+  color: #15803d;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.orientation-menu-btn {
+  margin-left: auto;
+  width: 38px;
+  height: 38px;
+  border-radius: 13px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  color: #64748b;
+  font-size: 18px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.orientation-card-body {
+  flex: 1;
+}
+
+.orientation-card-body h3 {
+  margin: 0 0 10px;
+  font-size: 17px;
+  font-weight: 900;
+  color: #061226;
+}
+
+.orientation-date {
+  margin-bottom: 14px;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.orientation-info {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.orientation-info span {
+  color: #64748b;
+}
+
+.orientation-info strong {
+  color: #061226;
+  font-weight: 900;
+}
+
+.orientation-card-actions {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid #edf0f2;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.orientation-card-actions button {
+  width: 100%;
+  height: 42px;
+  padding: 0 14px;
+  border-radius: 14px;
+  border: 1px solid #bbf7d0;
+  background: #f0fdf4;
+  color: #087a2c;
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.orientation-card-actions button:hover {
+  background: #dcfce7;
+}
+
+.orientation-card-list .empty-state {
+  grid-column: 1 / -1;
+  padding: 38px;
+  text-align: center;
+  color: #64748b;
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  border-radius: 18px;
+}
+
+/* QR MODAL */
+.qr-modal.hidden {
+  display: none !important;
+}
+
+.qr-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 12000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.qr-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(3px);
+}
+
+.qr-modal-content {
+  position: relative;
+  z-index: 1;
+  width: min(420px, 92vw);
+  background: #ffffff;
+  border-radius: 22px;
+  padding: 22px;
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.25);
+}
+
+.qr-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.qr-header h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.qr-header button {
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  background: #f1f5f9;
+  cursor: pointer;
+}
+
+.qr-body {
+  text-align: center;
+}
+
+#orientationQrContainer {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 18px;
+}
+
+.qr-info {
+  text-align: left;
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.qr-info p {
+  margin: 6px 0;
+  color: #334155;
+  font-size: 13px;
+}
+
+.qr-note {
+  margin-top: 14px;
+  padding: 12px;
+  border-radius: 12px;
+  background: #ecfdf5;
+  color: #087a2c;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.orientation-qr-image {
+  width: 240px;
+  height: 240px;
+  object-fit: contain;
+  display: block;
+  margin: 0 auto;
+}
+
+@media (max-width: 700px) {
+  #orientationSection .page-card {
+    padding: 20px;
+  }
+
+  .orientation-card-list {
+    grid-template-columns: 1fr;
+  }
+}
