@@ -709,14 +709,23 @@ async function loadTrackingReports() {
   `;
 
   try {
-    const res = await fetch("http://localhost:8081/api/tracking/reports", {
+    const res = await fetch(getTrackingReportsApiUrl(), {
       headers: {
-        "Accept": "application/json"
+        Accept: "application/json"
       }
     });
 
     const data = await res.json();
-    const reports = Array.isArray(data.data) ? data.data : [];
+
+    if (!res.ok || data.success === false) {
+      throw new Error(data.message || "Failed to load reports.");
+    }
+
+    const reports = Array.isArray(data)
+      ? data
+      : Array.isArray(data.data)
+        ? data.data
+        : [];
 
     if (!reports.length) {
       tbody.innerHTML = `
@@ -727,21 +736,25 @@ async function loadTrackingReports() {
       return;
     }
 
-    tbody.innerHTML = reports.map((r) => `
-      <tr>
-        <td>${escapeHtml(r.truck_id || "-")}</td>
-        <td>${escapeHtml(r.enforcer_name || "-")}</td>
-        <td>${formatTrackingTime(r.started_at)}</td>
-        <td>${r.ended_at ? formatTrackingTime(r.ended_at) : "Still Active"}</td>
-        <td>${escapeHtml(r.session_status || "-")}</td>
-        <td>${Number(r.session_distance_km || 0).toFixed(2)} km</td>
-        <td>
-          <button type="button" class="view-all-btn small" onclick="viewTrackingReport(${r.id})">
-            View
-          </button>
-        </td>
-      </tr>
-    `).join("");
+    tbody.innerHTML = reports.map((r) => {
+      const sessionId = r.id || r.session_id;
+
+      return `
+        <tr>
+          <td>${escapeHtml(r.truck_id || "-")}</td>
+          <td>${escapeHtml(r.enforcer_name || "-")}</td>
+          <td>${formatTrackingTime(r.started_at)}</td>
+          <td>${r.ended_at ? formatTrackingTime(r.ended_at) : "Still Active"}</td>
+          <td>${escapeHtml(r.session_status || r.status || "-")}</td>
+          <td>${Number(r.session_distance_km || r.total_distance_km || 0).toFixed(2)} km</td>
+          <td>
+            <button type="button" class="view-all-btn small" onclick="viewTrackingReport('${escapeHtml(String(sessionId))}')">
+              View
+            </button>
+          </td>
+        </tr>
+      `;
+    }).join("");
 
   } catch (error) {
     console.error("loadTrackingReports error:", error);
@@ -754,20 +767,23 @@ async function loadTrackingReports() {
   }
 }
 
-window.loadTrackingReports = loadTrackingReports;
-
-window.loadTrackingReports = loadTrackingReports;
-
 async function viewTrackingReport(sessionId) {
+  if (!sessionId) return;
+
   try {
-    const res = await fetch(`http://localhost:8081/api/tracking/reports/${sessionId}`, {
+    const res = await fetch(getTrackingReportDetailsApiUrl(sessionId), {
       headers: {
-        "Accept": "application/json"
+        Accept: "application/json"
       }
     });
 
     const data = await res.json();
-    openTrackingReportModal(data.data);
+
+    if (!res.ok || data.success === false) {
+      throw new Error(data.message || "Failed to load tracking report details.");
+    }
+
+    openTrackingReportModal(data.data || data);
 
   } catch (error) {
     console.error("viewTrackingReport error:", error);
@@ -775,37 +791,50 @@ async function viewTrackingReport(sessionId) {
   }
 }
 
-window.viewTrackingReport = viewTrackingReport;
-
 let reportMap = null;
 
 function openTrackingReportModal(data) {
   const modal = document.getElementById("trackingReportModal");
-  if (!modal) return;
+  const mapContainer = document.getElementById("trackingReportMap");
+
+  if (!modal || !mapContainer) return;
 
   modal.classList.remove("hidden");
 
   setTimeout(() => {
     if (reportMap) {
       reportMap.remove();
+      reportMap = null;
     }
+
+    mapContainer.innerHTML = "";
 
     reportMap = L.map("trackingReportMap").setView([6.1164, 125.1716], 13);
 
-    // TILE (fixed 403)
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png')
-      .addTo(reportMap);
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+      attribution: "&copy; OpenStreetMap contributors &copy; CARTO"
+    }).addTo(reportMap);
 
-    const logs = data.route_logs || [];
-    if (!logs.length) return;
+    const logs = Array.isArray(data?.route_logs)
+      ? data.route_logs
+      : Array.isArray(data?.logs)
+        ? data.logs
+        : [];
+
+    if (!logs.length) {
+      mapContainer.innerHTML = `<div class="empty-state">No route logs available.</div>`;
+      return;
+    }
 
     const latlngs = logs
-      .map(p => [parseFloat(p.latitude), parseFloat(p.longitude)])
-      .filter(([lat, lng]) => !isNaN(lat) && !isNaN(lng));
+      .map((p) => [parseFloat(p.latitude), parseFloat(p.longitude)])
+      .filter(([lat, lng]) => !Number.isNaN(lat) && !Number.isNaN(lng));
 
-    if (!latlngs.length) return;
+    if (!latlngs.length) {
+      mapContainer.innerHTML = `<div class="empty-state">No valid route coordinates available.</div>`;
+      return;
+    }
 
-    // ✅ ICONS
     const startIcon = L.icon({
       iconUrl: "https://maps.google.com/mapfiles/ms/icons/green-dot.png",
       iconSize: [32, 32],
@@ -818,38 +847,46 @@ function openTrackingReportModal(data) {
       iconAnchor: [16, 32]
     });
 
-    // ✅ START (GREEN)
     L.marker(latlngs[0], { icon: startIcon })
       .addTo(reportMap)
       .bindPopup("Start Point");
 
-    // ✅ END (RED)
     L.marker(latlngs[latlngs.length - 1], { icon: endIcon })
       .addTo(reportMap)
       .bindPopup("End Point");
 
-    // ✅ ROUTE LINE
     L.polyline(latlngs, {
       color: "#0d6efd",
-      weight: 5
+      weight: 5,
+      opacity: 0.9
     }).addTo(reportMap);
 
-    reportMap.fitBounds(latlngs);
+    reportMap.fitBounds(latlngs, {
+      padding: [24, 24]
+    });
+
+    setTimeout(() => {
+      reportMap.invalidateSize();
+    }, 150);
 
   }, 200);
 }
 
 function closeTrackingReportModal() {
   const modal = document.getElementById("trackingReportModal");
-  if (modal) modal.classList.add("hidden");
-}
 
-window.viewTrackingReport = viewTrackingReport;
-window.closeTrackingReportModal = closeTrackingReportModal;
+  if (modal) {
+    modal.classList.add("hidden");
+  }
+
+  if (reportMap) {
+    reportMap.remove();
+    reportMap = null;
+  }
+}
 
 function openTrackingReportsModal() {
   const modal = document.getElementById("trackingReportsModal");
-  console.log("Opening tracking reports modal:", modal);
 
   if (!modal) {
     alert("trackingReportsModal not found in HTML");
@@ -862,8 +899,14 @@ function openTrackingReportsModal() {
 
 function closeTrackingReportsModal() {
   const modal = document.getElementById("trackingReportsModal");
-  if (modal) modal.classList.add("hidden");
+
+  if (modal) {
+    modal.classList.add("hidden");
+  }
 }
 
+window.loadTrackingReports = loadTrackingReports;
+window.viewTrackingReport = viewTrackingReport;
 window.openTrackingReportsModal = openTrackingReportsModal;
 window.closeTrackingReportsModal = closeTrackingReportsModal;
+window.closeTrackingReportModal = closeTrackingReportModal;
