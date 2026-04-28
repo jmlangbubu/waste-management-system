@@ -43,17 +43,22 @@ router.post("/login", (req, res) => {
     }
 
     const user = results[0];
-    const userStatus = String(user.status || "").trim().toLowerCase();
-    const storedPassword = String(user.password || "").trim();
 
-    if (userStatus !== "active") {
+    const dbPassword = String(user.password || "").trim();
+    const inputPassword = String(password || "").trim();
+    const status = String(user.status || "").trim().toLowerCase();
+
+    console.log("WEB LOGIN STATUS:", status);
+    console.log("WEB LOGIN PASSWORD MATCH:", dbPassword === inputPassword);
+
+    if (status !== "active") {
       return res.status(403).json({
         success: false,
         message: "This account is inactive."
       });
     }
 
-    if (storedPassword !== password) {
+    if (dbPassword !== inputPassword) {
       return res.status(401).json({
         success: false,
         message: "Invalid username or password."
@@ -113,7 +118,7 @@ router.post("/create-user", (req, res) => {
   const checkSql = `
     SELECT id 
     FROM web_users 
-    WHERE LOWER(TRIM(username)) = LOWER(TRIM(?)) 
+    WHERE LOWER(TRIM(username)) = LOWER(TRIM(?))
     LIMIT 1
   `;
 
