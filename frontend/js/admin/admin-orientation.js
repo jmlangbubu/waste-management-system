@@ -1,14 +1,18 @@
 async function loadOrientationAppointments() {
   const cardList = document.getElementById("orientationCardList");
-if (!cardList) return;
+  const historyBody = document.getElementById("orientationHistoryTableBody");
 
-cardList.innerHTML = `<div class="empty-state">Loading orientation records...</div>`;
+  if (!cardList) return;
+
+  cardList.innerHTML = `<div class="empty-state">Loading orientation records...</div>`;
+
+  if (historyBody) {
+    historyBody.innerHTML = `<tr><td colspan="6">Loading history...</td></tr>`;
+  }
 
   try {
     const response = await fetch(getOrientationAppointmentsApiUrl(), {
-      headers: {
-        "Accept": "application/json"
-      }
+      headers: { Accept: "application/json" }
     });
 
     const rawText = await response.text();
@@ -16,7 +20,7 @@ cardList.innerHTML = `<div class="empty-state">Loading orientation records...</d
 
     try {
       data = rawText ? JSON.parse(rawText) : {};
-    } catch (parseError) {
+    } catch {
       console.error("Orientation API raw response:", rawText);
       throw new Error("Orientation API did not return valid JSON.");
     }
@@ -25,72 +29,115 @@ cardList.innerHTML = `<div class="empty-state">Loading orientation records...</d
       throw new Error(data.message || "Failed to load orientation appointments.");
     }
 
-    orientationAppointments = Array.isArray(data.appointments)
-      ? data.appointments
-      : [];
+    orientationAppointments = Array.isArray(data.appointments) ? data.appointments : [];
 
-    renderOrientationAppointmentsTable(orientationAppointments);
+    const active = orientationAppointments.filter((item) => {
+      const status = normalizeOrientationStatus(item.orientation_status);
+      return !status || status === "approved" || status === "pending_orientation";
+    });
+
+    const history = orientationAppointments.filter((item) => {
+      return normalizeOrientationStatus(item.orientation_status) === "completed_orientation";
+    });
+
+    renderActiveOrientation(active);
+    renderOrientationHistory(history);
   } catch (error) {
     console.error("Error loading orientation appointments:", error);
-
     cardList.innerHTML = `<div class="empty-state">Failed to load orientation data.</div>`;
+
+    if (historyBody) {
+      historyBody.innerHTML = `<tr><td colspan="6">Failed to load history.</td></tr>`;
+    }
   }
 }
 
-function renderOrientationAppointmentsTable(records) {
+function renderActiveOrientation(records) {
   const cardList = document.getElementById("orientationCardList");
   if (!cardList) return;
 
   if (!Array.isArray(records) || !records.length) {
-    cardList.innerHTML = `<div class="empty-state">No approved orientation records found.</div>`;
+    cardList.innerHTML = `<div class="empty-state">No active orientation records found.</div>`;
     return;
   }
 
-  cardList.innerHTML = records.map(item => `
-    <div class="orientation-card">
+  cardList.innerHTML = records.map((item) => {
+    const status = normalizeOrientationStatus(item.orientation_status);
 
-      <!-- HEADER -->
-      <div class="orientation-card-head">
-        <div class="orientation-icon">🏢</div>
-        <span class="orientation-status">Approved</span>
-        <button class="orientation-menu-btn">⋮</button>
-      </div>
+    return `
+      <div class="orientation-card">
+        <div class="orientation-card-head">
+          <div class="orientation-icon">🏢</div>
 
-      <!-- BODY -->
-      <div class="orientation-card-body">
-        <h3>${escapeHtml(item.full_name || "-")}</h3>
+          <span class="orientation-status ${getOrientationStatusClass(item)}">
+            ${getOrientationStatusLabel(item)}
+          </span>
 
-        <div class="orientation-date">
-          📅 ${escapeHtml(formatSimpleDate(item.preferred_date))}
+          <button type="button" class="orientation-menu-btn">⋮</button>
         </div>
 
-        <div class="orientation-info">
-          <span>Barangay</span>
-          <strong>${escapeHtml(item.barangay || "-")}</strong>
+        <div class="orientation-card-body">
+          <h3>${escapeHtml(item.full_name || "-")}</h3>
+
+          <div class="orientation-date">
+            📅 ${escapeHtml(formatSimpleDate(item.preferred_date))}
+          </div>
+
+          <div class="orientation-info">
+            <span>Barangay</span>
+            <strong>${escapeHtml(item.barangay || "-")}</strong>
+          </div>
+
+          <div class="orientation-info">
+            <span>Type</span>
+            <strong>SWM Orientation</strong>
+          </div>
         </div>
 
-        <div class="orientation-info">
-          <span>Type</span>
-          <strong>SWM Orientation</strong>
+        <div class="orientation-card-actions">
+          <button type="button" class="orientation-qr-btn" data-id="${item.id}">
+            <span>📲 Open QR Code</span>
+            <b>›</b>
+          </button>
+
+          <button
+            type="button"
+            class="orientation-web-btn"
+            data-id="${item.id}"
+            ${status === "completed_orientation" ? "disabled" : ""}
+          >
+            <span>🖥️ Take Web Exam</span>
+            <b>›</b>
+          </button>
         </div>
       </div>
+    `;
+  }).join("");
+}
 
-      <!-- ACTIONS -->
-      <div class="orientation-card-actions">
-        <button type="button" class="orientation-qr-btn" data-id="${item.id}">
-          <span>📲 Open QR Code</span>
-          <b>›</b>
-        </button>
+function renderOrientationHistory(records) {
+  const tableBody = document.getElementById("orientationHistoryTableBody");
+  if (!tableBody) return;
 
-        <button type="button" class="orientation-web-btn" data-id="${item.id}">
-          <span>🖥️ Take Web Exam</span>
-          <b>›</b>
-        </button>
-      </div>
+  if (!Array.isArray(records) || !records.length) {
+    tableBody.innerHTML = `<tr><td colspan="6">No completed orientation records yet.</td></tr>`;
+    return;
+  }
 
-    </div>
+  tableBody.innerHTML = records.map((item) => `
+    <tr>
+      <td>${escapeHtml(item.full_name || "-")}</td>
+      <td>${escapeHtml(item.barangay || "-")}</td>
+      <td>${escapeHtml(formatSimpleDate(item.orientation_started_at))}</td>
+      <td>${escapeHtml(formatSimpleDate(item.orientation_completed_at))}</td>
+      <td>${escapeHtml(item.orientation_score || "-")}</td>
+      <td>
+        <span class="orientation-status status-completed">Completed</span>
+      </td>
+    </tr>
   `).join("");
 }
+
 async function openOrientationWebExam(id) {
   const selected = orientationAppointments.find((item) => Number(item.id) === Number(id));
 
@@ -107,7 +154,7 @@ async function openOrientationWebExam(id) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Accept": "application/json"
+          Accept: "application/json"
         }
       });
 
@@ -116,7 +163,7 @@ async function openOrientationWebExam(id) {
 
       try {
         data = rawText ? JSON.parse(rawText) : {};
-      } catch (parseError) {
+      } catch {
         console.error("Generate orientation QR raw response:", rawText);
         throw new Error("Generate QR API did not return valid JSON.");
       }
@@ -143,7 +190,6 @@ async function openOrientationWebExam(id) {
     showToast(error.message || "Failed to open web exam.", "error");
   }
 }
-window.openOrientationWebExam = openOrientationWebExam;
 
 async function generateOrientationQr(id) {
   try {
@@ -151,7 +197,7 @@ async function generateOrientationQr(id) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Accept": "application/json"
+        Accept: "application/json"
       }
     });
 
@@ -160,9 +206,9 @@ async function generateOrientationQr(id) {
 
     try {
       data = rawText ? JSON.parse(rawText) : {};
-    } catch (parseError) {
+    } catch {
       console.error("Generate orientation QR raw response:", rawText);
-      throw new Error("Generate QR API did not return valid JSON.");
+      throw new Error("Generate orientation QR API did not return valid JSON.");
     }
 
     if (!response.ok || !data.success) {
@@ -193,13 +239,12 @@ async function viewOrientationQr(id) {
   try {
     let token = selected.orientation_token ? String(selected.orientation_token).trim() : "";
 
-    // Auto-generate QR if missing
     if (!token) {
       const response = await fetch(getGenerateOrientationQrApiUrl(id), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Accept": "application/json"
+          Accept: "application/json"
         }
       });
 
@@ -208,7 +253,7 @@ async function viewOrientationQr(id) {
 
       try {
         data = rawText ? JSON.parse(rawText) : {};
-      } catch (parseError) {
+      } catch {
         console.error("Generate orientation QR raw response:", rawText);
         throw new Error("Generate QR API did not return valid JSON.");
       }
@@ -223,14 +268,11 @@ async function viewOrientationQr(id) {
         throw new Error("QR token was not returned by the server.");
       }
 
-      // refresh orientation list para updated na local state
       await loadOrientationAppointments();
     }
 
     const latestRecord =
       orientationAppointments.find((item) => Number(item.id) === Number(id)) || selected;
-
-    const quizUrl = `${window.APP_CONFIG.BASE_URL}/orientation-quiz.html?token=${encodeURIComponent(token)}`;
 
     currentOrientationQrData = {
       appointment_id: latestRecord.id,
@@ -238,17 +280,16 @@ async function viewOrientationQr(id) {
       barangay: latestRecord.barangay,
       preferred_date: latestRecord.preferred_date,
       token,
-      qr_url: quizUrl
+      qr_url: `${window.APP_CONFIG.BASE_URL}/orientation-quiz.html?token=${encodeURIComponent(token)}`
     };
 
     renderOrientationQrModal(currentOrientationQrData);
     openOrientationQrModal();
   } catch (error) {
     console.error("viewOrientationQr error:", error);
-    alert(error.message || "Failed to open orientation QR.");
+    showToast(error.message || "Failed to open orientation QR.", "error");
   }
 }
-
 
 function renderOrientationQrModal(data) {
   const qrContainer = document.getElementById("orientationQrContainer");
@@ -259,15 +300,8 @@ function renderOrientationQrModal(data) {
 
   if (!qrContainer || !tokenText || !nameText || !barangayText || !dateText) return;
 
-  qrContainer.innerHTML = `
-  <img 
-    src="${getAppApiBase()}/appointments/${data.appointment_id}/orientation-qr-image" 
-    alt="QR Code"
-    style="width:240px;height:240px;"
-  />
-`;
-
-  if (!data || !data.token) {
+  if (!data || !data.token || !data.appointment_id) {
+    qrContainer.innerHTML = "";
     nameText.textContent = "Name: -";
     barangayText.textContent = "Barangay: -";
     dateText.textContent = "Date: -";
@@ -275,9 +309,13 @@ function renderOrientationQrModal(data) {
     return;
   }
 
-  const quizUrl = data.qr_url ||
-    `${window.APP_CONFIG.BASE_URL}/orientation-quiz.html?token=${encodeURIComponent(data.token)}`;
-
+  qrContainer.innerHTML = `
+    <img
+      src="${getAppApiBase()}/appointments/${data.appointment_id}/orientation-qr-image"
+      alt="Orientation QR Code"
+      style="width:240px;height:240px;"
+    />
+  `;
 
   nameText.textContent = `Name: ${data.full_name || "-"}`;
   barangayText.textContent = `Barangay: ${data.barangay || "-"}`;
@@ -285,14 +323,13 @@ function renderOrientationQrModal(data) {
   tokenText.textContent = `Token: ${data.token}`;
 }
 
-function openOrientationQrModal() {
-  console.log("opening orientation QR modal");
-  const modal = document.getElementById("orientationQrModal");
-  console.log("modal element:", modal);
+/* =========================
+   QR MODAL
+========================= */
 
-  if (modal) {
-    modal.classList.remove("hidden");
-  }
+function openOrientationQrModal() {
+  const modal = document.getElementById("orientationQrModal");
+  if (modal) modal.classList.remove("hidden");
 }
 
 function closeOrientationQrModal() {
@@ -308,20 +345,102 @@ function setupOrientationQrModal() {
   if (overlay) overlay.onclick = closeOrientationQrModal;
 }
 
+/* =========================
+   HISTORY MODAL
+========================= */
+
+function openOrientationHistoryModal() {
+  const modal = document.getElementById("orientationHistoryModal");
+
+  if (!modal) {
+    console.error("orientationHistoryModal not found in HTML.");
+    showToast("Orientation report modal is missing in HTML.", "error");
+    return;
+  }
+
+  const history = Array.isArray(orientationAppointments)
+    ? orientationAppointments.filter((item) => {
+        return normalizeOrientationStatus(item.orientation_status) === "completed_orientation";
+      })
+    : [];
+
+  renderOrientationHistory(history);
+  modal.classList.remove("hidden");
+}
+
+function closeOrientationHistoryModal() {
+  const modal = document.getElementById("orientationHistoryModal");
+  if (modal) modal.classList.add("hidden");
+}
+
+function setupOrientationHistoryModal() {
+  const openBtn = document.getElementById("openOrientationHistoryBtn");
+  const closeBtn = document.getElementById("closeOrientationHistoryBtn");
+  const overlay = document.getElementById("orientationHistoryOverlay");
+
+  if (openBtn) {
+    openBtn.onclick = openOrientationHistoryModal;
+  } else {
+    console.warn("openOrientationHistoryBtn not found.");
+  }
+
+  if (closeBtn) closeBtn.onclick = closeOrientationHistoryModal;
+  if (overlay) overlay.onclick = closeOrientationHistoryModal;
+}
+
+/* =========================
+   HELPERS
+========================= */
+
+function normalizeOrientationStatus(status) {
+  return String(status || "").toLowerCase().trim();
+}
+
+function getOrientationStatusLabel(item) {
+  const status = normalizeOrientationStatus(item.orientation_status);
+
+  if (status === "pending_orientation") return "Pending Orientation";
+  if (status === "completed_orientation") return "Completed";
+  return "Approved";
+}
+
+function getOrientationStatusClass(item) {
+  const status = normalizeOrientationStatus(item.orientation_status);
+
+  if (status === "pending_orientation") return "status-pending";
+  if (status === "completed_orientation") return "status-completed";
+  return "status-approved";
+}
+
+/* =========================
+   EVENTS
+========================= */
+
 document.addEventListener("click", (event) => {
   const qrBtn = event.target.closest(".orientation-qr-btn");
   if (qrBtn) {
-    const id = qrBtn.dataset.id;
-    viewOrientationQr(id);
+    viewOrientationQr(qrBtn.dataset.id);
     return;
   }
 
   const webBtn = event.target.closest(".orientation-web-btn");
   if (webBtn) {
-    const id = webBtn.dataset.id;
-    openOrientationWebExam(id);
+    openOrientationWebExam(webBtn.dataset.id);
   }
 });
 
+document.addEventListener("DOMContentLoaded", () => {
+  setupOrientationQrModal();
+  setupOrientationHistoryModal();
+});
+
+/* =========================
+   GLOBAL EXPORTS
+========================= */
+
+window.loadOrientationAppointments = loadOrientationAppointments;
 window.generateOrientationQr = generateOrientationQr;
 window.viewOrientationQr = viewOrientationQr;
+window.openOrientationWebExam = openOrientationWebExam;
+window.openOrientationHistoryModal = openOrientationHistoryModal;
+window.closeOrientationHistoryModal = closeOrientationHistoryModal;
