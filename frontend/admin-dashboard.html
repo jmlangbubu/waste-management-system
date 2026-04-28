@@ -498,16 +498,29 @@
       <!-- ORIENTATION -->
 <section id="orientationSection" class="content-section">
   <div class="page-card">
+    
+    <!-- HEADER -->
     <div class="page-card-header">
       <div>
         <h2>Orientation Management</h2>
-        <p>Manage approved SWM orientation requests and QR access.</p>
+        <p>Manage orientation lifecycle (QR → Exam → Completion).</p>
+      </div>
+
+      <!-- 🔥 BUTTON INSTEAD OF TABLE -->
+      <button type="button" class="view-all-btn small" id="openOrientationHistoryBtn">
+        View Orientation Report
+      </button>
+    </div>
+
+    <!-- ACTIVE ORIENTATION ONLY -->
+    <div style="margin-top: 20px;">
+      <h3 style="margin-bottom: 10px;">Active Orientation</h3>
+
+      <div id="orientationCardList" class="orientation-card-list">
+        <div class="empty-state">Loading orientation records...</div>
       </div>
     </div>
 
-    <div id="orientationCardList" class="orientation-card-list">
-      <div class="empty-state">Loading orientation records...</div>
-    </div>
   </div>
 </section>
 
@@ -657,7 +670,7 @@
     <div class="complaints-table-shell">
       <table class="complaints-table">
         <thead>
-  <tr>
+        <tr>
     <th>Subject</th>
     <th>Description</th>
     <th>Citizen</th>
@@ -1496,6 +1509,83 @@
 
     <div class="custom-modal-body">
       <div id="trackingReportMap" style="height:400px;"></div>
+    </div>
+  </div>
+</div>
+
+<div id="orientationHistoryModal" class="history-modal hidden">
+  <div class="history-modal-overlay" id="orientationHistoryOverlay"></div>
+
+  <div class="history-modal-content">
+    <div class="history-modal-header">
+      <div>
+        <h2>Orientation History / Report</h2>
+        <p>Completed SWM orientation records.</p>
+      </div>
+
+      <button type="button" class="history-close-btn" id="closeOrientationHistoryBtn">✕</button>
+    </div>
+
+    <div class="table-shell">
+      <table class="orientation-history-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Barangay</th>
+            <th>Date Started</th>
+            <th>Date Completed</th>
+            <th>Score</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+
+        <tbody id="orientationHistoryTableBody">
+          <tr>
+            <td colspan="6" class="loading-state">
+              Loading orientation history...
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div id="editUserModal" class="history-modal hidden">
+  <div class="history-modal-overlay" onclick="closeEditUserModal()"></div>
+
+  <div class="history-modal-content edit-user-modal-content">
+    <div class="history-modal-header">
+      <div>
+        <h2>Edit Account</h2>
+        <p>Update the username or change the password for this account.</p>
+      </div>
+
+      <button type="button" onclick="closeEditUserModal()" class="history-close-btn">×</button>
+    </div>
+
+    <div class="edit-user-form-grid">
+      <input type="hidden" id="editUserId">
+
+      <div class="edit-user-form-group full">
+        <label for="editUsername">Username / Email</label>
+        <input type="text" id="editUsername" placeholder="Enter username or email">
+      </div>
+
+      <div class="edit-user-form-group">
+        <label for="editPassword">New Password</label>
+        <input type="password" id="editPassword" placeholder="Leave blank if unchanged">
+      </div>
+
+      <div class="edit-user-form-group">
+        <label for="editConfirmPassword">Confirm Password</label>
+        <input type="password" id="editConfirmPassword" placeholder="Confirm new password">
+      </div>
+    </div>
+
+    <div class="edit-user-actions">
+      <button type="button" class="edit-cancel-btn" onclick="closeEditUserModal()">Cancel</button>
+      <button type="button" class="edit-save-btn" onclick="submitEditUser()">Save Changes</button>
     </div>
   </div>
 </div>
