@@ -25,13 +25,11 @@ const UPLOADS_DIR = path.join(ROOT_DIR, "uploads");
 const COMPLAINT_UPLOADS_DIR = path.join(UPLOADS_DIR, "complaints");
 
 /* ENSURE FOLDERS */
-if (!fs.existsSync(UPLOADS_DIR)) {
-  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-}
-
-if (!fs.existsSync(COMPLAINT_UPLOADS_DIR)) {
-  fs.mkdirSync(COMPLAINT_UPLOADS_DIR, { recursive: true });
-}
+[UPLOADS_DIR, COMPLAINT_UPLOADS_DIR].forEach((dir) => {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+});
 
 /* CORE MIDDLEWARE */
 app.use(cors());
@@ -50,9 +48,11 @@ app.use("/images", express.static(IMAGES_DIR));
 app.use(
   "/uploads",
   express.static(UPLOADS_DIR, {
-    fallthrough: true,
+    fallthrough: false,
+    maxAge: "1d",
     setHeaders: (res) => {
       res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
     }
   })
 );
@@ -78,6 +78,24 @@ app.get("/api/test", (req, res) => {
   });
 });
 
+/* DEBUG UPLOADS */
+app.get("/debug/uploads", (req, res) => {
+  const complaintFiles = fs.existsSync(COMPLAINT_UPLOADS_DIR)
+    ? fs.readdirSync(COMPLAINT_UPLOADS_DIR)
+    : [];
+
+  return res.status(200).json({
+    success: true,
+    rootDir: ROOT_DIR,
+    uploadsDir: UPLOADS_DIR,
+    complaintsDir: COMPLAINT_UPLOADS_DIR,
+    uploadsExists: fs.existsSync(UPLOADS_DIR),
+    complaintsExists: fs.existsSync(COMPLAINT_UPLOADS_DIR),
+    complaintFileCount: complaintFiles.length,
+    files: complaintFiles
+  });
+});
+
 /* API ROUTES */
 app.use("/api/auth", authRoutes);
 app.use("/api/waste", wasteRoutes);
@@ -87,6 +105,15 @@ app.use("/api/appointments", appointmentRoutes);
 app.use("/api/tracking", trackingRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/complaints", complaintRoutes);
+
+/* FRONTEND FALLBACK */
+app.get(["/admin-dashboard.html", "/index.html"], (req, res) => {
+  const requestedFile = req.path === "/admin-dashboard.html"
+    ? "admin-dashboard.html"
+    : "index.html";
+
+  res.sendFile(path.join(FRONTEND_DIR, requestedFile));
+});
 
 /* 404 HANDLER */
 app.use((req, res) => {
@@ -102,10 +129,9 @@ app.use((err, req, res, next) => {
   console.error(err);
   console.error(err.stack);
 
-  return res.status(500).json({
+  return res.status(err.status || 500).json({
     success: false,
-    message: "Internal server error",
-    error: err.message
+    message: err.message || "Internal server error"
   });
 });
 
