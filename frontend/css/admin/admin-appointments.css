@@ -22,19 +22,33 @@
   flex-wrap: wrap;
 }
 
-/* TABLE */
+/* =========================
+   TABLE SCROLL FIX
+========================= */
+
 #appointmentsSection .table-shell {
   width: 100%;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
   border: 1px solid #e5e7eb;
   border-radius: 16px;
   background: #ffffff;
 }
 
-#appointmentsSection table {
+#appointmentsSection .table-shell::-webkit-scrollbar {
+  height: 8px;
+}
+
+#appointmentsSection .table-shell::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+}
+
+#appointmentsSection .appointments-table {
+  min-width: 1250px;
   width: 100%;
   border-collapse: collapse;
-  table-layout: fixed;
+  table-layout: auto;
 }
 
 #appointmentsSection th,
@@ -43,12 +57,12 @@
   vertical-align: middle;
   font-size: 13px;
   color: #111827;
+  white-space: nowrap;
 }
 
 #appointmentsSection th {
   background: #f5f7fa;
   font-weight: 800;
-  white-space: nowrap;
 }
 
 #appointmentsSection td {
@@ -56,58 +70,62 @@
   border-top: 1px solid #edf0f2;
 }
 
-/* COLUMNS */
+/* Allow purpose to wrap only */
+#appointmentsSection th:nth-child(5),
+#appointmentsSection td:nth-child(5) {
+  min-width: 210px;
+  white-space: normal;
+  line-height: 1.35;
+}
+
+/* Column minimum widths */
 #appointmentsSection th:nth-child(1),
 #appointmentsSection td:nth-child(1) {
-  width: 120px;
+  min-width: 130px;
 }
 
 #appointmentsSection th:nth-child(2),
 #appointmentsSection td:nth-child(2) {
-  width: 75px;
+  min-width: 100px;
 }
 
 #appointmentsSection th:nth-child(3),
 #appointmentsSection td:nth-child(3) {
-  width: 110px;
+  min-width: 130px;
 }
 
 #appointmentsSection th:nth-child(4),
 #appointmentsSection td:nth-child(4) {
-  width: 125px;
-}
-
-#appointmentsSection th:nth-child(5),
-#appointmentsSection td:nth-child(5) {
-  width: 190px;
-  line-height: 1.35;
+  min-width: 135px;
 }
 
 #appointmentsSection th:nth-child(6),
 #appointmentsSection td:nth-child(6) {
-  width: 185px;
+  min-width: 190px;
 }
 
 #appointmentsSection th:nth-child(7),
 #appointmentsSection td:nth-child(7) {
-  width: 120px;
+  min-width: 130px;
   text-align: center;
 }
 
 #appointmentsSection th:nth-child(8),
 #appointmentsSection td:nth-child(8) {
-  width: 145px;
+  min-width: 160px;
   text-align: center;
 }
 
 #appointmentsSection th:nth-child(9),
 #appointmentsSection td:nth-child(9) {
-  width: 190px;
+  min-width: 220px;
   text-align: center;
 }
 
+/* =========================
+   STATUS BADGES
+========================= */
 
-/* STATUS */
 .status-badge {
   display: inline-flex;
   align-items: center;
@@ -152,7 +170,10 @@
   color: #111827;
 }
 
-/* ACTION BUTTONS */
+/* =========================
+   ACTION BUTTONS
+========================= */
+
 .appointment-action-buttons {
   display: flex;
   justify-content: center;
@@ -163,7 +184,6 @@
 
 .inline-action-btn {
   height: 32px;
-  border: none;
   border-radius: 8px;
   padding: 0 12px;
   font-size: 12px;
@@ -179,66 +199,16 @@
 
 .inline-action-btn.assign-btn,
 .inline-action-btn.success-btn {
-  background: #2f8a34;
-  color: #ffffff;
-}
-
-.inline-action-btn.delete-btn {
-  background: #fee2e2;
-  color: #991b1b;
-  border: 1px solid #fecaca;
-}
-
-.inline-action-btn.warning-btn,
-.inline-action-btn.danger-btn {
-  background: #f3f4f6;
-  color: #111827;
-}
-
-/* EMPTY / LOADING */
-#appointmentsSection .empty-state,
-#appointmentsSection .loading-state {
-  text-align: center;
-  padding: 22px;
-  color: #667085;
-  font-weight: 700;
-}
-
-/* RESPONSIVE */
-@media (max-width: 1200px) {
-  #appointmentsSection .table-shell {
-    overflow-x: auto;
-  }
-
-  #appointmentsSection table {
-    min-width: 1180px;
-  }
-}
-
-/* FORCE CENTER ACTIONS HEADER */
-#appointmentsSection table thead tr th:nth-child(9),
-#appointmentsSection .appointments-table thead tr th:nth-child(9) {
-  text-align: center !important;
-  justify-content: center !important;
-}
-
-/* =========================
-   ACTION BUTTON COLORS
-========================= */
-
-/* APPROVE / ACCEPT */
-.inline-action-btn.assign-btn,
-.inline-action-btn.success-btn {
   background: #16a34a;
   color: #ffffff;
   border: none;
 }
 
-.inline-action-btn.assign-btn:hover {
+.inline-action-btn.assign-btn:hover,
+.inline-action-btn.success-btn:hover {
   background: #15803d;
 }
 
-/* RESCHEDULE */
 .inline-action-btn.warning-btn {
   background: #e0f2fe;
   color: #0369a1;
@@ -249,7 +219,6 @@
   background: #bae6fd;
 }
 
-/* CANCEL / REJECT */
 .inline-action-btn.delete-btn,
 .inline-action-btn.danger-btn {
   background: #fee2e2;
@@ -260,4 +229,40 @@
 .inline-action-btn.delete-btn:hover,
 .inline-action-btn.danger-btn:hover {
   background: #fecaca;
+}
+
+/* =========================
+   EMPTY / LOADING
+========================= */
+
+#appointmentsSection .empty-state,
+#appointmentsSection .loading-state {
+  text-align: center;
+  padding: 22px;
+  color: #667085;
+  font-weight: 700;
+}
+
+/* =========================
+   RESPONSIVE
+========================= */
+
+@media (max-width: 900px) {
+  #appointmentsSection .page-card {
+    padding: 20px;
+  }
+
+  #appointmentsSection .page-card-header,
+  #appointmentsSection .appointment-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  #appointmentsSection .appointment-toolbar {
+    justify-content: flex-start;
+  }
+
+  #appointmentsSection .appointment-toolbar .view-all-btn {
+    width: 100%;
+  }
 }
