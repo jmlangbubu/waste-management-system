@@ -7,9 +7,40 @@
   border-radius: 24px;
 }
 
+/* HEADER */
 #orientationSection .page-card-header {
-  margin-bottom: 26px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+  margin-bottom: 28px;
 }
+
+#orientationSection .page-card-header > div {
+  flex: 1;
+}
+
+#openOrientationHistoryBtn {
+  margin-left: auto;
+  align-self: flex-start;
+  height: 46px;
+  padding: 0 22px;
+  border-radius: 16px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+#orientationSection h3 {
+  margin-top: 8px;
+  margin-bottom: 14px;
+  font-size: 22px;
+  font-weight: 900;
+  color: #06251c;
+}
+
+/* =========================
+   ACTIVE CARDS
+========================= */
 
 .orientation-card-list {
   display: grid;
@@ -57,11 +88,24 @@
 .orientation-status {
   padding: 6px 13px;
   border-radius: 999px;
-  background: #dcfce7;
-  color: #15803d;
   font-size: 11px;
   font-weight: 900;
   text-transform: uppercase;
+}
+
+.status-approved {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.status-pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.status-completed {
+  background: #dbeafe;
+  color: #1d4ed8;
 }
 
 .orientation-menu-btn {
@@ -139,6 +183,11 @@
   background: #dcfce7;
 }
 
+.orientation-card-actions button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .orientation-card-list .empty-state {
   grid-column: 1 / -1;
   padding: 38px;
@@ -149,7 +198,120 @@
   border-radius: 18px;
 }
 
-/* QR MODAL */
+/* =========================
+   ORIENTATION HISTORY MODAL FIX
+========================= */
+
+#orientationHistoryModal.history-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#orientationHistoryModal.hidden {
+  display: none !important;
+}
+
+#orientationHistoryModal .history-modal-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.62);
+  backdrop-filter: blur(4px);
+  z-index: 1;
+}
+
+#orientationHistoryModal .history-modal-content {
+  position: relative;
+  z-index: 2;
+  width: min(1050px, 88vw);
+  max-height: 84vh;
+  overflow: hidden;
+  background: #ffffff;
+  border-radius: 24px;
+  padding: 24px;
+  box-shadow: 0 30px 100px rgba(15, 23, 42, 0.28);
+}
+
+#orientationHistoryModal .history-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18px;
+  padding-bottom: 16px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+#orientationHistoryModal .history-modal-header h2 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 900;
+  color: #06251c;
+}
+
+#orientationHistoryModal .history-modal-header p {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 14px;
+}
+
+#orientationHistoryModal .history-close-btn {
+  width: 46px;
+  height: 46px;
+  border: none;
+  border-radius: 50%;
+  background: #f1f5f9;
+  color: #334155;
+  font-size: 22px;
+  cursor: pointer;
+}
+
+#orientationHistoryModal .history-close-btn:hover {
+  background: #e2e8f0;
+}
+
+#orientationHistoryModal .table-shell {
+  max-height: 58vh;
+  overflow: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 18px;
+}
+
+/* TABLE */
+.orientation-history-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 760px;
+}
+
+.orientation-history-table th {
+  padding: 15px 16px;
+  background: #f3f4f6;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 900;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.orientation-history-table td {
+  padding: 15px 16px;
+  border-bottom: 1px solid #e5e7eb;
+  color: #334155;
+  font-size: 13px;
+}
+
+.orientation-history-table tr:hover {
+  background: #f8fafc;
+}
+
+/* =========================
+   QR MODAL
+========================= */
+
 .qr-modal.hidden {
   display: none !important;
 }
@@ -157,7 +319,7 @@
 .qr-modal {
   position: fixed;
   inset: 0;
-  z-index: 12000;
+  z-index: 99998;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -180,76 +342,36 @@
   box-shadow: 0 24px 80px rgba(15, 23, 42, 0.25);
 }
 
-.qr-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 18px;
-}
-
-.qr-header h2 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 900;
-}
-
-.qr-header button {
-  width: 36px;
-  height: 36px;
-  border: none;
-  border-radius: 50%;
-  background: #f1f5f9;
-  cursor: pointer;
-}
-
-.qr-body {
-  text-align: center;
-}
-
-#orientationQrContainer {
-  display: flex;
-  justify-content: center;
-  margin-bottom: 18px;
-}
-
-.qr-info {
-  text-align: left;
-  margin-top: 14px;
-  padding: 14px;
-  border-radius: 14px;
-  background: #f8fafc;
-}
-
-.qr-info p {
-  margin: 6px 0;
-  color: #334155;
-  font-size: 13px;
-}
-
-.qr-note {
-  margin-top: 14px;
-  padding: 12px;
-  border-radius: 12px;
-  background: #ecfdf5;
-  color: #087a2c;
-  font-size: 13px;
-  font-weight: 800;
-}
-
-.orientation-qr-image {
-  width: 240px;
-  height: 240px;
-  object-fit: contain;
-  display: block;
-  margin: 0 auto;
-}
+/* =========================
+   RESPONSIVE
+========================= */
 
 @media (max-width: 700px) {
   #orientationSection .page-card {
     padding: 20px;
   }
 
+  #orientationSection .page-card-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  #openOrientationHistoryBtn {
+    width: 100%;
+    margin-left: 0;
+  }
+
   .orientation-card-list {
     grid-template-columns: 1fr;
+  }
+
+  #orientationHistoryModal .history-modal-content {
+    width: 94vw;
+    max-height: 86vh;
+    padding: 18px;
+  }
+
+  #orientationHistoryModal .history-modal-header h2 {
+    font-size: 20px;
   }
 }
