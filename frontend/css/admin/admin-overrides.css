@@ -15,3 +15,17 @@
 #sidebarToggleBtn.hidden-sidebar-toggle {
   display: none !important;
 }
+
+/* =========================
+   GLOBAL TOAST ABOVE MODALS
+========================= */
+
+#toastContainer {
+  z-index: 9999999 !important;
+}
+
+.toast,
+.toast-message,
+.custom-toast {
+  z-index: 9999999 !important;
+}
