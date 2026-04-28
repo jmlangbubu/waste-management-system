@@ -9,9 +9,7 @@ function showAccountMessage(message, type) {
 async function loadWebUsers() {
   try {
     const res = await fetch(getAccountsApiUrl(), {
-      headers: {
-        "Accept": "application/json"
-      }
+      headers: { Accept: "application/json" }
     });
 
     const rawText = await res.text();
@@ -38,11 +36,7 @@ async function loadWebUsers() {
 
     allWebUsers = accounts;
 
-    if (typeof getFilteredWebUsers === "function") {
-      renderWebUsers(getFilteredWebUsers());
-    } else {
-      renderWebUsers(accounts);
-    }
+    renderWebUsers(typeof getFilteredWebUsers === "function" ? getFilteredWebUsers() : accounts);
 
     if (typeof renderWebUserActivity === "function") {
       renderWebUserActivity();
@@ -51,6 +45,7 @@ async function loadWebUsers() {
     console.error("Error loading accounts:", error);
     allWebUsers = [];
     renderWebUsers([]);
+
     if (typeof renderWebUserActivity === "function") {
       renderWebUserActivity();
     }
@@ -80,6 +75,7 @@ function renderWebUsers(users) {
     const accountId = Number(user.id);
     const accountSource = user.account_source || "web";
     const status = String(user.status || "active").toLowerCase().trim();
+
     const isDeactivated =
       status === "deactivated" ||
       status === "inactive" ||
@@ -142,9 +138,7 @@ function getFilteredWebUsers() {
     .trim()
     .toLowerCase();
 
-  if (!searchValue) {
-    return allWebUsers;
-  }
+  if (!searchValue) return allWebUsers;
 
   return allWebUsers.filter((user) => {
     const fullName = String(user.full_name || "").toLowerCase();
@@ -263,12 +257,141 @@ function closeDeactivatedAccountsModal() {
   const modal = document.getElementById("deactivatedAccountsModal");
   if (!modal) return;
   modal.classList.add("hidden");
-}  
+}
+
+/* =========================
+   EDIT ACCOUNT
+========================= */
 
 function openEditAccountModal(source, id) {
-  alert(`Edit account coming next.\nSource: ${source}\nID: ${id}`);
+  const user = allWebUsers.find((u) => Number(u.id) === Number(id));
+
+  if (!user) {
+    showAccountMessage("User not found.", "error");
+    return;
+  }
+
+  currentEditUser = {
+    ...user,
+    source
+  };
+
+  const modal = document.getElementById("editUserModal");
+  const idInput = document.getElementById("editUserId");
+  const usernameInput = document.getElementById("editUsername");
+  const passwordInput = document.getElementById("editPassword");
+  const confirmInput = document.getElementById("editConfirmPassword");
+
+  if (!modal || !idInput || !usernameInput || !passwordInput || !confirmInput) {
+    showAccountMessage("Edit account modal is missing in HTML.", "error");
+    return;
+  }
+
+  idInput.value = id;
+  usernameInput.value = user.username || user.email || user.contact_number || "";
+  passwordInput.value = "";
+  confirmInput.value = "";
+
+  modal.classList.remove("hidden");
 }
-  
+
+function closeEditUserModal() {
+  const modal = document.getElementById("editUserModal");
+  if (modal) modal.classList.add("hidden");
+}
+
+async function submitEditUser() {
+  const id = document.getElementById("editUserId")?.value;
+  const username = document.getElementById("editUsername")?.value.trim();
+  const password = document.getElementById("editPassword")?.value.trim();
+  const confirmPassword = document.getElementById("editConfirmPassword")?.value.trim();
+
+  if (!currentEditUser) {
+    showToast?.("No selected account to edit.", "error");
+    return;
+  }
+
+  if (!id || !username) {
+    showToast?.("Username is required.", "error");
+    return;
+  }
+
+  if (password && password.length < 4) {
+    showToast?.("Password must be at least 4 characters.", "error");
+    return;
+  }
+
+  if (password && password !== confirmPassword) {
+    showToast?.("Passwords do not match.", "error");
+    return;
+  }
+
+  const saveBtn = document.querySelector("#editUserModal .edit-save-btn");
+
+  try {
+    if (saveBtn) {
+      saveBtn.disabled = true;
+      saveBtn.textContent = "Saving...";
+    }
+
+    const url =
+      currentEditUser.source === "mobile"
+        ? `${getAppApiBase()}/web-users/update-mobile/${id}`
+        : `${getAppApiBase()}/web-users/update/${id}`;
+
+    const res = await fetch(url, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json"
+      },
+      body: JSON.stringify({
+        username,
+        password: password || null
+      })
+    });
+
+    const rawText = await res.text();
+    let data = {};
+
+    try {
+      data = rawText ? JSON.parse(rawText) : {};
+    } catch {
+      data = {};
+    }
+
+    if (!res.ok) {
+      const message = data.message || "Failed to update account.";
+      if (typeof showToast === "function") showToast(message, "error");
+      else showAccountMessage(message, "error");
+      return;
+    }
+
+    closeEditUserModal();
+
+    if (typeof showToast === "function") {
+      showToast(data.message || "Account updated successfully.", "success");
+    } else {
+      showAccountMessage(data.message || "Account updated successfully.", "success");
+    }
+
+    await loadWebUsers();
+
+  } catch (error) {
+    console.error("Edit account error:", error);
+
+    if (typeof showToast === "function") {
+      showToast("Unable to update account.", "error");
+    } else {
+      showAccountMessage("Unable to update account.", "error");
+    }
+  } finally {
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = "Save Changes";
+    }
+  }
+}
 
 function setupAccountSearch() {
   const searchInput = document.getElementById("accountSearchInput");
@@ -279,8 +402,6 @@ function setupAccountSearch() {
     renderWebUsers(filteredUsers);
   });
 }
-
-
 
 async function handleAccountStatusUpdate(source, id, newStatus) {
   const actionText = newStatus === "suspended" ? "deactivate" : "activate";
@@ -299,7 +420,7 @@ async function handleAccountStatusUpdate(source, id, newStatus) {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
-        "Accept": "application/json"
+        Accept: "application/json"
       },
       body: JSON.stringify({ status: newStatus })
     });
@@ -327,6 +448,7 @@ async function handleAccountStatusUpdate(source, id, newStatus) {
     showAccountMessage("Unable to update account status.", "error");
   }
 }
+
 async function handleDeleteAccount(source, id) {
   if (!confirm("Are you sure you want to delete this account? This cannot be undone.")) {
     return;
@@ -338,12 +460,10 @@ async function handleDeleteAccount(source, id) {
         ? `${getAppApiBase()}/web-users/delete-mobile/${id}`
         : `${getAppApiBase()}/web-users/delete/${id}`;
 
-    console.log("Deleting account:", { source, id, url });
-
     const res = await fetch(url, {
       method: "DELETE",
       headers: {
-        "Accept": "application/json"
+        Accept: "application/json"
       }
     });
 
@@ -371,13 +491,6 @@ async function handleDeleteAccount(source, id) {
   }
 }
 
-window.handleAccountStatusUpdate = handleAccountStatusUpdate;
-window.handleDeleteAccount = handleDeleteAccount;
-window.openDeactivatedAccountsModal = openDeactivatedAccountsModal;
-window.closeDeactivatedAccountsModal = closeDeactivatedAccountsModal;
-window.openEditAccountModal = openEditAccountModal;
-
-
 function setupAccountPlatformForm() {
   const platformEl = document.getElementById("accountPlatform");
   const roleEl = document.getElementById("accountRole");
@@ -403,7 +516,7 @@ function setupAccountPlatformForm() {
 
     roleEl.innerHTML = `
       <option value="">Select role</option>
-      ${options.map(option => `
+      ${options.map((option) => `
         <option value="${option.value}">${option.label}</option>
       `).join("")}
     `;
@@ -432,8 +545,8 @@ function setupCreateAccountForm() {
   const submitBtn = document.getElementById("createAccountBtn");
 
   if (!form) return;
-
   if (form.dataset.bound === "true") return;
+
   form.dataset.bound = "true";
 
   form.addEventListener("submit", async (event) => {
@@ -490,13 +603,11 @@ function setupCreateAccountForm() {
         return;
       }
 
-      console.log("Creating account:", { platform, url, payload });
-
       const res = await fetch(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Accept": "application/json"
+          Accept: "application/json"
         },
         body: JSON.stringify(payload)
       });
@@ -533,3 +644,15 @@ function setupCreateAccountForm() {
     }
   });
 }
+
+/* =========================
+   GLOBAL EXPORTS
+========================= */
+
+window.handleAccountStatusUpdate = handleAccountStatusUpdate;
+window.handleDeleteAccount = handleDeleteAccount;
+window.openDeactivatedAccountsModal = openDeactivatedAccountsModal;
+window.closeDeactivatedAccountsModal = closeDeactivatedAccountsModal;
+window.openEditAccountModal = openEditAccountModal;
+window.closeEditUserModal = closeEditUserModal;
+window.submitEditUser = submitEditUser;
