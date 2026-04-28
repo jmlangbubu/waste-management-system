@@ -1,0 +1,17 @@
+@media (max-width: 992px) {
+  #sidebarToggleBtn {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 42px;
+    font-size: 22px;
+    background: #fff;
+    border-radius: 10px;
+    z-index: 10001;
+  }
+}
+
+#sidebarToggleBtn.hidden-sidebar-toggle {
+  display: none !important;
+}
