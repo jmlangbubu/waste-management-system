@@ -30,13 +30,14 @@
 }
 
 /* FORM */
+
 .account-form .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px;
 }
 
-.account-form .form-group label {
+.account-form label {
   display: block;
   margin-bottom: 7px;
   font-size: 12px;
@@ -82,66 +83,185 @@
   cursor: pointer;
 }
 
+.create-btn:hover {
+  background: #166534;
+}
+
 /* TOOLBAR */
+
 .accounts-toolbar {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 12px;
   margin-bottom: 18px;
+  flex-wrap: wrap;
 }
 
 .account-search-input {
   max-width: 420px;
 }
 
-/* TABLE */
+/* MAIN TABLE */
+
 #userManagementSection .table-shell {
+  width: 100%;
   overflow-x: auto;
   border: 1px solid #e5e7eb;
   border-radius: 18px;
   background: #ffffff;
 }
 
+#userManagementSection .table-shell::-webkit-scrollbar {
+  height: 8px;
+}
+
+#userManagementSection .table-shell::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+}
+
 #userManagementSection table {
   width: 100%;
-  min-width: 1100px;
+  min-width: 1180px;
   border-collapse: collapse;
+}
+
+#userManagementSection th,
+#userManagementSection td {
+  padding: 16px;
+  text-align: center;
+  vertical-align: middle;
+  white-space: nowrap;
 }
 
 #userManagementSection th {
   background: #f8fafc;
-  padding: 16px;
   font-size: 13px;
   font-weight: 900;
   color: #0f172a;
-  text-align: center;
   border-bottom: 1px solid #e5e7eb;
 }
 
 #userManagementSection td {
-  padding: 16px;
   font-size: 14px;
   color: #0f172a;
-  text-align: center;
   border-bottom: 1px solid #edf0f2;
 }
 
+#userManagementSection th:first-child,
 #userManagementSection td:first-child {
-  text-align: left;
-  font-weight: 800;
+  text-align: center;
+  font-weight: 900;
 }
 
 #userManagementSection tr:hover td {
   background: #f8fafc;
 }
 
-/* EXISTING BADGES */
+/* ACTION BUTTONS */
+
+.user-action-buttons,
+.account-action-buttons {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
+.user-btn,
+.account-action-btn,
+#userManagementSection .inline-action-btn,
+#userManagementSection td:last-child button,
+#deactivatedAccountsModal button {
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+}
+
+/* DEACTIVATE */
+.user-btn.deactivate,
+.account-action-btn.deactivate,
+#userManagementSection .deactivate-btn,
+#userManagementSection td:last-child button:first-child {
+  background: #fee2e2;
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+
+.user-btn.deactivate:hover,
+.account-action-btn.deactivate:hover,
+#userManagementSection .deactivate-btn:hover,
+#userManagementSection td:last-child button:first-child:hover {
+  background: #ef4444;
+  color: #ffffff;
+}
+
+/* EDIT */
+.user-btn.edit,
+.account-action-btn.edit,
+#userManagementSection .edit-btn,
+#userManagementSection td:last-child button:last-child {
+  background: #e0f2fe;
+  color: #0369a1;
+  border-color: #bae6fd;
+}
+
+.user-btn.edit:hover,
+.account-action-btn.edit:hover,
+#userManagementSection .edit-btn:hover,
+#userManagementSection td:last-child button:last-child:hover {
+  background: #0284c7;
+  color: #ffffff;
+}
+
+/* ACTIVATE */
+.user-btn.activate,
+.account-action-btn.activate,
+#deactivatedAccountsModal button:first-child {
+  background: #dcfce7 !important;
+  color: #166534 !important;
+  border: 1px solid #bbf7d0 !important;
+}
+
+.user-btn.activate:hover,
+.account-action-btn.activate:hover,
+#deactivatedAccountsModal button:first-child:hover {
+  background: #16a34a !important;
+  color: #ffffff !important;
+}
+
+/* DELETE */
+.user-btn.delete,
+.account-action-btn.delete,
+#deactivatedAccountsModal button:last-child {
+  background: #fee2e2 !important;
+  color: #b91c1c !important;
+  border: 1px solid #fecaca !important;
+}
+
+.user-btn.delete:hover,
+.account-action-btn.delete:hover,
+#deactivatedAccountsModal button:last-child:hover {
+  background: #dc2626 !important;
+  color: #ffffff !important;
+}
+
+/* BADGES */
+
 .user-avatar {
   width: 34px;
   height: 34px;
   border-radius: 50%;
   background: #2f8a34;
-  color: #fff;
+  color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -171,7 +291,120 @@
   color: #166534;
 }
 
+/* DEACTIVATED HISTORY MODAL */
+
+#deactivatedAccountsModal.history-modal {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  z-index: 999999 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+#deactivatedAccountsModal.hidden {
+  display: none !important;
+}
+
+#deactivatedAccountsModal .history-modal-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  background: rgba(15, 23, 42, 0.62) !important;
+  backdrop-filter: blur(4px);
+  z-index: 1 !important;
+}
+
+#deactivatedAccountsModal .history-modal-content {
+  position: relative !important;
+  z-index: 2 !important;
+  width: min(1050px, 88vw) !important;
+  max-height: 84vh !important;
+  overflow: hidden !important;
+  margin: 0 !important;
+  background: #ffffff;
+  border-radius: 24px;
+  padding: 24px;
+  box-shadow: 0 30px 100px rgba(15, 23, 42, 0.28);
+}
+
+#deactivatedAccountsModal .history-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18px;
+  padding-bottom: 16px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+#deactivatedAccountsModal .history-modal-header h2 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 900;
+  color: #06251c;
+}
+
+#deactivatedAccountsModal .history-modal-header p {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 14px;
+}
+
+#deactivatedAccountsModal .history-close-btn {
+  width: 46px;
+  height: 46px;
+  border: none;
+  border-radius: 50%;
+  background: #f1f5f9;
+  color: #334155;
+  font-size: 22px;
+  cursor: pointer;
+}
+
+#deactivatedAccountsModal .history-close-btn:hover {
+  background: #e2e8f0;
+}
+
+#deactivatedAccountsModal .table-shell {
+  width: 100%;
+  max-height: 56vh;
+  overflow-x: auto;
+  overflow-y: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 18px;
+}
+
+#deactivatedAccountsModal table {
+  width: 100%;
+  min-width: 950px;
+  border-collapse: collapse;
+}
+
+#deactivatedAccountsModal th,
+#deactivatedAccountsModal td {
+  text-align: center !important;
+  vertical-align: middle;
+  white-space: nowrap;
+  padding: 16px;
+}
+
+#deactivatedAccountsModal th {
+  background: #f8fafc;
+  font-size: 13px;
+  font-weight: 900;
+  color: #0f172a;
+}
+
+#deactivatedAccountsModal td {
+  font-size: 14px;
+  color: #0f172a;
+  border-bottom: 1px solid #edf0f2;
+}
+
 /* RESPONSIVE */
+
 @media (max-width: 800px) {
   .account-form .form-grid {
     grid-template-columns: 1fr;
@@ -185,4 +418,148 @@
   .account-search-input {
     max-width: none;
   }
+
+  #userManagementSection table {
+    min-width: 980px;
+  }
+
+  #deactivatedAccountsModal .history-modal-content {
+    width: 94vw !important;
+    max-height: 86vh !important;
+    padding: 18px;
+  }
+
+  #deactivatedAccountsModal table {
+    min-width: 900px;
+  }
 }
+
+/* =========================
+   EDIT USER MODAL FIX
+========================= */
+
+#editUserModal.history-modal {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 999999 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+#editUserModal.hidden {
+  display: none !important;
+}
+
+#editUserModal .history-modal-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  background: rgba(15, 23, 42, 0.62) !important;
+  backdrop-filter: blur(4px);
+  z-index: 1 !important;
+}
+
+#editUserModal .edit-user-modal-content {
+  position: relative !important;
+  z-index: 2 !important;
+  width: min(620px, 92vw) !important;
+  background: #ffffff;
+  border-radius: 24px;
+  padding: 26px;
+  box-shadow: 0 30px 100px rgba(15, 23, 42, 0.28);
+}
+
+#editUserModal .history-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18px;
+  padding-bottom: 16px;
+  margin-bottom: 22px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.edit-user-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+
+.edit-user-form-group.full {
+  grid-column: 1 / -1;
+}
+
+.edit-user-form-group label {
+  display: block;
+  margin-bottom: 7px;
+  font-size: 12px;
+  font-weight: 900;
+  color: #64748b;
+}
+
+.edit-user-form-group input {
+  width: 100%;
+  height: 48px;
+  border: 1px solid #dbe3ea;
+  border-radius: 14px;
+  padding: 0 14px;
+  background: #ffffff;
+  font-size: 14px;
+  outline: none;
+}
+
+.edit-user-form-group input:focus {
+  border-color: #22c55e;
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.12);
+}
+
+.edit-user-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.edit-cancel-btn,
+.edit-save-btn {
+  height: 44px;
+  padding: 0 18px;
+  border-radius: 14px;
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.edit-cancel-btn {
+  background: #f1f5f9;
+  color: #334155;
+  border: 1px solid #e2e8f0;
+}
+
+.edit-save-btn {
+  background: #0284c7;
+  color: #ffffff;
+  border: none;
+}
+
+.edit-save-btn:hover {
+  background: #0369a1;
+}
+
+@media (max-width: 700px) {
+  .edit-user-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .edit-user-actions {
+    flex-direction: column-reverse;
+  }
+
+  .edit-cancel-btn,
+  .edit-save-btn {
+    width: 100%;
+  }
+}
+
+
+
