@@ -1,12 +1,12 @@
 window.APP_CONFIG = {
-  BASE_URL: "http://192.168.1.37:8081",
-  API_BASE_URL: "http://192.168.1.37:8081/api",
+  BASE_URL: "https://waste-management-system-1-qon2.onrender.com",
+  API_BASE_URL: "https://waste-management-system-1-qon2.onrender.com/api",
 
-  APPOINTMENTS_ACTIVE_URL: "http://192.168.1.37:8081/api/appointments/active",
-  APPOINTMENTS_HISTORY_URL: "http://192.168.1.37:8081/api/appointments/history",
+  APPOINTMENTS_ACTIVE_URL: "https://waste-management-system-1-qon2.onrender.com/api/appointments/active",
+  APPOINTMENTS_HISTORY_URL: "https://waste-management-system-1-qon2.onrender.com/api/appointments/history",
 
   getAppointmentDecisionUrl: function (id) {
-    return `http://192.168.1.37:8081/api/appointments/${id}/decision`;
+    return `${this.API_BASE_URL}/appointments/${id}/decision`;
   },
 
   getRescheduleAppointmentUrl: function (id) {
