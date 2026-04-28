@@ -3,9 +3,7 @@
 // =========================
 
 function setActiveNavButton(sectionId) {
-  const navButtons = document.querySelectorAll(".nav-btn");
-
-  navButtons.forEach((btn) => {
+  document.querySelectorAll(".nav-btn").forEach((btn) => {
     const target = btn.getAttribute("data-section");
     btn.classList.toggle("active", target === sectionId);
   });
@@ -29,9 +27,7 @@ function setPageTitleFromSection(sectionId) {
 }
 
 function showSection(sectionId) {
-  const sections = document.querySelectorAll(".content-section");
-
-  sections.forEach((section) => {
+  document.querySelectorAll(".content-section").forEach((section) => {
     section.classList.toggle("active", section.id === sectionId);
   });
 
@@ -39,15 +35,56 @@ function showSection(sectionId) {
   setPageTitleFromSection(sectionId);
 }
 
+// =========================
+// SIDEBAR HELPERS
+// =========================
+
+function showSidebarToggleButton() {
+  const toggleBtn = document.getElementById("sidebarToggleBtn");
+  if (!toggleBtn) return;
+
+  if (window.innerWidth <= 992) {
+    toggleBtn.classList.remove("hidden-sidebar-toggle");
+    toggleBtn.style.setProperty("display", "inline-flex", "important");
+  }
+}
+
+function hideSidebarToggleButton() {
+  const toggleBtn = document.getElementById("sidebarToggleBtn");
+  if (!toggleBtn) return;
+
+  toggleBtn.classList.add("hidden-sidebar-toggle");
+  toggleBtn.style.setProperty("display", "none", "important");
+}
+
+function openMobileSidebar() {
+  const sidebar = document.getElementById("dashboardSidebar");
+  const backdrop = document.getElementById("sidebarBackdrop");
+
+  if (!sidebar || !backdrop) return;
+
+  sidebar.classList.add("open");
+  backdrop.classList.remove("hidden");
+  hideSidebarToggleButton();
+}
+
 function closeMobileSidebar() {
   const sidebar = document.getElementById("dashboardSidebar");
   const backdrop = document.getElementById("sidebarBackdrop");
 
+  if (!sidebar || !backdrop) return;
+
+  sidebar.classList.remove("open");
+  backdrop.classList.add("hidden");
+
   if (window.innerWidth <= 992) {
-    sidebar?.classList.remove("open");
-    backdrop?.classList.add("hidden");
+    showSidebarToggleButton();
   }
 }
+
+// =========================
+// SECTION OPENING
+// =========================
 
 function openSection(sectionId) {
   if (!canAccessSection(currentUser, sectionId)) {
@@ -57,8 +94,6 @@ function openSection(sectionId) {
   }
 
   showSection(sectionId);
-
-  // SECTION-BASED LOGIC
 
   if (sectionId === SECTION_IDS.appointments) {
     notificationsSeen = true;
@@ -90,7 +125,9 @@ function openSection(sectionId) {
     }
 
     setTimeout(() => {
-      if (truckMap) truckMap.invalidateSize();
+      if (typeof truckMap !== "undefined" && truckMap) {
+        truckMap.invalidateSize();
+      }
     }, 200);
   } else {
     if (typeof stopTrackingAutoRefresh === "function") {
@@ -102,9 +139,7 @@ function openSection(sectionId) {
 }
 
 function setupProtectedNavigation() {
-  const navButtons = document.querySelectorAll(".nav-btn");
-
-  navButtons.forEach((btn) => {
+  document.querySelectorAll(".nav-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
       const targetSection = btn.getAttribute("data-section");
       openSection(targetSection);
@@ -124,19 +159,33 @@ function bindSidebarToggle() {
   if (!sidebar || !toggleBtn || !backdrop) return;
 
   toggleBtn.addEventListener("click", () => {
-    sidebar.classList.toggle("open");
-    backdrop.classList.toggle("hidden");
+    if (sidebar.classList.contains("open")) {
+      closeMobileSidebar();
+    } else {
+      openMobileSidebar();
+    }
   });
 
-  backdrop.addEventListener("click", () => {
-    sidebar.classList.remove("open");
-    backdrop.classList.add("hidden");
-  });
+  backdrop.addEventListener("click", closeMobileSidebar);
 
   window.addEventListener("resize", () => {
     if (window.innerWidth > 992) {
       sidebar.classList.remove("open");
       backdrop.classList.add("hidden");
+      hideSidebarToggleButton();
+      return;
+    }
+
+    if (sidebar.classList.contains("open")) {
+      hideSidebarToggleButton();
+    } else {
+      showSidebarToggleButton();
     }
   });
+
+  if (window.innerWidth <= 992) {
+    showSidebarToggleButton();
+  } else {
+    hideSidebarToggleButton();
+  }
 }
