@@ -579,4 +579,120 @@ router.put("/appointments/:id/decision", (req, res) => {
     });
 });
 
+/* =========================================
+   UPDATE WEB ACCOUNT DETAILS
+   username required, password optional
+========================================= */
+router.put("/update/:id", async (req, res) => {
+    const { id } = req.params;
+    const { username, password } = req.body;
+
+    if (!username || !String(username).trim()) {
+        return res.status(400).json({
+            success: false,
+            message: "Username is required"
+        });
+    }
+
+    try {
+        let sql = `UPDATE web_users SET username = ?`;
+        const params = [String(username).trim()];
+
+        if (password && String(password).trim()) {
+            const hashedPassword = await bcrypt.hash(String(password).trim(), 10);
+            sql += `, password = ?`;
+            params.push(hashedPassword);
+        }
+
+        sql += ` WHERE id = ?`;
+        params.push(id);
+
+        db.query(sql, params, (err, result) => {
+            if (err) {
+                console.error("update web account error:", err);
+                return res.status(500).json({
+                    success: false,
+                    message: "Failed to update web account"
+                });
+            }
+
+            if (!result || result.affectedRows === 0) {
+                return res.status(404).json({
+                    success: false,
+                    message: "Web account not found"
+                });
+            }
+
+            return res.json({
+                success: true,
+                message: "Web account updated successfully"
+            });
+        });
+    } catch (error) {
+        console.error("update web account hash error:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Failed to process password"
+        });
+    }
+});
+
+/* =========================================
+   UPDATE MOBILE ACCOUNT DETAILS
+   username required, password optional
+========================================= */
+router.put("/update-mobile/:id", async (req, res) => {
+    const { id } = req.params;
+    const { username, password } = req.body;
+
+    if (!username || !String(username).trim()) {
+        return res.status(400).json({
+            success: false,
+            message: "Username is required"
+        });
+    }
+
+    try {
+        let sql = `UPDATE users SET username = ?`;
+        const params = [String(username).trim()];
+
+        if (password && String(password).trim()) {
+            const hashedPassword = await bcrypt.hash(String(password).trim(), 10);
+            sql += `, password = ?`;
+            params.push(hashedPassword);
+        }
+
+        sql += ` WHERE id = ?`;
+        params.push(id);
+
+        db.query(sql, params, (err, result) => {
+            if (err) {
+                console.error("update mobile account error:", err);
+                return res.status(500).json({
+                    success: false,
+                    message: "Failed to update mobile account"
+                });
+            }
+
+            if (!result || result.affectedRows === 0) {
+                return res.status(404).json({
+                    success: false,
+                    message: "Mobile account not found"
+                });
+            }
+
+            return res.json({
+                success: true,
+                message: "Mobile account updated successfully"
+            });
+        });
+    } catch (error) {
+        console.error("update mobile account hash error:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Failed to process password"
+        });
+    }
+});
+
 module.exports = router;
