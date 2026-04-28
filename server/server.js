@@ -39,10 +39,15 @@ if (!fs.existsSync(COMPLAINT_UPLOADS_DIR)) {
 /* =========================
    CORE MIDDLEWARE
 ========================= */
+const path = require("path");
+
 app.use(cors());
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+
+// 👉 ADD THIS
+app.use('/images', express.static(path.join(__dirname, '../images')));
 
 /* =========================
    REQUEST LOGGER
