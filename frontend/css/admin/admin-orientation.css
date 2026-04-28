@@ -7,7 +7,6 @@
   border-radius: 24px;
 }
 
-/* HEADER */
 #orientationSection .page-card-header {
   display: flex;
   justify-content: space-between;
@@ -39,7 +38,7 @@
 }
 
 /* =========================
-   ACTIVE CARDS
+   ACTIVE ORIENTATION CARDS
 ========================= */
 
 .orientation-card-list {
@@ -114,7 +113,7 @@
   height: 38px;
   border-radius: 13px;
   border: 1px solid #e5e7eb;
-  background: #fff;
+  background: #ffffff;
   color: #64748b;
   font-size: 18px;
   font-weight: 900;
@@ -199,13 +198,13 @@
 }
 
 /* =========================
-   ORIENTATION HISTORY MODAL FIX
+   ORIENTATION HISTORY MODAL
 ========================= */
 
 #orientationHistoryModal.history-modal {
   position: fixed;
   inset: 0;
-  z-index: 99999;
+  z-index: 999998;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -216,7 +215,7 @@
 }
 
 #orientationHistoryModal .history-modal-overlay {
-  position: absolute;
+  position: fixed;
   inset: 0;
   background: rgba(15, 23, 42, 0.62);
   backdrop-filter: blur(4px);
@@ -280,11 +279,10 @@
   border-radius: 18px;
 }
 
-/* TABLE */
 .orientation-history-table {
   width: 100%;
-  border-collapse: collapse;
   min-width: 760px;
+  border-collapse: collapse;
 }
 
 .orientation-history-table th {
@@ -309,37 +307,126 @@
 }
 
 /* =========================
-   QR MODAL
+   ORIENTATION QR MODAL
 ========================= */
 
-.qr-modal.hidden {
-  display: none !important;
-}
-
-.qr-modal {
+#orientationQrModal.qr-modal {
   position: fixed;
   inset: 0;
-  z-index: 99998;
+  z-index: 999998;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.qr-overlay {
-  position: absolute;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.55);
-  backdrop-filter: blur(3px);
+#orientationQrModal.hidden {
+  display: none !important;
 }
 
-.qr-modal-content {
-  position: relative;
+#orientationQrModal .qr-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.64);
+  backdrop-filter: blur(5px);
   z-index: 1;
-  width: min(420px, 92vw);
+}
+
+#orientationQrModal .qr-modal-content {
+  position: relative;
+  z-index: 2;
+  width: min(460px, 92vw);
+  max-height: 88vh;
+  overflow: auto;
   background: #ffffff;
-  border-radius: 22px;
-  padding: 22px;
-  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.25);
+  border-radius: 28px;
+  padding: 26px;
+  box-shadow: 0 32px 100px rgba(15, 23, 42, 0.32);
+}
+
+#orientationQrModal .qr-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding-bottom: 16px;
+  margin-bottom: 22px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+#orientationQrModal .qr-header h2 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 900;
+  color: #06251c;
+}
+
+#orientationQrModal #closeOrientationQrBtn {
+  flex: 0 0 auto;
+  width: 46px;
+  height: 46px;
+  border: none;
+  border-radius: 50%;
+  background: #f1f5f9;
+  color: #334155;
+  font-size: 22px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+#orientationQrModal #closeOrientationQrBtn:hover {
+  background: #e2e8f0;
+}
+
+#orientationQrModal .qr-body {
+  text-align: center;
+}
+
+#orientationQrModal #orientationQrContainer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  margin-bottom: 18px;
+}
+
+#orientationQrModal #orientationQrContainer img,
+#orientationQrModal .orientation-qr-image {
+  width: 250px !important;
+  height: 250px !important;
+  object-fit: contain;
+  display: block;
+  background: #ffffff;
+  padding: 8px;
+  border-radius: 18px;
+  border: 1px solid #e5e7eb;
+}
+
+#orientationQrModal .qr-info {
+  text-align: left;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 18px;
+  padding: 16px;
+  margin-top: 14px;
+}
+
+#orientationQrModal .qr-info p {
+  margin: 7px 0;
+  color: #334155;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+#orientationQrModal .qr-note {
+  margin-top: 14px;
+  padding: 13px 15px;
+  border-radius: 16px;
+  background: #ecfdf5;
+  color: #087a2c;
+  font-size: 13px;
+  font-weight: 800;
+  text-align: left;
+  line-height: 1.4;
 }
 
 /* =========================
@@ -365,13 +452,21 @@
     grid-template-columns: 1fr;
   }
 
-  #orientationHistoryModal .history-modal-content {
+  #orientationHistoryModal .history-modal-content,
+  #orientationQrModal .qr-modal-content {
     width: 94vw;
     max-height: 86vh;
     padding: 18px;
   }
 
-  #orientationHistoryModal .history-modal-header h2 {
+  #orientationHistoryModal .history-modal-header h2,
+  #orientationQrModal .qr-header h2 {
     font-size: 20px;
+  }
+
+  #orientationQrModal #orientationQrContainer img,
+  #orientationQrModal .orientation-qr-image {
+    width: 220px !important;
+    height: 220px !important;
   }
 }
