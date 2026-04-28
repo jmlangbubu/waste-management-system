@@ -1,43 +1,224 @@
 /* =========================
    RESPONSIVE
 ========================= */
+
+/* Tablet / smaller desktop */
 @media (max-width: 1200px) {
   .dashboard-hero-clean,
   .dashboard-secondary-grid,
   .dashboard-lower-grid,
+  .dashboard-main-grid,
+  .dashboard-bottom-grid,
   .tracking-layout {
     grid-template-columns: 1fr;
   }
 }
 
+/* Mobile / tablet sidebar drawer */
 @media (max-width: 992px) {
+  .admin-layout {
+    display: block;
+  }
+
   .main-content {
-    margin-left: 0;
+    margin-left: 0 !important;
     width: 100%;
+    min-width: 0;
+    padding: 18px;
   }
 
   .dashboard-sidebar {
     position: fixed;
+    top: 0;
+    left: 0;
+    width: 280px;
+    max-width: 82vw;
+    height: 100vh;
+    z-index: 10000;
+
     transform: translateX(-100%);
-    z-index: 9999;
+    transition: transform 0.3s ease;
   }
 
   .dashboard-sidebar.open {
     transform: translateX(0);
   }
+
+  .sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    z-index: 9999;
+  }
+
+  .sidebar-backdrop.hidden {
+    display: none;
+  }
+
+  .sidebar-toggle-btn {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .topbar {
+    align-items: flex-start;
+  }
+
+  .topbar-left {
+    width: 100%;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .topbar-actions {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .table-shell,
+  .complaints-table-shell {
+    overflow-x: auto;
+  }
+
+  table {
+    min-width: 800px;
+  }
 }
 
+/* Mobile */
 @media (max-width: 768px) {
-  .filter-bar {
+  .main-content {
+    padding: 14px;
+  }
+
+  .filter-bar,
+  .complaints-toolbar,
+  .complaints-summary-grid,
+  .waste-summary-cards,
+  .resolution-summary-row,
+  .truck-analytics-summary-grid,
+  .tracking-summary-row {
     grid-template-columns: 1fr;
   }
 
   .topbar {
     flex-direction: column;
-    gap: 10px;
+    gap: 12px;
+  }
+
+  .topbar-left h1 {
+    font-size: 22px;
+    line-height: 1.2;
+  }
+
+  .topbar-subtitle {
+    font-size: 13px;
+  }
+
+  .refresh-btn,
+  .view-all-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .dashboard-header-row,
+  .page-card-header,
+  .complaints-header,
+  .appointment-header,
+  .compact-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .dashboard-header-actions,
+  .complaints-header-actions,
+  .appointment-toolbar {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .segmented-filter {
+    width: 100%;
+  }
+
+  .segment-btn {
+    flex: 1;
   }
 
   .tracking-summary-row {
     flex-direction: column;
+  }
+
+  .tracking-map-wrap,
+  #truckMap {
+    min-height: 360px;
+  }
+
+  .complaint-modal-grid,
+  .resolution-main-grid,
+  .complaint-map-layout,
+  .truck-analytics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .custom-modal-content,
+  .history-modal-content {
+    width: 94%;
+    max-height: 88vh;
+    overflow-y: auto;
+  }
+
+  .resolved-evidence-frame {
+    min-height: 220px;
+  }
+}
+
+/* Small mobile */
+@media (max-width: 480px) {
+  .main-content {
+    padding: 12px;
+  }
+
+  .page-card {
+    padding: 14px;
+  }
+
+  .dashboard-sidebar {
+    width: 82vw;
+  }
+
+  .topbar-left h1 {
+    font-size: 20px;
+  }
+
+  .notification-dropdown {
+    right: auto;
+    left: 0;
+    width: 280px;
+  }
+
+  .custom-modal-content,
+  .history-modal-content {
+    width: 96%;
+  }
+
+  table {
+    min-width: 720px;
+  }
+}
+
+/* Desktop */
+@media (min-width: 993px) {
+  .sidebar-toggle-btn {
+    display: none !important;
+  }
+
+  .sidebar-backdrop {
+    display: none !important;
   }
 }
