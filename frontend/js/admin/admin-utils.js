@@ -39,21 +39,39 @@ function getImageUrl(imagePath) {
     return "";
   }
 
+  // If full URL na, gamitin agad
   if (/^https?:\/\//i.test(cleanPath)) {
     return cleanPath;
   }
 
+  // Get API base (no fallback to localhost anymore)
   const apiBase =
     window.APP_CONFIG?.API_BASE_URL ||
     window.API_BASE ||
-    "http://192.168.1.37:8081/api";
+    "";
 
+  if (!apiBase) {
+    console.error("API_BASE_URL is missing.");
+    return "";
+  }
+
+  // Remove /api sa dulo
   const serverBase = apiBase.replace(/\/api\/?$/, "");
+
+  // Ensure leading slash
   const normalizedPath = cleanPath.startsWith("/")
     ? cleanPath
     : `/${cleanPath}`;
 
-  return `${serverBase}${normalizedPath}`;
+  const finalUrl = `${serverBase}${normalizedPath}`;
+
+  // Debug (optional, pwede mo alisin later)
+  console.log("IMAGE DEBUG:", {
+    original: imagePath,
+    final: finalUrl
+  });
+
+  return finalUrl;
 }
 
 function escapeHtml(value) {
