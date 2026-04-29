@@ -1226,8 +1226,25 @@
 
         <div class="complaint-modal-right">
           <div class="complaint-evidence-wrapper">
-            <img id="complaintModalImage" class="complaint-evidence-image" src="" alt="Complaint evidence" />
-          </div>
+  <div id="complaintImageSkeleton" class="complaint-image-skeleton"></div>
+
+  <img
+    id="complaintModalImage"
+    class="complaint-evidence-image"
+    src=""
+    alt="Complaint evidence"
+    style="display:none;"
+  />
+
+  <div id="noImageText" class="no-image-placeholder" style="display:none;">
+    No image available
+  </div>
+</div>
+
+<div id="imagePreviewOverlay" class="image-preview-overlay hidden">
+  <button type="button" id="closeImagePreviewBtn" class="image-preview-close">&times;</button>
+  <img id="imagePreviewFull" class="image-preview-full" src="" alt="Preview image">
+</div>
         </div>
       </div>
 
