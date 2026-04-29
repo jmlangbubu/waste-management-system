@@ -547,19 +547,32 @@ function openComplaintModal(data) {
   const lng = data.longitude ?? "-";
   setText("complaintModalCoordinates", `${lat}, ${lng}`);
 
-  const imageEl = document.getElementById("complaintModalImage");
-  if (imageEl) {
-    const imageUrl = getImageUrl(data.image_url || data.evidence_url || data.photo_url);
+ const imageEl = document.getElementById("complaintModalImage");
 
-    if (imageUrl) {
-      imageEl.src = imageUrl;
-      imageEl.style.display = "block";
-      enableImagePreview(imageEl);
-    } else {
-      imageEl.src = "";
-      imageEl.style.display = "none";
-    }
+if (imageEl) {
+  const rawPath = data.image_url || data.evidence_url || data.photo_url;
+  const imageUrl = getImageUrl(rawPath);
+
+  console.log("IMAGE DEBUG:");
+  console.log("RAW:", rawPath);
+  console.log("FINAL:", imageUrl);
+
+  imageEl.onload = () => {
+    imageEl.style.display = "block";
+    enableImagePreview(imageEl);
+  };
+
+  imageEl.onerror = () => {
+    console.error("FAILED TO LOAD IMAGE:", imageUrl);
+    imageEl.style.display = "none";
+  };
+
+  if (imageUrl) {
+    imageEl.src = imageUrl + `?t=${Date.now()}`; 
+  } else {
+    imageEl.style.display = "none";
   }
+}
 
   document.getElementById("complaintDetailsModal")?.classList.remove("hidden");
 }
