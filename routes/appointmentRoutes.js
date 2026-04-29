@@ -612,8 +612,12 @@ const email = appointment.email;
 const fullName = appointment.full_name;
 
 if (email) {
+  console.log("EMAIL_USER:", process.env.EMAIL_USER);
+  console.log("EMAIL_PASS EXISTS:", !!process.env.EMAIL_PASS);
+  console.log("SENDING EMAIL TO:", email);
+
   const mailOptions = {
-    from: "wastemanagementgensan00@gmail.com",
+    from: process.env.EMAIL_USER,
     to: email,
     subject: "Appointment Rescheduled",
     html: `
@@ -627,11 +631,8 @@ if (email) {
   };
 
   transporter.sendMail(mailOptions, (err) => {
-    if (err) {
-      console.error("Email send error:", err);
-    } else {
-      console.log("Reschedule email sent to:", email);
-    }
+    if (err) console.error("Email send error:", err);
+    else console.log("Reschedule email sent to:", email);
   });
 }
 
