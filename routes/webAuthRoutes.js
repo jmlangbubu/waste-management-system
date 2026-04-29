@@ -58,12 +58,14 @@ router.post("/login", (req, res) => {
       });
     }
 
-    if (dbPassword !== inputPassword) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid username or password."
-      });
-    }
+    const isMatch = await require("bcrypt").compare(inputPassword, dbPassword);
+
+if (!isMatch) {
+  return res.status(401).json({
+    success: false,
+    message: "Invalid username or password."
+  });
+}
 
     return res.json({
       success: true,
