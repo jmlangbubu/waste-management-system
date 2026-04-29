@@ -13,8 +13,10 @@
   flex-direction: column;
   justify-content: space-between;
 
-  padding: 22px 18px;
-  background: linear-gradient(180deg, #163d2d 0%, #184431 100%);
+  padding: 24px 18px;
+  background:
+    radial-gradient(circle at top left, rgba(47, 138, 52, 0.28), transparent 34%),
+    linear-gradient(180deg, #123826 0%, #0f3324 100%);
   color: #ffffff;
   z-index: 10000;
   overflow-y: auto;
@@ -24,87 +26,110 @@
 .sidebar-top {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 26px;
 }
 
 /* BRAND */
 .sidebar-brand {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 14px;
+  gap: 13px;
+  margin-bottom: 18px;
 }
 
 .brand-mark {
-  width: 46px;
-  height: 46px;
-  min-width: 46px;
+  width: 52px;
+  height: 52px;
+  min-width: 52px;
 
   display: flex;
   align-items: center;
   justify-content: center;
 
-  border-radius: 14px;
-  background: #2f8a34;
+  border-radius: 16px;
+  background: linear-gradient(145deg, #37a044, #248331);
   color: #ffffff;
 
-  font-size: 22px;
+  font-size: 25px;
   font-weight: 900;
   line-height: 1;
-  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.18);
-}
-
-.brand-text {
-  display: block;
-  min-width: 0;
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.22);
 }
 
 .brand-text h2 {
   margin: 0;
-  font-size: 18px;
-  font-weight: 800;
-  line-height: 1.2;
+  font-size: 21px;
+  font-weight: 900;
+  line-height: 1.1;
+  letter-spacing: -0.3px;
 }
 
 .brand-text p {
-  margin: 3px 0 0;
+  margin: 5px 0 0;
   font-size: 13px;
   color: rgba(255, 255, 255, 0.78);
-  line-height: 1.2;
 }
 
 /* NAV */
 .sidebar-nav {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .nav-btn {
   width: 100%;
+  min-height: 54px;
+
+  display: flex;
+  align-items: center;
+  gap: 14px;
+
   border: none;
   background: transparent;
   color: rgba(255, 255, 255, 0.86);
 
   text-align: left;
-  border-radius: 14px;
-  padding: 14px 16px;
+  border-radius: 16px;
+  padding: 0 18px;
 
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 750;
   cursor: pointer;
-  transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+
+  transition:
+    background 0.2s ease,
+    color 0.2s ease,
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.nav-btn svg {
+  width: 21px;
+  height: 21px;
+  flex-shrink: 0;
+  stroke-width: 2;
+  opacity: 0.72;
+}
+
+.nav-btn span {
+  white-space: nowrap;
 }
 
 .nav-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.075);
   color: #ffffff;
+  transform: translateX(2px);
 }
 
 .nav-btn.active {
-  background: #2f8a34;
+  background: linear-gradient(135deg, #35a23d, #248a30);
   color: #ffffff;
-  box-shadow: 0 12px 22px rgba(47, 138, 52, 0.26);
+  box-shadow: 0 12px 24px rgba(47, 138, 52, 0.28);
+}
+
+.nav-btn.active svg {
+  opacity: 1;
 }
 
 .nav-btn:active {
@@ -115,45 +140,49 @@
 .sidebar-bottom {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  margin-top: 24px;
+  gap: 18px;
+  margin-top: 28px;
 }
 
 .sidebar-user-card {
-  padding: 14px;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.08);
+  padding: 18px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.085);
+  border: 1px solid rgba(255, 255, 255, 0.055);
 }
 
 .sidebar-user-name {
-  font-size: 14px;
-  font-weight: 800;
+  font-size: 16px;
+  font-weight: 900;
   color: #ffffff;
 }
 
 .sidebar-user-role {
-  margin-top: 3px;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.72);
+  margin-top: 5px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.76);
 }
 
 .logout-btn {
   width: 100%;
+  min-height: 54px;
   border: none;
-  border-radius: 14px;
-  padding: 13px 16px;
+  border-radius: 18px;
+  padding: 14px 18px;
 
-  background: #dc2d2d;
+  background: linear-gradient(135deg, #ef3030, #d72727);
   color: #ffffff;
 
-  font-size: 14px;
-  font-weight: 700;
+  font-size: 15px;
+  font-weight: 850;
   cursor: pointer;
-  transition: background 0.2s ease, transform 0.2s ease;
+  transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .logout-btn:hover {
-  background: #c82323;
+  background: linear-gradient(135deg, #f03a3a, #c91f1f);
+  box-shadow: 0 12px 24px rgba(220, 45, 45, 0.24);
 }
 
 .logout-btn:active {
