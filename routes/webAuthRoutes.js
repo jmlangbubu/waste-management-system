@@ -1,10 +1,14 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../config/db");
+const bcrypt = require("bcrypt");
 
 console.log("webAuthRoutes loaded");
 
-router.post("/login", async (req, res) => {
+// =========================
+// LOGIN
+// =========================
+router.post("/login", (req, res) => {
   const username = req.body?.username ? String(req.body.username).trim() : "";
   const password = req.body?.password ? String(req.body.password).trim() : "";
 
@@ -24,7 +28,8 @@ router.post("/login", async (req, res) => {
     LIMIT 1
   `;
 
-  db.query(sql, [username], (err, results) => {
+  // ⚠️ IMPORTANT: async callback para pwede gamitin await
+  db.query(sql, [username], async (err, results) => {
     if (err) {
       console.error("WEB LOGIN DB ERROR:", err);
       return res.status(500).json({
@@ -49,7 +54,6 @@ router.post("/login", async (req, res) => {
     const status = String(user.status || "").trim().toLowerCase();
 
     console.log("WEB LOGIN STATUS:", status);
-    console.log("WEB LOGIN PASSWORD MATCH:", dbPassword === inputPassword);
 
     if (status !== "active") {
       return res.status(403).json({
@@ -57,32 +61,54 @@ router.post("/login", async (req, res) => {
         message: "This account is inactive."
       });
     }
-    const bcrypt = require("bcrypt");
 
-    const isMatch = await require("bcrypt").compare(inputPassword, dbPassword);
+    try {
+      // 🔥 Detect kung hashed or plain password
+      const isHashedPassword =
+        dbPassword.startsWith("$2a$") ||
+        dbPassword.startsWith("$2b$") ||
+        dbPassword.startsWith("$2y$");
 
-if (!isMatch) {
-  return res.status(401).json({
-    success: false,
-    message: "Invalid username or password."
-  });
-}
+      const isMatch = isHashedPassword
+        ? await bcrypt.compare(inputPassword, dbPassword)
+        : dbPassword === inputPassword;
 
-    return res.json({
-      success: true,
-      message: "Web login successful.",
-      user: {
-        id: user.id,
-        fullName: user.full_name,
-        username: user.username,
-        role: user.role,
-        divisionName: user.division_name,
-        status: user.status
+      console.log("WEB LOGIN PASSWORD MATCH:", isMatch);
+
+      if (!isMatch) {
+        return res.status(401).json({
+          success: false,
+          message: "Invalid username or password."
+        });
       }
-    });
+
+      return res.json({
+        success: true,
+        message: "Web login successful.",
+        user: {
+          id: user.id,
+          fullName: user.full_name,
+          username: user.username,
+          role: user.role,
+          divisionName: user.division_name,
+          status: user.status
+        }
+      });
+
+    } catch (compareErr) {
+      console.error("WEB LOGIN PASSWORD COMPARE ERROR:", compareErr);
+      return res.status(500).json({
+        success: false,
+        message: "Server error during password verification."
+      });
+    }
   });
 });
 
+
+// =========================
+// CREATE USER (KEEP THIS)
+// =========================
 router.post("/create-user", (req, res) => {
   const {
     fullName,
@@ -156,7 +182,7 @@ router.post("/create-user", (req, res) => {
     const values = [
       String(fullName).trim(),
       String(username).trim(),
-      String(password).trim(),
+      String(password).trim(), // ⚠️ still plain (legacy route)
       String(role).trim(),
       divisionName ? String(divisionName).trim() : null,
       status ? String(status).trim() : "active",
