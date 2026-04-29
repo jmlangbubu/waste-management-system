@@ -565,14 +565,127 @@ table td {
   padding: 18px;
 }
 
-.no-image-placeholder {
+/* ===============================
+   COMPLAINT DETAILS MODAL - FINAL CLEAN UI
+================================ */
+#complaintDetailsModal .complaint-modal-content {
+  position: fixed !important;
+  top: 50%;
+  left: calc(260px + ((100vw - 260px) / 2));
+  transform: translate(-50%, -50%);
+  width: min(1050px, calc(100vw - 320px));
+  max-height: 84vh;
+  overflow: hidden;
+  border-radius: 24px;
+}
+
+#complaintDetailsModal .complaint-modal-body {
+  max-height: calc(84vh - 96px);
+  overflow-y: auto;
+  padding: 22px;
+}
+
+#complaintDetailsModal .complaint-modal-grid {
+  display: grid;
+  grid-template-columns: 1.25fr 0.75fr;
+  gap: 22px;
+  align-items: start;
+}
+
+#complaintDetailsModal .complaint-modal-left {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+#complaintDetailsModal .complaint-field-group {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 13px 15px;
+  min-height: 76px;
+}
+
+#complaintDetailsModal .complaint-field-group:nth-child(1),
+#complaintDetailsModal .complaint-field-group:nth-child(2),
+#complaintDetailsModal .complaint-field-group:nth-child(7) {
+  grid-column: 1 / -1;
+}
+
+#complaintDetailsModal .complaint-field-group label {
+  display: block;
+  margin-bottom: 7px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+#complaintDetailsModal .complaint-field-value {
+  font-size: 14px;
+  font-weight: 500;
+  color: #1e293b;
+  line-height: 1.35;
+}
+
+#complaintDetailsModal .complaint-evidence-wrapper {
+  width: 100%;
+  min-height: 380px;
+  border: 1px solid #e5e7eb;
+  border-radius: 18px;
+  background: #f8fafc;
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 250px;
-  color: #888;
-  font-size: 14px;
-  border: 2px dashed #ddd;
-  border-radius: 10px;
-  background: #fafafa;
+  overflow: hidden;
+}
+
+#complaintDetailsModal .complaint-evidence-image,
+#complaintDetailsModal .complaint-image-skeleton,
+#complaintDetailsModal .no-image-placeholder {
+  width: 100%;
+  height: 380px;
+}
+
+#complaintDetailsModal .complaint-evidence-image {
+  object-fit: contain;
+  cursor: zoom-in;
+}
+
+#complaintDetailsModal .complaint-image-skeleton {
+  background: linear-gradient(90deg, #eef2f7 25%, #f8fafc 50%, #eef2f7 75%);
+  background-size: 200% 100%;
+  animation: skeletonLoading 1.2s infinite;
+}
+
+#complaintDetailsModal .no-image-placeholder {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+#complaintDetailsModal .complaint-modal-actions {
+  margin-top: 18px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+@keyframes skeletonLoading {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+@media (max-width: 1000px) {
+  #complaintDetailsModal .complaint-modal-content {
+     left: 50%;
+  width: calc(100vw - 28px);
+  }
+
+  #complaintDetailsModal .complaint-modal-grid,
+  #complaintDetailsModal .complaint-modal-left {
+    grid-template-columns: 1fr;
+  }
 }
