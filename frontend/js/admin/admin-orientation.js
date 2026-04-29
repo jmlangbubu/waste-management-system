@@ -104,7 +104,7 @@ function renderActiveOrientation(records) {
             type="button"
             class="orientation-web-btn"
             data-id="${item.id}"
-            ${status === "completed_orientation" ? "disabled" : ""}
+            ${status === "pending_orientation" || status === "completed_orientation" ? "disabled" : ""}
           >
             <span>🖥️ Take Web Exam</span>
             <b>›</b>
@@ -399,7 +399,7 @@ function normalizeOrientationStatus(status) {
 function getOrientationStatusLabel(item) {
   const status = normalizeOrientationStatus(item.orientation_status);
 
-  if (status === "pending_orientation") return "Pending Orientation";
+  if (status === "pending_orientation") return "Taking Quiz";
   if (status === "completed_orientation") return "Completed";
   return "Approved";
 }
