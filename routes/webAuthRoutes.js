@@ -4,7 +4,7 @@ const db = require("../config/db");
 
 console.log("webAuthRoutes loaded");
 
-router.post("/login", (req, res) => {
+router.post("/login", async (req, res) => {
   const username = req.body?.username ? String(req.body.username).trim() : "";
   const password = req.body?.password ? String(req.body.password).trim() : "";
 
@@ -57,6 +57,7 @@ router.post("/login", (req, res) => {
         message: "This account is inactive."
       });
     }
+    const bcrypt = require("bcrypt");
 
     const isMatch = await require("bcrypt").compare(inputPassword, dbPassword);
 
