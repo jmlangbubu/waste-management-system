@@ -136,7 +136,7 @@ function updateChosenBarangayUI() {
       ? `${selectedBarangayCandidate.distance_meters} meters away`
       : "Distance unavailable";
 
-  chosenText.textContent = selectedBarangayCandidate.barangay_name || "-";
+  chosenText.textContent = `Suggested: ${selectedBarangayCandidate.barangay_name || "-"}`;
   chosenMeta.textContent =
     `${selectedBarangayCandidate.reference_name || "-"} • ${distanceText}`;
 }
@@ -685,7 +685,14 @@ async function openComplaintMapModal() {
       }).filter(Boolean);
 
       renderNearbyBarangayList(candidates);
+
+      const nearestCandidate = candidates[0];
+
+      if (nearestCandidate) {
+  selectBarangayCandidate(nearestCandidate, candidates);
+      } else {
       updateChosenBarangayUI();
+      } 
 
       const boundsPoints = [
         [lat, lng],
