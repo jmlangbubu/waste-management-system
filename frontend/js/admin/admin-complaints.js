@@ -548,29 +548,41 @@ function openComplaintModal(data) {
   setText("complaintModalCoordinates", `${lat}, ${lng}`);
 
  const imageEl = document.getElementById("complaintModalImage");
+const skeletonEl = document.getElementById("complaintImageSkeleton");
+const noImageText = document.getElementById("noImageText");
 
 if (imageEl) {
   const rawPath = data.image_url || data.evidence_url || data.photo_url;
   const imageUrl = getImageUrl(rawPath);
 
-  console.log("IMAGE DEBUG:");
-  console.log("RAW:", rawPath);
-  console.log("FINAL:", imageUrl);
+  imageEl.onload = null;
+  imageEl.onerror = null;
+  imageEl.onclick = null;
+
+  imageEl.style.display = "none";
+  imageEl.removeAttribute("src");
+
+  if (skeletonEl) skeletonEl.style.display = "block";
+  if (noImageText) noImageText.style.display = "none";
 
   imageEl.onload = () => {
+    if (skeletonEl) skeletonEl.style.display = "none";
+    if (noImageText) noImageText.style.display = "none";
     imageEl.style.display = "block";
     enableImagePreview(imageEl);
   };
 
   imageEl.onerror = () => {
-    console.error("FAILED TO LOAD IMAGE:", imageUrl);
+    if (skeletonEl) skeletonEl.style.display = "none";
     imageEl.style.display = "none";
+    if (noImageText) noImageText.style.display = "flex";
   };
 
   if (imageUrl) {
-    imageEl.src = imageUrl + `?t=${Date.now()}`; 
+    imageEl.src = `${imageUrl}?t=${Date.now()}`;
   } else {
-    imageEl.style.display = "none";
+    if (skeletonEl) skeletonEl.style.display = "none";
+    if (noImageText) noImageText.style.display = "flex";
   }
 }
 
