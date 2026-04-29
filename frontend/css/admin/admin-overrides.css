@@ -29,3 +29,376 @@
 .custom-toast {
   z-index: 9999999 !important;
 }
+
+/* ===============================
+   COMPLAINT HISTORY MODAL FIX
+================================ */
+#complaintHistoryModal.history-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 5000;
+}
+
+#complaintHistoryModal .history-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(4px);
+}
+
+#complaintHistoryModal .history-modal-content {
+  position: fixed;
+  top: 50%;
+  left: calc(280px + ((100vw - 280px) / 2));
+  transform: translate(-50%, -50%);
+  width: min(1050px, calc(100vw - 330px));
+  max-height: 82vh;
+  overflow: hidden;
+  background: #ffffff;
+  border-radius: 24px;
+  padding: 24px;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+}
+
+#complaintHistoryModal .history-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+#complaintHistoryModal .table-shell {
+  margin-top: 18px;
+  max-height: 58vh;
+  overflow: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 18px;
+}
+
+#complaintHistoryModal table {
+  width: 100%;
+  min-width: 900px;
+  border-collapse: collapse;
+}
+
+#complaintHistoryModal th,
+#complaintHistoryModal td {
+  padding: 14px 16px;
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+#complaintHistoryModal th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+#complaintHistoryModal td {
+  color: #334155;
+  font-size: 14px;
+  border-top: 1px solid #eef2f7;
+}
+
+#complaintHistoryModal button {
+  border: none;
+  border-radius: 10px;
+  padding: 7px 12px;
+  background: #e8f7ee;
+  color: #047857;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+#complaintHistoryModal .history-close-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  padding: 0;
+  background: #f1f5f9;
+  color: #334155;
+  font-size: 20px;
+}
+
+@media (max-width: 900px) {
+  #complaintHistoryModal .history-modal-content {
+    left: 50%;
+    width: calc(100vw - 28px);
+    max-height: 86vh;
+    padding: 18px;
+  }
+}
+
+/* ===============================
+   TRACKING REPORTS MODAL FIX
+================================ */
+#trackingReportsModal.custom-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 5000;
+}
+
+#trackingReportsModal .custom-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(4px);
+}
+
+#trackingReportsModal .custom-modal-content {
+  position: fixed !important;
+  top: 50%;
+  left: calc(280px + ((100vw - 280px) / 2));
+  transform: translate(-50%, -50%);
+  width: min(1050px, calc(100vw - 330px)) !important;
+  max-width: none !important;
+  max-height: 82vh;
+  overflow: hidden;
+  background: #ffffff;
+  border-radius: 24px;
+  padding: 24px;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+}
+
+#trackingReportsModal .custom-modal-body {
+  margin-top: 18px;
+  max-height: 60vh;
+  overflow: auto;
+  padding: 0;
+}
+
+#trackingReportsModal .table-shell {
+  overflow: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 18px;
+}
+
+#trackingReportsModal table {
+  width: 100%;
+  min-width: 950px;
+  border-collapse: collapse;
+}
+
+#trackingReportsModal th,
+#trackingReportsModal td {
+  padding: 16px 18px;
+  white-space: nowrap;
+  text-align: left;
+  vertical-align: middle;
+}
+
+#trackingReportsModal th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+#trackingReportsModal td {
+  border-top: 1px solid #eef2f7;
+  color: #334155;
+  font-size: 14px;
+}
+
+#trackingReportsModal .modal-close-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #f1f5f9;
+  color: #334155;
+}
+
+#trackingReportsModal button:not(.modal-close-btn) {
+  border: none;
+  border-radius: 14px;
+  padding: 10px 18px;
+  background: #e8f7ee;
+  color: #047857;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+@media (max-width: 900px) {
+  #trackingReportsModal .custom-modal-content {
+    left: 50%;
+    width: calc(100vw - 28px) !important;
+    max-height: 86vh;
+    padding: 18px;
+  }
+}
+
+/* ===============================
+   TRUCK MONITORING ANALYTICS MODAL FIX
+================================ */
+#truckAnalyticsModal.history-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 5000;
+}
+
+#truckAnalyticsModal .history-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(4px);
+}
+
+#truckAnalyticsModal .history-modal-content {
+  position: fixed;
+  top: 50%;
+  left: calc(280px + ((100vw - 280px) / 2));
+  transform: translate(-50%, -50%);
+  width: min(1050px, calc(100vw - 330px));
+  max-height: 82vh;
+  overflow: auto;
+  background: #ffffff;
+  border-radius: 24px;
+  padding: 24px;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+}
+
+#truckAnalyticsModal .history-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+#truckAnalyticsModal .truck-analytics-summary-grid,
+#truckAnalyticsModal .truck-analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-top: 18px;
+}
+
+#truckAnalyticsModal .truck-analytics-grid {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+#truckAnalyticsModal .truck-analytics-summary-card,
+#truckAnalyticsModal .truck-analytics-panel {
+  border: 1px solid #e5e7eb;
+  border-radius: 18px;
+  background: #f8fafc;
+  padding: 18px;
+  overflow: hidden;
+}
+
+#truckAnalyticsModal .truck-analytics-feed-list,
+#truckAnalyticsModal .truck-distance-chart-box {
+  max-height: 260px;
+  overflow: auto;
+}
+
+#truckAnalyticsModal .summary-item {
+  padding: 14px 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  background: #ffffff;
+  margin-bottom: 10px;
+}
+
+#truckAnalyticsModal .history-close-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  padding: 0;
+  background: #f1f5f9;
+  color: #334155;
+  font-size: 20px;
+}
+
+@media (max-width: 900px) {
+  #truckAnalyticsModal .history-modal-content {
+    left: 50%;
+    width: calc(100vw - 28px);
+    max-height: 86vh;
+    padding: 18px;
+  }
+
+  #truckAnalyticsModal .truck-analytics-summary-grid,
+  #truckAnalyticsModal .truck-analytics-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ===============================
+   TRUCK ANALYTICS - REMOVE ALERT FEED
+================================ */
+
+/* Hide Alert Feed panel */
+#truckAnalyticsModal .truck-analytics-grid .truck-analytics-panel:first-child {
+  display: none !important;
+}
+
+/* Make Truck Status Overview full width */
+#truckAnalyticsModal .truck-analytics-grid {
+  grid-template-columns: 1fr !important;
+}
+
+/* Optional: hide Total Alerts card */
+#truckAnalyticsModal .truck-analytics-summary-card:first-child {
+  display: none !important;
+}
+
+/* Make remaining summary cards clean */
+#truckAnalyticsModal .truck-analytics-summary-grid {
+  grid-template-columns: repeat(2, 1fr) !important;
+}
+
+/* Fix lower panels spacing */
+#truckAnalyticsModal .truck-analytics-panel {
+  margin-top: 16px;
+}
+
+/* ===============================
+   TRUCK ANALYTICS SCROLL FIX
+================================ */
+
+#truckAnalyticsModal .history-modal-content {
+  display: flex;
+  flex-direction: column;
+  max-height: 85vh;
+  overflow: hidden; /* lock outer */
+}
+
+/* scrollable content */
+#truckAnalyticsModal .history-modal-content > *:not(.history-modal-header) {
+  overflow-y: auto;
+}
+
+/* make inner sections scroll properly */
+#truckAnalyticsModal .truck-analytics-summary-grid,
+#truckAnalyticsModal .truck-analytics-grid,
+#truckAnalyticsModal .truck-analytics-panel {
+  flex-shrink: 0;
+}
+
+/* allow main content scroll */
+#truckAnalyticsModal .truck-analytics-grid,
+#truckAnalyticsModal .truck-analytics-panel:last-child {
+  margin-bottom: 10px;
+}
+
+/* optional: smooth scroll feel */
+#truckAnalyticsModal .history-modal-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+#truckAnalyticsModal .history-modal-content::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 10px;
+}
