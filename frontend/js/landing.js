@@ -21,8 +21,9 @@ function getAppointmentCheckStatusApiUrl() {
 
 document.addEventListener("DOMContentLoaded", () => {
   const appointmentForm = document.getElementById("appointmentForm");
-  const appointmentMessage = document.getElementById("appointmentMessage");
-  const statusContactInput = document.getElementById("statusContact");
+const appointmentMessage = document.getElementById("appointmentMessage");
+const statusContactInput = document.getElementById("statusContact");
+const contactNumberInput = document.getElementById("contactNumber");
 
 if (statusContactInput) {
   statusContactInput.addEventListener("input", function () {
