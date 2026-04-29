@@ -402,3 +402,177 @@
   background: #cbd5e1;
   border-radius: 10px;
 }
+
+/* WASTE RECORDS 100% ZOOM LAYOUT FIX */
+@media (min-width: 1200px) {
+  #recordsSection .page-card {
+    padding: 24px;
+  }
+
+  #recordsSection .filter-bar {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr 1fr;
+    gap: 14px;
+    align-items: end;
+  }
+
+  #recordsSection .filter-group input,
+  #recordsSection .filter-group select,
+  #recordsSection .filter-group button {
+    height: 48px;
+    font-size: 14px;
+  }
+
+  #recordsSection .waste-records-table-wrapper {
+    overflow-x: auto;
+  }
+
+  #recordsSection .waste-records-table {
+    width: 100%;
+    min-width: 1280px;
+    table-layout: fixed;
+  }
+
+  #recordsSection .waste-records-table th,
+  #recordsSection .waste-records-table td {
+    padding: 14px 10px;
+    font-size: 14px;
+    line-height: 1.25;
+    text-align: center;
+    vertical-align: middle;
+    white-space: nowrap;
+  }
+
+  #recordsSection .waste-records-table td:nth-child(2),
+  #recordsSection .waste-records-table th:nth-child(2) {
+    text-align: left;
+  }
+
+  #recordsSection .waste-records-table td:nth-child(4) {
+    white-space: normal;
+    font-size: 13px;
+  }
+
+  #recordsSection .waste-records-table th:nth-child(1),
+  #recordsSection .waste-records-table td:nth-child(1) {
+    width: 85px;
+  }
+
+  #recordsSection .waste-records-table th:nth-child(2),
+  #recordsSection .waste-records-table td:nth-child(2) {
+    width: 130px;
+  }
+
+  #recordsSection .waste-records-table th:nth-child(4),
+  #recordsSection .waste-records-table td:nth-child(4) {
+    width: 150px;
+  }
+
+  #recordsSection .waste-records-table th:nth-child(10),
+  #recordsSection .waste-records-table td:nth-child(10) {
+    width: 135px;
+  }
+
+  #recordsSection .waste-records-table th:nth-child(11),
+  #recordsSection .waste-records-table td:nth-child(11) {
+    width: 95px;
+  }
+}
+
+/* ===============================
+   GLOBAL COMPACT DASHBOARD FIX
+   No transform, no broken sidebar
+================================ */
+
+body {
+  font-size: 14px;
+}
+
+.dashboard-sidebar {
+  width: 260px;
+}
+
+.main-content {
+  margin-left: 260px;
+  padding: 28px 34px;
+  max-width: none;
+}
+
+.page-card {
+  padding: 22px;
+  border-radius: 22px;
+}
+
+.topbar {
+  margin-bottom: 24px;
+}
+
+.topbar h1 {
+  font-size: 24px;
+}
+
+.topbar-subtitle {
+  font-size: 13px;
+}
+
+.page-card-header h2 {
+  font-size: 22px;
+}
+
+.page-card-header p {
+  font-size: 13px;
+}
+
+.nav-btn {
+  min-height: 44px;
+  padding: 12px 16px;
+  font-size: 14px;
+}
+
+.refresh-btn,
+.view-all-btn,
+.logout-btn {
+  min-height: 44px;
+  padding: 11px 18px;
+  font-size: 14px;
+}
+
+input,
+select,
+button {
+  font-size: 14px;
+}
+
+table th,
+table td {
+  font-size: 13px;
+  padding: 13px 14px;
+}
+
+.dashboard-main-grid {
+  gap: 22px;
+}
+
+.dashboard-side-stack {
+  gap: 22px;
+}
+
+.waste-summary-cards {
+  gap: 14px;
+}
+
+.waste-summary-card {
+  padding: 18px;
+}
+
+.no-image-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 250px;
+  color: #888;
+  font-size: 14px;
+  border: 2px dashed #ddd;
+  border-radius: 10px;
+  background: #fafafa;
+}
