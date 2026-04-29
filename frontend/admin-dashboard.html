@@ -35,35 +35,42 @@
           </div>
         </div>
 
-        <nav class="sidebar-nav">
-          <button class="nav-btn active" data-section="dashboardSection" type="button">
-            <span>Dashboard Overview</span>
-          </button>
+       <nav class="sidebar-nav">
+  <button class="nav-btn active" data-section="dashboardSection" type="button">
+    <i data-lucide="layout-dashboard"></i>
+    <span>Dashboard Overview</span>
+  </button>
 
-          <button class="nav-btn" data-section="recordsSection" type="button">
-            <span>Waste Records</span>
-          </button>
+  <button class="nav-btn" data-section="recordsSection" type="button">
+    <i data-lucide="clipboard-list"></i>
+    <span>Waste Records</span>
+  </button>
 
-          <button class="nav-btn" data-section="appointmentsSection" type="button">
-            <span>Appointments</span>
-          </button>
+  <button class="nav-btn" data-section="appointmentsSection" type="button">
+    <i data-lucide="calendar-days"></i>
+    <span>Appointments</span>
+  </button>
 
-          <button class="nav-btn" data-section="complaintsSection" type="button">
-            <span>Complaints</span>
-          </button>
+  <button class="nav-btn" data-section="complaintsSection" type="button">
+    <i data-lucide="message-square-warning"></i>
+    <span>Complaints</span>
+  </button>
 
-          <button class="nav-btn" data-section="trackingSection" type="button">
-            <span>Live Tracking</span>
-          </button>
+  <button class="nav-btn" data-section="trackingSection" type="button">
+    <i data-lucide="map-pinned"></i>
+    <span>Live Tracking</span>
+  </button>
 
-          <button class="nav-btn" data-section="orientationSection" type="button">
-            <span>Orientation</span>
-          </button>
+  <button class="nav-btn" data-section="orientationSection" type="button">
+    <i data-lucide="graduation-cap"></i>
+    <span>Orientation</span>
+  </button>
 
-          <button id="navUserManagement" class="nav-btn" data-section="userManagementSection" type="button">
-            <span>User Management</span>
-          </button>
-        </nav>
+  <button id="navUserManagement" class="nav-btn" data-section="userManagementSection" type="button">
+    <i data-lucide="users"></i>
+    <span>User Management</span>
+  </button>
+</nav>
       </div>
 
       <div class="sidebar-bottom">
@@ -1616,6 +1623,7 @@
   z-index: 9999;
 "></div>
 
+<script src="https://unpkg.com/lucide@latest"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="js/config.js"></script>
 
@@ -1637,5 +1645,9 @@
 <script src="js/admin/admin-tracking.js"></script>
 <script src="js/admin/admin-users.js"></script>
 <script src="js/admin/admin-init.js"></script>
+
+<script>
+  lucide.createIcons();
+</script>
 </body>
 </html>
