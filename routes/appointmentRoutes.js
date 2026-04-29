@@ -1,6 +1,15 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../config/db");
+const nodemailer = require("nodemailer");
+
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: "wastemanagementgensan00@gmail.com",
+    pass: "lgqbzswacdxofrib"
+  }
+});
 
 console.log("appointmentRoutes loaded");
 
@@ -542,7 +551,7 @@ router.put("/:id/reschedule", (req, res) => {
   const cleanPersonnelName = String(personnel_name).trim();
 
   const checkSql = `
-    SELECT id, status, preferred_date
+    SELECT id, status, preferred_date, email, full_name
     FROM appointments
     WHERE id = ?
     LIMIT 1
@@ -595,6 +604,33 @@ router.put("/:id/reschedule", (req, res) => {
           error: updateErr.message
         });
       }
+
+const email = appointment.email;
+const fullName = appointment.full_name;
+
+if (email) {
+  const mailOptions = {
+    from: "wastemanagementgensan00@gmail.com",
+    to: email,
+    subject: "Appointment Rescheduled",
+    html: `
+      <h3>Hello ${fullName},</h3>
+      <p>Your appointment has been <b>rescheduled</b>.</p>
+      <p><b>New Date:</b> ${new_date}</p>
+      <p>Please be guided accordingly.</p>
+      <br>
+      <p>Waste Management Office</p>
+    `
+  };
+
+  transporter.sendMail(mailOptions, (err) => {
+    if (err) {
+      console.error("Email send error:", err);
+    } else {
+      console.log("Reschedule email sent to:", email);
+    }
+  });
+}
 
       return res.json({
         success: true,
