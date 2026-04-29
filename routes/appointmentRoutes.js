@@ -122,9 +122,12 @@ router.get("/history", (req, res) => {
       created_at,
       updated_at
     FROM appointments
-    WHERE
-      LOWER(TRIM(status)) IN ('approved', 'rejected', 'rescheduled', 'cancelled', 'completed')
-      OR preferred_date < CURDATE()
+  WHERE
+  LOWER(TRIM(status)) IN ('rejected', 'cancelled', 'completed')
+  OR (
+    LOWER(TRIM(status)) IN ('approved', 'rescheduled')
+    AND preferred_date < CURDATE()
+  )
     ORDER BY updated_at DESC, id DESC
   `;
 
