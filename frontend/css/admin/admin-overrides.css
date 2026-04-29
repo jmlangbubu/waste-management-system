@@ -689,3 +689,545 @@ table td {
     grid-template-columns: 1fr;
   }
 }
+
+/* ===============================
+   UNIFORM MODAL POSITION FIX
+   Works with fixed 260px sidebar
+================================ */
+
+
+.history-modal,
+.custom-modal {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 5000 !important;
+}
+
+/* modal background */
+.history-modal-overlay,
+.custom-modal-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  background: rgba(15, 23, 42, 0.55) !important;
+  backdrop-filter: blur(5px);
+}
+
+
+.history-modal .history-modal-content,
+.custom-modal .custom-modal-content {
+  position: fixed !important;
+  top: 50% !important;
+  left: calc(260px + ((100vw - 260px) / 2)) !important;
+  transform: translate(-50%, -50%) !important;
+
+  width: min(1080px, calc(100vw - 330px)) !important;
+  max-width: none !important;
+  max-height: 84vh !important;
+
+  background: #ffffff !important;
+  border-radius: 24px !important;
+  overflow: hidden !important;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28) !important;
+}
+
+/* modal body scroll */
+.history-modal .table-shell,
+.custom-modal .custom-modal-body {
+  max-height: 62vh;
+  overflow: auto;
+}
+
+/* keep headers clean */
+.history-modal .history-modal-header,
+.custom-modal .custom-modal-header {
+  padding: 22px 24px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+/* table modal spacing */
+.history-modal .table-shell {
+  margin: 22px 24px 24px;
+}
+
+/* close button */
+.history-close-btn,
+.modal-close-btn {
+  flex-shrink: 0;
+}
+
+/* mobile / small screen */
+@media (max-width: 900px) {
+  .history-modal .history-modal-content,
+  .custom-modal .custom-modal-content {
+    left: 50% !important;
+    width: calc(100vw - 28px) !important;
+    max-height: 86vh !important;
+  }
+}
+
+/* ===============================
+   USER MANAGEMENT MODAL FIX
+================================ */
+
+/* Edit Account modal - smaller centered */
+#editUserModal .history-modal-content {
+  position: fixed !important;
+  top: 50% !important;
+  left: calc(260px + ((100vw - 260px) / 2)) !important;
+  transform: translate(-50%, -50%) !important;
+
+  width: min(720px, calc(100vw - 340px)) !important;
+  max-height: 82vh !important;
+
+  background: #ffffff !important;
+  border-radius: 24px !important;
+  overflow: hidden !important;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28) !important;
+}
+
+/* Deactivated Account History modal */
+#deactivatedAccountsModal .history-modal-content {
+  position: fixed !important;
+  top: 50% !important;
+  left: calc(260px + ((100vw - 260px) / 2)) !important;
+  transform: translate(-50%, -50%) !important;
+
+  width: min(980px, calc(100vw - 340px)) !important;
+  max-height: 82vh !important;
+
+  background: #ffffff !important;
+  border-radius: 24px !important;
+  overflow: hidden !important;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28) !important;
+}
+
+#deactivatedAccountsModal .table-shell {
+  margin: 22px 24px 24px !important;
+  max-height: 58vh !important;
+  overflow: auto !important;
+}
+
+/* Edit form spacing */
+#editUserModal .edit-user-form-grid {
+  padding: 24px !important;
+}
+
+#editUserModal .edit-user-actions {
+  padding: 0 24px 24px !important;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+/* Small screen */
+@media (max-width: 900px) {
+  #editUserModal .history-modal-content,
+  #deactivatedAccountsModal .history-modal-content {
+    left: 50% !important;
+    width: calc(100vw - 28px) !important;
+  }
+}
+/* ===== REMOVE ONLY DASHBOARD VIEW ALL (TARGETED) ===== */
+
+/* 1. Waste Monitoring Overview */
+#viewAllAnalyticsBtn {
+  display: none !important;
+}
+
+/* 2. Recent Waste Records */
+.recent-records-card .view-all-btn {
+  display: none !important;
+}
+
+/* 3. Waste Category Analytics */
+#viewAllWasteMixBtn {
+  display: none !important;
+}
+
+/* ===============================
+   WASTE VALIDATION REPORT - CLEAN COMPACT CARDS
+================================ */
+#validationDetailsModal .report-modal {
+  width: min(900px, calc(100vw - 330px)) !important;
+  max-height: 86vh !important;
+  overflow: hidden !important;
+  border-radius: 20px !important;
+  background: #ffffff !important;
+}
+
+#validationDetailsModal .report-header {
+  padding: 16px 22px !important;
+  border-bottom: 1px solid #e5e7eb !important;
+}
+
+#validationDetailsModal .report-body,
+#validationDetailsModal #printableReportArea {
+  max-height: calc(86vh - 78px) !important;
+  overflow-y: auto !important;
+  padding: 18px 24px 22px !important;
+}
+
+#validationDetailsModal .report-title {
+  text-align: center !important;
+  margin-bottom: 16px !important;
+}
+
+#validationDetailsModal .report-title h3 {
+  font-size: 19px !important;
+  font-weight: 600 !important;
+  margin: 0 !important;
+}
+
+#validationDetailsModal .report-title p {
+  font-size: 12px !important;
+  color: #64748b !important;
+  margin-top: 4px !important;
+}
+
+#validationDetailsModal .report-section {
+  margin-bottom: 16px !important;
+}
+
+#validationDetailsModal .report-section h4 {
+  font-size: 14px !important;
+  font-weight: 650 !important;
+  color: #065f46 !important;
+  margin: 0 0 10px !important;
+  padding-bottom: 7px !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+}
+
+#validationDetailsModal .report-grid {
+  display: grid !important;
+  grid-template-columns: repeat(4, 1fr) !important;
+  gap: 10px !important;
+  border: none !important;
+  background: transparent !important;
+}
+
+#validationDetailsModal .report-grid > div {
+  min-height: 58px !important;
+  padding: 10px 12px !important;
+  border-radius: 12px !important;
+  border: 1px solid #e2e8f0 !important;
+  background: #f8fafc !important;
+  color: #0f172a !important;
+  font-size: 13px !important;
+  font-weight: 400 !important;
+  line-height: 1.3 !important;
+  white-space: pre-line !important;
+}
+
+#validationDetailsModal .report-grid > div::first-line {
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  color: #64748b !important;
+}
+
+#validationDetailsModal .report-footer {
+  margin-top: 14px !important;
+  padding-top: 12px !important;
+  border-top: 1px solid #e5e7eb !important;
+  font-size: 12px !important;
+}
+
+#validationDetailsModal #reportFooterValidator {
+  display: flex !important;
+  justify-content: flex-end !important;
+  min-height: 44px !important;
+  text-align: center !important;
+}
+
+#validationDetailsModal .print-btn {
+  height: 38px !important;
+  padding: 0 18px !important;
+  border-radius: 10px !important;
+  font-size: 13px !important;
+  font-weight: 650 !important;
+}
+
+#validationDetailsModal .modal-close-btn {
+  width: 38px !important;
+  height: 38px !important;
+}
+
+@media (max-width: 1100px) {
+  #validationDetailsModal .report-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
+/* REPORT: label bold, value normal */
+#validationDetailsModal .report-grid > div {
+  font-weight: 400 !important;
+  font-size: 13px !important;
+  line-height: 1.35 !important;
+}
+
+#validationDetailsModal .report-grid > div::first-line {
+  font-weight: 700 !important;
+  font-size: 12px !important;
+  color: #475569 !important;
+}
+
+#validationDetailsModal .report-grid > div * {
+  font-weight: 400 !important;
+}
+
+#validationDetailsModal .report-grid strong,
+#validationDetailsModal .report-grid b {
+  font-weight: 700 !important;
+  font-size: 12px !important;
+  color: #475569 !important;
+  margin-bottom: 6px !important;
+}
+
+#validationDetailsModal .report-grid br + *,
+#validationDetailsModal .report-grid strong + *,
+#validationDetailsModal .report-grid b + * {
+  font-weight: 400 !important;
+}
+
+/* REPORT CARDS CENTER ALIGN */
+#validationDetailsModal .report-grid > div {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  gap: 8px !important;
+  min-height: 78px !important;
+}
+
+#validationDetailsModal .report-grid > div::first-line {
+  font-weight: 600 !important;
+  color: #475569 !important;
+}
+
+/* ===============================
+   PRINT FIX - ONE PAGE WASTE REPORT
+================================ */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+
+  html,
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  #validationDetailsModal,
+  #validationDetailsModal * {
+    visibility: visible !important;
+  }
+
+  #validationDetailsModal {
+    position: static !important;
+    inset: auto !important;
+    width: 100% !important;
+    height: auto !important;
+    background: #fff !important;
+  }
+
+  #validationDetailsModal .custom-modal-overlay,
+  #validationDetailsModal .print-btn,
+  #validationDetailsModal .modal-close-btn {
+    display: none !important;
+  }
+
+  #validationDetailsModal .report-modal {
+    position: static !important;
+    transform: none !important;
+    width: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    height: auto !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+
+  #validationDetailsModal .report-header {
+    padding: 0 0 6px !important;
+    border-bottom: 1px solid #d1d5db !important;
+  }
+
+  #validationDetailsModal .report-header h2 {
+    font-size: 15px !important;
+    line-height: 1.1 !important;
+  }
+
+  #validationDetailsModal .report-header p {
+    font-size: 10px !important;
+    margin-top: 2px !important;
+  }
+
+  #validationDetailsModal .report-body,
+  #validationDetailsModal #printableReportArea {
+    padding: 8px 0 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  #validationDetailsModal .report-title {
+    margin-bottom: 8px !important;
+  }
+
+  #validationDetailsModal .report-title h3 {
+    font-size: 15px !important;
+    line-height: 1.1 !important;
+  }
+
+  #validationDetailsModal .report-title p {
+    font-size: 10px !important;
+    margin-top: 2px !important;
+  }
+
+  #validationDetailsModal .report-section {
+    margin-bottom: 8px !important;
+    page-break-inside: avoid !important;
+  }
+
+  #validationDetailsModal .report-section h4 {
+    font-size: 11px !important;
+    margin-bottom: 5px !important;
+    padding-bottom: 4px !important;
+  }
+
+  #validationDetailsModal .report-grid {
+    display: grid !important;
+    grid-template-columns: repeat(4, 1fr) !important;
+    gap: 5px !important;
+  }
+
+  #validationDetailsModal .report-grid > div {
+    min-height: 34px !important;
+    padding: 5px 6px !important;
+    border-radius: 6px !important;
+    font-size: 9.5px !important;
+    line-height: 1.15 !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  #validationDetailsModal .report-grid > div::first-line,
+  #validationDetailsModal .report-grid strong,
+  #validationDetailsModal .report-grid b {
+    font-size: 9px !important;
+    font-weight: 700 !important;
+  }
+
+  #validationDetailsModal .report-footer {
+    margin-top: 8px !important;
+    padding-top: 6px !important;
+    font-size: 9.5px !important;
+  }
+
+  #validationDetailsModal #reportFooterValidator {
+    min-height: 34px !important;
+  }
+}
+
+/* ===============================
+   COMPLAINT HISTORY MODAL - FINAL FIX
+================================ */
+#complaintHistoryModal .history-modal-content {
+  width: min(1120px, calc(100vw - 340px)) !important;
+  padding: 0 !important;
+}
+
+#complaintHistoryModal .history-modal-header {
+  padding: 24px 36px 18px !important;
+}
+
+#complaintHistoryModal .table-shell {
+  width: calc(100% - 72px) !important;
+  margin: 22px auto 34px !important;
+  max-height: 56vh !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  border-radius: 18px !important;
+}
+
+#complaintHistoryModal table {
+  width: 100% !important;
+  table-layout: fixed !important;
+  border-collapse: collapse !important;
+}
+
+#complaintHistoryModal th,
+#complaintHistoryModal td {
+  padding: 14px 14px !important;
+  font-size: 13px !important;
+  line-height: 1.35 !important;
+  vertical-align: middle !important;
+  white-space: nowrap !important;
+  word-break: normal !important;
+}
+
+#complaintHistoryModal th:nth-child(1),
+#complaintHistoryModal td:nth-child(1) {
+  width: 28% !important;
+  white-space: normal !important;
+}
+
+#complaintHistoryModal th:nth-child(2),
+#complaintHistoryModal td:nth-child(2) {
+  width: 18% !important;
+}
+
+#complaintHistoryModal th:nth-child(3),
+#complaintHistoryModal td:nth-child(3) {
+  width: 17% !important;
+}
+
+#complaintHistoryModal th:nth-child(4),
+#complaintHistoryModal td:nth-child(4) {
+  width: 11% !important;
+}
+
+#complaintHistoryModal th:nth-child(5),
+#complaintHistoryModal td:nth-child(5) {
+  width: 18% !important;
+}
+
+#complaintHistoryModal th:nth-child(6),
+#complaintHistoryModal td:nth-child(6) {
+  width: 8% !important;
+  text-align: center !important;
+}
+
+#complaintHistoryModal td:last-child button {
+  min-width: 58px !important;
+  padding: 8px 12px !important;
+  white-space: nowrap !important;
+}
+
+/* FIX HEADER ALIGNMENT */
+#complaintHistoryModal th {
+  text-align: center !important;
+  vertical-align: middle !important;
+  font-weight: 600 !important;
+  color: #1e293b !important;
+}
+
+/* FIX BODY ALIGNMENT */
+#complaintHistoryModal td {
+  text-align: center !important;
+  vertical-align: middle !important;
+}
+
+
+#complaintHistoryModal td:first-child,
+#complaintHistoryModal th:first-child {
+  text-align: left !important;
+  padding-left: 18px !important;
+}
