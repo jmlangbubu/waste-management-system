@@ -142,23 +142,26 @@ router.get("/history", (req, res) => {
 ========================================= */
 router.get("/orientation", (req, res) => {
   const sql = `
-    SELECT
-      id,
-      full_name,
-      barangay,
-      preferred_date,
-      status,
-      assigned_to,
-      orientation_token,
-      orientation_qr_status,
-      orientation_completed,
-      created_at,
-      updated_at
-    FROM appointments
-    WHERE LOWER(status) = 'approved'
-      AND purpose = 'SWM Orientation & Clearance'
-    ORDER BY preferred_date ASC, id DESC
-  `;
+  SELECT
+    id,
+    full_name,
+    barangay,
+    preferred_date,
+    status,
+    assigned_to,
+    orientation_token,
+    orientation_qr_status,
+    orientation_completed,
+    orientation_status,
+    orientation_started_at,
+    orientation_completed_at,
+    orientation_score,
+    created_at,
+    updated_at
+  FROM appointments
+  WHERE purpose = 'SWM Orientation & Clearance'
+  ORDER BY preferred_date ASC, id DESC
+`;
 
   db.query(sql, (err, results) => {
     if (err) {
@@ -328,10 +331,11 @@ router.post("/:id/generate-orientation-qr", (req, res) => {
 
     const updateSql = `
       UPDATE appointments
-      SET
-        orientation_token = ?,
-        orientation_qr_status = 'generated',
-        updated_at = NOW()
+     SET
+  orientation_token = ?,
+  orientation_qr_status = 'generated',
+  orientation_status = COALESCE(orientation_status, 'approved'),
+  updated_at = NOW()
       WHERE id = ?
     `;
 
@@ -450,12 +454,13 @@ router.put("/:id/decision", (req, res) => {
     if (shouldGenerateOrientationQr) {
       updateSql = `
         UPDATE appointments
-        SET
-          status = ?,
-          assigned_to = ?,
-          orientation_token = ?,
-          orientation_qr_status = 'generated',
-          updated_at = NOW()
+       SET
+  status = ?,
+  assigned_to = ?,
+  orientation_token = ?,
+  orientation_qr_status = 'generated',
+  orientation_status = 'approved',
+  updated_at = NOW()
         WHERE id = ?
       `;
       updateParams = [newStatus, cleanPersonnelName, tokenToUse, id];
@@ -889,6 +894,68 @@ router.get("/:id/orientation-qr-image", (req, res) => {
       console.error("QR image generation error:", error);
       return res.status(500).json({ success: false });
     }
+  });
+});
+
+/* =========================================
+   START ORIENTATION (QR SCAN)
+========================================= */
+router.put("/orientation/start/:token", (req, res) => {
+  const { token } = req.params;
+
+  const sql = `
+    UPDATE appointments
+    SET
+      orientation_status = 'pending_orientation',
+      orientation_started_at = NOW()
+    WHERE orientation_token = ?
+  `;
+
+  db.query(sql, [token], (err, result) => {
+    if (err) {
+      console.error("start orientation error:", err);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to start orientation"
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: "Orientation started"
+    });
+  });
+});
+
+/* =========================================
+   COMPLETE ORIENTATION (QUIZ DONE)
+========================================= */
+router.put("/orientation/complete/:token", (req, res) => {
+  const { token } = req.params;
+  const { score } = req.body;
+
+  const sql = `
+    UPDATE appointments
+    SET
+      orientation_status = 'completed_orientation',
+      orientation_completed_at = NOW(),
+      orientation_score = ?
+    WHERE orientation_token = ?
+  `;
+
+  db.query(sql, [score || null, token], (err, result) => {
+    if (err) {
+      console.error("complete orientation error:", err);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to complete orientation"
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: "Orientation completed"
+    });
   });
 });
 module.exports = router;
