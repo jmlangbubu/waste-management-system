@@ -430,12 +430,15 @@ function closeRescheduleModal() {
 }
 
 async function confirmRescheduleAppointment() {
+  console.log("CONFIRM RESCHEDULE CLICKED");
+  console.log("Selected ID:", selectedRescheduleAppointmentId);
+
   const btn = document.getElementById("confirmRescheduleAppointmentBtn");
   const dateInput = document.getElementById("rescheduleAppointmentDate");
   const timeInput = document.getElementById("rescheduleAppointmentTime");
 
-  const newDate = dateInput?.value;
-  const newTime = timeInput?.value;
+  const newDate = dateInput?.value || "";
+  const newTime = timeInput?.value || "";
 
   if (!selectedRescheduleAppointmentId) {
     showToast("No appointment selected.", "error");
@@ -449,24 +452,32 @@ async function confirmRescheduleAppointment() {
 
   const newDateTime = `${newDate} ${newTime}:00`;
 
-  const originalText = btn ? btn.innerText : "Save Reschedule";
-
-  if (btn) {
-    btn.innerText = "Saving...";
-    btn.disabled = true;
-  }
-
   const personnel_name =
     currentUser?.fullName ||
     currentUser?.username ||
     "WMO Admin";
 
+  const url = getRescheduleAppointmentUrl(selectedRescheduleAppointmentId);
+
+  console.log("Reschedule URL:", url);
+  console.log("Reschedule payload:", {
+    new_date: newDateTime,
+    personnel_name
+  });
+
+  const originalText = btn ? btn.innerText : "Save Reschedule";
+
   try {
-    const res = await fetch(getRescheduleAppointmentUrl(selectedRescheduleAppointmentId), {
+    if (btn) {
+      btn.innerText = "Saving...";
+      btn.disabled = true;
+    }
+
+    const res = await fetch(url, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
-        "Accept": "application/json"
+        Accept: "application/json"
       },
       body: JSON.stringify({
         new_date: newDateTime,
@@ -475,16 +486,17 @@ async function confirmRescheduleAppointment() {
     });
 
     const rawText = await res.text();
+    console.log("Reschedule raw response:", rawText);
+
     let data = {};
 
     try {
       data = rawText ? JSON.parse(rawText) : {};
     } catch {
-      console.error("Reschedule raw response:", rawText);
       throw new Error("Server returned invalid response.");
     }
 
-    if (!res.ok) {
+    if (!res.ok || !data.success) {
       showToast(data.message || "Failed to reschedule appointment.", "error");
       return;
     }
@@ -561,8 +573,8 @@ function initializeAppointments() {
   const confirmBtn = document.getElementById("confirmRescheduleAppointmentBtn");
 
   if (confirmBtn) {
-    confirmBtn.onclick = confirmRescheduleAppointment;
-  }
+  confirmBtn.addEventListener("click", confirmRescheduleAppointment);
+}
 }
 
 window.openAppointmentHistory = openAppointmentHistory;
