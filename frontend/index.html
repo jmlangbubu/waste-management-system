@@ -313,35 +313,57 @@
     </div>
   </div>
 
-  <div class="modal fade" id="playstoreModal" tabindex="-1" aria-hidden="true">
+    <!-- APPOINTMENT SUCCESS MODAL -->
+  <div class="modal fade" id="appointmentSuccessModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
-      <div class="modal-content shadow-sm playstore-modal-content">
-        <div class="modal-header px-4 py-3">
-          <div>
-            <h2 class="h4 mb-1">Mobile Platform</h2>
-            <p class="text-secondary mb-0">Google Play release preview</p>
-          </div>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-        </div>
+      <div class="modal-content appointment-success-modal">
+        <div class="appointment-success-header">
+          <div class="success-icon">✓</div>
 
-        <div class="modal-body px-4 py-4 text-center">
-          <div class="playstore-modal-icon">▶</div>
-          <h3 class="playstore-modal-title">Coming Soon on Google Play</h3>
-          <p class="playstore-modal-text">
-            The Waste Management Office mobile platform will be available soon for
-            public access, appointment requests, and easier coordination.
-          </p>
-        </div>
-
-        <div class="modal-footer px-4 py-3 justify-content-center">
-          <button type="button" class="btn btn-wmo-outline" data-bs-dismiss="modal">
-            Close
+          <button
+            type="button"
+            class="btn-close appointment-success-close"
+            data-bs-dismiss="modal"
+            aria-label="Close">
           </button>
+        </div>
+
+        <div class="appointment-success-body">
+          <h3>Appointment Request Submitted</h3>
+
+          <p>
+            Your appointment request has been submitted successfully.
+            Please save your reference code below.
+          </p>
+
+          <div class="reference-code-box">
+            <span>Reference Code</span>
+            <strong id="successAppointmentCode">-</strong>
+          </div>
+
+          <div class="appointment-reminder-box">
+            <strong>Important Reminder</strong>
+            <p>
+              Your schedule may still be approved, rejected, or rescheduled by the
+              Waste Management Office. Please always check your Gmail for updates
+              and notifications.
+            </p>
+          </div>
+
+          <div class="appointment-success-actions">
+            <button type="button" class="btn btn-success" id="copyAppointmentCodeBtn">
+              Copy Code
+            </button>
+
+            <button type="button" class="btn btn-outline-success" id="goToCheckStatusBtn">
+              Check Appointment Status
+            </button>
+          </div>
         </div>
       </div>
     </div>
   </div>
-
+  
   <script src="js/config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="js/landing.js"></script>
