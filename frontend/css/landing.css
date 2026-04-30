@@ -557,3 +557,260 @@ overflow-y: auto;
   background: #f3faef;
   color: #2f7d32;
 }
+
+/* =========================================
+   APPOINTMENT MODAL UX FIX
+   Keeps form modal usable on small screens
+========================================= */
+
+#appointmentModal .modal-content {
+  border-radius: 24px;
+  overflow: hidden;
+}
+
+#appointmentModal .modal-body {
+  max-height: calc(90vh - 150px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+#appointmentModal .modal-footer {
+  background: #ffffff;
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+}
+
+#appointmentMessage {
+  min-height: 20px;
+  line-height: 1.5;
+}
+
+/* =========================================
+   APPOINTMENT SUCCESS / REFERENCE CODE MODAL
+========================================= */
+
+.appointment-success-modal {
+  border: 0;
+  border-radius: 30px;
+  overflow: hidden;
+  background: #ffffff;
+  box-shadow: 0 28px 80px rgba(15, 23, 42, 0.28);
+}
+
+.appointment-success-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 30px 30px 0;
+}
+
+.success-icon {
+  width: 60px;
+  height: 60px;
+  border-radius: 20px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, #dcfce7, #bbf7d0);
+  color: #15803d;
+  font-size: 32px;
+  font-weight: 900;
+  box-shadow: 0 14px 28px rgba(22, 163, 74, 0.18);
+}
+
+.appointment-success-close {
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  background-color: #f1f5f9;
+  opacity: 1;
+  transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.appointment-success-close:hover {
+  background-color: #e2e8f0;
+  transform: rotate(90deg);
+}
+
+.appointment-success-body {
+  padding: 20px 30px 32px;
+}
+
+.appointment-success-body h3 {
+  margin: 0 0 8px;
+  font-size: 27px;
+  font-weight: 850;
+  letter-spacing: -0.03em;
+  color: #123524;
+}
+
+.appointment-success-body > p {
+  margin: 0 0 22px;
+  color: #64748b;
+  line-height: 1.65;
+  font-size: 15px;
+}
+
+.reference-code-box {
+  padding: 20px;
+  border: 1px dashed #16a34a;
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, rgba(240, 253, 244, 0.95), rgba(247, 254, 231, 0.95));
+  margin-bottom: 16px;
+}
+
+.reference-code-box span {
+  display: block;
+  font-size: 13px;
+  color: #64748b;
+  margin-bottom: 6px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.reference-code-box strong {
+  display: block;
+  font-size: 30px;
+  letter-spacing: 1px;
+  color: #14532d;
+  word-break: break-word;
+}
+
+.appointment-reminder-box {
+  padding: 16px 18px;
+  border-radius: 18px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  margin-bottom: 22px;
+}
+
+.appointment-reminder-box strong {
+  display: block;
+  margin-bottom: 6px;
+  color: #0f172a;
+  font-size: 15px;
+}
+
+.appointment-reminder-box p {
+  margin: 0;
+  color: #64748b;
+  line-height: 1.6;
+  font-size: 14px;
+}
+
+.appointment-success-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.appointment-success-actions .btn {
+  min-height: 48px;
+  border-radius: 14px;
+  font-weight: 800;
+}
+
+/* =========================================
+   LANDING MODAL MOBILE RESPONSIVE FIX
+========================================= */
+
+@media (max-width: 576px) {
+  .modal-dialog {
+    margin: 12px;
+  }
+
+  #appointmentModal .modal-content {
+    max-height: calc(100vh - 24px);
+    border-radius: 22px;
+  }
+
+  #appointmentModal .modal-header,
+  #appointmentModal .modal-body,
+  #appointmentModal .modal-footer {
+    padding-left: 20px !important;
+    padding-right: 20px !important;
+  }
+
+  #appointmentModal .modal-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 40px;
+    align-items: start;
+    gap: 12px;
+  }
+
+  #appointmentModal .modal-header h2 {
+    font-size: 21px;
+  }
+
+  #appointmentModal .modal-header p {
+    font-size: 13px;
+    line-height: 1.45;
+  }
+
+  #appointmentModal .modal-body {
+    max-height: calc(100vh - 190px);
+  }
+
+  #appointmentModal .modal-footer {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  #appointmentModal .modal-footer .btn {
+    width: 100%;
+    min-height: 48px;
+  }
+
+  .appointment-success-modal {
+    border-radius: 24px;
+  }
+
+  .appointment-success-header {
+    padding: 24px 22px 0;
+  }
+
+  .success-icon {
+    width: 54px;
+    height: 54px;
+    border-radius: 18px;
+    font-size: 28px;
+  }
+
+  .appointment-success-close {
+    width: 42px;
+    height: 42px;
+  }
+
+  .appointment-success-body {
+    padding: 18px 22px 26px;
+  }
+
+  .appointment-success-body h3 {
+    font-size: 23px;
+    line-height: 1.15;
+  }
+
+  .appointment-success-body > p {
+    font-size: 14px;
+  }
+
+  .reference-code-box {
+    padding: 17px;
+    border-radius: 18px;
+  }
+
+  .reference-code-box strong {
+    font-size: 24px;
+  }
+
+  .appointment-success-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .appointment-success-actions .btn {
+    width: 100%;
+  }
+}
