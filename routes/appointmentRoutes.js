@@ -4,19 +4,6 @@ const db = require("../config/db");
 const { Resend } = require("resend");
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 465,
-  secure: true,
-  connectionTimeout: 30000,
-  greetingTimeout: 30000,
-  socketTimeout: 30000,
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
-  }
-});
-
 console.log("appointmentRoutes loaded");
 
 function generateAppointmentCode(appointmentId) {
@@ -604,7 +591,7 @@ router.put("/:id/reschedule", (req, res) => {
       WHERE id = ?
     `;
 
-    db.query(updateSql, [new_date, cleanPersonnelName, id], (updateErr, result) => {
+    db.query(updateSql, [new_date, cleanPersonnelName, id], async (updateErr, result) => {
       if (updateErr) {
         console.error("reschedule appointment error:", updateErr);
         return res.status(500).json({
