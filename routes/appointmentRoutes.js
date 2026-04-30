@@ -607,7 +607,7 @@ const fullName = appointment.full_name;
 if (email) {
   try {
     await resend.emails.send({
-      from: "WMO <onboarding@resend.dev>",
+      from: "WMO System <noreply@wastegensan.com>",
       to: email,
       subject: "Appointment Rescheduled",
       html: `
