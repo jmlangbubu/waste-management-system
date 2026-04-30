@@ -1231,3 +1231,869 @@ table td {
   text-align: left !important;
   padding-left: 18px !important;
 }
+
+/* =========================================================
+   ADMIN RESPONSIVE OVERRIDES
+   Safe final-layer fixes for tablet/mobile
+   Paste at the BOTTOM of admin-overrides.css
+========================================================= */
+
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Make wide sections behave properly */
+.main-content,
+.content-section,
+.page-card {
+  min-width: 0;
+}
+
+/* Tables should scroll instead of destroying layout */
+.table-shell,
+.complaints-table-shell,
+.recent-records-preview {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table-shell table,
+.complaints-table-shell table,
+.recent-records-preview table {
+  min-width: 780px;
+}
+
+/* =========================================================
+   TABLET FIXES
+========================================================= */
+@media (max-width: 1024px) {
+  .admin-layout {
+    display: block !important;
+  }
+
+  .main-content {
+    width: 100% !important;
+    margin-left: 0 !important;
+    padding: 22px !important;
+  }
+
+  .topbar {
+    width: 100%;
+    display: flex !important;
+    align-items: flex-start !important;
+    justify-content: space-between !important;
+    gap: 16px !important;
+    flex-wrap: wrap !important;
+  }
+
+  .topbar-left {
+    display: flex !important;
+    align-items: center !important;
+    gap: 14px !important;
+    min-width: 0 !important;
+    flex: 1 1 360px !important;
+  }
+
+  .topbar-left > div {
+    min-width: 0 !important;
+  }
+
+  .topbar h1,
+  #pageTitle {
+    font-size: 26px !important;
+    line-height: 1.15 !important;
+    margin: 0 !important;
+    word-break: normal !important;
+    overflow-wrap: normal !important;
+  }
+
+  .topbar-subtitle {
+    max-width: 520px;
+    line-height: 1.45 !important;
+  }
+
+  .topbar-actions {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-end !important;
+    gap: 12px !important;
+    flex-wrap: wrap !important;
+  }
+
+  .dashboard-main-grid,
+  .dashboard-bottom-grid,
+  .users-layout,
+  .truck-analytics-grid,
+  .resolution-main-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .dashboard-side-stack {
+    min-width: 0 !important;
+  }
+
+  .dashboard-header-row,
+  .page-card-header,
+  .complaints-header,
+  .appointment-header {
+    align-items: flex-start !important;
+    gap: 16px !important;
+    flex-wrap: wrap !important;
+  }
+
+  .dashboard-header-actions,
+  .complaints-header-actions,
+  .appointment-toolbar {
+    flex-wrap: wrap !important;
+  }
+
+  .filter-bar,
+  .complaints-toolbar,
+  .accounts-toolbar {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  .tracking-layout,
+  .complaint-map-layout,
+  .complaint-modal-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .tracking-map-wrap,
+  #truckMap,
+  .complaint-leaflet-map {
+    min-height: 420px !important;
+  }
+}
+
+/* =========================================================
+   MOBILE FIXES
+========================================================= */
+@media (max-width: 768px) {
+  body {
+    background: #f6fbf8;
+  }
+
+  .main-content {
+    padding: 14px !important;
+    width: 100% !important;
+    margin-left: 0 !important;
+  }
+
+  .content-section {
+    width: 100% !important;
+  }
+
+  /* Topbar: fixes screenshot issue */
+  .topbar {
+    position: relative !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 14px !important;
+    width: 100% !important;
+    padding: 0 0 14px 0 !important;
+    margin-bottom: 16px !important;
+  }
+
+  .topbar-left {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 52px minmax(0, 1fr) !important;
+    align-items: center !important;
+    gap: 12px !important;
+  }
+
+  /* Critical: prevent hamburger from overlapping title */
+  #sidebarToggleBtn,
+  .sidebar-toggle-btn {
+    position: static !important;
+    inset: auto !important;
+    width: 52px !important;
+    height: 52px !important;
+    min-width: 52px !important;
+    border-radius: 14px !important;
+    z-index: 20 !important;
+  }
+
+  .topbar-left > div {
+    min-width: 0 !important;
+    width: 100% !important;
+  }
+
+  .topbar h1,
+  #pageTitle {
+    font-size: 23px !important;
+    line-height: 1.1 !important;
+    margin: 0 0 4px 0 !important;
+    white-space: normal !important;
+    word-break: normal !important;
+    overflow-wrap: normal !important;
+  }
+
+  .topbar-subtitle {
+    font-size: 13px !important;
+    line-height: 1.35 !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    white-space: normal !important;
+  }
+
+  .topbar-actions {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 52px minmax(0, 1fr) !important;
+    align-items: center !important;
+    gap: 10px !important;
+  }
+
+  .notification-wrapper {
+    width: 52px !important;
+  }
+
+  .notification-btn {
+    width: 52px !important;
+    height: 52px !important;
+  }
+
+  .notif-badge {
+    top: -4px !important;
+    right: -4px !important;
+  }
+
+  .refresh-btn {
+    width: 100% !important;
+    height: 52px !important;
+    justify-content: center !important;
+    text-align: center !important;
+    border-radius: 14px !important;
+    white-space: nowrap !important;
+  }
+
+  /* Cards */
+  .page-card {
+    width: 100% !important;
+    padding: 18px !important;
+    border-radius: 20px !important;
+  }
+
+  .dashboard-main-grid,
+  .dashboard-bottom-grid,
+  .waste-summary-cards,
+  .complaints-summary-grid,
+  .tracking-summary-row,
+  .truck-analytics-summary-grid,
+  .resolution-summary-row,
+  .users-layout {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+  }
+
+  .dashboard-side-stack {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+  }
+
+  .page-card-header,
+  .dashboard-header-row,
+  .compact-header,
+  .complaints-header,
+  .appointment-header {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 14px !important;
+  }
+
+  .dashboard-title-with-icon {
+    display: grid !important;
+    grid-template-columns: 46px minmax(0, 1fr) !important;
+    align-items: start !important;
+    gap: 12px !important;
+  }
+
+  .dashboard-title-with-icon h2,
+  .page-card-header h2 {
+    font-size: 20px !important;
+    line-height: 1.15 !important;
+    margin: 0 !important;
+  }
+
+  .dashboard-title-with-icon p,
+  .page-card-header p {
+    font-size: 13px !important;
+    line-height: 1.4 !important;
+    margin-top: 4px !important;
+  }
+
+  .dashboard-header-actions,
+  .complaints-header-actions,
+  .appointment-toolbar {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  .segmented-filter {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: repeat(3, 1fr) !important;
+  }
+
+  .segment-btn {
+    width: 100% !important;
+    min-width: 0 !important;
+    padding: 12px 8px !important;
+    font-size: 13px !important;
+  }
+
+  .view-all-btn,
+  .view-all-btn.small,
+  .danger-stop-btn,
+  .create-btn,
+  .logout-btn,
+  .print-btn,
+  .edit-save-btn,
+  .edit-cancel-btn {
+    width: 100% !important;
+    min-height: 44px !important;
+    justify-content: center !important;
+    text-align: center !important;
+    white-space: nowrap !important;
+  }
+
+  /* Chart/card heights */
+  .modern-trend-card,
+  .medium-chart-card,
+  .chart-card {
+    min-height: 280px !important;
+  }
+
+  .waste-trend-box {
+    min-height: 230px !important;
+  }
+
+  /* Filters/forms */
+  .filter-bar,
+  .complaints-toolbar,
+  .accounts-toolbar,
+  .form-grid,
+  .edit-user-form-grid {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  .filter-group,
+  .filter-group.wide,
+  .complaints-search-wrap,
+  .complaints-filter-wrap,
+  .form-group {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  input,
+  select,
+  textarea {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  /* Tables */
+  .table-shell,
+  .complaints-table-shell,
+  .recent-records-preview {
+    margin-top: 10px !important;
+    border-radius: 16px !important;
+    overflow-x: auto !important;
+  }
+
+  .appointments-table {
+    min-width: 980px !important;
+  }
+
+  .waste-records-table {
+    min-width: 1100px !important;
+  }
+
+  .complaints-table {
+    min-width: 900px !important;
+  }
+
+  .orientation-history-table {
+    min-width: 780px !important;
+  }
+
+  th,
+  td {
+    white-space: nowrap;
+  }
+
+  /* Tracking */
+  .tracking-layout,
+  .complaint-map-layout,
+  .complaint-modal-grid,
+  .resolution-main-grid {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+  }
+
+  .tracking-map-wrap,
+  #truckMap {
+    width: 100% !important;
+    min-height: 360px !important;
+    height: 360px !important;
+  }
+
+  .tracking-side-panel,
+  .complaint-side-panel {
+    width: 100% !important;
+  }
+
+  .complaint-leaflet-map {
+    height: 360px !important;
+    min-height: 360px !important;
+  }
+
+  /* Modals */
+  .custom-modal,
+  .history-modal,
+  .qr-modal {
+    padding: 12px !important;
+  }
+
+  .custom-modal-content,
+  .history-modal-content,
+  .qr-modal-content,
+  .complaint-modal-content,
+  .complaint-map-modal-content,
+  .complaint-resolution-modal-content,
+  .truck-analytics-modal-content,
+  .edit-user-modal-content,
+  .report-modal {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: calc(100vh - 24px) !important;
+    overflow-y: auto !important;
+    border-radius: 18px !important;
+    margin: 0 auto !important;
+  }
+
+  .custom-modal-header,
+  .history-modal-header,
+  .qr-header,
+  .report-header {
+    display: flex !important;
+    align-items: flex-start !important;
+    gap: 12px !important;
+  }
+
+  .custom-modal-header > div,
+  .history-modal-header > div,
+  .qr-header h2,
+  .report-header > div {
+    min-width: 0 !important;
+    flex: 1 !important;
+  }
+
+  .modal-close-btn,
+  .history-close-btn,
+  #closeOrientationQrBtn {
+    width: 42px !important;
+    height: 42px !important;
+    min-width: 42px !important;
+  }
+
+  .complaint-modal-actions,
+  .complaint-map-footer-actions,
+  .edit-user-actions,
+  .form-actions,
+  .report-actions {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  .complaint-evidence-wrapper,
+  .resolved-evidence-wrap {
+    width: 100% !important;
+  }
+
+  .complaint-evidence-image,
+  .resolved-evidence-image {
+    width: 100% !important;
+    max-height: 360px !important;
+    object-fit: contain !important;
+  }
+
+  #trackingReportMap {
+    height: 340px !important;
+  }
+
+  #toastContainer {
+    top: 12px !important;
+    right: 12px !important;
+    left: 12px !important;
+    width: auto !important;
+    z-index: 99999 !important;
+  }
+}
+
+/* =========================================================
+   SMALL MOBILE
+========================================================= */
+@media (max-width: 480px) {
+  .main-content {
+    padding: 12px !important;
+  }
+
+  .page-card {
+    padding: 15px !important;
+    border-radius: 18px !important;
+  }
+
+  .topbar-left {
+    grid-template-columns: 48px minmax(0, 1fr) !important;
+  }
+
+  #sidebarToggleBtn,
+  .sidebar-toggle-btn,
+  .notification-btn {
+    width: 48px !important;
+    height: 48px !important;
+    min-width: 48px !important;
+  }
+
+  .topbar-actions {
+    grid-template-columns: 48px minmax(0, 1fr) !important;
+  }
+
+  #pageTitle {
+    font-size: 21px !important;
+  }
+
+  .topbar-subtitle {
+    font-size: 12.5px !important;
+  }
+
+  .dashboard-title-with-icon {
+    grid-template-columns: 42px minmax(0, 1fr) !important;
+  }
+
+  .dashboard-card-icon {
+    width: 42px !important;
+    height: 42px !important;
+  }
+
+  .dashboard-title-with-icon h2,
+  .page-card-header h2 {
+    font-size: 18px !important;
+  }
+
+  .segmented-filter {
+    border-radius: 14px !important;
+  }
+
+  .segment-btn {
+    padding: 11px 6px !important;
+    font-size: 12px !important;
+  }
+
+  .tracking-map-wrap,
+  #truckMap,
+  .complaint-leaflet-map {
+    height: 320px !important;
+    min-height: 320px !important;
+  }
+}
+
+
+/* =========================================================
+   HARD FIX: MOBILE/TABLET MODALS
+   Paste at the VERY BOTTOM of admin-overrides.css
+========================================================= */
+
+@media (max-width: 1200px) {
+  #appointmentHistoryModal.history-modal:not(.hidden),
+  #complaintHistoryModal.history-modal:not(.hidden),
+  #deactivatedAccountsModal.history-modal:not(.hidden),
+  #orientationHistoryModal.history-modal:not(.hidden),
+  #editUserModal.history-modal:not(.hidden),
+  #truckAnalyticsModal.history-modal:not(.hidden),
+  #rescheduleAppointmentModal.custom-modal:not(.hidden),
+  #complaintDetailsModal.custom-modal:not(.hidden),
+  #complaintMapModal.custom-modal:not(.hidden),
+  #complaintResolutionModal.custom-modal:not(.hidden),
+  #trackingReportsModal.custom-modal:not(.hidden),
+  #trackingReportModal.custom-modal:not(.hidden),
+  #wasteBreakdownModal.custom-modal:not(.hidden),
+  #validationDetailsModal.custom-modal:not(.hidden),
+  #orientationQrModal.qr-modal:not(.hidden) {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    z-index: 99990 !important;
+
+    display: grid !important;
+    place-items: center !important;
+
+    padding: 16px !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+  }
+
+  #appointmentHistoryModal .history-modal-overlay,
+  #complaintHistoryModal .history-modal-overlay,
+  #deactivatedAccountsModal .history-modal-overlay,
+  #orientationHistoryModal .history-modal-overlay,
+  #editUserModal .history-modal-overlay,
+  #truckAnalyticsModal .history-modal-overlay,
+  #rescheduleAppointmentModal .custom-modal-overlay,
+  #complaintDetailsModal .custom-modal-overlay,
+  #complaintMapModal .custom-modal-overlay,
+  #complaintResolutionModal .custom-modal-overlay,
+  #trackingReportsModal .custom-modal-overlay,
+  #trackingReportModal .custom-modal-overlay,
+  #wasteBreakdownModal .custom-modal-overlay,
+  #validationDetailsModal .custom-modal-overlay,
+  #orientationQrModal .qr-overlay {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    z-index: 1 !important;
+  }
+
+  #appointmentHistoryModal .history-modal-content,
+  #complaintHistoryModal .history-modal-content,
+  #deactivatedAccountsModal .history-modal-content,
+  #orientationHistoryModal .history-modal-content,
+  #editUserModal .history-modal-content,
+  #truckAnalyticsModal .history-modal-content,
+  #rescheduleAppointmentModal .custom-modal-content,
+  #complaintDetailsModal .custom-modal-content,
+  #complaintMapModal .custom-modal-content,
+  #complaintResolutionModal .custom-modal-content,
+  #trackingReportsModal .custom-modal-content,
+  #trackingReportModal .custom-modal-content,
+  #wasteBreakdownModal .custom-modal-content,
+  #validationDetailsModal .custom-modal-content,
+  #orientationQrModal .qr-modal-content {
+    position: relative !important;
+    z-index: 2 !important;
+
+    width: min(980px, calc(100vw - 32px)) !important;
+    min-width: min(980px, calc(100vw - 32px)) !important;
+    max-width: calc(100vw - 32px) !important;
+
+    max-height: calc(100dvh - 32px) !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+
+    margin: 0 auto !important;
+    border-radius: 22px !important;
+    box-sizing: border-box !important;
+  }
+
+  #appointmentHistoryModal .history-modal-header,
+  #complaintHistoryModal .history-modal-header,
+  #deactivatedAccountsModal .history-modal-header,
+  #orientationHistoryModal .history-modal-header,
+  #editUserModal .history-modal-header,
+  #truckAnalyticsModal .history-modal-header,
+  #rescheduleAppointmentModal .custom-modal-header,
+  #complaintDetailsModal .custom-modal-header,
+  #complaintMapModal .custom-modal-header,
+  #complaintResolutionModal .custom-modal-header,
+  #trackingReportsModal .custom-modal-header,
+  #trackingReportModal .custom-modal-header,
+  #wasteBreakdownModal .custom-modal-header,
+  #validationDetailsModal .report-header,
+  #orientationQrModal .qr-header {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) 44px !important;
+    align-items: start !important;
+    gap: 12px !important;
+  }
+
+  #appointmentHistoryModal .history-modal-header > div,
+  #complaintHistoryModal .history-modal-header > div,
+  #deactivatedAccountsModal .history-modal-header > div,
+  #orientationHistoryModal .history-modal-header > div,
+  #editUserModal .history-modal-header > div,
+  #truckAnalyticsModal .history-modal-header > div,
+  #rescheduleAppointmentModal .custom-modal-header > div,
+  #complaintDetailsModal .custom-modal-header > div,
+  #complaintMapModal .custom-modal-header > div,
+  #complaintResolutionModal .custom-modal-header > div,
+  #trackingReportsModal .custom-modal-header > div,
+  #wasteBreakdownModal .custom-modal-header > div {
+    min-width: 0 !important;
+    width: 100% !important;
+  }
+
+  .history-modal-header h2,
+  .custom-modal-header h3,
+  .qr-header h2 {
+    font-size: 20px !important;
+    line-height: 1.15 !important;
+    margin: 0 !important;
+    white-space: normal !important;
+    overflow-wrap: normal !important;
+    word-break: normal !important;
+  }
+
+  .history-modal-header p,
+  .custom-modal-header p {
+    font-size: 13px !important;
+    line-height: 1.4 !important;
+    margin-top: 5px !important;
+    white-space: normal !important;
+  }
+
+  .history-close-btn,
+  .modal-close-btn,
+  #closeOrientationQrBtn {
+    width: 44px !important;
+    height: 44px !important;
+    min-width: 44px !important;
+    max-width: 44px !important;
+    border-radius: 999px !important;
+    flex: none !important;
+  }
+
+  .history-modal-content .table-shell,
+  .custom-modal-content .table-shell,
+  .complaints-table-shell {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    overflow-y: visible !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  .history-modal-content table,
+  .custom-modal-content table {
+    min-width: 760px !important;
+    width: 760px !important;
+  }
+}
+
+/* =========================================================
+   TRACKING REPORTS MODAL - MOBILE SCROLL FIX
+   Paste at the VERY BOTTOM of admin-overrides.css
+========================================================= */
+
+@media (max-width: 768px) {
+  #trackingReportsModal.custom-modal:not(.hidden) {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100vw !important;
+    height: 100dvh !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 12px !important;
+    overflow: hidden !important;
+    z-index: 99990 !important;
+  }
+
+  #trackingReportsModal .custom-modal-content {
+    width: calc(100vw - 24px) !important;
+    max-width: calc(100vw - 24px) !important;
+    max-height: calc(100dvh - 24px) !important;
+    margin: 0 !important;
+    border-radius: 24px !important;
+    overflow: hidden !important;
+  }
+
+  #trackingReportsModal .custom-modal-header {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) 48px !important;
+    gap: 12px !important;
+    align-items: start !important;
+    padding: 22px 22px 16px !important;
+    border-bottom: 1px solid #e5e7eb !important;
+  }
+
+  #trackingReportsModal .custom-modal-header h3 {
+    font-size: 22px !important;
+    line-height: 1.15 !important;
+    margin: 0 !important;
+  }
+
+  #trackingReportsModal .custom-modal-header p {
+    font-size: 14px !important;
+    line-height: 1.45 !important;
+    margin: 6px 0 0 !important;
+  }
+
+  #trackingReportsModal .modal-close-btn {
+    width: 48px !important;
+    height: 48px !important;
+    min-width: 48px !important;
+    border-radius: 999px !important;
+  }
+
+  /* Important: body should not stretch the whole modal */
+  #trackingReportsModal .custom-modal-body {
+    padding: 18px 20px 22px !important;
+    max-height: calc(100dvh - 150px) !important;
+    overflow: hidden !important;
+  }
+
+  /* Main fix: vertical + horizontal scroll inside table area */
+  #trackingReportsModal .table-shell {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: calc(100dvh - 225px) !important;
+
+    overflow-x: auto !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+
+    border: 1px solid #e5e7eb !important;
+    border-radius: 16px !important;
+    background: #ffffff !important;
+  }
+
+  /* Do not shrink table columns on mobile */
+  #trackingReportsModal table {
+    width: max-content !important;
+    min-width: 920px !important;
+    border-collapse: separate !important;
+    border-spacing: 0 !important;
+  }
+
+  #trackingReportsModal th,
+  #trackingReportsModal td {
+    white-space: nowrap !important;
+    padding: 16px 18px !important;
+    font-size: 14px !important;
+  }
+
+  /* Sticky header while scrolling down */
+  #trackingReportsModal thead th {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 5 !important;
+    background: #f8fafc !important;
+    border-bottom: 1px solid #e5e7eb !important;
+  }
+}
