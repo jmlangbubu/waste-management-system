@@ -1,14 +1,20 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../config/db");
-const nodemailer = require("nodemailer");
+const { Resend } = require("resend");
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 const transporter = nodemailer.createTransport({
-  service: "gmail",
+  host: "smtp.gmail.com",
+  port: 465,
+  secure: true,
+  connectionTimeout: 30000,
+  greetingTimeout: 30000,
+  socketTimeout: 30000,
   auth: {
-  user: process.env.EMAIL_USER,
-  pass: process.env.EMAIL_PASS
-}
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS
+  }
 });
 
 console.log("appointmentRoutes loaded");
@@ -612,28 +618,23 @@ const email = appointment.email;
 const fullName = appointment.full_name;
 
 if (email) {
-  console.log("EMAIL_USER:", process.env.EMAIL_USER);
-  console.log("EMAIL_PASS EXISTS:", !!process.env.EMAIL_PASS);
-  console.log("SENDING EMAIL TO:", email);
+  try {
+    await resend.emails.send({
+      from: "WMO <onboarding@resend.dev>",
+      to: email,
+      subject: "Appointment Rescheduled",
+      html: `
+        <h3>Hello ${fullName},</h3>
+        <p>Your appointment has been <b>rescheduled</b>.</p>
+        <p><b>New Date:</b> ${new_date}</p>
+        <p>Please be guided accordingly.</p>
+      `
+    });
 
-  const mailOptions = {
-    from: process.env.EMAIL_USER,
-    to: email,
-    subject: "Appointment Rescheduled",
-    html: `
-      <h3>Hello ${fullName},</h3>
-      <p>Your appointment has been <b>rescheduled</b>.</p>
-      <p><b>New Date:</b> ${new_date}</p>
-      <p>Please be guided accordingly.</p>
-      <br>
-      <p>Waste Management Office</p>
-    `
-  };
-
-  transporter.sendMail(mailOptions, (err) => {
-    if (err) console.error("Email send error:", err);
-    else console.log("Reschedule email sent to:", email);
-  });
+    console.log("Reschedule email sent to:", email);
+  } catch (err) {
+    console.error("Resend error:", err);
+  }
 }
 
       return res.json({
