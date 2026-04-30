@@ -21,18 +21,10 @@ function getAppointmentCheckStatusApiUrl() {
 
 document.addEventListener("DOMContentLoaded", () => {
   const appointmentForm = document.getElementById("appointmentForm");
-const appointmentMessage = document.getElementById("appointmentMessage");
-const statusContactInput = document.getElementById("statusContact");
-const contactNumberInput = document.getElementById("contactNumber");
+  const appointmentMessage = document.getElementById("appointmentMessage");
+  const statusContactInput = document.getElementById("statusContact");
+  const contactNumberInput = document.getElementById("contactNumber");
 
-if (statusContactInput) {
-  statusContactInput.addEventListener("input", function () {
-   
-    if (/^\d+$/.test(this.value)) {
-      this.value = this.value.replace(/\D/g, "").slice(0, 11);
-    }
-  });
-}
   const purposeSelect = document.getElementById("purpose");
   const notesInput = document.getElementById("notes");
   const preferredDateInput = document.getElementById("preferredDate");
@@ -51,6 +43,20 @@ if (statusContactInput) {
 
   if (appointmentModalEl && window.bootstrap) {
     appointmentModalInstance = bootstrap.Modal.getOrCreateInstance(appointmentModalEl);
+  }
+
+  if (statusContactInput) {
+    statusContactInput.addEventListener("input", function () {
+      if (/^\d+$/.test(this.value)) {
+        this.value = this.value.replace(/\D/g, "").slice(0, 11);
+      }
+    });
+  }
+
+  if (contactNumberInput) {
+    contactNumberInput.addEventListener("input", function () {
+      this.value = this.value.replace(/\D/g, "").slice(0, 11);
+    });
   }
 
   if (customTimeDropdown && customTimeSelected && customTimeMenu && appointmentTimeInput) {
@@ -76,6 +82,7 @@ if (statusContactInput) {
 
   function showMessage(message, isSuccess = false) {
     if (!appointmentMessage) return;
+
     appointmentMessage.innerHTML = message;
     appointmentMessage.classList.remove("text-success", "text-danger", "text-secondary");
     appointmentMessage.classList.add(isSuccess ? "text-success" : "text-danger");
@@ -83,6 +90,7 @@ if (statusContactInput) {
 
   function showNeutralMessage(message) {
     if (!appointmentMessage) return;
+
     appointmentMessage.textContent = message;
     appointmentMessage.classList.remove("text-success", "text-danger");
     appointmentMessage.classList.add("text-secondary");
@@ -90,8 +98,80 @@ if (statusContactInput) {
 
   function clearMessage() {
     if (!appointmentMessage) return;
+
     appointmentMessage.textContent = "";
     appointmentMessage.classList.remove("text-success", "text-danger", "text-secondary");
+  }
+
+  function setSubmitButtonLoading(isLoading) {
+    if (!submitBtn) return;
+
+    submitBtn.disabled = isLoading;
+    submitBtn.textContent = isLoading ? "Submitting..." : "Submit Request";
+  }
+
+  function showAppointmentSuccessModal(appointmentCode, emailAddress) {
+    const successModalEl = document.getElementById("appointmentSuccessModal");
+    const successCodeEl = document.getElementById("successAppointmentCode");
+    const copyBtn = document.getElementById("copyAppointmentCodeBtn");
+    const goToStatusBtn = document.getElementById("goToCheckStatusBtn");
+
+    if (successCodeEl) {
+      successCodeEl.textContent = appointmentCode;
+    }
+
+    if (copyBtn) {
+      copyBtn.onclick = async () => {
+        try {
+          await navigator.clipboard.writeText(appointmentCode);
+          copyBtn.textContent = "Copied!";
+
+          setTimeout(() => {
+            copyBtn.textContent = "Copy Code";
+          }, 1500);
+        } catch {
+          copyBtn.textContent = "Copy Failed";
+
+          setTimeout(() => {
+            copyBtn.textContent = "Copy Code";
+          }, 1500);
+        }
+      };
+    }
+
+    if (goToStatusBtn) {
+      goToStatusBtn.onclick = () => {
+        const statusCodeInput = document.getElementById("statusAppointmentCode");
+        const statusContactInput = document.getElementById("statusContact");
+        const statusSection = document.getElementById("appointmentStatusSection");
+
+        if (statusCodeInput) statusCodeInput.value = appointmentCode;
+        if (statusContactInput) statusContactInput.value = emailAddress;
+
+        if (successModalEl && window.bootstrap) {
+          bootstrap.Modal.getOrCreateInstance(successModalEl).hide();
+        }
+
+        setTimeout(() => {
+          if (statusSection) {
+            statusSection.scrollIntoView({
+              behavior: "smooth",
+              block: "start"
+            });
+          }
+
+          if (statusCodeInput) {
+            statusCodeInput.focus();
+          }
+        }, 300);
+      };
+    }
+
+    if (successModalEl && window.bootstrap) {
+      bootstrap.Modal.getOrCreateInstance(successModalEl).show();
+    } else {
+      alert(`Appointment submitted successfully.\nReference Code: ${appointmentCode}`);
+    }
   }
 
   function resetAppointmentFormState() {
@@ -100,10 +180,14 @@ if (statusContactInput) {
     appointmentForm.reset();
     clearMessage();
 
-    if (appointmentTimeInput) appointmentTimeInput.value = "";
+    if (appointmentTimeInput) {
+      appointmentTimeInput.value = "";
+    }
+
     if (customTimeSelected) {
       customTimeSelected.innerHTML = `Select time slot <span>⌄</span>`;
     }
+
     if (customTimeDropdown) {
       customTimeDropdown.classList.remove("open");
     }
@@ -113,11 +197,7 @@ if (statusContactInput) {
       notesInput.placeholder = "Enter additional details";
     }
 
-    if (submitBtn) {
-      submitBtn.disabled = false;
-      submitBtn.textContent = "Submit Request";
-    }
-
+    setSubmitButtonLoading(false);
     setMinimumPreferredDate();
   }
 
@@ -130,12 +210,6 @@ if (statusContactInput) {
     const dd = String(today.getDate()).padStart(2, "0");
 
     preferredDateInput.min = `${yyyy}-${mm}-${dd}`;
-  }
-
-  if (contactNumberInput) {
-    contactNumberInput.addEventListener("input", function () {
-      this.value = this.value.replace(/\D/g, "").slice(0, 11);
-    });
   }
 
   if (purposeSelect && notesInput) {
@@ -204,13 +278,9 @@ if (statusContactInput) {
       };
 
       showNeutralMessage("Submitting appointment request...");
+      setSubmitButtonLoading(true);
 
       try {
-        if (submitBtn) {
-          submitBtn.disabled = true;
-          submitBtn.textContent = "Submitting...";
-        }
-
         const response = await fetch(getAppointmentsCreateApiUrl(), {
           method: "POST",
           headers: {
@@ -228,36 +298,35 @@ if (statusContactInput) {
         } catch {
           console.error("Invalid JSON response:", rawText);
           showMessage("Server returned an invalid response.");
+          setSubmitButtonLoading(false);
           return;
         }
 
         if (!response.ok || !data.success) {
           showMessage(data.message || "Failed to submit appointment request.");
+          setSubmitButtonLoading(false);
           return;
         }
 
-        const appointmentCode = data.appointment_code || "Not generated";
+        const appointmentCode = data.appointment_code || data.referenceCode || "Not generated";
 
-        showMessage(
-          `
-          Appointment request submitted successfully.<br>
-          <strong>Reference Code:</strong> ${escapeLandingHtml(appointmentCode)}<br>
-          <span>Please save this code. You can use it with your email or contact number to check your appointment status.</span>
-          `,
-          true
-        );
+        clearMessage();
+
+        if (appointmentModalInstance) {
+          appointmentModalInstance.hide();
+        } else if (appointmentModalEl) {
+          appointmentModalEl.classList.remove("show");
+          appointmentModalEl.style.display = "none";
+        }
 
         setTimeout(() => {
-          alert(`Appointment submitted successfully.\nReference Code: ${appointmentCode}`);
-        }, 300);
+          resetAppointmentFormState();
+          showAppointmentSuccessModal(appointmentCode, emailAddress);
+        }, 350);
       } catch (error) {
         console.error("Appointment submit error:", error);
         showMessage("Unable to connect to the server. Please try again.");
-      } finally {
-        if (submitBtn) {
-          submitBtn.disabled = false;
-          submitBtn.textContent = "Submit Request";
-        }
+        setSubmitButtonLoading(false);
       }
     });
   }
@@ -270,31 +339,30 @@ if (statusContactInput) {
       const contact = document.getElementById("statusContact")?.value.trim() || "";
 
       if (!appointmentCode || !contact) {
-  renderStatusMessage("Please enter your reference code and email/contact number.", "danger");
-  return;
-}
+        renderStatusMessage("Please enter your reference code and email/contact number.", "danger");
+        return;
+      }
 
-// ✅ VALIDATION LOGIC
-const isOnlyNumbers = /^\d+$/.test(contact);
+      const isOnlyNumbers = /^\d+$/.test(contact);
 
-if (isOnlyNumbers) {
-  if (contact.length !== 11) {
-    renderStatusMessage("Contact number must be exactly 11 digits.", "danger");
-    return;
-  }
-} else {
-  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (isOnlyNumbers) {
+        if (contact.length !== 11) {
+          renderStatusMessage("Contact number must be exactly 11 digits.", "danger");
+          return;
+        }
+      } else {
+        const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-  if (!contact.includes("@")) {
-    renderStatusMessage("Email must contain @.", "danger");
-    return;
-  }
+        if (!contact.includes("@")) {
+          renderStatusMessage("Email must contain @.", "danger");
+          return;
+        }
 
-  if (!emailPattern.test(contact)) {
-    renderStatusMessage("Please enter a valid email address.", "danger");
-    return;
-  }
-}
+        if (!emailPattern.test(contact)) {
+          renderStatusMessage("Please enter a valid email address.", "danger");
+          return;
+        }
+      }
 
       renderStatusMessage("Checking appointment status...", "info");
 
