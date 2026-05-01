@@ -57,10 +57,16 @@ async function loadAppointments() {
       ? historyData
       : (historyData.history || historyData.data || []);
 
-    allAppointments = [...activeAppointments, ...historyAppointments];
+    const sortedActiveAppointments = sortAppointmentRecordsByReference(activeAppointments);
+    const sortedHistoryAppointments = sortAppointmentRecordsByReference(historyAppointments);
 
-    renderAppointmentsTable(activeAppointments);
-    renderAppointmentHistory(historyAppointments);
+    allAppointments = sortAppointmentRecordsByReference([
+      ...sortedActiveAppointments,
+      ...sortedHistoryAppointments
+    ]);
+
+    renderAppointmentsTable(sortedActiveAppointments);
+    renderAppointmentHistory(sortedHistoryAppointments);
   } catch (error) {
     console.error("Error loading appointments:", error);
     allAppointments = [];
@@ -157,6 +163,48 @@ async function loadPersonnel() {
 }
 
 /* =========================
+   APPOINTMENT SORTING
+========================= */
+
+function sortAppointmentRecordsByReference(records = []) {
+  if (!Array.isArray(records)) return [];
+
+  return [...records].sort((a, b) => {
+    const numberA = getAppointmentReferenceNumber(a);
+    const numberB = getAppointmentReferenceNumber(b);
+
+    if (numberA !== numberB) {
+      return numberA - numberB;
+    }
+
+    const codeA = String(a?.appointment_code || "").toUpperCase();
+    const codeB = String(b?.appointment_code || "").toUpperCase();
+
+    return codeA.localeCompare(codeB, undefined, {
+      numeric: true,
+      sensitivity: "base"
+    });
+  });
+}
+
+function getAppointmentReferenceNumber(app) {
+  const code = String(app?.appointment_code || "").trim();
+  const numberMatch = code.match(/(\d+)\s*$/);
+
+  if (numberMatch) {
+    return Number(numberMatch[1]);
+  }
+
+  const fallbackId = Number(app?.id);
+
+  if (Number.isFinite(fallbackId)) {
+    return fallbackId;
+  }
+
+  return Number.MAX_SAFE_INTEGER;
+}
+
+/* =========================
    APPOINTMENTS RENDER
 ========================= */
 
@@ -173,7 +221,9 @@ function renderAppointmentsTable(appointments) {
     return;
   }
 
-  tableBody.innerHTML = appointments.map((app) => {
+  const sortedAppointments = sortAppointmentRecordsByReference(appointments);
+
+  tableBody.innerHTML = sortedAppointments.map((app) => {
     const displayName = app.name || app.full_name || "-";
     const displayBarangay = app.barangay || "-";
     const displayContact =
@@ -260,8 +310,6 @@ function renderAppointmentsTable(appointments) {
 
   </div>
 </td>
-          </div>
-        </td>
       </tr>
     `;
   }).join("");
@@ -334,7 +382,7 @@ async function openAppointmentHistory() {
       ? data
       : (data.history || data.data || []);
 
-    renderAppointmentHistory(historyAppointments);
+    renderAppointmentHistory(sortAppointmentRecordsByReference(historyAppointments));
 
     if (modal) {
       modal.classList.remove("hidden");
@@ -374,7 +422,9 @@ function renderAppointmentHistory(history = []) {
     return;
   }
 
-  tableBody.innerHTML = history.map((app) => {
+  const sortedHistory = sortAppointmentRecordsByReference(history);
+
+  tableBody.innerHTML = sortedHistory.map((app) => {
     const displayName = app.name || app.full_name || "-";
     const displayBarangay = app.barangay || "-";
     const displayContact = app.contact || app.contact_number || "-";
