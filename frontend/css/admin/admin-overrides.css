@@ -4847,3 +4847,115 @@ body {
     max-height: calc(100dvh - 132px) !important;
   }
 }
+
+/* =========================================================
+   FINAL FIX: SIDEBAR LOGO IMAGE SIZE
+   Put this at the VERY BOTTOM of:
+   css/admin/admin-overrides.css
+
+   Fix:
+   - Prevents images/logo.jpg from expanding over the sidebar
+   - Keeps the logo inside a small rounded square
+   - Keeps brand text readable
+========================================================= */
+
+.sidebar-brand {
+  position: relative !important;
+  display: grid !important;
+  grid-template-columns: 58px minmax(0, 1fr) !important;
+  align-items: center !important;
+  gap: 14px !important;
+  min-height: 72px !important;
+  padding: 6px 4px 20px !important;
+  overflow: visible !important;
+}
+
+.sidebar-brand .brand-mark,
+.sidebar-brand .brand-mark.brand-logo {
+  position: relative !important;
+  width: 58px !important;
+  height: 58px !important;
+  min-width: 58px !important;
+  max-width: 58px !important;
+  min-height: 58px !important;
+  max-height: 58px !important;
+
+  display: grid !important;
+  place-items: center !important;
+
+  overflow: hidden !important;
+  border-radius: 18px !important;
+  background: #ffffff !important;
+  box-shadow: 0 12px 28px rgba(22, 163, 74, 0.20) !important;
+  isolation: isolate !important;
+}
+
+.sidebar-brand .sidebar-logo-img {
+  position: relative !important;
+  z-index: 2 !important;
+
+  width: 100% !important;
+  height: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+
+  display: block !important;
+  object-fit: contain !important;
+  object-position: center !important;
+  padding: 5px !important;
+  border-radius: inherit !important;
+
+  transform: none !important;
+  inset: auto !important;
+  opacity: 1 !important;
+}
+
+.sidebar-brand .sidebar-logo-fallback {
+  display: none !important;
+}
+
+.sidebar-brand .brand-text {
+  position: relative !important;
+  z-index: 3 !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+}
+
+.sidebar-brand .brand-text h2,
+.sidebar-brand .brand-text p {
+  position: relative !important;
+  z-index: 3 !important;
+  text-shadow: none !important;
+}
+
+.dashboard-sidebar::after,
+.sidebar-brand::after,
+.sidebar-brand .brand-logo::after {
+  content: none !important;
+}
+
+/* Extra guard: no image inside sidebar should become a background-like giant image */
+.dashboard-sidebar img.sidebar-logo-img {
+  float: none !important;
+  clear: both !important;
+}
+
+/* Mobile/tablet keeps same safe size */
+@media (max-width: 768px) {
+  .sidebar-brand {
+    grid-template-columns: 54px minmax(0, 1fr) !important;
+  }
+
+  .sidebar-brand .brand-mark,
+  .sidebar-brand .brand-mark.brand-logo {
+    width: 54px !important;
+    height: 54px !important;
+    min-width: 54px !important;
+    max-width: 54px !important;
+    min-height: 54px !important;
+    max-height: 54px !important;
+  }
+}
+
