@@ -74,7 +74,31 @@
       </div>
 
       <div class="sidebar-bottom">
-        <div class="sidebar-user-card">
+
+        <div class="sidebar-other-group" id="sidebarOtherGroup">
+          <button class="sidebar-other-trigger" id="sidebarOtherTrigger" type="button" aria-expanded="false">
+            <span class="sidebar-other-trigger-left">
+              <i data-lucide="ellipsis"></i>
+              <span>Other</span>
+            </span>
+
+            <span class="sidebar-other-arrow">⌄</span>
+          </button>
+
+          <div class="sidebar-other-menu hidden" id="sidebarOtherMenu">
+            <button type="button" class="sidebar-other-btn" id="openCalendarActivitiesBtn">
+              <i data-lucide="calendar-range"></i>
+              <span>Calendar of Activities</span>
+            </button>
+
+            <button type="button" class="sidebar-other-btn" id="openIncomingInvoiceBtn">
+              <i data-lucide="receipt-text"></i>
+              <span>Incoming Invoice</span>
+            </button>
+          </div>
+        </div>
+
+<div class="sidebar-user-card">
           <div class="sidebar-user-name" id="sidebarName">-</div>
           <div class="sidebar-user-role" id="sidebarRole">-</div>
         </div>
@@ -1657,6 +1681,264 @@
 
 
 
+
+<div id="calendarActivitiesModal" class="custom-modal hidden other-modal calendar-pro-modal">
+  <div class="custom-modal-overlay" id="calendarActivitiesOverlay"></div>
+
+  <div class="custom-modal-content calendar-pro-content calendar-main-report-content">
+    <div class="custom-modal-header calendar-pro-header">
+      <div>
+        <h3 id="calendarMainTitle">Calendar of Activities</h3>
+        <p id="calendarMainSubtitle">Whole-month activity calendar. Click a date or use Add Activity to create a schedule.</p>
+      </div>
+
+      <button type="button" class="modal-close-btn" id="closeCalendarActivitiesBtn">&times;</button>
+    </div>
+
+    <div class="custom-modal-body calendar-pro-body calendar-main-report-body">
+      <div class="calendar-main-topbar">
+        <div class="calendar-pro-nav">
+          <button type="button" class="calendar-icon-btn" id="calendarPrevMonthBtn" aria-label="Previous Month">‹</button>
+
+          <div>
+            <h4 id="calendarCurrentLabel">Month Year</h4>
+            <p id="calendarMonthSubLabel">Saved activities for this month.</p>
+          </div>
+
+          <button type="button" class="calendar-icon-btn" id="calendarNextMonthBtn" aria-label="Next Month">›</button>
+        </div>
+
+        <div class="calendar-pro-actions">
+          <button type="button" class="calendar-secondary-btn" id="calendarTodayBtn">Today</button>
+          <button type="button" class="calendar-primary-btn" id="calendarOpenAddBtn">Add Activity</button>
+        </div>
+      </div>
+
+      <div class="calendar-report-summary calendar-main-summary">
+        <div>
+          <span>Total Activities</span>
+          <strong id="calendarMainTotal">0</strong>
+        </div>
+
+        <div>
+          <span>Active Days</span>
+          <strong id="calendarMainActiveDays">0</strong>
+        </div>
+
+        <div>
+          <span>Month Status</span>
+          <strong id="calendarMainStatus">-</strong>
+        </div>
+      </div>
+
+      <div class="calendar-main-calendar-wrap">
+        <div class="calendar-report-weekdays">
+          <span>Sun</span>
+          <span>Mon</span>
+          <span>Tue</span>
+          <span>Wed</span>
+          <span>Thu</span>
+          <span>Fri</span>
+          <span>Sat</span>
+        </div>
+
+        <div id="calendarGrid" class="calendar-report-grid calendar-main-grid"></div>
+      </div>
+
+      <div class="calendar-main-bottom-grid">
+        <div class="calendar-selected-activities-panel">
+          <div class="calendar-day-activities-header">
+            <div>
+              <h4 id="calendarSelectedDateLabel">Select a date</h4>
+              <p>Activities saved for the selected date.</p>
+            </div>
+
+            <span id="calendarActivityCount">0</span>
+          </div>
+
+          <div id="calendarActivityList" class="calendar-day-activities-list">
+            <div class="calendar-empty-day">
+              <strong>No selected date</strong>
+              <p>Click a date from the calendar to view or add activities.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="calendar-month-reports-card calendar-main-month-reports">
+          <div class="calendar-month-reports-header">
+            <div>
+              <h4>Monthly Activity Reports</h4>
+              <p>Saved activity months with full report view.</p>
+            </div>
+          </div>
+
+          <div id="calendarMonthlyReportList" class="calendar-month-report-list">
+            <div class="calendar-empty-report">No monthly reports yet.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+    </div>
+  </div>
+</div>
+</div>
+
+<div id="incomingInvoiceModal" class="custom-modal hidden other-modal">
+  <div class="custom-modal-overlay" id="incomingInvoiceOverlay"></div>
+
+  <div class="custom-modal-content other-modal-content">
+    <div class="custom-modal-header">
+      <div>
+        <h3>Incoming Invoice</h3>
+        <p>Preview of incoming billing, collection-related invoices, or office transaction requests.</p>
+      </div>
+
+      <button type="button" class="modal-close-btn" id="closeIncomingInvoiceBtn">&times;</button>
+    </div>
+
+    <div class="custom-modal-body other-modal-body">
+      <div class="other-modal-summary-grid">
+        <div class="other-summary-card">
+          <span>Total Incoming</span>
+          <strong>0</strong>
+          <small>Invoice records</small>
+        </div>
+
+        <div class="other-summary-card blue">
+          <span>Pending</span>
+          <strong>0</strong>
+          <small>For review</small>
+        </div>
+
+        <div class="other-summary-card amber">
+          <span>Processed</span>
+          <strong>0</strong>
+          <small>Completed invoices</small>
+        </div>
+      </div>
+
+      <div class="other-empty-panel">
+        <div class="other-empty-icon">🧾</div>
+        <h4>No incoming invoices yet</h4>
+        <p>This modal is ready for the Incoming Invoice feature. Connect this later to your invoice table or API.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<div id="calendarAddActivityModal" class="custom-modal hidden calendar-add-activity-modal">
+  <div class="custom-modal-overlay" id="calendarAddActivityOverlay"></div>
+
+  <div class="custom-modal-content calendar-add-activity-content">
+    <div class="custom-modal-header">
+      <div>
+        <h3>Add Calendar Activity</h3>
+        <p id="calendarAddActivitySubtitle">Create an activity for the selected date.</p>
+      </div>
+
+      <button type="button" class="modal-close-btn" id="calendarCloseAddFormBtn">&times;</button>
+    </div>
+
+    <div class="custom-modal-body calendar-add-activity-body">
+      <form class="calendar-add-form" id="calendarActivityForm">
+        <div class="calendar-selected-card">
+          <span>Selected Date</span>
+          <strong id="calendarAddSelectedDateLabel">Select a date</strong>
+          <p>You can click any date in the calendar before adding an activity.</p>
+        </div>
+
+        <div class="calendar-form-group">
+          <label for="calendarActivityTitle">Activity Title</label>
+          <input type="text" id="calendarActivityTitle" placeholder="Example: SWM Orientation" required />
+        </div>
+
+        <div class="calendar-form-row">
+          <div class="calendar-form-group">
+            <label for="calendarActivityTime">Time</label>
+            <input type="time" id="calendarActivityTime" />
+          </div>
+
+          <div class="calendar-form-group">
+            <label for="calendarActivityTag">Category</label>
+            <select id="calendarActivityTag">
+              <option value="Orientation">Orientation</option>
+              <option value="Collection">Collection</option>
+              <option value="Meeting">Meeting</option>
+              <option value="Training">Training</option>
+              <option value="Community Event">Community Event</option>
+              <option value="Inspection">Inspection</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="calendar-form-group">
+          <label for="calendarActivityNotes">Notes / Venue</label>
+          <textarea id="calendarActivityNotes" placeholder="Optional notes, venue, or reminders..."></textarea>
+        </div>
+
+        <button type="submit" class="calendar-save-activity-btn">Save Activity</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div id="calendarMonthlyReportModal" class="custom-modal hidden calendar-report-modal">
+  <div class="custom-modal-overlay" id="calendarMonthlyReportOverlay"></div>
+
+  <div class="custom-modal-content calendar-report-content">
+    <div class="custom-modal-header calendar-report-header">
+      <div>
+        <h3 id="calendarReportTitle">Monthly Activity Report</h3>
+        <p id="calendarReportSubtitle">Full month activity record.</p>
+      </div>
+
+      <button type="button" class="modal-close-btn" id="closeCalendarMonthlyReportBtn">&times;</button>
+    </div>
+
+    <div class="custom-modal-body calendar-report-body">
+      <div class="calendar-report-summary">
+        <div>
+          <span>Total Activities</span>
+          <strong id="calendarReportTotal">0</strong>
+        </div>
+
+        <div>
+          <span>Active Days</span>
+          <strong id="calendarReportActiveDays">0</strong>
+        </div>
+
+        <div>
+          <span>Month Status</span>
+          <strong id="calendarReportStatus">-</strong>
+        </div>
+      </div>
+
+      <div class="calendar-report-grid-wrap">
+        <div class="calendar-report-weekdays">
+          <span>Sun</span>
+          <span>Mon</span>
+          <span>Tue</span>
+          <span>Wed</span>
+          <span>Thu</span>
+          <span>Fri</span>
+          <span>Sat</span>
+        </div>
+
+        <div id="calendarReportGrid" class="calendar-report-grid"></div>
+      </div>
+
+      <div class="calendar-report-list-section">
+        <h4>Activity List</h4>
+        <div id="calendarReportList" class="calendar-report-list"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div id="toastContainer" style="
   position: fixed;
   top: 20px;
@@ -1685,6 +1967,7 @@
 <script src="js/admin/admin-orientation.js"></script>
 <script src="js/admin/admin-tracking.js"></script>
 <script src="js/admin/admin-users.js"></script>
+<script src="js/admin/admin-other.js"></script>
 <script src="js/admin/admin-init.js"></script>
 
 <script>
