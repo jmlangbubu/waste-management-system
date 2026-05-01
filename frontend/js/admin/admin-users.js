@@ -52,6 +52,23 @@ async function loadWebUsers() {
   }
 }
 
+function formatAccountRoleLabel(role) {
+  const value = String(role || "").toLowerCase().trim();
+
+  const labels = {
+    division_admin: "Division Admin",
+    personnel: "Personnel",
+    supervisor: "Supervisor",
+    clerk_admin: "Clerk Admin",
+    enforcer: "Enforcer",
+    barangay: "Barangay",
+    establishment: "Establishment",
+    mobile_user: "Mobile User"
+  };
+
+  return labels[value] || role || "-";
+}
+
 function renderWebUsers(users) {
   const tableBody = document.getElementById("webUsersTableBody");
   if (!tableBody) return;
@@ -91,8 +108,8 @@ function renderWebUsers(users) {
 
     const roleLabel =
       accountSource === "mobile"
-        ? (user.mobile_role || user.role || "mobile_user")
-        : (user.role || "-");
+        ? formatAccountRoleLabel(user.mobile_role || user.role || "mobile_user")
+        : formatAccountRoleLabel(user.role || "-");
 
     const assignmentLabel =
       accountSource === "mobile"
@@ -203,8 +220,8 @@ function renderDeactivatedAccountsHistory() {
 
     const roleLabel =
       accountSource === "mobile"
-        ? (user.mobile_role || user.role || "mobile_user")
-        : (user.role || "-");
+        ? formatAccountRoleLabel(user.mobile_role || user.role || "mobile_user")
+        : formatAccountRoleLabel(user.role || "-");
 
     const assignmentLabel =
       accountSource === "mobile"
@@ -494,15 +511,16 @@ async function handleDeleteAccount(source, id) {
 function setupAccountPlatformForm() {
   const platformEl = document.getElementById("accountPlatform");
   const roleEl = document.getElementById("accountRole");
-  const assignmentInput = document.getElementById("assignmentName");
   const assignmentLabel = document.querySelector('label[for="assignmentName"]');
 
-  if (!platformEl || !roleEl || !assignmentInput) return;
+  if (!platformEl || !roleEl) return;
 
   const roleOptions = {
     web: [
       { value: "division_admin", label: "Division Admin" },
-      { value: "personnel", label: "Personnel" }
+      { value: "personnel", label: "Personnel" },
+      { value: "supervisor", label: "Supervisor" },
+      { value: "clerk_admin", label: "Clerk Admin" }
     ],
     mobile: [
       { value: "enforcer", label: "Enforcer" },
@@ -511,8 +529,79 @@ function setupAccountPlatformForm() {
     ]
   };
 
+  const barangayOptions = [
+    "Apopong",
+    "Baluan",
+    "Batomelong",
+    "Buayan",
+    "Bula",
+    "Calumpang",
+    "City Heights",
+    "Conel",
+    "Dadiangas East",
+    "Dadiangas North",
+    "Dadiangas South",
+    "Dadiangas West",
+    "Fatima",
+    "Katangawan",
+    "Labangal",
+    "Lagao",
+    "Ligaya",
+    "Mabuhay",
+    "Olympog",
+    "San Isidro",
+    "San Jose",
+    "Siguel",
+    "Sinawal",
+    "Tambler",
+    "Tinagacan",
+    "Upper Labay"
+  ];
+
+  function getAssignmentField() {
+    return document.getElementById("assignmentName");
+  }
+
+  function replaceAssignmentField(nextField) {
+    const currentField = getAssignmentField();
+
+    if (!currentField || !currentField.parentElement) return;
+
+    currentField.replaceWith(nextField);
+  }
+
+  function createAssignmentSelect() {
+    const select = document.createElement("select");
+
+    select.id = "assignmentName";
+    select.name = "assignmentName";
+    select.required = true;
+
+    select.innerHTML = `
+      <option value="">Select barangay</option>
+      ${barangayOptions.map((barangay) => `
+        <option value="${barangay}">${barangay}</option>
+      `).join("")}
+    `;
+
+    return select;
+  }
+
+  function createAssignmentInput(placeholder) {
+    const input = document.createElement("input");
+
+    input.type = "text";
+    input.id = "assignmentName";
+    input.name = "assignmentName";
+    input.placeholder = placeholder;
+    input.required = true;
+
+    return input;
+  }
+
   function renderRoleOptions(platform) {
     const options = roleOptions[platform] || [];
+    const previousValue = roleEl.value;
 
     roleEl.innerHTML = `
       <option value="">Select role</option>
@@ -521,23 +610,58 @@ function setupAccountPlatformForm() {
       `).join("")}
     `;
 
+    if (options.some((option) => option.value === previousValue)) {
+      roleEl.value = previousValue;
+    }
+  }
+
+  function renderAssignmentField() {
+    const platform = platformEl.value;
+    const role = roleEl.value;
+
     if (platform === "web") {
       if (assignmentLabel) assignmentLabel.textContent = "Division Name";
-      assignmentInput.placeholder = "Enter division name";
-    } else if (platform === "mobile") {
-      if (assignmentLabel) assignmentLabel.textContent = "Assignment Area";
-      assignmentInput.placeholder = "Enter barangay or establishment name";
-    } else {
-      if (assignmentLabel) assignmentLabel.textContent = "Division / Barangay / Assignment";
-      assignmentInput.placeholder = "Enter assignment name";
+      replaceAssignmentField(createAssignmentInput("Enter division name"));
+      return;
     }
+
+    if (platform === "mobile" && (role === "enforcer" || role === "barangay")) {
+      if (assignmentLabel) assignmentLabel.textContent = "Barangay";
+      replaceAssignmentField(createAssignmentSelect());
+      return;
+    }
+
+    if (platform === "mobile" && role === "establishment") {
+      if (assignmentLabel) assignmentLabel.textContent = "Establishment Name";
+      replaceAssignmentField(createAssignmentInput("Enter establishment name"));
+      return;
+    }
+
+    if (platform === "mobile") {
+      if (assignmentLabel) assignmentLabel.textContent = "Assignment Area";
+      replaceAssignmentField(createAssignmentInput("Select a role first"));
+      return;
+    }
+
+    if (assignmentLabel) assignmentLabel.textContent = "Division / Barangay / Assignment";
+    replaceAssignmentField(createAssignmentInput("Enter assignment name"));
+  }
+
+  function syncAccountPlatformForm() {
+    renderRoleOptions(platformEl.value);
+    renderAssignmentField();
   }
 
   platformEl.onchange = function () {
     renderRoleOptions(this.value);
+    renderAssignmentField();
   };
 
-  renderRoleOptions(platformEl.value);
+  roleEl.onchange = function () {
+    renderAssignmentField();
+  };
+
+  syncAccountPlatformForm();
 }
 
 function setupCreateAccountForm() {
@@ -656,3 +780,4 @@ window.closeDeactivatedAccountsModal = closeDeactivatedAccountsModal;
 window.openEditAccountModal = openEditAccountModal;
 window.closeEditUserModal = closeEditUserModal;
 window.submitEditUser = submitEditUser;
+window.formatAccountRoleLabel = formatAccountRoleLabel;
