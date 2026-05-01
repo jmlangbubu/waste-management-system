@@ -12,18 +12,59 @@ const messageBox = document.getElementById("messageBox");
 
 function showMessage(message, type) {
   if (!messageBox) return;
+
   messageBox.textContent = message;
   messageBox.className = `message-box ${type}`;
 }
 
+function normalizeLoginRole(role) {
+  return String(role || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_");
+}
+
 function getDashboardByRole(role) {
-  switch (role) {
+  const normalizedRole = normalizeLoginRole(role);
+
+  switch (normalizedRole) {
     case "super_admin":
     case "division_admin":
     case "personnel":
+    case "supervisor":
+    case "clerk_admin":
+      return "admin-dashboard.html";
+
     default:
       return "admin-dashboard.html";
   }
+}
+
+function isAllowedWebRole(role) {
+  const normalizedRole = normalizeLoginRole(role);
+
+  return [
+    "super_admin",
+    "division_admin",
+    "personnel",
+    "supervisor",
+    "clerk_admin"
+  ].includes(normalizedRole);
+}
+
+function saveWebUserSession(user) {
+  if (!user || typeof user !== "object") {
+    throw new Error("Invalid user session payload.");
+  }
+
+  const normalizedUser = {
+    ...user,
+    role: normalizeLoginRole(user.role)
+  };
+
+  localStorage.setItem("webUser", JSON.stringify(normalizedUser));
+
+  return normalizedUser;
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -52,8 +93,11 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      loginBtn.disabled = true;
-      loginBtn.textContent = "Logging in...";
+      if (loginBtn) {
+        loginBtn.disabled = true;
+        loginBtn.textContent = "Logging in...";
+      }
+
       showMessage("", "");
 
       try {
@@ -61,7 +105,7 @@ document.addEventListener("DOMContentLoaded", () => {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "Accept": "application/json"
+            Accept: "application/json"
           },
           body: JSON.stringify({ username, password })
         });
@@ -81,18 +125,33 @@ document.addEventListener("DOMContentLoaded", () => {
           return;
         }
 
-        localStorage.setItem("webUser", JSON.stringify(data.user));
+        if (!data.user || !data.user.role) {
+          showMessage("Login succeeded, but account role is missing.", "error");
+          return;
+        }
+
+        const normalizedRole = normalizeLoginRole(data.user.role);
+
+        if (!isAllowedWebRole(normalizedRole)) {
+          showMessage("This account role is not allowed to access the web dashboard.", "error");
+          return;
+        }
+
+        const savedUser = saveWebUserSession(data.user);
+
         showMessage("Login successful. Redirecting...", "success");
 
         setTimeout(() => {
-          window.location.href = getDashboardByRole(data.user.role);
+          window.location.href = getDashboardByRole(savedUser.role);
         }, 800);
       } catch (error) {
         console.error("Web login error:", error);
         showMessage("Unable to connect to the server.", "error");
       } finally {
-        loginBtn.disabled = false;
-        loginBtn.textContent = "Login";
+        if (loginBtn) {
+          loginBtn.disabled = false;
+          loginBtn.textContent = "Login";
+        }
       }
     });
   } catch (error) {
@@ -103,3 +162,7 @@ document.addEventListener("DOMContentLoaded", () => {
 function goBackToHome() {
   window.location.href = "index.html";
 }
+
+window.goBackToHome = goBackToHome;
+window.getDashboardByRole = getDashboardByRole;
+window.normalizeLoginRole = normalizeLoginRole;
