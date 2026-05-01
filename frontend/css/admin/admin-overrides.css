@@ -2097,3 +2097,839 @@ body {
     border-bottom: 1px solid #e5e7eb !important;
   }
 }
+
+/* =========================================================
+   FINAL ADMIN OVERRIDES PATCH
+   Put at the VERY BOTTOM of css/admin/admin-overrides.css
+   Purpose:
+   - Upcoming Orientation button/modal support
+   - Better orientation responsive cards
+   - Real mobile/tablet layout stabilization
+   - Unified modal behavior including upcomingOrientationModal
+========================================================= */
+
+/* ===============================
+   ORIENTATION HEADER + STATUS FIX
+================================ */
+
+.orientation-header-actions {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 12px !important;
+  flex-wrap: wrap !important;
+}
+
+.orientation-active-wrap {
+  margin-top: 20px !important;
+}
+
+.orientation-active-title {
+  margin-bottom: 10px !important;
+}
+
+.orientation-card-list {
+  width: 100% !important;
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)) !important;
+  gap: 22px !important;
+  align-items: stretch !important;
+}
+
+.orientation-card {
+  min-width: 0 !important;
+  width: 100% !important;
+}
+
+.orientation-status.status-no-show {
+  background: #fee2e2 !important;
+  color: #991b1b !important;
+}
+
+.orientation-status.status-incomplete {
+  background: #ffedd5 !important;
+  color: #9a3412 !important;
+}
+
+.orientation-status.status-cancelled {
+  background: #f1f5f9 !important;
+  color: #475569 !important;
+}
+
+/* Upcoming orientation modal is also a history modal */
+#upcomingOrientationModal.history-modal {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 99990 !important;
+}
+
+#upcomingOrientationModal .history-modal-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  background: rgba(15, 23, 42, 0.55) !important;
+  backdrop-filter: blur(5px) !important;
+}
+
+#upcomingOrientationModal .history-modal-content {
+  position: fixed !important;
+  top: 50% !important;
+  left: calc(260px + ((100vw - 260px) / 2)) !important;
+  transform: translate(-50%, -50%) !important;
+  width: min(980px, calc(100vw - 330px)) !important;
+  max-width: none !important;
+  max-height: 84vh !important;
+  overflow: hidden !important;
+  background: #ffffff !important;
+  border-radius: 24px !important;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28) !important;
+}
+
+#upcomingOrientationModal .history-modal-header {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) 44px !important;
+  align-items: start !important;
+  gap: 14px !important;
+  padding: 22px 24px !important;
+  border-bottom: 1px solid #e5e7eb !important;
+}
+
+#upcomingOrientationModal .table-shell {
+  margin: 22px 24px 24px !important;
+  max-height: 58vh !important;
+  overflow: auto !important;
+  border: 1px solid #e5e7eb !important;
+  border-radius: 18px !important;
+}
+
+/* ===============================
+   DESKTOP BASE STABILITY
+================================ */
+
+html,
+body {
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow-x: hidden !important;
+}
+
+body {
+  min-height: 100vh !important;
+  min-height: 100dvh !important;
+}
+
+.admin-layout,
+.main-content,
+.content-section,
+.page-card {
+  min-width: 0 !important;
+}
+
+.dashboard-sidebar {
+  width: 260px !important;
+  max-width: 260px !important;
+}
+
+.main-content {
+  margin-left: 260px !important;
+  width: calc(100% - 260px) !important;
+  max-width: calc(100% - 260px) !important;
+}
+
+/* Better scrolling for all tables */
+.table-shell,
+.complaints-table-shell,
+.recent-records-preview {
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+}
+
+/* ===============================
+   TABLET LAYOUT
+================================ */
+
+@media (max-width: 1180px) {
+  .dashboard-sidebar {
+    position: fixed !important;
+    top: 0 !important;
+    left: -280px !important;
+    z-index: 99980 !important;
+    width: 280px !important;
+    max-width: 280px !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    transform: translateX(0) !important;
+    transition: left 0.25s ease !important;
+  }
+
+  .dashboard-sidebar.open,
+  .dashboard-sidebar.active,
+  .dashboard-sidebar.show,
+  body.sidebar-open .dashboard-sidebar {
+    left: 0 !important;
+  }
+
+  .sidebar-backdrop {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 99970 !important;
+    background: rgba(15, 23, 42, 0.48) !important;
+    backdrop-filter: blur(3px) !important;
+  }
+
+  .sidebar-backdrop.hidden {
+    display: none !important;
+  }
+
+  .main-content {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin-left: 0 !important;
+    padding: 22px !important;
+  }
+
+  #sidebarToggleBtn,
+  .sidebar-toggle-btn {
+    display: inline-flex !important;
+  }
+
+  .topbar {
+    display: flex !important;
+    align-items: flex-start !important;
+    justify-content: space-between !important;
+    gap: 16px !important;
+    flex-wrap: wrap !important;
+  }
+
+  .topbar-left {
+    flex: 1 1 360px !important;
+    min-width: 0 !important;
+  }
+
+  .topbar-actions {
+    flex: 0 1 auto !important;
+    min-width: 0 !important;
+    flex-wrap: wrap !important;
+  }
+
+  .dashboard-main-grid,
+  .dashboard-bottom-grid,
+  .users-layout,
+  .tracking-layout,
+  .complaint-map-layout,
+  .complaint-modal-grid,
+  .resolution-main-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .filter-bar,
+  .complaints-toolbar,
+  .accounts-toolbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .orientation-header-actions {
+    justify-content: flex-start !important;
+  }
+
+  .history-modal .history-modal-content,
+  .custom-modal .custom-modal-content,
+  .qr-modal .qr-modal-content,
+  #upcomingOrientationModal .history-modal-content {
+    left: 50% !important;
+    width: min(980px, calc(100vw - 32px)) !important;
+    max-width: calc(100vw - 32px) !important;
+  }
+}
+
+/* ===============================
+   MOBILE LAYOUT
+================================ */
+
+@media (max-width: 768px) {
+  body {
+    font-size: 14px !important;
+    background: #f6fbf8 !important;
+  }
+
+  .main-content {
+    padding: 14px !important;
+  }
+
+  .topbar {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+    margin-bottom: 16px !important;
+  }
+
+  .topbar-left {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 52px minmax(0, 1fr) !important;
+    align-items: center !important;
+    gap: 12px !important;
+  }
+
+  #sidebarToggleBtn,
+  .sidebar-toggle-btn {
+    position: static !important;
+    width: 52px !important;
+    height: 52px !important;
+    min-width: 52px !important;
+    border-radius: 14px !important;
+    z-index: auto !important;
+  }
+
+  .topbar-left > div {
+    min-width: 0 !important;
+  }
+
+  #pageTitle,
+  .topbar h1 {
+    font-size: 23px !important;
+    line-height: 1.12 !important;
+    margin: 0 0 4px !important;
+    white-space: normal !important;
+    overflow-wrap: break-word !important;
+  }
+
+  .topbar-subtitle {
+    font-size: 13px !important;
+    line-height: 1.35 !important;
+    margin: 0 !important;
+    white-space: normal !important;
+  }
+
+  .topbar-actions {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 52px minmax(0, 1fr) !important;
+    align-items: center !important;
+    gap: 10px !important;
+  }
+
+  .notification-wrapper,
+  .notification-btn {
+    width: 52px !important;
+    height: 52px !important;
+  }
+
+  .notification-dropdown {
+    position: fixed !important;
+    top: 76px !important;
+    left: 14px !important;
+    right: 14px !important;
+    width: auto !important;
+    max-width: none !important;
+  }
+
+  .refresh-btn {
+    width: 100% !important;
+    height: 52px !important;
+    justify-content: center !important;
+    border-radius: 14px !important;
+    white-space: nowrap !important;
+  }
+
+  .page-card {
+    width: 100% !important;
+    padding: 18px !important;
+    border-radius: 20px !important;
+  }
+
+  .page-card-header,
+  .dashboard-header-row,
+  .compact-header,
+  .complaints-header,
+  .appointment-header {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+    align-items: start !important;
+  }
+
+  .dashboard-title-with-icon {
+    display: grid !important;
+    grid-template-columns: 46px minmax(0, 1fr) !important;
+    align-items: start !important;
+    gap: 12px !important;
+  }
+
+  .dashboard-title-with-icon h2,
+  .page-card-header h2 {
+    font-size: 20px !important;
+    line-height: 1.15 !important;
+  }
+
+  .dashboard-title-with-icon p,
+  .page-card-header p {
+    font-size: 13px !important;
+    line-height: 1.4 !important;
+  }
+
+  .dashboard-header-actions,
+  .complaints-header-actions,
+  .appointment-toolbar,
+  .orientation-header-actions {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+    justify-content: stretch !important;
+  }
+
+  .orientation-header-actions .view-all-btn,
+  .view-all-btn,
+  .view-all-btn.small,
+  .danger-stop-btn,
+  .create-btn,
+  .logout-btn,
+  .print-btn,
+  .edit-save-btn,
+  .edit-cancel-btn {
+    width: 100% !important;
+    min-height: 44px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    text-align: center !important;
+    white-space: nowrap !important;
+  }
+
+  .filter-bar,
+  .complaints-toolbar,
+  .accounts-toolbar,
+  .form-grid,
+  .edit-user-form-grid {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  .filter-group,
+  .filter-group.wide,
+  .complaints-search-wrap,
+  .complaints-filter-wrap,
+  .form-group {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  input,
+  select,
+  textarea {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .dashboard-main-grid,
+  .dashboard-bottom-grid,
+  .waste-summary-cards,
+  .complaints-summary-grid,
+  .tracking-summary-row,
+  .truck-analytics-summary-grid,
+  .resolution-summary-row,
+  .dashboard-side-stack {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+  }
+
+  .orientation-card-list {
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+  }
+
+  .orientation-card {
+    padding: 18px !important;
+    border-radius: 22px !important;
+  }
+
+  .orientation-card-head {
+    gap: 10px !important;
+  }
+
+  .orientation-card-body h3 {
+    font-size: 22px !important;
+    line-height: 1.15 !important;
+    overflow-wrap: break-word !important;
+  }
+
+  .orientation-card-actions {
+    gap: 10px !important;
+  }
+
+  .orientation-card-actions button {
+    min-height: 48px !important;
+  }
+
+  .segmented-filter {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+
+  .segment-btn {
+    width: 100% !important;
+    min-width: 0 !important;
+    padding: 12px 8px !important;
+    font-size: 13px !important;
+  }
+
+  .table-shell,
+  .complaints-table-shell,
+  .recent-records-preview {
+    margin-top: 10px !important;
+    border-radius: 16px !important;
+    overflow-x: auto !important;
+    overflow-y: auto !important;
+  }
+
+  .table-shell table,
+  .complaints-table-shell table,
+  .recent-records-preview table {
+    width: max-content !important;
+    min-width: 780px !important;
+  }
+
+  .appointments-table {
+    min-width: 980px !important;
+  }
+
+  .waste-records-table {
+    min-width: 1100px !important;
+  }
+
+  .complaints-table {
+    min-width: 900px !important;
+  }
+
+  .orientation-history-table {
+    min-width: 760px !important;
+  }
+
+  th,
+  td {
+    white-space: nowrap !important;
+  }
+
+  .tracking-map-wrap,
+  #truckMap,
+  .complaint-leaflet-map {
+    width: 100% !important;
+    height: 360px !important;
+    min-height: 360px !important;
+  }
+
+  /* Mobile modal system */
+  #appointmentHistoryModal.history-modal:not(.hidden),
+  #complaintHistoryModal.history-modal:not(.hidden),
+  #deactivatedAccountsModal.history-modal:not(.hidden),
+  #orientationHistoryModal.history-modal:not(.hidden),
+  #upcomingOrientationModal.history-modal:not(.hidden),
+  #editUserModal.history-modal:not(.hidden),
+  #truckAnalyticsModal.history-modal:not(.hidden),
+  #rescheduleAppointmentModal.custom-modal:not(.hidden),
+  #complaintDetailsModal.custom-modal:not(.hidden),
+  #complaintMapModal.custom-modal:not(.hidden),
+  #complaintResolutionModal.custom-modal:not(.hidden),
+  #trackingReportsModal.custom-modal:not(.hidden),
+  #trackingReportModal.custom-modal:not(.hidden),
+  #wasteBreakdownModal.custom-modal:not(.hidden),
+  #validationDetailsModal.custom-modal:not(.hidden),
+  #orientationQrModal.qr-modal:not(.hidden) {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100vw !important;
+    height: 100dvh !important;
+    display: grid !important;
+    place-items: center !important;
+    padding: 12px !important;
+    overflow: hidden !important;
+    z-index: 99990 !important;
+  }
+
+  #appointmentHistoryModal .history-modal-content,
+  #complaintHistoryModal .history-modal-content,
+  #deactivatedAccountsModal .history-modal-content,
+  #orientationHistoryModal .history-modal-content,
+  #upcomingOrientationModal .history-modal-content,
+  #editUserModal .history-modal-content,
+  #truckAnalyticsModal .history-modal-content,
+  #rescheduleAppointmentModal .custom-modal-content,
+  #complaintDetailsModal .custom-modal-content,
+  #complaintMapModal .custom-modal-content,
+  #complaintResolutionModal .custom-modal-content,
+  #trackingReportsModal .custom-modal-content,
+  #trackingReportModal .custom-modal-content,
+  #wasteBreakdownModal .custom-modal-content,
+  #validationDetailsModal .custom-modal-content,
+  #orientationQrModal .qr-modal-content {
+    position: relative !important;
+    top: auto !important;
+    left: auto !important;
+    transform: none !important;
+    z-index: 2 !important;
+    width: calc(100vw - 24px) !important;
+    min-width: 0 !important;
+    max-width: calc(100vw - 24px) !important;
+    max-height: calc(100dvh - 24px) !important;
+    margin: 0 auto !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    border-radius: 22px !important;
+  }
+
+  .history-modal-header,
+  .custom-modal-header,
+  .qr-header,
+  .report-header,
+  #upcomingOrientationModal .history-modal-header {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) 44px !important;
+    align-items: start !important;
+    gap: 12px !important;
+  }
+
+  .history-modal-header h2,
+  .custom-modal-header h3,
+  .qr-header h2 {
+    font-size: 20px !important;
+    line-height: 1.15 !important;
+    margin: 0 !important;
+    white-space: normal !important;
+    overflow-wrap: break-word !important;
+  }
+
+  .history-modal-header p,
+  .custom-modal-header p {
+    font-size: 13px !important;
+    line-height: 1.4 !important;
+    margin-top: 5px !important;
+  }
+
+  .history-close-btn,
+  .modal-close-btn,
+  #closeOrientationQrBtn {
+    width: 44px !important;
+    height: 44px !important;
+    min-width: 44px !important;
+    max-width: 44px !important;
+    border-radius: 999px !important;
+  }
+
+  .history-modal-content .table-shell,
+  .custom-modal-content .table-shell,
+  #upcomingOrientationModal .table-shell {
+    width: calc(100% - 28px) !important;
+    max-width: calc(100% - 28px) !important;
+    margin: 14px auto 18px !important;
+    overflow-x: auto !important;
+    overflow-y: auto !important;
+    max-height: calc(100dvh - 190px) !important;
+  }
+
+  .complaint-modal-actions,
+  .complaint-map-footer-actions,
+  .edit-user-actions,
+  .form-actions,
+  .report-actions {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  #toastContainer {
+    top: 12px !important;
+    right: 12px !important;
+    left: 12px !important;
+    width: auto !important;
+    z-index: 999999 !important;
+  }
+}
+
+/* ===============================
+   SMALL MOBILE
+================================ */
+
+@media (max-width: 480px) {
+  .main-content {
+    padding: 12px !important;
+  }
+
+  .page-card {
+    padding: 15px !important;
+    border-radius: 18px !important;
+  }
+
+  .topbar-left {
+    grid-template-columns: 48px minmax(0, 1fr) !important;
+  }
+
+  #sidebarToggleBtn,
+  .sidebar-toggle-btn,
+  .notification-btn {
+    width: 48px !important;
+    height: 48px !important;
+    min-width: 48px !important;
+  }
+
+  .topbar-actions {
+    grid-template-columns: 48px minmax(0, 1fr) !important;
+  }
+
+  #pageTitle {
+    font-size: 21px !important;
+  }
+
+  .topbar-subtitle {
+    font-size: 12.5px !important;
+  }
+
+  .dashboard-title-with-icon {
+    grid-template-columns: 42px minmax(0, 1fr) !important;
+  }
+
+  .dashboard-title-with-icon h2,
+  .page-card-header h2 {
+    font-size: 18px !important;
+  }
+
+  .orientation-card-body h3 {
+    font-size: 20px !important;
+  }
+
+  .tracking-map-wrap,
+  #truckMap,
+  .complaint-leaflet-map {
+    height: 320px !important;
+    min-height: 320px !important;
+  }
+}
+
+/* =========================================================
+   FINAL ORIENTATION BUTTON ALIGNMENT + UPCOMING COLOR FIX
+   Purpose:
+   - Keep Upcoming Orientation and View Orientation Report close together
+   - Give Upcoming Orientation a separate blue schedule color
+   - Keep mobile/tablet responsive
+========================================================= */
+
+#orientationSection .page-card > .page-card-header {
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: space-between !important;
+  gap: 18px !important;
+}
+
+#orientationSection .page-card > .page-card-header > div:first-child {
+  min-width: 0 !important;
+  flex: 1 1 auto !important;
+}
+
+#orientationSection .orientation-header-actions {
+  width: auto !important;
+  min-width: fit-content !important;
+  margin-left: auto !important;
+
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+
+  gap: 10px !important;
+  flex: 0 0 auto !important;
+  flex-wrap: nowrap !important;
+}
+
+#orientationSection .orientation-header-actions .view-all-btn {
+  width: auto !important;
+  min-width: 190px !important;
+  min-height: 48px !important;
+  padding: 0 24px !important;
+
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+
+  white-space: nowrap !important;
+  border-radius: 17px !important;
+  font-weight: 800 !important;
+}
+
+/* Upcoming Orientation = scheduled/future color */
+#openUpcomingOrientationBtn {
+  background: #eef6ff !important;
+  border: 1px solid #bfdbfe !important;
+  color: #1d4ed8 !important;
+  box-shadow: 0 12px 26px rgba(37, 99, 235, 0.08) !important;
+}
+
+#openUpcomingOrientationBtn:hover {
+  background: #dbeafe !important;
+  border-color: #93c5fd !important;
+  color: #1e40af !important;
+  transform: translateY(-1px) !important;
+}
+
+/* Report stays green */
+#openOrientationHistoryBtn {
+  background: #ecfdf3 !important;
+  border: 1px solid #bbf7d0 !important;
+  color: #047857 !important;
+  box-shadow: 0 12px 26px rgba(4, 120, 87, 0.08) !important;
+}
+
+#openOrientationHistoryBtn:hover {
+  background: #dcfce7 !important;
+  border-color: #86efac !important;
+  color: #065f46 !important;
+  transform: translateY(-1px) !important;
+}
+
+/* Upcoming modal status scheduled color */
+#upcomingOrientationModal .orientation-status.status-approved {
+  background: #eef6ff !important;
+  color: #1d4ed8 !important;
+  border: 1px solid #bfdbfe !important;
+}
+
+/* Tablet: keep buttons together but allow wrapping if screen is tight */
+@media (max-width: 1180px) {
+  #orientationSection .page-card > .page-card-header {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+  }
+
+  #orientationSection .orientation-header-actions {
+    width: 100% !important;
+    min-width: 0 !important;
+    margin-left: 0 !important;
+    justify-content: flex-start !important;
+    flex-wrap: wrap !important;
+  }
+
+  #orientationSection .orientation-header-actions .view-all-btn {
+    min-width: 190px !important;
+  }
+}
+
+/* Mobile: full-width stacked buttons */
+@media (max-width: 768px) {
+  #orientationSection .orientation-header-actions {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+    width: 100% !important;
+  }
+
+  #orientationSection .orientation-header-actions .view-all-btn {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 46px !important;
+    padding: 0 16px !important;
+  }
+}
