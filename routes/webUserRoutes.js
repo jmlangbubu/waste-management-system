@@ -3,7 +3,68 @@ const router = express.Router();
 const db = require("../config/db");
 const bcrypt = require("bcrypt");
 
+
 console.log("webUserRoutes loaded");
+
+const ALLOWED_WEB_ROLES = [
+    "division_admin",
+    "personnel",
+    "supervisor",
+    "clerk_admin"
+];
+
+const ALLOWED_MOBILE_ROLES = [
+    "enforcer",
+    "barangay",
+    "establishment"
+];
+
+const ALLOWED_ACCOUNT_STATUS = [
+    "active",
+    "suspended",
+    "inactive",
+    "deactivated"
+];
+
+function cleanText(value) {
+    return String(value || "").trim();
+}
+
+function normalizeRole(value) {
+    return cleanText(value).toLowerCase();
+}
+
+function isAllowedStatus(status) {
+    if (!status) return true;
+    return ALLOWED_ACCOUNT_STATUS.includes(cleanText(status).toLowerCase());
+}
+
+function handleInsertError(res, err, accountType = "account") {
+    console.error(`create ${accountType} insert error:`, err);
+
+    const sqlMessage = String(err?.sqlMessage || err?.message || "");
+
+    if (
+        sqlMessage.toLowerCase().includes("data truncated") ||
+        sqlMessage.toLowerCase().includes("constraint") ||
+        sqlMessage.toLowerCase().includes("check constraint") ||
+        sqlMessage.toLowerCase().includes("enum")
+    ) {
+        return res.status(500).json({
+            success: false,
+            message:
+                accountType === "web user"
+                    ? "Insert failed. The database may not allow this role yet. Please update the web_users.role column to allow supervisor and clerk_admin."
+                    : "Insert failed. The database may not allow this mobile role yet."
+        });
+    }
+
+    return res.status(500).json({
+        success: false,
+        message: "Insert failed"
+    });
+}
+
 
 /* =========================================
    CREATE WEB USER
@@ -19,16 +80,37 @@ router.post("/create", async (req, res) => {
         created_by
     } = req.body;
 
-    if (!full_name || !username || !password || !role || !division_name) {
+    const cleanFullName = cleanText(full_name);
+    const cleanUsername = cleanText(username);
+    const cleanPassword = cleanText(password);
+    const cleanDivisionName = cleanText(division_name);
+    const normalizedRole = normalizeRole(role);
+    const normalizedStatus = status ? cleanText(status).toLowerCase() : "active";
+
+    if (!cleanFullName || !cleanUsername || !cleanPassword || !normalizedRole || !cleanDivisionName) {
         return res.status(400).json({
             success: false,
             message: "Missing required fields"
         });
     }
 
+    if (!ALLOWED_WEB_ROLES.includes(normalizedRole)) {
+        return res.status(400).json({
+            success: false,
+            message: `Invalid web role. Allowed roles: ${ALLOWED_WEB_ROLES.join(", ")}`
+        });
+    }
+
+    if (!isAllowedStatus(normalizedStatus)) {
+        return res.status(400).json({
+            success: false,
+            message: "Invalid account status"
+        });
+    }
+
     const checkSql = `SELECT id FROM web_users WHERE username = ? LIMIT 1`;
 
-    db.query(checkSql, [username], async (checkErr, checkResults) => {
+    db.query(checkSql, [cleanUsername], async (checkErr, checkResults) => {
         if (checkErr) {
             console.error("create web user check error:", checkErr);
             return res.status(500).json({
@@ -45,7 +127,7 @@ router.post("/create", async (req, res) => {
         }
 
         try {
-            const hashedPassword = await bcrypt.hash(password, 10);
+            const hashedPassword = await bcrypt.hash(cleanPassword, 10);
 
             const insertSql = `
                 INSERT INTO web_users
@@ -56,21 +138,17 @@ router.post("/create", async (req, res) => {
             db.query(
                 insertSql,
                 [
-                    full_name,
-                    username,
+                    cleanFullName,
+                    cleanUsername,
                     hashedPassword,
-                    role,
-                    division_name,
-                    status || "active",
+                    normalizedRole,
+                    cleanDivisionName,
+                    normalizedStatus,
                     created_by || null
                 ],
                 (err, result) => {
                     if (err) {
-                        console.error("create web user insert error:", err);
-                        return res.status(500).json({
-                            success: false,
-                            message: "Insert failed"
-                        });
+                        return handleInsertError(res, err, "web user");
                     }
 
                     return res.status(201).json({
@@ -103,16 +181,37 @@ router.post("/create-mobile-account", async (req, res) => {
         status
     } = req.body;
 
-    if (!full_name || !username || !password || !mobile_role || !assigned_source_name) {
+    const cleanFullName = cleanText(full_name);
+    const cleanUsername = cleanText(username);
+    const cleanPassword = cleanText(password);
+    const normalizedMobileRole = normalizeRole(mobile_role);
+    const cleanAssignedSourceName = cleanText(assigned_source_name);
+    const normalizedStatus = status ? cleanText(status).toLowerCase() : "active";
+
+    if (!cleanFullName || !cleanUsername || !cleanPassword || !normalizedMobileRole || !cleanAssignedSourceName) {
         return res.status(400).json({
             success: false,
             message: "Missing required fields"
         });
     }
 
+    if (!ALLOWED_MOBILE_ROLES.includes(normalizedMobileRole)) {
+        return res.status(400).json({
+            success: false,
+            message: `Invalid mobile role. Allowed roles: ${ALLOWED_MOBILE_ROLES.join(", ")}`
+        });
+    }
+
+    if (!isAllowedStatus(normalizedStatus)) {
+        return res.status(400).json({
+            success: false,
+            message: "Invalid account status"
+        });
+    }
+
     const checkSql = `SELECT id FROM users WHERE username = ? LIMIT 1`;
 
-    db.query(checkSql, [username], async (checkErr, checkResults) => {
+    db.query(checkSql, [cleanUsername], async (checkErr, checkResults) => {
         if (checkErr) {
             console.error("create mobile account check error:", checkErr);
             return res.status(500).json({
@@ -129,12 +228,12 @@ router.post("/create-mobile-account", async (req, res) => {
         }
 
         try {
-            const hashedPassword = await bcrypt.hash(password, 10);
+            const hashedPassword = await bcrypt.hash(cleanPassword, 10);
 
-            const roleValue = mobile_role;
+            const roleValue = normalizedMobileRole;
             const barangayValue =
-                mobile_role === "barangay" || mobile_role === "enforcer"
-                    ? assigned_source_name
+                normalizedMobileRole === "barangay" || normalizedMobileRole === "enforcer"
+                    ? cleanAssignedSourceName
                     : null;
 
             const insertSql = `
@@ -146,22 +245,18 @@ router.post("/create-mobile-account", async (req, res) => {
             db.query(
                 insertSql,
                 [
-                    full_name,
-                    username,
+                    cleanFullName,
+                    cleanUsername,
                     hashedPassword,
                     roleValue,
-                    mobile_role,
-                    assigned_source_name,
+                    normalizedMobileRole,
+                    cleanAssignedSourceName,
                     barangayValue,
-                    status || "active"
+                    normalizedStatus
                 ],
                 (err, result) => {
                     if (err) {
-                        console.error("create mobile account insert error:", err);
-                        return res.status(500).json({
-                            success: false,
-                            message: "Insert failed"
-                        });
+                        return handleInsertError(res, err, "mobile account");
                     }
 
                     return res.status(201).json({
