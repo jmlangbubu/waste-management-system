@@ -1,34 +1,16 @@
 /* =========================
    ADMIN INVOICE WORKFLOW
-   Frontend workflow shell using localStorage.
+   DATABASE/API VERSION
 
-   Real backend/database version should replace localStorage with API calls.
+   Flow:
+   Head Admin -> Clerk Admin -> Supervisor -> Division Admin -> Clerk Admin -> Report
 ========================= */
 
-const INVOICE_STORAGE_KEY = "wmo_incoming_invoice_workflow_v1";
 let invoiceRecords = [];
 let invoiceClerkAccounts = [];
 let invoiceDivisionAdminAccounts = [];
 
-function getInvoiceStoredUser() {
-  try {
-    const raw = localStorage.getItem("webUser");
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-}
-
-function normalizeInvoiceRole(role) {
-  return String(role || "").trim().toLowerCase().replace(/\s+/g, "_");
-}
-
-
 function getInvoiceApiBase() {
-  if (typeof getAppApiBase === "function") {
-    return getAppApiBase();
-  }
-
   if (window.APP_CONFIG && window.APP_CONFIG.API_BASE_URL) {
     return window.APP_CONFIG.API_BASE_URL;
   }
@@ -36,124 +18,26 @@ function getInvoiceApiBase() {
   return "";
 }
 
-function getInvoiceAccountsApiUrl() {
-  if (typeof getAccountsApiUrl === "function") {
-    return getAccountsApiUrl();
-  }
-
-  const base = getInvoiceApiBase();
-  return base ? `${base}/web-users` : "";
+function getInvoiceApiUrl(path = "") {
+  return `${getInvoiceApiBase()}/invoices${path}`;
 }
 
-function getInvoiceAccountFullName(account) {
-  return (
-    account?.full_name ||
-    account?.fullName ||
-    account?.name ||
-    account?.username ||
-    ""
-  ).trim();
-}
-
-function isActiveInvoiceAccount(account) {
-  const status = String(account?.status || "active").toLowerCase().trim();
-  return !["deactivated", "inactive", "suspended"].includes(status);
-}
-
-function normalizeInvoiceAccountRole(account) {
-  return normalizeInvoiceRole(account?.role || account?.admin_role || "");
-}
-
-function extractInvoiceAccounts(payload) {
-  if (Array.isArray(payload)) return payload;
-  if (Array.isArray(payload?.accounts)) return payload.accounts;
-  if (Array.isArray(payload?.data)) return payload.data;
-  if (Array.isArray(payload?.users)) return payload.users;
-  return [];
-}
-
-function getInvoiceAccountsFromExistingState() {
+function getInvoiceStoredUser() {
   try {
-    if (typeof allWebUsers !== "undefined" && Array.isArray(allWebUsers)) {
-      return allWebUsers;
-    }
-  } catch {
-    // ignore unavailable lexical global
-  }
-
-  if (Array.isArray(window.allWebUsers)) {
-    return window.allWebUsers;
-  }
-
-  return [];
-}
-
-async function loadInvoiceClerkAccounts() {
-  const existingAccounts = getInvoiceAccountsFromExistingState();
-
-  if (existingAccounts.length) {
-    invoiceClerkAccounts = existingAccounts
-      .filter((account) => normalizeInvoiceAccountRole(account) === "clerk_admin")
-      .filter(isActiveInvoiceAccount)
-      .map((account) => ({
-        id: account.id || "",
-        fullName: getInvoiceAccountFullName(account),
-        username: account.username || ""
-      }))
-      .filter((account) => account.fullName);
-
-    populateInvoiceAssignmentDropdowns();
-    return invoiceClerkAccounts;
-  }
-
-  const accountsUrl = getInvoiceAccountsApiUrl();
-
-  if (!accountsUrl) {
-    invoiceClerkAccounts = [];
-    populateInvoiceAssignmentDropdowns();
-    return invoiceClerkAccounts;
-  }
-
-  try {
-    const response = await fetch(accountsUrl, {
-      headers: { Accept: "application/json" }
-    });
-
-    const rawText = await response.text();
-    let data = {};
-
-    try {
-      data = rawText ? JSON.parse(rawText) : {};
-    } catch {
-      throw new Error("Accounts API did not return valid JSON.");
-    }
-
-    if (!response.ok) {
-      throw new Error(data.message || "Failed to load Clerk Admin accounts.");
-    }
-
-    const accounts = extractInvoiceAccounts(data);
-
-    invoiceClerkAccounts = accounts
-      .filter((account) => normalizeInvoiceAccountRole(account) === "clerk_admin")
-      .filter(isActiveInvoiceAccount)
-      .map((account) => ({
-        id: account.id || "",
-        fullName: getInvoiceAccountFullName(account),
-        username: account.username || ""
-      }))
-      .filter((account) => account.fullName);
-
-    populateInvoiceAssignmentDropdowns();
-    return invoiceClerkAccounts;
+    const raw = localStorage.getItem("webUser");
+    return raw ? JSON.parse(raw) : null;
   } catch (error) {
-    console.error("Unable to load Clerk Admin accounts:", error);
-    invoiceClerkAccounts = [];
-    populateInvoiceAssignmentDropdowns();
-    return invoiceClerkAccounts;
+    console.error("Invalid webUser for invoice workflow:", error);
+    return null;
   }
 }
 
+function normalizeInvoiceRole(role) {
+  return String(role || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_");
+}
 
 function formatInvoiceRole(role) {
   const labels = {
@@ -165,12 +49,21 @@ function formatInvoiceRole(role) {
     division_admin: "Division Admin",
     personnel: "Personnel"
   };
+
   return labels[normalizeInvoiceRole(role)] || role || "-";
 }
 
 function getInvoiceCurrentUser() {
   const user = getInvoiceStoredUser();
-  if (!user) return { id: null, name: "Unknown User", username: "", role: "" };
+
+  if (!user) {
+    return {
+      id: null,
+      name: "Unknown User",
+      username: "",
+      role: ""
+    };
+  }
 
   return {
     id: user.id || null,
@@ -197,29 +90,27 @@ function isInvoiceDivisionAdmin(role) {
   return normalizeInvoiceRole(role) === "division_admin";
 }
 
-function loadInvoiceRecords() {
-  try {
-    const raw = localStorage.getItem(INVOICE_STORAGE_KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    invoiceRecords = Array.isArray(parsed) ? parsed : [];
-  } catch {
-    invoiceRecords = [];
-  }
+function escapeInvoiceHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
-function saveInvoiceRecords() {
-  localStorage.setItem(INVOICE_STORAGE_KEY, JSON.stringify(invoiceRecords));
-}
-
-function generateInvoiceTrackingNo() {
-  const year = new Date().getFullYear();
-  return `INV-${year}-${String(invoiceRecords.length + 1).padStart(5, "0")}`;
+function setInvoiceText(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = value;
 }
 
 function formatInvoiceDate(value) {
   if (!value) return "-";
+
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "-" : date.toLocaleString();
+  if (Number.isNaN(date.getTime())) return "-";
+
+  return date.toLocaleString();
 }
 
 function getInvoiceStatusLabel(status) {
@@ -232,39 +123,102 @@ function getInvoiceStatusLabel(status) {
     returned_to_clerk: "Returned to Clerk Admin",
     completed: "Completed Report"
   };
+
   return labels[status] || status || "-";
 }
 
 function getInvoiceRoleInstruction(role) {
-  if (isInvoiceHeadAdmin(role)) return "Create an invoice subject, assign a Clerk Admin, then send it for acceptance.";
-  if (isInvoiceClerk(role)) return "Accept invoices from Head Admin, forward to Supervisor, then confirm returned validations.";
-  if (isInvoiceSupervisor(role)) return "Assign a Division Admin to validate invoices sent by the Clerk Admin.";
-  if (isInvoiceDivisionAdmin(role)) return "Accept assigned invoices, validate them, then return them to Clerk Admin.";
+  const normalizedRole = normalizeInvoiceRole(role);
+
+  if (isInvoiceHeadAdmin(normalizedRole)) {
+    return "Create an invoice subject, assign a Clerk Admin, then send it for acceptance.";
+  }
+
+  if (isInvoiceClerk(normalizedRole)) {
+    return "Accept invoices from Head Admin, forward to Supervisor, then confirm returned validations.";
+  }
+
+  if (isInvoiceSupervisor(normalizedRole)) {
+    return "Assign a Division Admin to validate invoices sent by the Clerk Admin.";
+  }
+
+  if (isInvoiceDivisionAdmin(normalizedRole)) {
+    return "Accept assigned invoices, validate them, then return them to Clerk Admin.";
+  }
+
   return "You can view invoice reports, but this role has no routing action yet.";
 }
 
-function escapeInvoiceHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+async function invoiceFetchJson(url, options = {}) {
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      ...(options.headers || {})
+    }
+  });
+
+  const rawText = await response.text();
+  let data = {};
+
+  try {
+    data = rawText ? JSON.parse(rawText) : {};
+  } catch (error) {
+    console.error("Invoice API raw response:", rawText);
+    throw new Error("Invoice API did not return valid JSON.");
+  }
+
+  if (!response.ok || data.success === false) {
+    throw new Error(data.message || "Invoice request failed.");
+  }
+
+  return data;
 }
 
-function addInvoiceLog(invoice, actionType, message, toUser = "", toRole = "") {
+async function loadInvoiceAssignableAccounts() {
+  try {
+    const [clerksData, divisionData] = await Promise.all([
+      invoiceFetchJson(getInvoiceApiUrl("/users/clerk-admins")),
+      invoiceFetchJson(getInvoiceApiUrl("/users/division-admins"))
+    ]);
+
+    invoiceClerkAccounts = Array.isArray(clerksData.users) ? clerksData.users : [];
+    invoiceDivisionAdminAccounts = Array.isArray(divisionData.users) ? divisionData.users : [];
+
+    populateInvoiceAssignmentDropdowns();
+  } catch (error) {
+    console.error("Failed to load invoice assignable accounts:", error);
+    invoiceClerkAccounts = [];
+    invoiceDivisionAdminAccounts = [];
+    populateInvoiceAssignmentDropdowns();
+  }
+}
+
+async function loadInvoiceRecords() {
   const user = getInvoiceCurrentUser();
-  invoice.logs.push({
-    id: `log-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    actionType,
-    message,
-    fromUserId: user.id,
-    fromUserName: user.name,
-    fromRole: user.role,
-    toUserName: toUser,
-    toRole,
-    createdAt: new Date().toISOString()
-  });
+
+  if (!user.id || !user.role) {
+    invoiceRecords = [];
+    return;
+  }
+
+  try {
+    const data = await invoiceFetchJson(
+      getInvoiceApiUrl(`?user_id=${encodeURIComponent(user.id)}&role=${encodeURIComponent(user.role)}`)
+    );
+
+    invoiceRecords = Array.isArray(data.invoices) ? data.invoices : [];
+  } catch (error) {
+    console.error("Failed to load invoices:", error);
+    invoiceRecords = [];
+  }
+}
+
+async function reloadInvoiceWorkflow() {
+  await loadInvoiceAssignableAccounts();
+  await loadInvoiceRecords();
+  renderInvoiceWorkflow();
 }
 
 function getInvoiceVisibleQueue(role) {
@@ -286,19 +240,16 @@ function getInvoiceVisibleQueue(role) {
     }
 
     if (isInvoiceHeadAdmin(normalizedRole)) {
-      return invoice.createdByRole === normalizedRole || isInvoiceHeadAdmin(invoice.createdByRole);
+      return true;
     }
 
     return false;
   });
 }
 
-function findInvoiceById(invoiceId) {
-  return invoiceRecords.find((invoice) => String(invoice.id) === String(invoiceId));
-}
-
 function getInvoiceHandler(invoice) {
   if (!invoice) return "-";
+
   if (invoice.status === "sent_to_clerk") return invoice.assignedClerkName || "Clerk Admin";
   if (invoice.status === "accepted_by_clerk") return invoice.assignedClerkName || "Clerk Admin";
   if (invoice.status === "sent_to_supervisor") return "Supervisor";
@@ -306,33 +257,39 @@ function getInvoiceHandler(invoice) {
   if (invoice.status === "accepted_by_division") return invoice.assignedDivisionAdminName || "Division Admin";
   if (invoice.status === "returned_to_clerk") return invoice.assignedClerkName || "Clerk Admin";
   if (invoice.status === "completed") return invoice.confirmedByName || invoice.assignedClerkName || "Clerk Admin";
+
   return "-";
 }
 
-function setInvoiceText(id, value) {
-  const el = document.getElementById(id);
-  if (el) el.textContent = value;
-}
-
 function renderInvoiceWorkflow() {
-  loadInvoiceRecords();
-
   const user = getInvoiceCurrentUser();
-  const queue = getInvoiceVisibleQueue(user.role);
+  const roleLabel = formatInvoiceRole(user.role);
   const completed = invoiceRecords.filter((invoice) => invoice.status === "completed");
+  const queue = getInvoiceVisibleQueue(user.role);
+
+  const roleLabelEl = document.getElementById("invoiceCurrentRoleLabel");
+  const instructionEl = document.getElementById("invoiceRoleInstruction");
   const createPanel = document.getElementById("invoiceCreatePanel");
 
-  setInvoiceText("invoiceCurrentRoleLabel", `${formatInvoiceRole(user.role)}${user.name ? " • " + user.name : ""}`);
-  setInvoiceText("invoiceRoleInstruction", getInvoiceRoleInstruction(user.role));
+  if (roleLabelEl) {
+    roleLabelEl.textContent = `${roleLabel}${user.name ? " • " + user.name : ""}`;
+  }
+
+  if (instructionEl) {
+    instructionEl.textContent = getInvoiceRoleInstruction(user.role);
+  }
+
+  if (createPanel) {
+    createPanel.classList.toggle("hidden", !isInvoiceHeadAdmin(user.role));
+  }
+
   setInvoiceText("invoiceTotalCount", invoiceRecords.length);
   setInvoiceText("invoiceMyActionCount", queue.length);
   setInvoiceText("invoiceCompletedCount", completed.length);
 
-  if (createPanel) createPanel.classList.toggle("hidden", !isInvoiceHeadAdmin(user.role));
-
-  populateInvoiceAssignmentDropdowns();
   renderInvoiceQueue(queue, user.role);
   renderInvoiceHistory();
+  populateInvoiceAssignmentDropdowns();
 }
 
 function renderInvoiceQueue(queue, role) {
@@ -340,24 +297,59 @@ function renderInvoiceQueue(queue, role) {
   if (!tbody) return;
 
   if (!queue.length) {
-    tbody.innerHTML = `<tr><td colspan="6" class="invoice-empty-cell">No invoices waiting for your action.</td></tr>`;
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="6" class="invoice-empty-cell">No invoices waiting for your action.</td>
+      </tr>
+    `;
     return;
   }
 
   tbody.innerHTML = queue.map((invoice) => `
     <tr>
-      <td><strong>${escapeInvoiceHtml(invoice.trackingNo)}</strong></td>
+      <td><strong>${escapeInvoiceHtml(invoice.trackingNo || invoice.tracking_no)}</strong></td>
       <td>${escapeInvoiceHtml(invoice.subject)}</td>
       <td><span class="invoice-status-pill">${escapeInvoiceHtml(getInvoiceStatusLabel(invoice.status))}</span></td>
       <td>${escapeInvoiceHtml(getInvoiceHandler(invoice))}</td>
-      <td>${escapeInvoiceHtml(formatInvoiceDate(invoice.updatedAt))}</td>
+      <td>${escapeInvoiceHtml(formatInvoiceDate(invoice.updatedAt || invoice.updated_at))}</td>
       <td>${renderInvoiceActionButton(invoice, role)}</td>
     </tr>
   `).join("");
 
   tbody.querySelectorAll("[data-invoice-action]").forEach((btn) => {
-    btn.addEventListener("click", () => handleInvoiceAction(btn.dataset.invoiceAction, btn.dataset.invoiceId));
+    btn.addEventListener("click", () => {
+      handleInvoiceAction(btn.dataset.invoiceAction, btn.dataset.invoiceId);
+    });
   });
+}
+
+function buildInvoiceAccountOptions(accounts, placeholder) {
+  if (!accounts.length) {
+    return `<option value="">No account found</option>`;
+  }
+
+  return `
+    <option value="">${placeholder}</option>
+    ${accounts
+      .map((account) => `
+        <option
+          value="${escapeInvoiceHtml(account.id)}"
+          data-full-name="${escapeInvoiceHtml(account.full_name || account.fullName || account.username)}">
+          ${escapeInvoiceHtml(account.full_name || account.fullName || account.username)}
+        </option>
+      `)
+      .join("")}
+  `;
+}
+
+function buildDivisionAdminSelect(invoiceId) {
+  const disabled = invoiceDivisionAdminAccounts.length ? "" : "disabled";
+
+  return `
+    <select class="invoice-inline-select" data-division-select="${invoiceId}" ${disabled}>
+      ${buildInvoiceAccountOptions(invoiceDivisionAdminAccounts, "Select Division Admin")}
+    </select>
+  `;
 }
 
 function renderInvoiceActionButton(invoice, role) {
@@ -400,38 +392,53 @@ function renderInvoiceActionButton(invoice, role) {
 function renderInvoiceHistory() {
   const tbody = document.getElementById("invoiceHistoryTableBody");
   const searchInput = document.getElementById("invoiceHistorySearchInput");
+
   if (!tbody) return;
 
   const keyword = String(searchInput?.value || "").toLowerCase().trim();
+
   let completed = invoiceRecords.filter((invoice) => invoice.status === "completed");
 
   if (keyword) {
-    completed = completed.filter((invoice) => [
-      invoice.trackingNo,
-      invoice.subject,
-      invoice.createdByName,
-      invoice.assignedClerkName,
-      invoice.supervisorName,
-      invoice.assignedDivisionAdminName,
-      invoice.confirmedByName
-    ].join(" ").toLowerCase().includes(keyword));
+    completed = completed.filter((invoice) => {
+      const haystack = [
+        invoice.trackingNo,
+        invoice.tracking_no,
+        invoice.subject,
+        invoice.createdByName,
+        invoice.assignedClerkName,
+        invoice.supervisorName,
+        invoice.assignedDivisionAdminName,
+        invoice.confirmedByName
+      ].join(" ").toLowerCase();
+
+      return haystack.includes(keyword);
+    });
   }
 
   if (!completed.length) {
-    tbody.innerHTML = `<tr><td colspan="8" class="invoice-empty-cell">No confirmed invoice reports yet.</td></tr>`;
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="8" class="invoice-empty-cell">No confirmed invoice reports yet.</td>
+      </tr>
+    `;
     return;
   }
 
   tbody.innerHTML = completed.map((invoice) => `
     <tr>
-      <td><strong>${escapeInvoiceHtml(invoice.trackingNo)}</strong></td>
+      <td><strong>${escapeInvoiceHtml(invoice.trackingNo || invoice.tracking_no)}</strong></td>
       <td>${escapeInvoiceHtml(invoice.subject)}</td>
       <td>${escapeInvoiceHtml(invoice.createdByName || "-")}</td>
       <td>${escapeInvoiceHtml(invoice.assignedClerkName || "-")}</td>
       <td>${escapeInvoiceHtml(invoice.supervisorName || "-")}</td>
       <td>${escapeInvoiceHtml(invoice.assignedDivisionAdminName || "-")}</td>
-      <td>${escapeInvoiceHtml(formatInvoiceDate(invoice.completedAt))}</td>
-      <td><button type="button" class="invoice-view-btn" data-invoice-action="view" data-invoice-id="${invoice.id}">View</button></td>
+      <td>${escapeInvoiceHtml(formatInvoiceDate(invoice.completedAt || invoice.completed_at))}</td>
+      <td>
+        <button type="button" class="invoice-view-btn" data-invoice-action="view" data-invoice-id="${invoice.id}">
+          View
+        </button>
+      </td>
     </tr>
   `).join("");
 
@@ -440,78 +447,72 @@ function renderInvoiceHistory() {
   });
 }
 
-function handleInvoiceAction(action, invoiceId) {
+async function handleInvoiceAction(action, invoiceId) {
   if (action === "view") {
     openInvoiceTrackingModal(invoiceId);
     return;
   }
 
-  const invoice = findInvoiceById(invoiceId);
   const user = getInvoiceCurrentUser();
-  if (!invoice) return;
+
+  if (!user.id) {
+    alert("User session missing. Please log in again.");
+    return;
+  }
+
+  let url = "";
+  let body = { user_id: user.id };
 
   if (action === "accept_clerk") {
-    invoice.status = "accepted_by_clerk";
-    invoice.acceptedByClerkName = user.name;
-    addInvoiceLog(invoice, "accept_clerk", `${user.name} accepted the invoice as Clerk Admin.`);
+    url = getInvoiceApiUrl(`/${invoiceId}/accept-clerk`);
   }
 
   if (action === "send_supervisor") {
-    invoice.status = "sent_to_supervisor";
-    invoice.supervisorName = "Supervisor";
-    addInvoiceLog(invoice, "send_supervisor", `${user.name} sent the invoice to Supervisor.`, "Supervisor", "supervisor");
+    url = getInvoiceApiUrl(`/${invoiceId}/send-supervisor`);
   }
 
   if (action === "assign_division") {
-    const divisionSelect = document.querySelector(`[data-division-select="${invoice.id}"]`);
+    const divisionSelect = document.querySelector(`[data-division-select="${invoiceId}"]`);
     const selectedDivisionId = divisionSelect?.value?.trim();
-    const selectedDivisionOption = divisionSelect?.selectedOptions?.[0];
 
-    const divisionName =
-      selectedDivisionOption?.dataset?.fullName ||
-      selectedDivisionOption?.textContent?.trim() ||
-      "";
-
-    if (!selectedDivisionId || !divisionName) {
+    if (!selectedDivisionId) {
       alert("Please select a registered Division Admin account.");
       divisionSelect?.focus();
       return;
     }
 
-    invoice.status = "assigned_to_division";
-    invoice.assignedDivisionAdminId = selectedDivisionId;
-    invoice.assignedDivisionAdminName = divisionName;
-    invoice.supervisorName = user.name;
-    addInvoiceLog(invoice, "assign_division", `${user.name} assigned the invoice to Division Admin ${divisionName}.`, divisionName, "division_admin");
+    url = getInvoiceApiUrl(`/${invoiceId}/assign-division`);
+    body.assigned_division_admin_id = selectedDivisionId;
   }
 
   if (action === "accept_division") {
-    invoice.status = "accepted_by_division";
-    invoice.acceptedByDivisionName = user.name;
-    if (!invoice.assignedDivisionAdminName) invoice.assignedDivisionAdminName = user.name;
-    addInvoiceLog(invoice, "accept_division", `${user.name} accepted the invoice as Division Admin.`);
+    url = getInvoiceApiUrl(`/${invoiceId}/accept-division`);
   }
 
   if (action === "validate_return") {
-    invoice.status = "returned_to_clerk";
-    invoice.validatedByDivisionName = user.name;
-    invoice.validatedAt = new Date().toISOString();
-    addInvoiceLog(invoice, "validate_return", `${user.name} validated the invoice and returned it to Clerk Admin.`, invoice.assignedClerkName, "clerk_admin");
+    url = getInvoiceApiUrl(`/${invoiceId}/validate-return`);
   }
 
   if (action === "confirm_report") {
-    invoice.status = "completed";
-    invoice.confirmedByName = user.name;
-    invoice.completedAt = new Date().toISOString();
-    addInvoiceLog(invoice, "confirm_report", `${user.name} confirmed the invoice. The record was moved to report/history.`);
+    url = getInvoiceApiUrl(`/${invoiceId}/confirm`);
   }
 
-  invoice.updatedAt = new Date().toISOString();
-  saveInvoiceRecords();
-  renderInvoiceWorkflow();
+  if (!url) return;
+
+  try {
+    await invoiceFetchJson(url, {
+      method: "POST",
+      body: JSON.stringify(body)
+    });
+
+    await reloadInvoiceWorkflow();
+  } catch (error) {
+    console.error("Invoice action failed:", error);
+    alert(error.message || "Invoice action failed.");
+  }
 }
 
-function handleInvoiceCreate(event) {
+async function handleInvoiceCreate(event) {
   event.preventDefault();
 
   const user = getInvoiceCurrentUser();
@@ -524,150 +525,30 @@ function handleInvoiceCreate(event) {
   const subject = document.getElementById("invoiceSubjectInput")?.value.trim();
   const description = document.getElementById("invoiceDescriptionInput")?.value.trim();
   const clerkSelect = document.getElementById("invoiceAssignedClerkSelect");
-  const selectedClerkId = clerkSelect?.value.trim();
-  const selectedClerkOption = clerkSelect?.selectedOptions?.[0];
+  const assignedClerkId = clerkSelect?.value.trim();
 
-  const assignedClerkName =
-    selectedClerkOption?.dataset?.fullName ||
-    selectedClerkOption?.textContent?.trim() ||
-    "";
-
-  if (!subject || !description || !selectedClerkId || !assignedClerkName) {
+  if (!subject || !description || !assignedClerkId) {
     alert("Please complete subject, details, and select a registered Clerk Admin account.");
     return;
   }
 
-  const now = new Date().toISOString();
-
-  const invoice = {
-    id: `invoice-${Date.now()}`,
-    trackingNo: generateInvoiceTrackingNo(),
-    subject,
-    description,
-    status: "sent_to_clerk",
-    createdById: user.id,
-    createdByName: user.name,
-    createdByRole: user.role,
-    assignedClerkId: selectedClerkId,
-    assignedClerkName,
-    supervisorName: "",
-    assignedDivisionAdminName: "",
-    confirmedByName: "",
-    createdAt: now,
-    updatedAt: now,
-    completedAt: "",
-    logs: []
-  };
-
-  addInvoiceLog(invoice, "create", `${user.name} created invoice ${invoice.trackingNo}.`);
-  addInvoiceLog(invoice, "send_clerk", `${user.name} assigned and sent the invoice to Clerk Admin ${assignedClerkName}.`, assignedClerkName, "clerk_admin");
-
-  invoiceRecords.push(invoice);
-  saveInvoiceRecords();
-  event.target.reset();
-  renderInvoiceWorkflow();
-}
-
-
-function buildInvoiceAccountOptions(accounts, placeholder) {
-  if (!accounts.length) {
-    return `<option value="">No account found</option>`;
-  }
-
-  return `
-    <option value="">${placeholder}</option>
-    ${accounts
-      .map((account) => `
-        <option
-          value="${escapeInvoiceHtml(account.id || account.fullName)}"
-          data-full-name="${escapeInvoiceHtml(account.fullName)}"
-          data-username="${escapeInvoiceHtml(account.username || "")}">
-          ${escapeInvoiceHtml(account.fullName)}
-        </option>
-      `)
-      .join("")}
-  `;
-}
-
-function buildDivisionAdminSelect(invoiceId) {
-  const disabled = invoiceDivisionAdminAccounts.length ? "" : "disabled";
-
-  return `
-    <select class="invoice-inline-select" data-division-select="${invoiceId}" ${disabled}>
-      ${buildInvoiceAccountOptions(invoiceDivisionAdminAccounts, "Select Division Admin")}
-    </select>
-  `;
-}
-
-async function loadInvoiceDivisionAdminAccounts() {
-  const existingAccounts = getInvoiceAccountsFromExistingState();
-
-  if (existingAccounts.length) {
-    invoiceDivisionAdminAccounts = existingAccounts
-      .filter((account) => normalizeInvoiceAccountRole(account) === "division_admin")
-      .filter(isActiveInvoiceAccount)
-      .map((account) => ({
-        id: account.id || "",
-        fullName: getInvoiceAccountFullName(account),
-        username: account.username || ""
-      }))
-      .filter((account) => account.fullName);
-
-    return invoiceDivisionAdminAccounts;
-  }
-
-  const accountsUrl = getInvoiceAccountsApiUrl();
-
-  if (!accountsUrl) {
-    invoiceDivisionAdminAccounts = [];
-    return invoiceDivisionAdminAccounts;
-  }
-
   try {
-    const response = await fetch(accountsUrl, {
-      headers: { Accept: "application/json" }
+    await invoiceFetchJson(getInvoiceApiUrl(""), {
+      method: "POST",
+      body: JSON.stringify({
+        subject,
+        description,
+        assigned_clerk_id: assignedClerkId,
+        created_by: user.id
+      })
     });
 
-    const rawText = await response.text();
-    let data = {};
-
-    try {
-      data = rawText ? JSON.parse(rawText) : {};
-    } catch {
-      throw new Error("Accounts API did not return valid JSON.");
-    }
-
-    if (!response.ok) {
-      throw new Error(data.message || "Failed to load Division Admin accounts.");
-    }
-
-    const accounts = extractInvoiceAccounts(data);
-
-    invoiceDivisionAdminAccounts = accounts
-      .filter((account) => normalizeInvoiceAccountRole(account) === "division_admin")
-      .filter(isActiveInvoiceAccount)
-      .map((account) => ({
-        id: account.id || "",
-        fullName: getInvoiceAccountFullName(account),
-        username: account.username || ""
-      }))
-      .filter((account) => account.fullName);
-
-    return invoiceDivisionAdminAccounts;
+    event.target.reset();
+    await reloadInvoiceWorkflow();
   } catch (error) {
-    console.error("Unable to load Division Admin accounts:", error);
-    invoiceDivisionAdminAccounts = [];
-    return invoiceDivisionAdminAccounts;
+    console.error("Create invoice failed:", error);
+    alert(error.message || "Failed to create invoice.");
   }
-}
-
-async function loadInvoiceAssignableAccounts() {
-  await Promise.all([
-    loadInvoiceClerkAccounts(),
-    loadInvoiceDivisionAdminAccounts()
-  ]);
-
-  populateInvoiceAssignmentDropdowns();
 }
 
 function populateInvoiceAssignmentDropdowns() {
@@ -677,63 +558,60 @@ function populateInvoiceAssignmentDropdowns() {
   const currentValue = clerkSelect.value;
 
   if (!invoiceClerkAccounts.length) {
-    clerkSelect.innerHTML = `
-      <option value="">No Clerk Admin account found</option>
-    `;
+    clerkSelect.innerHTML = `<option value="">No Clerk Admin account found</option>`;
     clerkSelect.disabled = true;
     return;
   }
 
   clerkSelect.disabled = false;
 
-  clerkSelect.innerHTML = `
-    <option value="">Select Clerk Admin</option>
-    ${invoiceClerkAccounts
-      .map((account) => `
-        <option
-          value="${escapeInvoiceHtml(account.id || account.fullName)}"
-          data-full-name="${escapeInvoiceHtml(account.fullName)}"
-          data-username="${escapeInvoiceHtml(account.username || "")}">
-          ${escapeInvoiceHtml(account.fullName)}
-        </option>
-      `)
-      .join("")}
-  `;
+  clerkSelect.innerHTML = buildInvoiceAccountOptions(invoiceClerkAccounts, "Select Clerk Admin");
 
-  if (currentValue && invoiceClerkAccounts.some((account) => String(account.id || account.fullName) === String(currentValue))) {
+  if (currentValue && invoiceClerkAccounts.some((account) => String(account.id) === String(currentValue))) {
     clerkSelect.value = currentValue;
   }
 }
 
-function openInvoiceTrackingModal(invoiceId) {
-  const invoice = findInvoiceById(invoiceId);
+async function openInvoiceTrackingModal(invoiceId) {
   const modal = document.getElementById("invoiceTrackingModal");
-  if (!invoice || !modal) return;
 
-  setInvoiceText("invoiceTrackingTitle", `${invoice.trackingNo} Tracking Details`);
-  setInvoiceText("invoiceTrackingSubtitle", "Full validation and routing trail.");
-  setInvoiceText("invoiceViewTrackingNo", invoice.trackingNo);
-  setInvoiceText("invoiceViewStatus", getInvoiceStatusLabel(invoice.status));
-  setInvoiceText("invoiceViewHandler", getInvoiceHandler(invoice));
-  setInvoiceText("invoiceViewSubject", invoice.subject);
-  setInvoiceText("invoiceViewDescription", invoice.description);
+  if (!modal) return;
 
-  const timeline = document.getElementById("invoiceTrackingTimeline");
-  if (timeline) {
-    timeline.innerHTML = invoice.logs?.length
-      ? invoice.logs.map((log) => `
-        <div class="invoice-timeline-item">
-          <div class="invoice-timeline-dot"></div>
-          <div>
-            <strong>${escapeInvoiceHtml(log.message)}</strong>
-            <span>${escapeInvoiceHtml(formatInvoiceRole(log.fromRole))} • ${escapeInvoiceHtml(log.fromUserName || "-")} • ${escapeInvoiceHtml(formatInvoiceDate(log.createdAt))}</span>
+  try {
+    const data = await invoiceFetchJson(getInvoiceApiUrl(`/${invoiceId}`));
+    const invoice = data.invoice;
+
+    if (!invoice) return;
+
+    setInvoiceText("invoiceTrackingTitle", `${invoice.trackingNo || invoice.tracking_no} Tracking Details`);
+    setInvoiceText("invoiceTrackingSubtitle", "Full validation and routing trail.");
+    setInvoiceText("invoiceViewTrackingNo", invoice.trackingNo || invoice.tracking_no);
+    setInvoiceText("invoiceViewStatus", getInvoiceStatusLabel(invoice.status));
+    setInvoiceText("invoiceViewHandler", getInvoiceHandler(invoice));
+    setInvoiceText("invoiceViewSubject", invoice.subject);
+    setInvoiceText("invoiceViewDescription", invoice.description);
+
+    const timeline = document.getElementById("invoiceTrackingTimeline");
+
+    if (timeline) {
+      timeline.innerHTML = invoice.logs?.length
+        ? invoice.logs.map((log) => `
+          <div class="invoice-timeline-item">
+            <div class="invoice-timeline-dot"></div>
+            <div>
+              <strong>${escapeInvoiceHtml(log.message)}</strong>
+              <span>${escapeInvoiceHtml(formatInvoiceRole(log.action_by_role))} • ${escapeInvoiceHtml(log.actionByName || "-")} • ${escapeInvoiceHtml(formatInvoiceDate(log.createdAt || log.created_at))}</span>
+            </div>
           </div>
-        </div>
-      `).join("")
-      : `<div class="invoice-empty-cell">No tracking logs available.</div>`;
-  }
+        `).join("")
+        : `<div class="invoice-empty-cell">No tracking logs available.</div>`;
+    }
 
-  modal.classList.remove("hidden");
+    modal.classList.remove("hidden");
+  } catch (error) {
+    console.error("Open invoice tracking failed:", error);
+    alert(error.message || "Failed to load invoice tracking.");
+  }
 }
 
 function closeInvoiceTrackingModal() {
@@ -743,29 +621,25 @@ function closeInvoiceTrackingModal() {
 
 function setupInvoiceWorkflow() {
   document.getElementById("invoiceCreateForm")?.addEventListener("submit", handleInvoiceCreate);
+
   document.getElementById("refreshInvoiceWorkflowBtn")?.addEventListener("click", async () => {
-    await loadInvoiceAssignableAccounts();
-    renderInvoiceWorkflow();
+    await reloadInvoiceWorkflow();
   });
+
   document.getElementById("invoiceHistorySearchInput")?.addEventListener("input", renderInvoiceHistory);
   document.getElementById("closeInvoiceTrackingBtn")?.addEventListener("click", closeInvoiceTrackingModal);
   document.getElementById("invoiceTrackingOverlay")?.addEventListener("click", closeInvoiceTrackingModal);
 
-  loadInvoiceAssignableAccounts().then(renderInvoiceWorkflow);
+  reloadInvoiceWorkflow();
 
   document.getElementById("openIncomingInvoiceBtn")?.addEventListener("click", () => {
-    setTimeout(async () => {
-      await loadInvoiceAssignableAccounts();
-      renderInvoiceWorkflow();
-    }, 50);
+    setTimeout(reloadInvoiceWorkflow, 80);
   });
 }
 
 document.addEventListener("DOMContentLoaded", setupInvoiceWorkflow);
 
-window.loadInvoiceClerkAccounts = loadInvoiceClerkAccounts;
-window.loadInvoiceDivisionAdminAccounts = loadInvoiceDivisionAdminAccounts;
-window.loadInvoiceAssignableAccounts = loadInvoiceAssignableAccounts;
+window.reloadInvoiceWorkflow = reloadInvoiceWorkflow;
 window.renderInvoiceWorkflow = renderInvoiceWorkflow;
 window.openInvoiceTrackingModal = openInvoiceTrackingModal;
 window.closeInvoiceTrackingModal = closeInvoiceTrackingModal;
