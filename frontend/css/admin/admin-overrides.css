@@ -5768,5 +5768,855 @@ body {
   }
 }
 
+/* =========================================================
+   INCOMING INVOICE WORKFLOW UI
+   Paste at the bottom of css/admin/admin-overrides.css
+========================================================= */
+
+.invoice-workflow-content {
+  width: min(1180px, calc(100vw - 330px)) !important;
+  max-height: 88vh !important;
+  overflow: hidden !important;
+}
+
+.invoice-workflow-body {
+  max-height: calc(88vh - 96px) !important;
+  overflow-y: auto !important;
+  padding: 22px 26px 28px !important;
+}
+
+.invoice-role-banner {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 16px !important;
+  padding: 18px 20px !important;
+  margin-bottom: 18px !important;
+  border: 1px solid #bbf7d0 !important;
+  border-radius: 20px !important;
+  background: #ecfdf3 !important;
+}
+
+.invoice-role-banner span,
+.invoice-summary-card span,
+.invoice-tracking-summary span,
+.invoice-view-subject-card span {
+  display: block !important;
+  color: #64748b !important;
+  font-size: 12px !important;
+  font-weight: 850 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.04em !important;
+}
+
+.invoice-role-banner strong {
+  display: block !important;
+  margin-top: 5px !important;
+  color: #0f172a !important;
+  font-size: 20px !important;
+  font-weight: 950 !important;
+}
+
+.invoice-role-banner p {
+  margin: 6px 0 0 !important;
+  color: #475569 !important;
+  font-size: 13px !important;
+}
+
+.invoice-refresh-btn,
+.invoice-primary-btn,
+.invoice-action-btn,
+.invoice-view-btn {
+  border: 0 !important;
+  min-height: 42px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 16px !important;
+  border-radius: 14px !important;
+  font-size: 12.5px !important;
+  font-weight: 900 !important;
+  cursor: pointer !important;
+}
+
+.invoice-refresh-btn,
+.invoice-view-btn {
+  background: #eff6ff !important;
+  color: #1d4ed8 !important;
+}
+
+.invoice-primary-btn,
+.invoice-action-btn {
+  background: linear-gradient(135deg, #15803d, #16a34a) !important;
+  color: #ffffff !important;
+  box-shadow: 0 12px 26px rgba(22, 163, 74, 0.18) !important;
+}
+
+.invoice-summary-grid,
+.invoice-tracking-summary {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 14px !important;
+  margin-bottom: 18px !important;
+}
+
+.invoice-summary-card,
+.invoice-tracking-summary > div {
+  padding: 16px 18px !important;
+  border: 1px solid #bbf7d0 !important;
+  border-radius: 18px !important;
+  background: #ecfdf3 !important;
+}
+
+.invoice-summary-card.blue {
+  border-color: #bfdbfe !important;
+  background: #eff6ff !important;
+}
+
+.invoice-summary-card.amber {
+  border-color: #fde68a !important;
+  background: #fffbeb !important;
+}
+
+.invoice-summary-card strong,
+.invoice-tracking-summary strong {
+  display: block !important;
+  margin-top: 8px !important;
+  color: #0f172a !important;
+  font-size: 26px !important;
+  line-height: 1 !important;
+  font-weight: 950 !important;
+}
+
+.invoice-summary-card small {
+  display: block !important;
+  margin-top: 7px !important;
+  color: #64748b !important;
+  font-size: 12px !important;
+  font-weight: 750 !important;
+}
+
+.invoice-workflow-layout {
+  display: grid !important;
+  grid-template-columns: minmax(340px, 0.75fr) minmax(0, 1.25fr) !important;
+  gap: 18px !important;
+  margin-bottom: 18px !important;
+}
+
+.invoice-panel {
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 22px !important;
+  background: #ffffff !important;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06) !important;
+  overflow: hidden !important;
+}
+
+.invoice-panel.hidden {
+  display: none !important;
+}
+
+.invoice-panel-header {
+  padding: 18px 20px !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+  background: #f8fafc !important;
+}
+
+.invoice-panel-header h4 {
+  margin: 0 !important;
+  color: #0f172a !important;
+  font-size: 18px !important;
+  font-weight: 950 !important;
+}
+
+.invoice-panel-header p {
+  margin: 5px 0 0 !important;
+  color: #64748b !important;
+  font-size: 13px !important;
+  line-height: 1.45 !important;
+}
+
+.invoice-form {
+  display: grid !important;
+  gap: 14px !important;
+  padding: 18px 20px 20px !important;
+}
+
+.invoice-form-row {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 12px !important;
+}
+
+.invoice-form-group label {
+  display: block !important;
+  margin-bottom: 7px !important;
+  color: #475569 !important;
+  font-size: 12px !important;
+  font-weight: 850 !important;
+}
+
+.invoice-form-group input,
+.invoice-form-group select,
+.invoice-form-group textarea,
+.invoice-history-actions input,
+.invoice-inline-assign input {
+  width: 100% !important;
+  min-height: 43px !important;
+  border: 1px solid #dbe4ee !important;
+  border-radius: 13px !important;
+  background: #ffffff !important;
+  color: #0f172a !important;
+  padding: 0 12px !important;
+  outline: none !important;
+}
+
+.invoice-form-group textarea {
+  min-height: 104px !important;
+  padding: 12px !important;
+  resize: vertical !important;
+}
+
+.invoice-table-shell {
+  width: 100% !important;
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+}
+
+.invoice-table {
+  width: 100% !important;
+  min-width: 860px !important;
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+}
+
+.invoice-table th,
+.invoice-table td {
+  padding: 14px 16px !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+  text-align: left !important;
+  white-space: nowrap !important;
+}
+
+.invoice-table th {
+  background: #f8fafc !important;
+  color: #0f172a !important;
+  font-size: 12px !important;
+  font-weight: 950 !important;
+}
+
+.invoice-empty-cell {
+  padding: 28px !important;
+  color: #64748b !important;
+  text-align: center !important;
+  font-size: 13px !important;
+  font-weight: 750 !important;
+}
+
+.invoice-status-pill {
+  display: inline-flex !important;
+  min-height: 28px !important;
+  align-items: center !important;
+  padding: 5px 10px !important;
+  border-radius: 999px !important;
+  background: #dcfce7 !important;
+  color: #047857 !important;
+  font-size: 11px !important;
+  font-weight: 900 !important;
+}
+
+.invoice-inline-assign {
+  display: grid !important;
+  grid-template-columns: minmax(170px, 1fr) auto !important;
+  gap: 8px !important;
+  align-items: center !important;
+}
+
+.invoice-history-header {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 14px !important;
+}
+
+.invoice-history-actions {
+  min-width: 280px !important;
+}
+
+.invoice-tracking-content {
+  width: min(900px, calc(100vw - 330px)) !important;
+  max-height: 88vh !important;
+  overflow: hidden !important;
+}
+
+.invoice-tracking-body {
+  max-height: calc(88vh - 96px) !important;
+  overflow-y: auto !important;
+  padding: 22px 24px 26px !important;
+}
+
+.invoice-view-subject-card {
+  padding: 18px !important;
+  margin-bottom: 18px !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 18px !important;
+  background: #f8fafc !important;
+}
+
+.invoice-view-subject-card h4 {
+  margin: 8px 0 8px !important;
+  color: #0f172a !important;
+  font-size: 20px !important;
+  font-weight: 950 !important;
+}
+
+.invoice-view-subject-card p {
+  margin: 0 !important;
+  color: #475569 !important;
+  line-height: 1.55 !important;
+}
+
+.invoice-trail-section h4 {
+  margin: 0 0 12px !important;
+  color: #0f172a !important;
+  font-size: 17px !important;
+  font-weight: 950 !important;
+}
+
+.invoice-tracking-timeline {
+  display: grid !important;
+  gap: 12px !important;
+}
+
+.invoice-timeline-item {
+  display: grid !important;
+  grid-template-columns: 16px minmax(0, 1fr) !important;
+  gap: 12px !important;
+  padding: 14px !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 16px !important;
+  background: #ffffff !important;
+}
+
+.invoice-timeline-dot {
+  width: 13px !important;
+  height: 13px !important;
+  margin-top: 4px !important;
+  border-radius: 999px !important;
+  background: #16a34a !important;
+  box-shadow: 0 0 0 4px #dcfce7 !important;
+}
+
+.invoice-timeline-item strong {
+  display: block !important;
+  color: #0f172a !important;
+  font-size: 13.5px !important;
+  font-weight: 900 !important;
+}
+
+.invoice-timeline-item span {
+  display: block !important;
+  margin-top: 5px !important;
+  color: #64748b !important;
+  font-size: 12px !important;
+}
+
+@media (max-width: 1180px) {
+  .invoice-workflow-content,
+  .invoice-tracking-content {
+    position: relative !important;
+    top: auto !important;
+    left: auto !important;
+    transform: none !important;
+    width: calc(100vw - 32px) !important;
+    max-width: calc(100vw - 32px) !important;
+  }
+
+  .invoice-workflow-layout,
+  .invoice-summary-grid,
+  .invoice-tracking-summary {
+    grid-template-columns: 1fr !important;
+  }
+
+  .invoice-role-banner,
+  .invoice-history-header {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+  }
+
+  .invoice-history-actions {
+    min-width: 0 !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .invoice-workflow-body,
+  .invoice-tracking-body {
+    padding: 16px !important;
+  }
+
+  .invoice-form-row,
+  .invoice-inline-assign {
+    grid-template-columns: 1fr !important;
+  }
+
+  .invoice-table {
+    min-width: 780px !important;
+  }
+}
+
+/* =========================================================
+   INVOICE CLERK DROPDOWN CLEANUP
+   Paste after the invoice workflow CSS patch if needed.
+========================================================= */
+
+.invoice-create-panel .invoice-form-row {
+  grid-template-columns: 1fr !important;
+}
+
+.invoice-field-hint {
+  display: block !important;
+  margin-top: 7px !important;
+  color: #64748b !important;
+  font-size: 11.5px !important;
+  line-height: 1.35 !important;
+  font-weight: 700 !important;
+}
+
+#invoiceAssignedClerkSelect:disabled {
+  color: #94a3b8 !important;
+  background: #f8fafc !important;
+  cursor: not-allowed !important;
+}
+
+
+
+/* =========================================================
+   SAFE PATCH: INVOICE VIEW MODAL ABOVE WORKFLOW MODAL
+   Paste at the VERY BOTTOM of css/admin/admin-overrides.css
+
+   Fix:
+   - Invoice Tracking/View modal appears above Incoming Invoice Workflow modal
+   - Prevents the View modal from being hidden behind the parent modal
+========================================================= */
+
+#invoiceTrackingModal.invoice-tracking-modal:not(.hidden),
+#invoiceTrackingModal.custom-modal:not(.hidden) {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 100500 !important;
+
+  display: grid !important;
+  place-items: center !important;
+
+  width: 100vw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+
+  padding: 18px !important;
+  overflow: hidden !important;
+}
+
+#invoiceTrackingModal .custom-modal-overlay,
+#invoiceTrackingModal #invoiceTrackingOverlay {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 100501 !important;
+
+  background: rgba(15, 23, 42, 0.58) !important;
+  backdrop-filter: blur(6px) !important;
+}
+
+#invoiceTrackingModal .invoice-tracking-content,
+#invoiceTrackingModal .custom-modal-content {
+  position: relative !important;
+  z-index: 100502 !important;
+
+  top: auto !important;
+  left: auto !important;
+  transform: none !important;
+
+  width: min(920px, calc(100vw - 40px)) !important;
+  max-width: calc(100vw - 40px) !important;
+  max-height: calc(100dvh - 40px) !important;
+
+  overflow: hidden !important;
+  background: #ffffff !important;
+  border-radius: 24px !important;
+  box-shadow: 0 30px 90px rgba(15, 23, 42, 0.35) !important;
+}
+
+#invoiceTrackingModal .invoice-tracking-body {
+  max-height: calc(100dvh - 150px) !important;
+  overflow-y: auto !important;
+}
+
+/* Keep the parent workflow modal lower than the tracking details modal */
+#incomingInvoiceModal.invoice-workflow-modal:not(.hidden),
+#incomingInvoiceModal.custom-modal:not(.hidden) {
+  z-index: 100000 !important;
+}
+
+/* Mobile safe sizing */
+@media (max-width: 768px) {
+  #invoiceTrackingModal.invoice-tracking-modal:not(.hidden),
+  #invoiceTrackingModal.custom-modal:not(.hidden) {
+    padding: 12px !important;
+  }
+
+  #invoiceTrackingModal .invoice-tracking-content,
+  #invoiceTrackingModal .custom-modal-content {
+    width: calc(100vw - 24px) !important;
+    max-width: calc(100vw - 24px) !important;
+    max-height: calc(100dvh - 24px) !important;
+    border-radius: 18px !important;
+  }
+
+  #invoiceTrackingModal .invoice-tracking-body {
+    max-height: calc(100dvh - 140px) !important;
+  }
+}
+
+/* =========================================================
+   SAFE PATCH: INVOICE QUEUE FULL WIDTH WHEN CREATE PANEL IS HIDDEN
+   Paste at the VERY BOTTOM of css/admin/admin-overrides.css
+
+   Fix:
+   - If the current role cannot create invoice subjects, the create panel is hidden.
+   - My Invoice Queue should expand full width instead of staying small.
+   - Reduces unnecessary horizontal scrollbar.
+========================================================= */
+
+/* Modern browser support: detect hidden create panel */
+.invoice-workflow-layout:has(.invoice-create-panel.hidden) {
+  grid-template-columns: 1fr !important;
+}
+
+/* Fallback: queue panel after hidden create panel expands full grid */
+.invoice-create-panel.hidden + .invoice-queue-panel {
+  grid-column: 1 / -1 !important;
+  width: 100% !important;
+}
+
+/* Make queue panel use available modal width */
+.invoice-queue-panel {
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+.invoice-queue-panel .invoice-table-shell {
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow-x: auto !important;
+}
+
+/* On wide modal, fit queue table naturally */
+.invoice-queue-panel .invoice-table {
+  width: 100% !important;
+  min-width: 0 !important;
+  table-layout: auto !important;
+}
+
+/* Keep important cells readable but avoid forcing huge width */
+.invoice-queue-panel .invoice-table th,
+.invoice-queue-panel .invoice-table td {
+  white-space: nowrap !important;
+}
+
+/* Let Subject use more space */
+.invoice-queue-panel .invoice-table th:nth-child(2),
+.invoice-queue-panel .invoice-table td:nth-child(2) {
+  min-width: 220px !important;
+  white-space: normal !important;
+}
+
+/* Keep status pill inside cell */
+.invoice-queue-panel .invoice-status-pill {
+  white-space: nowrap !important;
+}
+
+/* Better action column */
+.invoice-queue-panel .invoice-table th:last-child,
+.invoice-queue-panel .invoice-table td:last-child {
+  width: 150px !important;
+  text-align: right !important;
+}
+
+/* If the table still overflows on smaller screens, scrollbar stays local only */
+@media (max-width: 1180px) {
+  .invoice-workflow-layout {
+    grid-template-columns: 1fr !important;
+  }
+
+  .invoice-queue-panel .invoice-table {
+    min-width: 720px !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .invoice-queue-panel .invoice-table {
+    min-width: 680px !important;
+  }
+}
+
+
+/* =========================================================
+   INVOICE SUPERVISOR DIVISION ADMIN DROPDOWN
+   Paste at the VERY BOTTOM of css/admin/admin-overrides.css
+
+   Fix:
+   - Supervisor assigns by dropdown, not manual typing
+   - Dropdown shows full names of registered Division Admin accounts
+========================================================= */
+
+.invoice-inline-assign {
+  display: grid !important;
+  grid-template-columns: minmax(230px, 1fr) auto !important;
+  gap: 10px !important;
+  align-items: center !important;
+  min-width: 360px !important;
+}
+
+.invoice-inline-select {
+  width: 100% !important;
+  min-height: 44px !important;
+  border: 1px solid #dbe4ee !important;
+  border-radius: 14px !important;
+  background: #ffffff !important;
+  color: #0f172a !important;
+  padding: 0 12px !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  outline: none !important;
+}
+
+.invoice-inline-select:focus {
+  border-color: #22c55e !important;
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.13) !important;
+}
+
+.invoice-inline-select:disabled {
+  color: #94a3b8 !important;
+  background: #f8fafc !important;
+  cursor: not-allowed !important;
+}
+
+@media (max-width: 768px) {
+  .invoice-inline-assign {
+    grid-template-columns: 1fr !important;
+    min-width: 260px !important;
+  }
+}
+
+/* =========================================================
+   SAFE PATCH: DIVISION ADMIN DROPDOWN BOX UI FIX
+   Paste at the VERY BOTTOM of css/admin/admin-overrides.css
+
+   Fix:
+   - cleaner dropdown/select box for Supervisor action
+   - better spacing with Assign button
+   - prevents awkward cramped box inside table row
+   - keeps layout responsive
+========================================================= */
+
+/* Let action cell breathe */
+.invoice-queue-panel .invoice-table td:last-child,
+.invoice-queue-panel .invoice-table th:last-child {
+  overflow: visible !important;
+  min-width: 360px !important;
+}
+
+/* Cleaner wrapper for dropdown + button */
+.invoice-inline-assign {
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  width: 100% !important;
+  min-width: 420px !important;
+}
+
+/* Better dropdown/select box */
+.invoice-inline-select {
+  flex: 1 1 auto !important;
+  width: 100% !important;
+  min-width: 280px !important;
+  height: 52px !important;
+  padding: 0 16px !important;
+
+  border: 1.5px solid #cfe1d5 !important;
+  border-radius: 18px !important;
+  background: #ffffff !important;
+  color: #0f172a !important;
+
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  line-height: 1 !important;
+
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04) !important;
+  box-sizing: border-box !important;
+  appearance: auto !important;
+}
+
+/* Focus state */
+.invoice-inline-select:focus,
+.invoice-inline-select:focus-visible {
+  outline: none !important;
+  border-color: #22c55e !important;
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.12) !important;
+}
+
+/* Disabled state */
+.invoice-inline-select:disabled {
+  background: #f8fafc !important;
+  color: #94a3b8 !important;
+  cursor: not-allowed !important;
+}
+
+/* Assign button matches box height */
+.invoice-inline-assign .invoice-action-btn {
+  height: 52px !important;
+  min-width: 104px !important;
+  padding: 0 20px !important;
+  border-radius: 18px !important;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+}
+
+/* Keep table shell from clipping action controls */
+.invoice-queue-panel .invoice-table-shell {
+  overflow-x: auto !important;
+  overflow-y: visible !important;
+}
+
+/* Tablet */
+@media (max-width: 992px) {
+  .invoice-inline-assign {
+    min-width: 360px !important;
+  }
+
+  .invoice-inline-select {
+    min-width: 220px !important;
+    height: 48px !important;
+    border-radius: 16px !important;
+  }
+
+  .invoice-inline-assign .invoice-action-btn {
+    height: 48px !important;
+    border-radius: 16px !important;
+  }
+}
+
+/* Mobile */
+@media (max-width: 768px) {
+  .invoice-queue-panel .invoice-table td:last-child,
+  .invoice-queue-panel .invoice-table th:last-child {
+    min-width: 300px !important;
+  }
+
+  .invoice-inline-assign {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    min-width: 260px !important;
+  }
+
+  .invoice-inline-select {
+    min-width: 100% !important;
+    width: 100% !important;
+  }
+
+  .invoice-inline-assign .invoice-action-btn {
+    width: 100% !important;
+  }
+}
+
+/* =========================================================
+   SAFE PATCH: ORIENTATION SINGLE CARD WIDTH FIX
+   Paste at the VERY BOTTOM of css/admin/admin-overrides.css
+
+   Fix:
+   - If only one orientation record exists, card will not stretch full width
+   - Cards stay clean/proportional
+   - Multiple cards still display as responsive grid
+========================================================= */
+
+.orientation-active-wrap {
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+.orientation-card-list {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 420px)) !important;
+  justify-content: start !important;
+  align-items: start !important;
+  gap: 22px !important;
+  width: 100% !important;
+}
+
+/* Prevent single card from becoming super wide */
+.orientation-card,
+.orientation-item,
+.orientation-record-card,
+.orientation-card-list > .orientation-card,
+.orientation-card-list > .orientation-item,
+.orientation-card-list > .orientation-record-card,
+.orientation-card-list > div:not(.empty-state) {
+  width: 100% !important;
+  max-width: 420px !important;
+  min-height: 360px !important;
+  align-self: start !important;
+}
+
+/* Keep card actions aligned nicely */
+.orientation-card .orientation-actions,
+.orientation-item .orientation-actions,
+.orientation-record-card .orientation-actions {
+  margin-top: auto !important;
+}
+
+/* Empty state should still occupy full width */
+.orientation-card-list > .empty-state {
+  grid-column: 1 / -1 !important;
+  width: 100% !important;
+  max-width: none !important;
+}
+
+/* Tablet: two cards if space allows */
+@media (max-width: 1180px) {
+  .orientation-card-list {
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)) !important;
+  }
+
+  .orientation-card,
+  .orientation-item,
+  .orientation-record-card,
+  .orientation-card-list > .orientation-card,
+  .orientation-card-list > .orientation-item,
+  .orientation-card-list > .orientation-record-card,
+  .orientation-card-list > div:not(.empty-state) {
+    max-width: 100% !important;
+  }
+}
+
+/* Mobile: full width is correct */
+@media (max-width: 768px) {
+  .orientation-card-list {
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+  }
+
+  .orientation-card,
+  .orientation-item,
+  .orientation-record-card,
+  .orientation-card-list > .orientation-card,
+  .orientation-card-list > .orientation-item,
+  .orientation-card-list > .orientation-record-card,
+  .orientation-card-list > div:not(.empty-state) {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: auto !important;
+  }
+}
+
+
 
 
