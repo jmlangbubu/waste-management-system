@@ -93,7 +93,7 @@ function getSidebarBrandByRole(role) {
       subtitle: "Management Panel"
     },
     clerk_admin: {
-      title: "WMO Admin",
+      title: "Clerk Admin",
       subtitle: "Clerk Admin Panel"
     },
     division_admin: {
@@ -119,14 +119,6 @@ function getSidebarBrandByRole(role) {
 function setSidebarBrand(user) {
   const brand = getSidebarBrandByRole(user?.role);
 
-  /*
-    Works even if your HTML has no custom IDs.
-    It targets:
-    <div class="brand-text">
-      <h2>WMO Admin</h2>
-      <p>Management Panel</p>
-    </div>
-  */
   const brandTitle =
     document.getElementById("sidebarBrandTitle") ||
     document.querySelector(".sidebar-brand .brand-text h2");
@@ -160,15 +152,36 @@ function isAdminRole(user) {
 function canAccessSection(user, sectionId) {
   if (!user) return false;
 
-  /*
-    User Management should stay restricted to super admin only.
-    Do not allow personnel/supervisor/clerk admin to create accounts unless intended.
-  */
   if (sectionId === SECTION_IDS.userManagement) {
     return isSuperAdmin(user);
   }
 
   return Object.values(SECTION_IDS).includes(sectionId);
+}
+
+function forceHideElement(element) {
+  if (!element) return;
+
+  element.hidden = true;
+  element.classList.add("hidden");
+  element.classList.add("role-hidden");
+  element.setAttribute("aria-hidden", "true");
+  element.style.setProperty("display", "none", "important");
+}
+
+function forceShowElement(element, displayValue = "") {
+  if (!element) return;
+
+  element.hidden = false;
+  element.classList.remove("hidden");
+  element.classList.remove("role-hidden");
+  element.removeAttribute("aria-hidden");
+
+  if (displayValue) {
+    element.style.setProperty("display", displayValue, "important");
+  } else {
+    element.style.removeProperty("display");
+  }
 }
 
 function initializeSession() {
@@ -182,6 +195,8 @@ function initializeSession() {
 
   setUserHeaderInfo(currentUser);
   setUserManagementVisibility(currentUser);
+  guardRestrictedActiveSection(currentUser);
+
   return true;
 }
 
@@ -214,13 +229,44 @@ function setUserManagementVisibility(user) {
   const superAdminContent = document.getElementById("superAdminContent");
 
   if (isSuperAdmin(user)) {
-    if (navUserManagement) navUserManagement.style.display = "";
+    /*
+      Super Admin only:
+      show User Management nav and content.
+    */
+    forceShowElement(navUserManagement, "grid");
     if (restrictedUserMessage) restrictedUserMessage.classList.add("hidden");
     if (superAdminContent) superAdminContent.classList.remove("hidden");
-  } else {
-    if (navUserManagement) navUserManagement.style.display = "none";
-    if (restrictedUserMessage) restrictedUserMessage.classList.remove("hidden");
-    if (superAdminContent) superAdminContent.classList.add("hidden");
+    return;
+  }
+
+  /*
+    Important:
+    Some CSS patches use display:grid !important on .nav-btn.
+    Normal style.display = "none" can be overridden.
+    This uses display none !important + hidden attribute.
+  */
+  forceHideElement(navUserManagement);
+
+  if (restrictedUserMessage) restrictedUserMessage.classList.remove("hidden");
+  if (superAdminContent) superAdminContent.classList.add("hidden");
+}
+
+function guardRestrictedActiveSection(user) {
+  const userManagementSection = document.getElementById("userManagementSection");
+  const dashboardSection = document.getElementById("dashboardSection");
+
+  if (!userManagementSection || isSuperAdmin(user)) return;
+
+  if (userManagementSection.classList.contains("active")) {
+    userManagementSection.classList.remove("active");
+
+    if (dashboardSection) {
+      dashboardSection.classList.add("active");
+    }
+
+    if (typeof openSection === "function") {
+      openSection("dashboardSection");
+    }
   }
 }
 
@@ -240,6 +286,9 @@ window.setSidebarBrand = setSidebarBrand;
 window.isSuperAdmin = isSuperAdmin;
 window.isAdminRole = isAdminRole;
 window.canAccessSection = canAccessSection;
+window.forceHideElement = forceHideElement;
+window.forceShowElement = forceShowElement;
 window.initializeSession = initializeSession;
 window.setUserHeaderInfo = setUserHeaderInfo;
 window.setUserManagementVisibility = setUserManagementVisibility;
+window.guardRestrictedActiveSection = guardRestrictedActiveSection;
