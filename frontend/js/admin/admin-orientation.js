@@ -1,6 +1,116 @@
+// =========================
+// APPROVED-ONLY ORIENTATION FILTER
+// =========================
+
+function normalizeOrientationAnyStatus(value) {
+  return String(value || "")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, "_");
+}
+
+function getOrientationAppointmentStatus(item) {
+  return normalizeOrientationAnyStatus(
+    item?.status ||
+    item?.appointment_status ||
+    item?.approval_status ||
+    ""
+  );
+}
+
+function getOrientationRawLifecycleStatus(item) {
+  return normalizeOrientationAnyStatus(
+    item?.orientation_status ||
+    item?.orientation_qr_status ||
+    ""
+  );
+}
+
+function isRejectedOrCancelledOrientationRecord(item) {
+  const appointmentStatus = getOrientationAppointmentStatus(item);
+  const lifecycleStatus = getOrientationRawLifecycleStatus(item);
+
+  const blockedStatuses = [
+    "rejected",
+    "reject",
+    "cancelled",
+    "canceled",
+    "cancelled_orientation",
+    "canceled_orientation",
+    "cancelled_by_wmo",
+    "canceled_by_wmo"
+  ];
+
+  return (
+    blockedStatuses.includes(appointmentStatus) ||
+    blockedStatuses.includes(lifecycleStatus)
+  );
+}
+
+function isApprovedOrientationAppointment(item) {
+  const appointmentStatus = getOrientationAppointmentStatus(item);
+
+  /*
+    Only approved appointments should enter Orientation.
+    Pending stays in Appointments.
+    Rejected/cancelled stays in Appointment History, not Orientation.
+  */
+  return appointmentStatus === "approved";
+}
+
+function isOrientationAllowedForDashboard(item) {
+  return (
+    isApprovedOrientationAppointment(item) &&
+    !isRejectedOrCancelledOrientationRecord(item)
+  );
+}
+
+function isOrientationStartedOrCompleted(item) {
+  const lifecycleStatus = getOrientationRawLifecycleStatus(item);
+
+  return Boolean(
+    item?.orientation_started_at ||
+    item?.orientation_completed_at ||
+    lifecycleStatus === "pending_orientation" ||
+    lifecycleStatus === "completed_orientation"
+  );
+}
+
+function getActiveOrientationRecords(records) {
+  const safeRecords = Array.isArray(records) ? records : [];
+
+  return safeRecords.filter((item) => {
+    if (!isOrientationAllowedForDashboard(item)) return false;
+    if (!isOrientationToday(item)) return false;
+
+    const lifecycleStatus = getOrientationLifecycleStatus(item);
+
+    return (
+      lifecycleStatus === "approved" ||
+      lifecycleStatus === "pending_orientation"
+    );
+  });
+}
+
+function getUpcomingOrientationRecords(records) {
+  const safeRecords = Array.isArray(records) ? records : [];
+
+  return safeRecords.filter((item) => {
+    if (!isOrientationAllowedForDashboard(item)) return false;
+    if (!isOrientationUpcoming(item)) return false;
+    if (isOrientationStartedOrCompleted(item)) return false;
+
+    const lifecycleStatus = getOrientationLifecycleStatus(item);
+
+    return lifecycleStatus === "approved";
+  });
+}
+
+
 async function loadOrientationAppointments() {
   const cardList = document.getElementById("orientationCardList");
   const historyBody = document.getElementById("orientationHistoryTableBody");
+  const upcomingBody = document.getElementById("upcomingOrientationTableBody");
 
   if (!cardList) return;
 
@@ -10,7 +120,6 @@ async function loadOrientationAppointments() {
     historyBody.innerHTML = `<tr><td colspan="6">Loading history...</td></tr>`;
   }
 
-  const upcomingBody = document.getElementById("upcomingOrientationTableBody");
   if (upcomingBody) {
     upcomingBody.innerHTML = `<tr><td colspan="5">Loading upcoming orientations...</td></tr>`;
   }
@@ -36,29 +145,16 @@ async function loadOrientationAppointments() {
 
     orientationAppointments = Array.isArray(data.appointments) ? data.appointments : [];
 
-    const active = orientationAppointments.filter((item) => {
-      const lifecycleStatus = getOrientationLifecycleStatus(item);
-
-      /*
-        Active Orientation must show today's schedules only.
-        Future approved orientations should not appear yet.
-        Past unfinished orientations are handled by history as No Show / Incomplete.
-      */
-      return (
-        isOrientationToday(item) &&
-        (lifecycleStatus === "approved" || lifecycleStatus === "pending_orientation")
-      );
-    });
-
-    const upcoming = orientationAppointments.filter((item) => {
-      const lifecycleStatus = getOrientationLifecycleStatus(item);
-
-      return (
-        isOrientationUpcoming(item) &&
-        (lifecycleStatus === "approved" || lifecycleStatus === "pending_orientation")
-      );
-    });
-
+    /*
+      Correct orientation flow:
+      - Pending appointment: Appointments tab only
+      - Approved + today: Active Orientation
+      - Approved + future date: Upcoming Orientation
+      - Rejected/cancelled: hidden from Orientation
+      - Completed/no show/incomplete: Orientation Report
+    */
+    const active = getActiveOrientationRecords(orientationAppointments);
+    const upcoming = getUpcomingOrientationRecords(orientationAppointments);
     const history = orientationAppointments.filter((item) => {
       return isOrientationHistoryRecord(item);
     });
@@ -74,7 +170,6 @@ async function loadOrientationAppointments() {
       historyBody.innerHTML = `<tr><td colspan="6">Failed to load history.</td></tr>`;
     }
 
-    const upcomingBody = document.getElementById("upcomingOrientationTableBody");
     if (upcomingBody) {
       upcomingBody.innerHTML = `<tr><td colspan="5">Failed to load upcoming orientations.</td></tr>`;
     }
@@ -151,7 +246,7 @@ function renderUpcomingOrientation(records) {
   if (!Array.isArray(records) || !records.length) {
     tableBody.innerHTML = `
       <tr>
-        <td colspan="5">No upcoming orientation schedules found.</td>
+        <td colspan="5">No approved upcoming orientation schedules.</td>
       </tr>
     `;
     return;
@@ -165,7 +260,7 @@ function renderUpcomingOrientation(records) {
       <td>SWM Orientation</td>
       <td>
         <span class="orientation-status status-approved">
-          Scheduled
+          Approved
         </span>
       </td>
     </tr>
@@ -435,16 +530,7 @@ function openUpcomingOrientationModal() {
     return;
   }
 
-  const upcoming = Array.isArray(orientationAppointments)
-    ? orientationAppointments.filter((item) => {
-        const lifecycleStatus = getOrientationLifecycleStatus(item);
-
-        return (
-          isOrientationUpcoming(item) &&
-          (lifecycleStatus === "approved" || lifecycleStatus === "pending_orientation")
-        );
-      })
-    : [];
+  const upcoming = getUpcomingOrientationRecords(orientationAppointments);
 
   renderUpcomingOrientation(upcoming);
   modal.classList.remove("hidden");
@@ -522,14 +608,14 @@ function normalizeOrientationStatus(status) {
 }
 
 function getOrientationLifecycleStatus(item) {
-  const status = normalizeOrientationStatus(item?.orientation_status);
+  if (isRejectedOrCancelledOrientationRecord(item)) {
+    return "cancelled_orientation";
+  }
+
+  const status = getOrientationRawLifecycleStatus(item);
 
   if (status === "completed_orientation" || item?.orientation_completed_at) {
     return "completed_orientation";
-  }
-
-  if (status === "cancelled" || status === "cancelled_orientation") {
-    return "cancelled_orientation";
   }
 
   if (
@@ -570,13 +656,18 @@ function getOrientationLifecycleStatus(item) {
 }
 
 function isOrientationHistoryRecord(item) {
+  /*
+    Rejected/cancelled appointments belong to Appointment History,
+    not Orientation Report.
+  */
+  if (!isOrientationAllowedForDashboard(item)) return false;
+
   const lifecycleStatus = getOrientationLifecycleStatus(item);
 
   return (
     lifecycleStatus === "completed_orientation" ||
     lifecycleStatus === "no_show" ||
-    lifecycleStatus === "incomplete_orientation" ||
-    lifecycleStatus === "cancelled_orientation"
+    lifecycleStatus === "incomplete_orientation"
   );
 }
 
@@ -707,3 +798,8 @@ window.openOrientationHistoryModal = openOrientationHistoryModal;
 window.closeOrientationHistoryModal = closeOrientationHistoryModal;
 window.openUpcomingOrientationModal = openUpcomingOrientationModal;
 window.closeUpcomingOrientationModal = closeUpcomingOrientationModal;
+
+window.renderUpcomingOrientation = renderUpcomingOrientation;
+window.getActiveOrientationRecords = getActiveOrientationRecords;
+window.getUpcomingOrientationRecords = getUpcomingOrientationRecords;
+window.isOrientationAllowedForDashboard = isOrientationAllowedForDashboard;
