@@ -980,3 +980,911 @@ function renderWebUserActivity() {
     setChartLoadingState("webUsersChart", false);
   }, 250);
 }
+/* =========================================================
+   DASHBOARD ANALYTICS FINAL UPDATE
+   Period filter + cleaner empty chart states
+   Added safely at bottom to override earlier functions.
+
+   Features:
+   - Today / Current Month / Last Month / Last 3 Months / This Year
+   - Existing Day / Month / Year buttons still work
+   - Waste Monitoring summary cards follow selected trend period
+   - Waste Trend chart filters by selected period
+   - Waste Category Analytics filters by selected category period
+   - Empty states are centered and cleaner
+========================================================= */
+
+function formatDashboardLocalDate(date) {
+  const safeDate = new Date(date);
+  if (Number.isNaN(safeDate.getTime())) return "";
+
+  const year = safeDate.getFullYear();
+  const month = String(safeDate.getMonth() + 1).padStart(2, "0");
+  const day = String(safeDate.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function getDashboardPeriodRange(periodKey) {
+  const now = new Date();
+
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+  const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+  if (periodKey === "today") {
+    return {
+      periodKey,
+      rangeType: "day",
+      label: "Today",
+      startDate: todayStart,
+      endDate: todayEnd
+    };
+  }
+
+  if (periodKey === "current_month") {
+    return {
+      periodKey,
+      rangeType: "month",
+      label: "Current Month",
+      startDate: new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0),
+      endDate: new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999)
+    };
+  }
+
+  if (periodKey === "last_month") {
+    return {
+      periodKey,
+      rangeType: "month",
+      label: "Last Month",
+      startDate: new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0, 0),
+      endDate: new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999)
+    };
+  }
+
+  if (periodKey === "last_3_months") {
+    return {
+      periodKey,
+      rangeType: "year",
+      label: "Last 3 Months",
+      startDate: new Date(now.getFullYear(), now.getMonth() - 2, 1, 0, 0, 0, 0),
+      endDate: todayEnd
+    };
+  }
+
+  if (periodKey === "this_year") {
+    return {
+      periodKey,
+      rangeType: "year",
+      label: "This Year",
+      startDate: new Date(now.getFullYear(), 0, 1, 0, 0, 0, 0),
+      endDate: new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999)
+    };
+  }
+
+  return getDashboardPeriodRange("today");
+}
+
+function mapDashboardRangeToPeriodKey(range) {
+  if (range === "day") return "today";
+  if (range === "month") return "current_month";
+  if (range === "year") return "this_year";
+  return "today";
+}
+
+function getSelectedDashboardTrendPeriodKey() {
+  return (
+    localStorage.getItem("dashboardTrendPeriod") ||
+    mapDashboardRangeToPeriodKey(typeof dashboardRange !== "undefined" ? dashboardRange : "day")
+  );
+}
+
+function getSelectedDashboardCategoryPeriodKey() {
+  return (
+    localStorage.getItem("dashboardCategoryPeriod") ||
+    mapDashboardRangeToPeriodKey(typeof categoryRange !== "undefined" ? categoryRange : "day")
+  );
+}
+
+function setActiveDashboardSegment(selector, rangeType) {
+  const buttons = document.querySelectorAll(selector);
+
+  buttons.forEach((btn) => {
+    const value = btn.getAttribute(
+      selector.includes("category") ? "data-category-range" : "data-range"
+    );
+
+    btn.classList.toggle("active", value === rangeType);
+  });
+}
+
+function getDashboardRecordDate(record) {
+  const rawDate = getRecordCreatedAt(record);
+  if (!rawDate) return null;
+
+  const date = new Date(rawDate);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function isRecordWithinDashboardRange(record, periodInfo) {
+  const recordDate = getDashboardRecordDate(record);
+  if (!recordDate) return false;
+
+  return recordDate >= periodInfo.startDate && recordDate <= periodInfo.endDate;
+}
+
+function getFilteredRecordsByPeriod(records = validatedWasteRecords, periodKey = "today") {
+  if (!Array.isArray(records) || !records.length) return [];
+
+  const periodInfo = getDashboardPeriodRange(periodKey);
+
+  return records.filter((record) => isRecordWithinDashboardRange(record, periodInfo));
+}
+
+/*
+  Override old trend filtering.
+  This now supports Last Month and Last 3 Months, not only current day/month/year.
+*/
+function getFilteredRecordsByRange(records = validatedWasteRecords) {
+  const periodKey = getSelectedDashboardTrendPeriodKey();
+  const periodInfo = getDashboardPeriodRange(periodKey);
+
+  dashboardRange = periodInfo.rangeType;
+
+  return getFilteredRecordsByPeriod(records, periodKey);
+}
+
+/*
+  Override old category filtering.
+*/
+function getFilteredCategoryRecordsByRange(records = validatedWasteRecords) {
+  const periodKey = getSelectedDashboardCategoryPeriodKey();
+  const periodInfo = getDashboardPeriodRange(periodKey);
+
+  categoryRange = periodInfo.rangeType;
+
+  return getFilteredRecordsByPeriod(records, periodKey);
+}
+
+function createDashboardPeriodSelect(id, storageKey, filterType) {
+  const select = document.createElement("select");
+  select.id = id;
+  select.className = "dashboard-period-select";
+  select.setAttribute("aria-label", `${filterType} period filter`);
+
+  select.innerHTML = `
+    <option value="today">Today</option>
+    <option value="current_month">Current Month</option>
+    <option value="last_month">Last Month</option>
+    <option value="last_3_months">Last 3 Months</option>
+    <option value="this_year">This Year</option>
+  `;
+
+  select.value = localStorage.getItem(storageKey) || "today";
+
+  select.addEventListener("change", () => {
+    if (filterType === "trend") {
+      setDashboardTrendPeriod(select.value);
+    } else {
+      setDashboardCategoryPeriod(select.value);
+    }
+  });
+
+  return select;
+}
+
+function setupDashboardAdvancedPeriodFilters() {
+  if (window.__dashboardAdvancedPeriodFiltersInitialized === true) {
+    syncDashboardPeriodSelects();
+    return;
+  }
+
+  window.__dashboardAdvancedPeriodFiltersInitialized = true;
+
+  const trendActions = document
+    .querySelector("#viewAllAnalyticsBtn")
+    ?.closest(".dashboard-header-actions");
+
+  const categoryActions = document
+    .querySelector("#viewAllWasteMixBtn")
+    ?.closest(".dashboard-header-actions");
+
+  if (trendActions && !document.getElementById("dashboardTrendPeriodSelect")) {
+    const trendSelect = createDashboardPeriodSelect(
+      "dashboardTrendPeriodSelect",
+      "dashboardTrendPeriod",
+      "trend"
+    );
+
+    trendActions.appendChild(trendSelect);
+  }
+
+  if (categoryActions && !document.getElementById("dashboardCategoryPeriodSelect")) {
+    const categorySelect = createDashboardPeriodSelect(
+      "dashboardCategoryPeriodSelect",
+      "dashboardCategoryPeriod",
+      "category"
+    );
+
+    categoryActions.appendChild(categorySelect);
+  }
+
+  syncDashboardPeriodSelects();
+}
+
+function syncDashboardPeriodSelects() {
+  const trendSelect = document.getElementById("dashboardTrendPeriodSelect");
+  const categorySelect = document.getElementById("dashboardCategoryPeriodSelect");
+
+  if (trendSelect) {
+    trendSelect.value = getSelectedDashboardTrendPeriodKey();
+  }
+
+  if (categorySelect) {
+    categorySelect.value = getSelectedDashboardCategoryPeriodKey();
+  }
+
+  const trendInfo = getDashboardPeriodRange(getSelectedDashboardTrendPeriodKey());
+  const categoryInfo = getDashboardPeriodRange(getSelectedDashboardCategoryPeriodKey());
+
+  setActiveDashboardSegment("[data-range]", trendInfo.rangeType);
+  setActiveDashboardSegment("[data-category-range]", categoryInfo.rangeType);
+}
+
+function setDashboardTrendPeriod(periodKey) {
+  const periodInfo = getDashboardPeriodRange(periodKey);
+
+  localStorage.setItem("dashboardTrendPeriod", periodKey);
+  dashboardRange = periodInfo.rangeType;
+
+  syncDashboardPeriodSelects();
+
+  const filteredRecords = getFilteredRecordsByRange(validatedWasteRecords);
+
+  updateDashboardAnalytics(filteredRecords);
+  renderWasteTrendOverview(validatedWasteRecords);
+
+  document.dispatchEvent(
+    new CustomEvent("dashboard:periodFilterChanged", {
+      detail: {
+        filterType: "trend",
+        periodKey,
+        label: periodInfo.label,
+        rangeType: periodInfo.rangeType,
+        startDate: formatDashboardLocalDate(periodInfo.startDate),
+        endDate: formatDashboardLocalDate(periodInfo.endDate)
+      }
+    })
+  );
+}
+
+function setDashboardCategoryPeriod(periodKey) {
+  const periodInfo = getDashboardPeriodRange(periodKey);
+
+  localStorage.setItem("dashboardCategoryPeriod", periodKey);
+  categoryRange = periodInfo.rangeType;
+
+  syncDashboardPeriodSelects();
+  renderCategoryAnalytics(validatedWasteRecords);
+
+  document.dispatchEvent(
+    new CustomEvent("dashboard:periodFilterChanged", {
+      detail: {
+        filterType: "category",
+        periodKey,
+        label: periodInfo.label,
+        rangeType: periodInfo.rangeType,
+        startDate: formatDashboardLocalDate(periodInfo.startDate),
+        endDate: formatDashboardLocalDate(periodInfo.endDate)
+      }
+    })
+  );
+}
+
+/*
+  Override old Day / Month / Year filter setup.
+  Existing buttons still work, but they now map to:
+  Day = Today
+  Month = Current Month
+  Year = This Year
+*/
+function setupDashboardRangeFilters() {
+  const rangeButtons = document.querySelectorAll("[data-range]");
+
+  rangeButtons.forEach((btn) => {
+    btn.onclick = () => {
+      const range = btn.getAttribute("data-range") || "day";
+      setDashboardTrendPeriod(mapDashboardRangeToPeriodKey(range));
+    };
+  });
+
+  syncDashboardPeriodSelects();
+}
+
+function setupCategoryRangeFilters() {
+  const categoryButtons = document.querySelectorAll("[data-category-range]");
+
+  categoryButtons.forEach((btn) => {
+    btn.onclick = () => {
+      const range = btn.getAttribute("data-category-range") || "day";
+      setDashboardCategoryPeriod(mapDashboardRangeToPeriodKey(range));
+    };
+  });
+
+  syncDashboardPeriodSelects();
+}
+
+function renderDashboardChartEmpty(container, message, subText) {
+  if (!container) return;
+
+  container.innerHTML = `
+    <div class="dashboard-chart-empty">
+      <span>${escapeHtml(message)}</span>
+      <small>${escapeHtml(subText || "")}</small>
+    </div>
+  `;
+}
+
+function renderWasteTrendOverview(records = validatedWasteRecords) {
+  const container = document.getElementById("wasteTrendChart");
+  if (!container) return;
+
+  let canvas = document.getElementById("wasteTrendCanvas");
+
+  const trendData = buildWasteTrendData(records);
+  const periodInfo = getDashboardPeriodRange(getSelectedDashboardTrendPeriodKey());
+
+  if (!trendData.length) {
+    if (wasteTrendChartInstance) {
+      wasteTrendChartInstance.destroy();
+      wasteTrendChartInstance = null;
+    }
+
+    renderDashboardChartEmpty(
+      container,
+      "No waste monitoring data available for this range.",
+      `${periodInfo.label}: ${formatDashboardLocalDate(periodInfo.startDate)} to ${formatDashboardLocalDate(periodInfo.endDate)}`
+    );
+    return;
+  }
+
+  if (!canvas) {
+    container.innerHTML = `<canvas id="wasteTrendCanvas"></canvas>`;
+    canvas = document.getElementById("wasteTrendCanvas");
+  }
+
+  if (!canvas) return;
+
+  const labels = trendData.map(item => item.label);
+  const biodegradableData = trendData.map(item => item.biodegradable);
+  const recyclableData = trendData.map(item => item.recyclable);
+  const residualData = trendData.map(item => item.residual);
+  const specialData = trendData.map(item => item.special);
+
+  try {
+    if (wasteTrendChartInstance) {
+      wasteTrendChartInstance.destroy();
+      wasteTrendChartInstance = null;
+    }
+
+    if (typeof Chart !== "undefined" && Chart.getChart) {
+      const existingChart = Chart.getChart(canvas);
+      if (existingChart) existingChart.destroy();
+    }
+  } catch (error) {
+    console.warn("Old waste trend chart cleanup skipped:", error);
+    wasteTrendChartInstance = null;
+  }
+
+  if (typeof Chart === "undefined") {
+    console.error("Chart.js is not loaded.");
+    renderDashboardChartEmpty(
+      container,
+      "Chart.js is not loaded.",
+      "Please check if the Chart.js script is included before dashboard analytics."
+    );
+    return;
+  }
+
+  const ctx = canvas.getContext("2d");
+
+  wasteTrendChartInstance = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: "Bio",
+          data: biodegradableData,
+          borderWidth: 3,
+          tension: 0.35,
+          fill: false,
+          pointRadius: 5,
+          pointHoverRadius: 7
+        },
+        {
+          label: "Recycle",
+          data: recyclableData,
+          borderWidth: 3,
+          tension: 0.35,
+          fill: false,
+          pointRadius: 5,
+          pointHoverRadius: 7
+        },
+        {
+          label: "Residual",
+          data: residualData,
+          borderWidth: 3,
+          tension: 0.35,
+          fill: false,
+          pointRadius: 5,
+          pointHoverRadius: 7
+        },
+        {
+          label: "Special",
+          data: specialData,
+          borderWidth: 3,
+          tension: 0.35,
+          fill: false,
+          pointRadius: 5,
+          pointHoverRadius: 7
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {
+        mode: "index",
+        intersect: false
+      },
+      plugins: {
+        legend: {
+          position: "top",
+          labels: {
+            usePointStyle: true,
+            boxWidth: 10,
+            padding: 16
+          }
+        },
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              return `${context.dataset.label}: ${formatNumber(context.raw)}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: {
+            display: false
+          }
+        },
+        y: {
+          beginAtZero: true,
+          ticks: {
+            callback: function(value) {
+              return formatNumber(value);
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+function renderCategoryAnalytics(records = validatedWasteRecords) {
+  const container = document.getElementById("wasteCategoryChart");
+  if (!container) return;
+
+  const filteredRecords = getFilteredCategoryRecordsByRange(records);
+  const periodInfo = getDashboardPeriodRange(getSelectedDashboardCategoryPeriodKey());
+
+  const items = [
+    {
+      label: "Biodegradable",
+      value: filteredRecords.reduce((sum, record) => sum + toNumber(record.biodegradable_subtotal), 0)
+    },
+    {
+      label: "Recyclable",
+      value: filteredRecords.reduce((sum, record) => sum + toNumber(record.recyclable_subtotal), 0)
+    },
+    {
+      label: "Residual",
+      value: filteredRecords.reduce((sum, record) => sum + toNumber(record.residual_subtotal), 0)
+    },
+    {
+      label: "Special Waste",
+      value: filteredRecords.reduce((sum, record) => sum + toNumber(record.special_subtotal), 0)
+    }
+  ];
+
+  const hasData = items.some((item) => item.value > 0);
+
+  if (!hasData) {
+    if (wasteCategoryChartInstance) {
+      wasteCategoryChartInstance.destroy();
+      wasteCategoryChartInstance = null;
+    }
+
+    renderDashboardChartEmpty(
+      container,
+      "No waste category data available for this range.",
+      `${periodInfo.label}: ${formatDashboardLocalDate(periodInfo.startDate)} to ${formatDashboardLocalDate(periodInfo.endDate)}`
+    );
+    return;
+  }
+
+  let canvas = document.getElementById("wasteCategoryCanvas");
+
+  if (!canvas) {
+    container.innerHTML = `<canvas id="wasteCategoryCanvas"></canvas>`;
+    canvas = document.getElementById("wasteCategoryCanvas");
+  }
+
+  if (!canvas) return;
+
+  try {
+    if (wasteCategoryChartInstance) {
+      wasteCategoryChartInstance.destroy();
+      wasteCategoryChartInstance = null;
+    }
+
+    if (typeof Chart !== "undefined" && Chart.getChart) {
+      const existingChart = Chart.getChart(canvas);
+      if (existingChart) existingChart.destroy();
+    }
+  } catch (error) {
+    console.warn("Old waste category chart cleanup skipped:", error);
+    wasteCategoryChartInstance = null;
+  }
+
+  if (typeof Chart === "undefined") {
+    console.error("Chart.js is not loaded.");
+    renderDashboardChartEmpty(
+      container,
+      "Chart.js is not loaded.",
+      "Please check if the Chart.js script is included before dashboard analytics."
+    );
+    return;
+  }
+
+  const ctx = canvas.getContext("2d");
+
+  wasteCategoryChartInstance = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: items.map((item) => item.label),
+      datasets: [
+        {
+          label: "Waste Volume",
+          data: items.map((item) => item.value),
+          borderRadius: 12,
+          barThickness: 24,
+          backgroundColor: (context) => {
+            const chart = context.chart;
+            const { ctx, chartArea } = chart;
+
+            if (!chartArea) return "#2e7d32";
+
+            const gradient = ctx.createLinearGradient(0, chartArea.left, chartArea.right, 0);
+            gradient.addColorStop(0, "#66bb6a");
+            gradient.addColorStop(1, "#1b5e20");
+
+            return gradient;
+          }
+        }
+      ]
+    },
+    options: {
+      indexAxis: "y",
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: {
+        duration: 900,
+        easing: "easeOutQuart"
+      },
+      plugins: {
+        legend: {
+          display: false
+        },
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              return `Total: ${formatNumber(context.raw)}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          beginAtZero: true,
+          ticks: {
+            callback: function(value) {
+              return formatNumber(value);
+            }
+          },
+          grid: {
+            drawBorder: false
+          }
+        },
+        y: {
+          grid: {
+            display: false,
+            drawBorder: false
+          }
+        }
+      }
+    }
+  });
+}
+
+function initializeDashboardData() {
+  setupDashboardAdvancedPeriodFilters();
+  setupDashboardRangeFilters();
+  setupCategoryRangeFilters();
+
+  try {
+    updateDashboardAnalytics(getFilteredRecordsByRange(validatedWasteRecords));
+  } catch (error) {
+    console.error("updateDashboardAnalytics error:", error);
+  }
+
+  try {
+    renderWasteTrendOverview(validatedWasteRecords);
+  } catch (error) {
+    console.error("renderWasteTrendOverview error:", error);
+  }
+
+  try {
+    renderLatestSubmission(validatedWasteRecords);
+  } catch (error) {
+    console.error("renderLatestSubmission error:", error);
+  }
+
+  try {
+    renderSubmissionSources(validatedWasteRecords);
+  } catch (error) {
+    console.error("renderSubmissionSources error:", error);
+  }
+
+  try {
+    renderWebUserActivity();
+  } catch (error) {
+    console.error("renderWebUserActivity error:", error);
+  }
+
+  try {
+    renderCategoryAnalytics(validatedWasteRecords);
+  } catch (error) {
+    console.error("renderCategoryAnalytics error:", error);
+  }
+
+  try {
+    renderSystemRecommendations(validatedWasteRecords);
+  } catch (error) {
+    console.error("renderSystemRecommendations error:", error);
+  }
+
+  syncDashboardPeriodSelects();
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  setupDashboardAdvancedPeriodFilters();
+  setupDashboardRangeFilters();
+  setupCategoryRangeFilters();
+
+  setTimeout(() => {
+    syncDashboardPeriodSelects();
+  }, 250);
+});
+
+/* Useful globals for testing/debugging */
+window.getDashboardPeriodRange = getDashboardPeriodRange;
+window.setDashboardTrendPeriod = setDashboardTrendPeriod;
+window.setDashboardCategoryPeriod = setDashboardCategoryPeriod;
+window.setupDashboardAdvancedPeriodFilters = setupDashboardAdvancedPeriodFilters;
+/* =========================================================
+   DASHBOARD CUSTOM PERIOD DROPDOWN UI - FULL INTEGRATED
+   Purpose:
+   - Hide native browser select dropdown
+   - Render professional custom dropdown
+   - Keep original select synced with existing filter logic
+   - Works with dashboardTrendPeriodSelect and dashboardCategoryPeriodSelect
+========================================================= */
+
+function getDashboardSelectLabel(select) {
+  if (!select) return "-";
+
+  const selectedOption = select.options[select.selectedIndex];
+  return selectedOption ? selectedOption.textContent.trim() : "-";
+}
+
+function closeAllDashboardCustomDropdowns(exceptWrapper = null) {
+  document.querySelectorAll(".dashboard-custom-select.open").forEach((wrapper) => {
+    if (wrapper !== exceptWrapper) {
+      wrapper.classList.remove("open");
+
+      const btn = wrapper.querySelector(".dashboard-custom-select-btn");
+      if (btn) btn.setAttribute("aria-expanded", "false");
+    }
+  });
+}
+
+function syncDashboardCustomDropdown(select) {
+  if (!select || !select.id) return;
+
+  const wrapper = document.querySelector(
+    `.dashboard-custom-select[data-for="${select.id}"]`
+  );
+
+  if (!wrapper) return;
+
+  const label = wrapper.querySelector(".dashboard-custom-select-label");
+  if (label) label.textContent = getDashboardSelectLabel(select);
+
+  wrapper.querySelectorAll(".dashboard-custom-select-option").forEach((optionBtn) => {
+    const isActive = optionBtn.dataset.value === select.value;
+
+    optionBtn.classList.toggle("active", isActive);
+    optionBtn.setAttribute("aria-selected", isActive ? "true" : "false");
+  });
+}
+
+function buildDashboardCustomDropdown(select) {
+  if (!select || !select.id) return;
+
+  const existingWrapper = document.querySelector(
+    `.dashboard-custom-select[data-for="${select.id}"]`
+  );
+
+  if (existingWrapper) {
+    select.classList.add("dashboard-native-hidden");
+    syncDashboardCustomDropdown(select);
+    return;
+  }
+
+  select.classList.add("dashboard-native-hidden");
+
+  const wrapper = document.createElement("div");
+  wrapper.className = "dashboard-custom-select";
+  wrapper.dataset.for = select.id;
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "dashboard-custom-select-btn";
+  button.setAttribute("aria-haspopup", "listbox");
+  button.setAttribute("aria-expanded", "false");
+
+  button.innerHTML = `
+    <span class="dashboard-custom-select-label">${getDashboardSelectLabel(select)}</span>
+    <span class="dashboard-custom-select-arrow">⌄</span>
+  `;
+
+  const menu = document.createElement("div");
+  menu.className = "dashboard-custom-select-menu";
+  menu.setAttribute("role", "listbox");
+
+  Array.from(select.options).forEach((option) => {
+    const optionBtn = document.createElement("button");
+    optionBtn.type = "button";
+    optionBtn.className = "dashboard-custom-select-option";
+    optionBtn.dataset.value = option.value;
+    optionBtn.textContent = option.textContent;
+    optionBtn.setAttribute("role", "option");
+    optionBtn.setAttribute("aria-selected", option.value === select.value ? "true" : "false");
+
+    if (option.value === select.value) {
+      optionBtn.classList.add("active");
+    }
+
+    optionBtn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      select.value = option.value;
+
+      select.dispatchEvent(
+        new Event("change", {
+          bubbles: true
+        })
+      );
+
+      syncDashboardCustomDropdown(select);
+
+      wrapper.classList.remove("open");
+      button.setAttribute("aria-expanded", "false");
+    });
+
+    menu.appendChild(optionBtn);
+  });
+
+  button.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const willOpen = !wrapper.classList.contains("open");
+
+    closeAllDashboardCustomDropdowns(wrapper);
+
+    wrapper.classList.toggle("open", willOpen);
+    button.setAttribute("aria-expanded", willOpen ? "true" : "false");
+  });
+
+  wrapper.appendChild(button);
+  wrapper.appendChild(menu);
+
+  select.insertAdjacentElement("afterend", wrapper);
+
+  select.addEventListener("change", () => {
+    syncDashboardCustomDropdown(select);
+  });
+
+  syncDashboardCustomDropdown(select);
+}
+
+function setupDashboardCustomPeriodDropdowns() {
+  const selects = [
+    document.getElementById("dashboardTrendPeriodSelect"),
+    document.getElementById("dashboardCategoryPeriodSelect")
+  ].filter(Boolean);
+
+  selects.forEach(buildDashboardCustomDropdown);
+}
+
+document.addEventListener("click", () => {
+  closeAllDashboardCustomDropdowns();
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    closeAllDashboardCustomDropdowns();
+  }
+});
+
+document.addEventListener("DOMContentLoaded", () => {
+  setTimeout(setupDashboardCustomPeriodDropdowns, 80);
+  setTimeout(setupDashboardCustomPeriodDropdowns, 350);
+  setTimeout(setupDashboardCustomPeriodDropdowns, 900);
+});
+
+/*
+  Wrap period-filter setup so custom dropdowns are always created after
+  the native period selects are inserted into the DOM.
+*/
+if (typeof setupDashboardAdvancedPeriodFilters === "function" && !window.__dashboardCustomDropdownSetupWrapped) {
+  window.__dashboardCustomDropdownSetupWrapped = true;
+
+  const originalSetupDashboardAdvancedPeriodFilters = setupDashboardAdvancedPeriodFilters;
+
+  setupDashboardAdvancedPeriodFilters = function patchedSetupDashboardAdvancedPeriodFilters() {
+    originalSetupDashboardAdvancedPeriodFilters();
+    setupDashboardCustomPeriodDropdowns();
+  };
+
+  window.setupDashboardAdvancedPeriodFilters = setupDashboardAdvancedPeriodFilters;
+}
+
+/*
+  Wrap select sync so custom UI always follows the real select value.
+*/
+if (typeof syncDashboardPeriodSelects === "function" && !window.__dashboardCustomDropdownSyncWrapped) {
+  window.__dashboardCustomDropdownSyncWrapped = true;
+
+  const originalSyncDashboardPeriodSelects = syncDashboardPeriodSelects;
+
+  syncDashboardPeriodSelects = function patchedSyncDashboardPeriodSelects() {
+    originalSyncDashboardPeriodSelects();
+    setupDashboardCustomPeriodDropdowns();
+
+    document
+      .querySelectorAll(".dashboard-period-select")
+      .forEach(syncDashboardCustomDropdown);
+  };
+
+  window.syncDashboardPeriodSelects = syncDashboardPeriodSelects;
+}
+
+window.setupDashboardCustomPeriodDropdowns = setupDashboardCustomPeriodDropdowns;
+window.syncDashboardCustomDropdown = syncDashboardCustomDropdown;
+window.closeAllDashboardCustomDropdowns = closeAllDashboardCustomDropdowns;
