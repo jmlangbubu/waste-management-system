@@ -643,3 +643,389 @@ window.reloadInvoiceWorkflow = reloadInvoiceWorkflow;
 window.renderInvoiceWorkflow = renderInvoiceWorkflow;
 window.openInvoiceTrackingModal = openInvoiceTrackingModal;
 window.closeInvoiceTrackingModal = closeInvoiceTrackingModal;
+/* =========================================================
+   INVOICE WORKFLOW CUSTOM DROPDOWN UI - FULL INTEGRATED
+   Added for:
+   - Assign Clerk Admin dropdown
+   - Assign Division Admin dropdown
+   - Any future invoice workflow select inside invoice modals
+
+   Notes:
+   - Original native <select> remains active behind the custom UI.
+   - Existing invoice logic still reads the real select value.
+   - Dropdown menu is rendered as a portal to avoid being clipped by modal/table scroll.
+========================================================= */
+
+let activeInvoiceCustomSelect = null;
+let activeInvoicePortalMenu = null;
+
+function isInvoiceSelectTarget(select) {
+  if (!select || select.tagName !== "SELECT") return false;
+
+  return Boolean(
+    select.closest("#incomingInvoiceModal") ||
+    select.closest("#invoiceTrackingModal") ||
+    select.closest(".invoice-workflow-modal") ||
+    select.closest(".invoice-modal") ||
+    select.classList.contains("invoice-inline-select") ||
+    select.id === "invoiceAssignedClerkSelect"
+  );
+}
+
+function getInvoiceSelectLabel(select) {
+  if (!select) return "-";
+
+  const selectedOption = select.options[select.selectedIndex];
+  return selectedOption ? selectedOption.textContent.trim() : "-";
+}
+
+function closeInvoiceCustomDropdown() {
+  if (activeInvoicePortalMenu) {
+    activeInvoicePortalMenu.remove();
+    activeInvoicePortalMenu = null;
+  }
+
+  if (activeInvoiceCustomSelect) {
+    activeInvoiceCustomSelect.classList.remove("open");
+
+    const btn = activeInvoiceCustomSelect.querySelector(".invoice-custom-select-btn");
+    if (btn) btn.setAttribute("aria-expanded", "false");
+
+    activeInvoiceCustomSelect = null;
+  }
+}
+
+function syncInvoiceCustomDropdown(select) {
+  if (!select || !select.id) return;
+
+  const wrapper = document.querySelector(
+    `.invoice-custom-select[data-for="${select.id}"]`
+  );
+
+  if (!wrapper) return;
+
+  const label = wrapper.querySelector(".invoice-custom-select-label");
+  if (label) label.textContent = getInvoiceSelectLabel(select);
+
+  const btn = wrapper.querySelector(".invoice-custom-select-btn");
+  if (btn) {
+    btn.disabled = !!select.disabled;
+    btn.classList.toggle("is-disabled", !!select.disabled);
+  }
+}
+
+function positionInvoicePortalMenu(wrapper, portal) {
+  if (!wrapper || !portal) return;
+
+  const button = wrapper.querySelector(".invoice-custom-select-btn");
+  if (!button) return;
+
+  const rect = button.getBoundingClientRect();
+  const viewportHeight = window.innerHeight;
+  const viewportWidth = window.innerWidth;
+
+  const menuWidth = Math.max(rect.width, 230);
+  const estimatedHeight = Math.min(portal.scrollHeight || 280, 280);
+
+  let left = rect.left;
+  let top = rect.bottom + 8;
+
+  if (left + menuWidth > viewportWidth - 12) {
+    left = viewportWidth - menuWidth - 12;
+  }
+
+  if (top + estimatedHeight > viewportHeight - 12) {
+    top = Math.max(12, rect.top - estimatedHeight - 8);
+  }
+
+  portal.style.left = `${Math.max(12, left)}px`;
+  portal.style.top = `${Math.max(12, top)}px`;
+  portal.style.width = `${menuWidth}px`;
+}
+
+function openInvoiceCustomDropdown(select, wrapper) {
+  closeInvoiceCustomDropdown();
+
+  if (!select || !wrapper || select.disabled) return;
+
+  wrapper.classList.add("open");
+
+  const btn = wrapper.querySelector(".invoice-custom-select-btn");
+  if (btn) btn.setAttribute("aria-expanded", "true");
+
+  const portal = document.createElement("div");
+  portal.className = "invoice-custom-select-portal-menu";
+  portal.setAttribute("role", "listbox");
+  portal.dataset.for = select.id;
+
+  Array.from(select.options).forEach((option) => {
+    const optionBtn = document.createElement("button");
+    optionBtn.type = "button";
+    optionBtn.className = "invoice-custom-select-option";
+    optionBtn.dataset.value = option.value;
+    optionBtn.textContent = option.textContent;
+    optionBtn.setAttribute("role", "option");
+
+    const isActive = option.value === select.value;
+    optionBtn.classList.toggle("active", isActive);
+    optionBtn.setAttribute("aria-selected", isActive ? "true" : "false");
+
+    if (option.disabled) {
+      optionBtn.disabled = true;
+      optionBtn.classList.add("is-disabled");
+    }
+
+    optionBtn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (option.disabled) return;
+
+      select.value = option.value;
+
+      select.dispatchEvent(
+        new Event("change", {
+          bubbles: true
+        })
+      );
+
+      syncInvoiceCustomDropdown(select);
+      closeInvoiceCustomDropdown();
+    });
+
+    portal.appendChild(optionBtn);
+  });
+
+  document.body.appendChild(portal);
+
+  activeInvoiceCustomSelect = wrapper;
+  activeInvoicePortalMenu = portal;
+
+  positionInvoicePortalMenu(wrapper, portal);
+
+  requestAnimationFrame(() => {
+    positionInvoicePortalMenu(wrapper, portal);
+  });
+}
+
+function buildInvoiceCustomDropdown(select) {
+  if (!isInvoiceSelectTarget(select)) return;
+
+  if (!select.id) {
+    select.id = `invoiceSelect_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  const existingWrapper = document.querySelector(
+    `.invoice-custom-select[data-for="${select.id}"]`
+  );
+
+  if (existingWrapper) {
+    select.classList.add("invoice-native-select-hidden");
+    syncInvoiceCustomDropdown(select);
+    return;
+  }
+
+  select.classList.add("invoice-native-select-hidden");
+
+  const wrapper = document.createElement("div");
+  wrapper.className = "invoice-custom-select";
+  wrapper.dataset.for = select.id;
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "invoice-custom-select-btn";
+  button.setAttribute("aria-haspopup", "listbox");
+  button.setAttribute("aria-expanded", "false");
+
+  button.innerHTML = `
+    <span class="invoice-custom-select-label">${getInvoiceSelectLabel(select)}</span>
+    <span class="invoice-custom-select-arrow">⌄</span>
+  `;
+
+  button.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (select.disabled) return;
+
+    if (wrapper.classList.contains("open")) {
+      closeInvoiceCustomDropdown();
+      return;
+    }
+
+    openInvoiceCustomDropdown(select, wrapper);
+  });
+
+  wrapper.appendChild(button);
+  select.insertAdjacentElement("afterend", wrapper);
+
+  select.addEventListener("change", () => {
+    syncInvoiceCustomDropdown(select);
+  });
+
+  syncInvoiceCustomDropdown(select);
+}
+
+function setupInvoiceCustomDropdowns(root = document) {
+  root.querySelectorAll("select").forEach((select) => {
+    if (isInvoiceSelectTarget(select)) {
+      buildInvoiceCustomDropdown(select);
+    }
+  });
+}
+
+function observeInvoiceCustomDropdowns() {
+  if (window.__invoiceCustomDropdownObserverBound === true) return;
+  window.__invoiceCustomDropdownObserverBound = true;
+
+  const observer = new MutationObserver((mutations) => {
+    let shouldSetup = false;
+
+    mutations.forEach((mutation) => {
+      mutation.addedNodes.forEach((node) => {
+        if (!(node instanceof HTMLElement)) return;
+
+        if (
+          node.matches?.("select") ||
+          node.querySelector?.("select") ||
+          node.id === "incomingInvoiceModal" ||
+          node.closest?.("#incomingInvoiceModal")
+        ) {
+          shouldSetup = true;
+        }
+      });
+    });
+
+    if (shouldSetup) {
+      setTimeout(() => setupInvoiceCustomDropdowns(), 40);
+      setTimeout(() => setupInvoiceCustomDropdowns(), 160);
+    }
+  });
+
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true
+  });
+
+  window.invoiceCustomDropdownObserver = observer;
+}
+
+/*
+  After invoice dropdown options are repopulated, refresh the custom UI.
+*/
+if (typeof populateInvoiceAssignmentDropdowns === "function" && !window.__populateInvoiceAssignmentDropdownsCustomWrapped) {
+  window.__populateInvoiceAssignmentDropdownsCustomWrapped = true;
+
+  const originalPopulateInvoiceAssignmentDropdowns = populateInvoiceAssignmentDropdowns;
+
+  populateInvoiceAssignmentDropdowns = function patchedPopulateInvoiceAssignmentDropdowns(...args) {
+    const result = originalPopulateInvoiceAssignmentDropdowns.apply(this, args);
+
+    setTimeout(() => setupInvoiceCustomDropdowns(), 20);
+    setTimeout(() => {
+      document.querySelectorAll("#incomingInvoiceModal select, .invoice-inline-select, #invoiceAssignedClerkSelect")
+        .forEach(syncInvoiceCustomDropdown);
+    }, 60);
+
+    return result;
+  };
+
+  window.populateInvoiceAssignmentDropdowns = populateInvoiceAssignmentDropdowns;
+}
+
+/*
+  After queue is rendered, convert dynamically generated Division Admin selects.
+*/
+if (typeof renderInvoiceQueue === "function" && !window.__renderInvoiceQueueCustomDropdownWrapped) {
+  window.__renderInvoiceQueueCustomDropdownWrapped = true;
+
+  const originalRenderInvoiceQueue = renderInvoiceQueue;
+
+  renderInvoiceQueue = function patchedRenderInvoiceQueue(...args) {
+    const result = originalRenderInvoiceQueue.apply(this, args);
+
+    setTimeout(() => setupInvoiceCustomDropdowns(), 20);
+    setTimeout(() => setupInvoiceCustomDropdowns(), 120);
+
+    return result;
+  };
+
+  window.renderInvoiceQueue = renderInvoiceQueue;
+}
+
+/*
+  After workflow render/reload, refresh custom selects.
+*/
+if (typeof renderInvoiceWorkflow === "function" && !window.__renderInvoiceWorkflowCustomDropdownWrapped) {
+  window.__renderInvoiceWorkflowCustomDropdownWrapped = true;
+
+  const originalRenderInvoiceWorkflow = renderInvoiceWorkflow;
+
+  renderInvoiceWorkflow = function patchedRenderInvoiceWorkflow(...args) {
+    const result = originalRenderInvoiceWorkflow.apply(this, args);
+
+    setTimeout(() => setupInvoiceCustomDropdowns(), 30);
+    setTimeout(() => setupInvoiceCustomDropdowns(), 150);
+
+    return result;
+  };
+
+  window.renderInvoiceWorkflow = renderInvoiceWorkflow;
+}
+
+if (typeof reloadInvoiceWorkflow === "function" && !window.__reloadInvoiceWorkflowCustomDropdownWrapped) {
+  window.__reloadInvoiceWorkflowCustomDropdownWrapped = true;
+
+  const originalReloadInvoiceWorkflow = reloadInvoiceWorkflow;
+
+  reloadInvoiceWorkflow = async function patchedReloadInvoiceWorkflow(...args) {
+    const result = await originalReloadInvoiceWorkflow.apply(this, args);
+
+    setTimeout(() => setupInvoiceCustomDropdowns(), 40);
+    setTimeout(() => setupInvoiceCustomDropdowns(), 180);
+
+    return result;
+  };
+
+  window.reloadInvoiceWorkflow = reloadInvoiceWorkflow;
+}
+
+document.addEventListener("click", (event) => {
+  const clickedCustomSelect = event.target.closest(".invoice-custom-select");
+  const clickedPortal = event.target.closest(".invoice-custom-select-portal-menu");
+
+  if (!clickedCustomSelect && !clickedPortal) {
+    closeInvoiceCustomDropdown();
+  }
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    closeInvoiceCustomDropdown();
+  }
+});
+
+window.addEventListener("resize", () => {
+  if (activeInvoiceCustomSelect && activeInvoicePortalMenu) {
+    positionInvoicePortalMenu(activeInvoiceCustomSelect, activeInvoicePortalMenu);
+  }
+});
+
+window.addEventListener("scroll", () => {
+  if (activeInvoiceCustomSelect && activeInvoicePortalMenu) {
+    positionInvoicePortalMenu(activeInvoiceCustomSelect, activeInvoicePortalMenu);
+  }
+}, true);
+
+document.addEventListener("DOMContentLoaded", () => {
+  setupInvoiceCustomDropdowns();
+  observeInvoiceCustomDropdowns();
+
+  setTimeout(setupInvoiceCustomDropdowns, 250);
+  setTimeout(setupInvoiceCustomDropdowns, 800);
+  setTimeout(setupInvoiceCustomDropdowns, 1400);
+});
+
+window.setupInvoiceCustomDropdowns = setupInvoiceCustomDropdowns;
+window.closeInvoiceCustomDropdown = closeInvoiceCustomDropdown;
+window.syncInvoiceCustomDropdown = syncInvoiceCustomDropdown;
