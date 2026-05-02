@@ -35,6 +35,94 @@ function showSection(sectionId) {
   setPageTitleFromSection(sectionId);
 }
 
+
+// =========================
+// GLOBAL MODAL CLEANUP
+// =========================
+
+function closeAllAdminModalsOnNavigation() {
+  const modalSelectors = [
+    ".custom-modal",
+    ".modal",
+    ".admin-modal",
+    ".other-modal",
+
+    "#appointmentHistoryModal",
+    "#appointmentDetailsModal",
+    "#appointmentRescheduleModal",
+    "#appointmentRejectModal",
+
+    "#complaintDetailsModal",
+    "#complaintMapModal",
+    "#complaintHistoryModal",
+    "#complaintResolutionModal",
+
+    "#incomingInvoiceModal",
+    "#invoiceTrackingModal",
+
+    "#calendarActivitiesModal",
+    "#calendarAddActivityModal",
+
+    "#orientationQrModal",
+    "#orientationReportModal",
+    "#orientationExamModal",
+
+    "#deactivatedAccountsModal",
+    "#userHistoryModal"
+  ];
+
+  document.querySelectorAll(modalSelectors.join(",")).forEach((modal) => {
+    modal.classList.add("hidden");
+    modal.setAttribute("aria-hidden", "true");
+  });
+
+  /*
+    Remove temporary image preview modal if open.
+  */
+  document.querySelectorAll(".image-preview-modal").forEach((preview) => {
+    preview.remove();
+  });
+
+  /*
+    Close Other dropdown/submenu if it is open.
+    Safe kahit iba-iba ang class name na gamit mo.
+  */
+  document.querySelectorAll(
+    ".sidebar-other-menu, .other-submenu, .other-dropdown, #sidebarOtherMenu"
+  ).forEach((menu) => {
+    menu.classList.add("hidden");
+    menu.classList.remove("open", "show", "active");
+  });
+
+  /*
+    Reset complaint/map selected state safely if variables exist.
+    Wrapped in try blocks para hindi masira if wala yung module sa page.
+  */
+  try {
+    if (typeof selectedBarangayCandidate !== "undefined") {
+      selectedBarangayCandidate = null;
+    }
+  } catch (error) {
+    console.warn("selectedBarangayCandidate cleanup skipped:", error);
+  }
+
+  try {
+    if (typeof currentComplaint !== "undefined") {
+      currentComplaint = null;
+    }
+  } catch (error) {
+    console.warn("currentComplaint cleanup skipped:", error);
+  }
+
+  try {
+    if (typeof currentComplaintResolution !== "undefined") {
+      currentComplaintResolution = null;
+    }
+  } catch (error) {
+    console.warn("currentComplaintResolution cleanup skipped:", error);
+  }
+}
+
 // =========================
 // SIDEBAR HELPERS
 // =========================
@@ -88,11 +176,13 @@ function closeMobileSidebar() {
 
 function openSection(sectionId) {
   if (!canAccessSection(currentUser, sectionId)) {
+    closeAllAdminModalsOnNavigation();
     showSection(SECTION_IDS.dashboard);
     closeMobileSidebar();
     return;
   }
 
+  closeAllAdminModalsOnNavigation();
   showSection(sectionId);
 
   if (sectionId === SECTION_IDS.appointments) {
@@ -189,3 +279,19 @@ function bindSidebarToggle() {
     hideSidebarToggleButton();
   }
 }
+
+// =========================
+// GLOBAL EXPORTS
+// =========================
+
+window.setActiveNavButton = setActiveNavButton;
+window.setPageTitleFromSection = setPageTitleFromSection;
+window.showSection = showSection;
+window.closeAllAdminModalsOnNavigation = closeAllAdminModalsOnNavigation;
+window.showSidebarToggleButton = showSidebarToggleButton;
+window.hideSidebarToggleButton = hideSidebarToggleButton;
+window.openMobileSidebar = openMobileSidebar;
+window.closeMobileSidebar = closeMobileSidebar;
+window.openSection = openSection;
+window.setupProtectedNavigation = setupProtectedNavigation;
+window.bindSidebarToggle = bindSidebarToggle;
