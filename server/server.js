@@ -16,50 +16,61 @@ const appointmentRoutes = require("../routes/appointmentRoutes");
 const trackingRoutes = require("../routes/trackingRoutes");
 const notificationRoutes = require("../routes/notificationRoutes");
 const complaintRoutes = require("../routes/complaintRoutes");
+const invoiceRoutes = require("../routes/invoiceRoutes");
 
-/* PATHS */
+/* =========================
+   PATHS
+========================= */
 const ROOT_DIR = path.join(__dirname, "..");
 const FRONTEND_DIR = path.join(ROOT_DIR, "frontend");
-const IMAGES_DIR = path.join(ROOT_DIR, "images");
 const UPLOADS_DIR = path.join(ROOT_DIR, "uploads");
 const COMPLAINT_UPLOADS_DIR = path.join(UPLOADS_DIR, "complaints");
 
-/* ENSURE FOLDERS */
-[UPLOADS_DIR, COMPLAINT_UPLOADS_DIR].forEach((dir) => {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-});
+/* =========================
+   ENSURE UPLOAD FOLDERS EXIST
+========================= */
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
 
-/* CORE MIDDLEWARE */
+if (!fs.existsSync(COMPLAINT_UPLOADS_DIR)) {
+  fs.mkdirSync(COMPLAINT_UPLOADS_DIR, { recursive: true });
+}
+
+/* =========================
+   CORE MIDDLEWARE
+========================= */
 app.use(cors());
+
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
-/* REQUEST LOGGER */
+/* =========================
+   REQUEST LOGGER
+========================= */
 app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl}`);
   next();
 });
 
-/* STATIC FILES */
-app.use("/images", express.static(IMAGES_DIR));
-
+/* =========================
+   STATIC FILES
+========================= */
 app.use(
   "/uploads",
   express.static(UPLOADS_DIR, {
-    fallthrough: false,
-    maxAge: "1d",
+    fallthrough: true,
     setHeaders: (res) => {
       res.setHeader("Access-Control-Allow-Origin", "*");
-      res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
     }
   })
 );
 
 app.use(express.static(FRONTEND_DIR));
 
-/* BASIC ROUTES */
+/* =========================
+   BASIC TEST ROUTES
+========================= */
 app.get("/", (req, res) => {
   res.sendFile(path.join(FRONTEND_DIR, "index.html"));
 });
@@ -78,25 +89,65 @@ app.get("/api/test", (req, res) => {
   });
 });
 
-/* DEBUG UPLOADS */
-app.get("/debug/uploads", (req, res) => {
-  const complaintFiles = fs.existsSync(COMPLAINT_UPLOADS_DIR)
-    ? fs.readdirSync(COMPLAINT_UPLOADS_DIR)
-    : [];
+/* =========================
+   DEBUG UPLOAD CHECK
+========================= */
+app.get("/api/debug/uploads", (req, res) => {
+  let complaintFiles = [];
 
-  return res.status(200).json({
+  try {
+    complaintFiles = fs.existsSync(COMPLAINT_UPLOADS_DIR)
+      ? fs.readdirSync(COMPLAINT_UPLOADS_DIR)
+      : [];
+  } catch (error) {
+    complaintFiles = [];
+  }
+
+  return res.json({
     success: true,
     rootDir: ROOT_DIR,
+    frontendDir: FRONTEND_DIR,
     uploadsDir: UPLOADS_DIR,
-    complaintsDir: COMPLAINT_UPLOADS_DIR,
-    uploadsExists: fs.existsSync(UPLOADS_DIR),
-    complaintsExists: fs.existsSync(COMPLAINT_UPLOADS_DIR),
+    complaintUploadsDir: COMPLAINT_UPLOADS_DIR,
+    uploadsDirExists: fs.existsSync(UPLOADS_DIR),
+    complaintUploadsDirExists: fs.existsSync(COMPLAINT_UPLOADS_DIR),
     complaintFileCount: complaintFiles.length,
-    files: complaintFiles
+    complaintFiles
   });
 });
 
-/* API ROUTES */
+app.get("/api/debug/file-exists", (req, res) => {
+  const relativePath = req.query.path;
+
+  if (!relativePath) {
+    return res.status(400).json({
+      success: false,
+      message: "Missing query param: path"
+    });
+  }
+
+  const safeRelative = String(relativePath)
+    .replace(/^\/+/, "")
+    .replace(/\.\./g, "");
+
+  const absolutePath = path.join(ROOT_DIR, safeRelative);
+  const exists = fs.existsSync(absolutePath);
+
+  return res.json({
+    success: true,
+    requestedPath: relativePath,
+    safeRelative,
+    absolutePath,
+    exists,
+    publicUrl: exists
+      ? `/uploads/${path.relative(UPLOADS_DIR, absolutePath).replace(/\\/g, "/")}`
+      : null
+  });
+});
+
+/* =========================
+   API ROUTES
+========================= */
 app.use("/api/auth", authRoutes);
 app.use("/api/waste", wasteRoutes);
 app.use("/api/web-auth", webAuthRoutes);
@@ -105,17 +156,11 @@ app.use("/api/appointments", appointmentRoutes);
 app.use("/api/tracking", trackingRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/complaints", complaintRoutes);
+app.use("/api/invoices", invoiceRoutes);
 
-/* FRONTEND FALLBACK */
-app.get(["/admin-dashboard.html", "/index.html"], (req, res) => {
-  const requestedFile = req.path === "/admin-dashboard.html"
-    ? "admin-dashboard.html"
-    : "index.html";
-
-  res.sendFile(path.join(FRONTEND_DIR, requestedFile));
-});
-
-/* 404 HANDLER */
+/* =========================
+   404 HANDLER
+========================= */
 app.use((req, res) => {
   return res.status(404).json({
     success: false,
@@ -123,19 +168,24 @@ app.use((req, res) => {
   });
 });
 
-/* GLOBAL ERROR HANDLER */
+/* =========================
+   GLOBAL ERROR HANDLER
+========================= */
 app.use((err, req, res, next) => {
   console.error("=== GLOBAL EXPRESS ERROR ===");
   console.error(err);
   console.error(err.stack);
 
-  return res.status(err.status || 500).json({
+  return res.status(500).json({
     success: false,
-    message: err.message || "Internal server error"
+    message: "Internal server error",
+    error: err.message
   });
 });
 
-/* PROCESS ERROR HANDLERS */
+/* =========================
+   PROCESS-LEVEL ERROR HANDLERS
+========================= */
 process.on("uncaughtException", (error) => {
   console.error("=== UNCAUGHT EXCEPTION ===");
   console.error(error);
@@ -147,7 +197,9 @@ process.on("unhandledRejection", (reason) => {
   console.error(reason);
 });
 
-/* SERVER START */
+/* =========================
+   SERVER START
+========================= */
 const PORT = process.env.PORT || 8081;
 const HOST = "0.0.0.0";
 
@@ -156,15 +208,14 @@ app.listen(PORT, HOST, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Server host binding: ${HOST}`);
   console.log(`Local URL: http://localhost:${PORT}`);
+  console.log(`Network URL: http://192.168.1.37:${PORT}`);
   console.log("--------------------------------------");
   console.log(`ROOT_DIR: ${ROOT_DIR}`);
   console.log(`FRONTEND_DIR: ${FRONTEND_DIR}`);
-  console.log(`IMAGES_DIR: ${IMAGES_DIR}`);
   console.log(`UPLOADS_DIR: ${UPLOADS_DIR}`);
   console.log(`COMPLAINT_UPLOADS_DIR: ${COMPLAINT_UPLOADS_DIR}`);
   console.log("--------------------------------------");
   console.log(`FRONTEND_DIR exists: ${fs.existsSync(FRONTEND_DIR)}`);
-  console.log(`IMAGES_DIR exists: ${fs.existsSync(IMAGES_DIR)}`);
   console.log(`UPLOADS_DIR exists: ${fs.existsSync(UPLOADS_DIR)}`);
   console.log(`COMPLAINT_UPLOADS_DIR exists: ${fs.existsSync(COMPLAINT_UPLOADS_DIR)}`);
   console.log("======================================");
