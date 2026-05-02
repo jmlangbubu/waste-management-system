@@ -470,3 +470,282 @@
     height: 220px !important;
   }
 }
+
+/* =========================================================
+   ORIENTATION BOARD ALIGNMENT FIX
+   Paste at the VERY BOTTOM of css/admin/admin-overrides.css
+
+   Fix:
+   - Orientation Management board spacing becomes even
+   - Active Orientation area aligns properly
+   - Empty/loading state uses full available width
+   - Single card stays normal size
+   - Multiple cards still use responsive grid
+========================================================= */
+
+/* Main orientation board/card */
+#orientationSection .admin-card,
+#orientationSection .content-card,
+#orientationSection .orientation-management-card,
+#orientationSection .section-card,
+#orientationSection > .card,
+.orientation-management-card {
+  width: 100% !important;
+  max-width: none !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  padding: 32px 34px !important;
+  border-radius: 26px !important;
+  box-sizing: border-box !important;
+}
+
+/* Header row inside Orientation Management */
+#orientationSection .section-card-header,
+#orientationSection .orientation-header,
+#orientationSection .orientation-management-header,
+.orientation-management-header {
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: space-between !important;
+  gap: 18px !important;
+  width: 100% !important;
+  margin-bottom: 28px !important;
+}
+
+/* Buttons on top-right */
+#orientationSection .orientation-top-actions,
+#orientationSection .section-actions,
+.orientation-management-actions {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 14px !important;
+  flex-wrap: wrap !important;
+}
+
+/* Active Orientation title spacing */
+#orientationSection h2,
+#orientationSection .orientation-title,
+#orientationSection .active-orientation-title {
+  margin-top: 0 !important;
+  margin-bottom: 18px !important;
+}
+
+/* Active orientation list/grid */
+#orientationCardList,
+.orientation-card-list {
+  width: 100% !important;
+  min-width: 0 !important;
+
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 420px)) !important;
+  justify-content: start !important;
+  align-items: start !important;
+
+  gap: 22px !important;
+  box-sizing: border-box !important;
+}
+
+/* Empty/loading state should look like a full-width board message */
+#orientationCardList .empty-state,
+.orientation-card-list .empty-state,
+#orientationCardList > .empty-state {
+  grid-column: 1 / -1 !important;
+
+  width: 100% !important;
+  max-width: 100% !important;
+  min-height: 76px !important;
+
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+
+  margin: 0 !important;
+  padding: 18px 22px !important;
+
+  border: 1px dashed #cbd5e1 !important;
+  border-radius: 18px !important;
+  background: #f8fafc !important;
+
+  color: #64748b !important;
+  font-size: 14px !important;
+  font-weight: 750 !important;
+  text-align: center !important;
+  box-sizing: border-box !important;
+}
+
+/* Prevent one orientation card from stretching too wide */
+#orientationCardList .orientation-card,
+.orientation-card-list .orientation-card {
+  width: 100% !important;
+  max-width: 420px !important;
+  min-height: 360px !important;
+  align-self: start !important;
+  box-sizing: border-box !important;
+}
+
+/* Make orientation card internals balanced */
+.orientation-card {
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.orientation-card-body {
+  flex: 1 1 auto !important;
+}
+
+.orientation-card-actions {
+  margin-top: auto !important;
+}
+
+/* Tablet */
+@media (max-width: 1180px) {
+  #orientationSection .admin-card,
+  #orientationSection .content-card,
+  #orientationSection .orientation-management-card,
+  #orientationSection .section-card,
+  #orientationSection > .card,
+  .orientation-management-card {
+    padding: 26px !important;
+  }
+
+  #orientationCardList,
+  .orientation-card-list {
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)) !important;
+  }
+
+  #orientationCardList .orientation-card,
+  .orientation-card-list .orientation-card {
+    max-width: 100% !important;
+  }
+}
+
+/* Mobile */
+@media (max-width: 768px) {
+  #orientationSection .admin-card,
+  #orientationSection .content-card,
+  #orientationSection .orientation-management-card,
+  #orientationSection .section-card,
+  #orientationSection > .card,
+  .orientation-management-card {
+    padding: 20px !important;
+    border-radius: 20px !important;
+  }
+
+  #orientationSection .section-card-header,
+  #orientationSection .orientation-header,
+  #orientationSection .orientation-management-header,
+  .orientation-management-header {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+  }
+
+  #orientationSection .orientation-top-actions,
+  #orientationSection .section-actions,
+  .orientation-management-actions {
+    width: 100% !important;
+    justify-content: stretch !important;
+  }
+
+  #orientationSection .orientation-top-actions button,
+  #orientationSection .section-actions button,
+  .orientation-management-actions button {
+    width: 100% !important;
+  }
+
+  #orientationCardList,
+  .orientation-card-list {
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+  }
+
+  #orientationCardList .orientation-card,
+  .orientation-card-list .orientation-card {
+    max-width: 100% !important;
+    min-height: auto !important;
+  }
+
+  #orientationCardList .empty-state,
+  .orientation-card-list .empty-state,
+  #orientationCardList > .empty-state {
+    min-height: 68px !important;
+    padding: 16px !important;
+  }
+}
+
+/* =========================================================
+   ORIENTATION EMPTY STATE FULL-WIDTH FIX
+   Paste at the VERY BOTTOM of css/admin/admin-overrides.css
+
+   Fix:
+   - Empty/loading state inside Active Orientation fills the full board width
+   - Removes awkward half-width empty box
+   - Keeps real orientation cards normal size when records exist
+========================================================= */
+
+/* When Active Orientation has only empty/loading state, use one full-width column */
+#orientationCardList:has(> .empty-state),
+.orientation-card-list:has(> .empty-state) {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  justify-content: stretch !important;
+  align-items: stretch !important;
+  width: 100% !important;
+  max-width: none !important;
+}
+
+/* Full-width empty/loading box */
+#orientationCardList > .empty-state,
+.orientation-card-list > .empty-state {
+  grid-column: 1 / -1 !important;
+  width: 100% !important;
+  max-width: none !important;
+
+  min-height: 82px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+
+  margin: 0 !important;
+  padding: 18px 24px !important;
+
+  border: 1px dashed #cbd5e1 !important;
+  border-radius: 18px !important;
+  background: #f8fafc !important;
+
+  color: #64748b !important;
+  font-size: 14px !important;
+  font-weight: 800 !important;
+  text-align: center !important;
+  box-sizing: border-box !important;
+}
+
+/* Make sure the Active Orientation container itself uses full width */
+#orientationCardList,
+.orientation-card-list {
+  width: 100% !important;
+  max-width: none !important;
+  box-sizing: border-box !important;
+}
+
+/* Keep actual cards from stretching too wide when records exist */
+#orientationCardList > .orientation-card,
+.orientation-card-list > .orientation-card {
+  max-width: 420px !important;
+}
+
+/* Mobile: full-width empty state is still correct */
+@media (max-width: 768px) {
+  #orientationCardList > .empty-state,
+  .orientation-card-list > .empty-state {
+    min-height: 72px !important;
+    padding: 16px !important;
+    border-radius: 16px !important;
+  }
+
+  #orientationCardList > .orientation-card,
+  .orientation-card-list > .orientation-card {
+    max-width: 100% !important;
+  }
+}
