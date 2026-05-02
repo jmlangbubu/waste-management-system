@@ -6617,6 +6617,1034 @@ body {
   }
 }
 
+/* =========================================================
+   SAFE PATCH: INVOICE QUEUE TABLE ALIGNMENT FIX
+   Paste at the VERY BOTTOM of css/admin/admin-overrides.css
 
+   Fix:
+   - Aligns invoice queue headers and row values
+   - Centers status pill under Status column
+   - Prevents Assigned To text from looking cut/off
+   - Makes table columns cleaner and more professional
+========================================================= */
 
+/* Make the queue table use consistent column sizes */
+.invoice-queue-panel .invoice-table {
+  width: 100% !important;
+  min-width: 980px !important;
+  table-layout: fixed !important;
+}
 
+/* Base cell alignment */
+.invoice-queue-panel .invoice-table th,
+.invoice-queue-panel .invoice-table td {
+  vertical-align: middle !important;
+  padding: 18px 20px !important;
+  font-size: 14px !important;
+  line-height: 1.25 !important;
+}
+
+/* Column 1: Tracking No. */
+.invoice-queue-panel .invoice-table th:nth-child(1),
+.invoice-queue-panel .invoice-table td:nth-child(1) {
+  width: 170px !important;
+  text-align: left !important;
+}
+
+/* Column 2: Subject */
+.invoice-queue-panel .invoice-table th:nth-child(2),
+.invoice-queue-panel .invoice-table td:nth-child(2) {
+  width: 220px !important;
+  text-align: left !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+}
+
+/* Column 3: Status */
+.invoice-queue-panel .invoice-table th:nth-child(3),
+.invoice-queue-panel .invoice-table td:nth-child(3) {
+  width: 230px !important;
+  text-align: center !important;
+}
+
+/* Column 4: Assigned To */
+.invoice-queue-panel .invoice-table th:nth-child(4),
+.invoice-queue-panel .invoice-table td:nth-child(4) {
+  width: 230px !important;
+  text-align: left !important;
+}
+
+/* Column 5: Updated */
+.invoice-queue-panel .invoice-table th:nth-child(5),
+.invoice-queue-panel .invoice-table td:nth-child(5) {
+  width: 190px !important;
+  text-align: left !important;
+}
+
+/* Column 6: Action */
+.invoice-queue-panel .invoice-table th:nth-child(6),
+.invoice-queue-panel .invoice-table td:nth-child(6) {
+  width: 260px !important;
+  text-align: right !important;
+}
+
+/* Status pill centered inside its column */
+.invoice-queue-panel .invoice-status-pill {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+
+  min-width: 150px !important;
+  max-width: 100% !important;
+  min-height: 34px !important;
+  padding: 8px 14px !important;
+
+  text-align: center !important;
+  white-space: nowrap !important;
+  line-height: 1 !important;
+}
+
+/* Prevent assigned names from being visually cut */
+.invoice-queue-panel .invoice-table td:nth-child(4) {
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+/* Make action controls not overlap the table */
+.invoice-queue-panel .invoice-inline-assign {
+  justify-content: flex-end !important;
+  margin-left: auto !important;
+}
+
+/* Cleaner horizontal scroll placement */
+.invoice-queue-panel .invoice-table-shell {
+  overflow-x: auto !important;
+  overflow-y: visible !important;
+  padding-bottom: 10px !important;
+}
+
+/* Scrollbar visual cleanup */
+.invoice-queue-panel .invoice-table-shell::-webkit-scrollbar {
+  height: 10px !important;
+}
+
+.invoice-queue-panel .invoice-table-shell::-webkit-scrollbar-thumb {
+  background: #cbd5e1 !important;
+  border-radius: 999px !important;
+}
+
+.invoice-queue-panel .invoice-table-shell::-webkit-scrollbar-track {
+  background: #f1f5f9 !important;
+  border-radius: 999px !important;
+}
+
+/* On smaller screens, keep table scrollable but still aligned */
+@media (max-width: 1180px) {
+  .invoice-queue-panel .invoice-table {
+    min-width: 980px !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .invoice-queue-panel .invoice-table th,
+  .invoice-queue-panel .invoice-table td {
+    padding: 15px 16px !important;
+    font-size: 13px !important;
+  }
+
+  .invoice-queue-panel .invoice-status-pill {
+    min-width: 140px !important;
+    min-height: 32px !important;
+  }
+}
+
+/* =========================================================
+   SAFE PATCH: INVOICE UPDATED + ACTION COLUMN CENTER FIX
+   Paste at the VERY BOTTOM of css/admin/admin-overrides.css
+
+   Fix:
+   - Centers Updated column header and date value
+   - Centers Action column header and View/action buttons
+   - Makes the last two columns look balanced
+========================================================= */
+
+/* Updated column */
+.invoice-queue-panel .invoice-table th:nth-child(5),
+.invoice-queue-panel .invoice-table td:nth-child(5) {
+  width: 210px !important;
+  text-align: center !important;
+  vertical-align: middle !important;
+}
+
+/* Action column */
+.invoice-queue-panel .invoice-table th:nth-child(6),
+.invoice-queue-panel .invoice-table td:nth-child(6) {
+  width: 180px !important;
+  text-align: center !important;
+  vertical-align: middle !important;
+}
+
+/* Center action buttons */
+.invoice-queue-panel .invoice-table td:nth-child(6) {
+  display: table-cell !important;
+}
+
+.invoice-queue-panel .invoice-table td:nth-child(6) .invoice-view-btn,
+.invoice-queue-panel .invoice-table td:nth-child(6) .invoice-action-btn {
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+/* View button consistent size */
+.invoice-queue-panel .invoice-view-btn {
+  min-width: 86px !important;
+  height: 46px !important;
+  padding: 0 18px !important;
+  border-radius: 16px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+/* If action has dropdown + assign button, keep it centered */
+.invoice-queue-panel .invoice-inline-assign {
+  justify-content: center !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+/* Prevent previous patch from forcing action far right */
+.invoice-queue-panel .invoice-table th:last-child,
+.invoice-queue-panel .invoice-table td:last-child {
+  text-align: center !important;
+}
+
+/* Desktop: reduce awkward extra action width when only View button */
+.invoice-queue-panel .invoice-table {
+  min-width: 920px !important;
+}
+
+/* For supervisor assign dropdown, allow wider action column when needed */
+.invoice-queue-panel .invoice-inline-assign {
+  min-width: 380px !important;
+}
+
+/* When assign dropdown exists, action column can expand */
+.invoice-queue-panel .invoice-table td:nth-child(6):has(.invoice-inline-assign),
+.invoice-queue-panel .invoice-table th:nth-child(6) {
+  overflow: visible !important;
+}
+
+@media (max-width: 1180px) {
+  .invoice-queue-panel .invoice-table {
+    min-width: 920px !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .invoice-queue-panel .invoice-table th:nth-child(5),
+  .invoice-queue-panel .invoice-table td:nth-child(5) {
+    width: 190px !important;
+  }
+
+  .invoice-queue-panel .invoice-table th:nth-child(6),
+  .invoice-queue-panel .invoice-table td:nth-child(6) {
+    width: 160px !important;
+  }
+}
+
+/* =========================================================
+   GLOBAL ADMIN MODAL + BUTTON DESIGN SYSTEM
+   Paste at the VERY BOTTOM of css/admin/admin-overrides.css
+
+   Goal:
+   - Uniform modal design across admin system
+   - All modals pop up centered
+   - Same backdrop, radius, shadow, spacing, animation
+   - Uniform View buttons
+   - Uniform action buttons
+   - Responsive on tablet/mobile
+
+   Important:
+   - Paste this LAST so it can override older modal patches.
+   - This is CSS-only. No JS logic changed.
+========================================================= */
+
+:root {
+  --admin-modal-z: 100000;
+  --admin-modal-overlay: rgba(15, 23, 42, 0.62);
+  --admin-modal-radius: 24px;
+  --admin-modal-shadow: 0 34px 100px rgba(15, 23, 42, 0.34);
+
+  --admin-green: #15803d;
+  --admin-green-2: #16a34a;
+  --admin-blue: #1d4ed8;
+  --admin-blue-soft: #eff6ff;
+  --admin-red: #ef4444;
+  --admin-slate: #0f172a;
+  --admin-muted: #64748b;
+  --admin-border: #e2e8f0;
+  --admin-surface: #ffffff;
+  --admin-soft: #f8fafc;
+}
+
+/* =========================================================
+   GLOBAL MODAL CENTERING
+========================================================= */
+
+.custom-modal:not(.hidden),
+.modal:not(.hidden),
+.admin-modal:not(.hidden),
+.other-modal:not(.hidden),
+#complaintDetailsModal:not(.hidden),
+#complaintMapModal:not(.hidden),
+#complaintHistoryModal:not(.hidden),
+#complaintResolutionModal:not(.hidden),
+#incomingInvoiceModal:not(.hidden),
+#invoiceTrackingModal:not(.hidden),
+#calendarActivitiesModal:not(.hidden),
+#calendarAddActivityModal:not(.hidden),
+#orientationQrModal:not(.hidden),
+#orientationReportModal:not(.hidden),
+#deactivatedAccountsModal:not(.hidden) {
+  position: fixed !important;
+  inset: 0 !important;
+
+  width: 100vw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+
+  padding: 24px !important;
+  margin: 0 !important;
+
+  overflow: hidden !important;
+  background: var(--admin-modal-overlay) !important;
+  backdrop-filter: blur(7px) !important;
+
+  z-index: var(--admin-modal-z) !important;
+}
+
+/* Overlay should not push content out of center */
+.custom-modal:not(.hidden) > .custom-modal-overlay,
+.modal:not(.hidden) > .custom-modal-overlay,
+.admin-modal:not(.hidden) > .custom-modal-overlay,
+.custom-modal:not(.hidden) > [id$="Overlay"],
+.modal:not(.hidden) > [id$="Overlay"],
+.admin-modal:not(.hidden) > [id$="Overlay"] {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100dvh !important;
+  z-index: 1 !important;
+  background: transparent !important;
+}
+
+/* =========================================================
+   GLOBAL MODAL CONTENT
+========================================================= */
+
+.custom-modal:not(.hidden) .custom-modal-content,
+.custom-modal:not(.hidden) .modal-content,
+.custom-modal:not(.hidden) .admin-modal-content,
+.modal:not(.hidden) .custom-modal-content,
+.modal:not(.hidden) .modal-content,
+.admin-modal:not(.hidden) .custom-modal-content,
+.admin-modal:not(.hidden) .modal-content,
+#complaintDetailsModal:not(.hidden) .custom-modal-content,
+#complaintDetailsModal:not(.hidden) .complaint-modal-content,
+#complaintDetailsModal:not(.hidden) .modal-content,
+#complaintMapModal:not(.hidden) .custom-modal-content,
+#complaintMapModal:not(.hidden) .complaint-map-modal-content,
+#complaintMapModal:not(.hidden) .modal-content,
+#complaintHistoryModal:not(.hidden) .custom-modal-content,
+#complaintResolutionModal:not(.hidden) .custom-modal-content,
+#incomingInvoiceModal:not(.hidden) .custom-modal-content,
+#invoiceTrackingModal:not(.hidden) .custom-modal-content,
+#calendarActivitiesModal:not(.hidden) .custom-modal-content,
+#calendarAddActivityModal:not(.hidden) .custom-modal-content,
+#orientationQrModal:not(.hidden) .custom-modal-content,
+#orientationReportModal:not(.hidden) .custom-modal-content,
+#deactivatedAccountsModal:not(.hidden) .custom-modal-content {
+  position: relative !important;
+  z-index: 2 !important;
+
+  inset: auto !important;
+  top: auto !important;
+  left: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  transform: none !important;
+  translate: none !important;
+
+  width: min(1080px, calc(100vw - 48px)) !important;
+  max-width: calc(100vw - 48px) !important;
+  max-height: calc(100dvh - 48px) !important;
+
+  display: flex !important;
+  flex-direction: column !important;
+
+  margin: 0 auto !important;
+
+  border: 1px solid rgba(226, 232, 240, 0.9) !important;
+  border-radius: var(--admin-modal-radius) !important;
+  background: var(--admin-surface) !important;
+  box-shadow: var(--admin-modal-shadow) !important;
+
+  overflow: hidden !important;
+
+  animation: adminModalPopIn 0.22s ease both !important;
+}
+
+/* Wider modals that naturally need more room */
+#incomingInvoiceModal:not(.hidden) .custom-modal-content,
+#calendarActivitiesModal:not(.hidden) .custom-modal-content,
+#orientationReportModal:not(.hidden) .custom-modal-content,
+#complaintMapModal:not(.hidden) .custom-modal-content,
+#complaintMapModal:not(.hidden) .complaint-map-modal-content {
+  width: min(1220px, calc(100vw - 48px)) !important;
+}
+
+/* Smaller detail/confirm modals */
+#invoiceTrackingModal:not(.hidden) .custom-modal-content,
+#calendarAddActivityModal:not(.hidden) .custom-modal-content,
+#orientationQrModal:not(.hidden) .custom-modal-content {
+  width: min(900px, calc(100vw - 48px)) !important;
+}
+
+@keyframes adminModalPopIn {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* =========================================================
+   GLOBAL MODAL HEADER
+========================================================= */
+
+.custom-modal-content > .custom-modal-header,
+.custom-modal-content > .modal-header,
+.modal-content > .custom-modal-header,
+.modal-content > .modal-header,
+.admin-modal-content > .custom-modal-header,
+.admin-modal-content > .modal-header,
+.complaint-modal-content > .custom-modal-header,
+.complaint-modal-content > .modal-header,
+.complaint-map-modal-content > .custom-modal-header,
+.complaint-map-modal-content > .modal-header {
+  flex: 0 0 auto !important;
+
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) 52px !important;
+  align-items: start !important;
+  gap: 18px !important;
+
+  padding: 22px 26px !important;
+
+  border-bottom: 1px solid var(--admin-border) !important;
+  background: rgba(255, 255, 255, 0.98) !important;
+}
+
+.custom-modal-header h3,
+.modal-header h3,
+.admin-modal-header h3 {
+  margin: 0 0 5px !important;
+  color: #173c2a !important;
+  font-size: 22px !important;
+  line-height: 1.15 !important;
+  font-weight: 950 !important;
+  letter-spacing: -0.035em !important;
+}
+
+.custom-modal-header p,
+.modal-header p,
+.admin-modal-header p {
+  margin: 0 !important;
+  color: var(--admin-muted) !important;
+  font-size: 13.5px !important;
+  line-height: 1.45 !important;
+}
+
+/* =========================================================
+   GLOBAL CLOSE BUTTON
+========================================================= */
+
+.modal-close-btn,
+.close-modal-btn,
+.close-btn[id^="close"],
+button[id^="close"][id$="Btn"],
+button[id^="close"][id$="Modal"],
+#closeComplaintDetailsModal,
+#closeComplaintMapModal,
+#closeComplaintHistoryBtn,
+#closeComplaintResolutionModal,
+#closeIncomingInvoiceBtn,
+#closeInvoiceTrackingBtn,
+#closeCalendarActivitiesBtn,
+#closeCalendarAddActivityBtn,
+#closeOrientationQrBtn {
+  width: 52px !important;
+  height: 52px !important;
+  min-width: 52px !important;
+  min-height: 52px !important;
+
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+
+  border: 0 !important;
+  border-radius: 999px !important;
+
+  background: #eef2f7 !important;
+  color: #475569 !important;
+
+  font-size: 24px !important;
+  font-weight: 900 !important;
+  line-height: 1 !important;
+
+  cursor: pointer !important;
+  transition:
+    transform 0.16s ease,
+    background 0.16s ease,
+    color 0.16s ease !important;
+}
+
+.modal-close-btn:hover,
+.close-modal-btn:hover,
+.close-btn[id^="close"]:hover,
+button[id^="close"][id$="Btn"]:hover,
+button[id^="close"][id$="Modal"]:hover,
+#closeComplaintDetailsModal:hover,
+#closeComplaintMapModal:hover,
+#closeComplaintHistoryBtn:hover,
+#closeComplaintResolutionModal:hover,
+#closeIncomingInvoiceBtn:hover,
+#closeInvoiceTrackingBtn:hover,
+#closeCalendarActivitiesBtn:hover,
+#closeCalendarAddActivityBtn:hover,
+#closeOrientationQrBtn:hover {
+  transform: translateY(-1px) !important;
+  background: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+/* =========================================================
+   GLOBAL MODAL BODY
+========================================================= */
+
+.custom-modal-body,
+.modal-body,
+.admin-modal-body,
+.complaint-modal-body,
+.complaint-map-body,
+.invoice-workflow-body,
+.invoice-tracking-body {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+
+  padding: 24px 26px !important;
+}
+
+/* Standard card look inside modals */
+.custom-modal-content .detail-card,
+.custom-modal-content .info-card,
+.custom-modal-content .modal-card,
+.custom-modal-content .summary-card,
+.modal-content .detail-card,
+.modal-content .info-card,
+.modal-content .modal-card,
+.modal-content .summary-card {
+  border: 1px solid #dfe7ef !important;
+  border-radius: 17px !important;
+  background: var(--admin-soft) !important;
+}
+
+/* =========================================================
+   GLOBAL MODAL FOOTER / ACTION BAR
+========================================================= */
+
+.custom-modal-footer,
+.modal-footer,
+.admin-modal-footer,
+.complaint-details-action-bar,
+.complaint-modal-footer {
+  flex: 0 0 auto !important;
+
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 12px !important;
+  flex-wrap: wrap !important;
+
+  width: 100% !important;
+  min-width: 0 !important;
+
+  margin: 0 !important;
+  padding: 16px 26px 20px !important;
+
+  border-top: 1px solid var(--admin-border) !important;
+  background: rgba(255, 255, 255, 0.98) !important;
+  backdrop-filter: blur(12px) !important;
+
+  box-sizing: border-box !important;
+}
+
+/* If modal has three main complaint buttons, keep them equal */
+#complaintDetailsModal .complaint-details-action-bar {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+}
+
+/* =========================================================
+   GLOBAL BUTTON DESIGN
+========================================================= */
+
+.admin-btn,
+.modal-btn,
+.action-btn,
+.view-btn,
+.table-view-btn,
+.complaint-action-btn,
+.complaint-history-view-btn,
+.invoice-view-btn,
+.invoice-action-btn,
+.orientation-view-btn,
+.orientation-report-view-btn,
+.tracking-view-btn,
+.user-action-btn,
+button[data-action="view"],
+button[data-invoice-action="view"],
+button[data-resolution-id],
+button[data-id].complaint-action-btn {
+  min-height: 42px !important;
+
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+
+  gap: 8px !important;
+
+  border: 1px solid transparent !important;
+  border-radius: 14px !important;
+
+  padding: 0 16px !important;
+
+  font-size: 13px !important;
+  font-weight: 900 !important;
+  line-height: 1 !important;
+  text-align: center !important;
+  white-space: nowrap !important;
+
+  cursor: pointer !important;
+  transition:
+    transform 0.16s ease,
+    box-shadow 0.16s ease,
+    background 0.16s ease,
+    border-color 0.16s ease !important;
+}
+
+/* Uniform View buttons */
+.view-btn,
+.table-view-btn,
+.complaint-action-btn,
+.complaint-history-view-btn,
+.invoice-view-btn,
+.orientation-view-btn,
+.orientation-report-view-btn,
+.tracking-view-btn,
+button[data-action="view"],
+button[data-invoice-action="view"],
+button[data-resolution-id],
+button[data-id].complaint-action-btn {
+  min-width: 86px !important;
+  background: var(--admin-blue-soft) !important;
+  color: var(--admin-blue) !important;
+  border-color: #bfdbfe !important;
+}
+
+.view-btn:hover,
+.table-view-btn:hover,
+.complaint-action-btn:hover,
+.complaint-history-view-btn:hover,
+.invoice-view-btn:hover,
+.orientation-view-btn:hover,
+.orientation-report-view-btn:hover,
+.tracking-view-btn:hover,
+button[data-action="view"]:hover,
+button[data-invoice-action="view"]:hover,
+button[data-resolution-id]:hover,
+button[data-id].complaint-action-btn:hover {
+  transform: translateY(-1px) !important;
+  background: #dbeafe !important;
+  box-shadow: 0 12px 24px rgba(29, 78, 216, 0.12) !important;
+}
+
+/* Primary action */
+.admin-btn.primary,
+.modal-btn.primary,
+.action-btn.primary,
+.invoice-action-btn,
+#btnValidateForwardComplaint,
+#saveCalendarActivityBtn,
+#createAccountBtn,
+button[type="submit"].primary,
+button[type="submit"].invoice-primary-btn {
+  background: linear-gradient(135deg, var(--admin-green), var(--admin-green-2)) !important;
+  color: #ffffff !important;
+  border-color: var(--admin-green-2) !important;
+  box-shadow: 0 12px 24px rgba(22, 163, 74, 0.16) !important;
+}
+
+/* Secondary action */
+.admin-btn.secondary,
+.modal-btn.secondary,
+.action-btn.secondary,
+#btnOpenComplaintMap,
+#openIncomingInvoiceBtn,
+#openCalendarActivitiesBtn {
+  background: var(--admin-blue-soft) !important;
+  color: var(--admin-blue) !important;
+  border-color: #bfdbfe !important;
+}
+
+/* Danger/Close action */
+.admin-btn.danger,
+.modal-btn.danger,
+.action-btn.danger,
+#btnCloseComplaintModalFooter,
+#logoutBtn,
+button.danger,
+button.close-danger {
+  background: var(--admin-red) !important;
+  color: #ffffff !important;
+  border-color: var(--admin-red) !important;
+}
+
+/* Disabled */
+.admin-btn:disabled,
+.modal-btn:disabled,
+.action-btn:disabled,
+.view-btn:disabled,
+.complaint-action-btn:disabled,
+.invoice-action-btn:disabled,
+.invoice-view-btn:disabled,
+#btnOpenComplaintMap:disabled,
+#btnValidateForwardComplaint:disabled,
+.is-disabled {
+  opacity: 0.55 !important;
+  cursor: not-allowed !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+/* =========================================================
+   GLOBAL TABLE ACTION ALIGNMENT
+========================================================= */
+
+td:last-child .view-btn,
+td:last-child .table-view-btn,
+td:last-child .complaint-action-btn,
+td:last-child .complaint-history-view-btn,
+td:last-child .invoice-view-btn,
+td:last-child .orientation-view-btn,
+td:last-child button[data-action="view"],
+td:last-child button[data-invoice-action="view"] {
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+th:last-child,
+td:last-child {
+  text-align: center !important;
+}
+
+/* =========================================================
+   MODAL Z-INDEX FOR NESTED MODALS
+========================================================= */
+
+#invoiceTrackingModal:not(.hidden),
+#complaintMapModal:not(.hidden),
+#calendarAddActivityModal:not(.hidden),
+.image-preview-modal {
+  z-index: calc(var(--admin-modal-z) + 600) !important;
+}
+
+#invoiceTrackingModal:not(.hidden) .custom-modal-content,
+#complaintMapModal:not(.hidden) .custom-modal-content,
+#calendarAddActivityModal:not(.hidden) .custom-modal-content {
+  z-index: calc(var(--admin-modal-z) + 602) !important;
+}
+
+/* =========================================================
+   RESPONSIVE
+========================================================= */
+
+@media (max-width: 1180px) {
+  .custom-modal:not(.hidden),
+  .modal:not(.hidden),
+  .admin-modal:not(.hidden),
+  .other-modal:not(.hidden),
+  #complaintDetailsModal:not(.hidden),
+  #complaintMapModal:not(.hidden),
+  #complaintHistoryModal:not(.hidden),
+  #complaintResolutionModal:not(.hidden),
+  #incomingInvoiceModal:not(.hidden),
+  #invoiceTrackingModal:not(.hidden),
+  #calendarActivitiesModal:not(.hidden),
+  #calendarAddActivityModal:not(.hidden),
+  #orientationQrModal:not(.hidden),
+  #orientationReportModal:not(.hidden),
+  #deactivatedAccountsModal:not(.hidden) {
+    padding: 14px !important;
+  }
+
+  .custom-modal:not(.hidden) .custom-modal-content,
+  .modal:not(.hidden) .custom-modal-content,
+  .modal:not(.hidden) .modal-content,
+  .admin-modal:not(.hidden) .custom-modal-content,
+  #complaintDetailsModal:not(.hidden) .custom-modal-content,
+  #complaintDetailsModal:not(.hidden) .complaint-modal-content,
+  #complaintDetailsModal:not(.hidden) .modal-content,
+  #complaintMapModal:not(.hidden) .custom-modal-content,
+  #complaintMapModal:not(.hidden) .complaint-map-modal-content,
+  #incomingInvoiceModal:not(.hidden) .custom-modal-content,
+  #invoiceTrackingModal:not(.hidden) .custom-modal-content,
+  #calendarActivitiesModal:not(.hidden) .custom-modal-content,
+  #calendarAddActivityModal:not(.hidden) .custom-modal-content {
+    width: calc(100vw - 28px) !important;
+    max-width: calc(100vw - 28px) !important;
+    max-height: calc(100dvh - 28px) !important;
+    border-radius: 20px !important;
+  }
+
+  .custom-modal-header,
+  .modal-header {
+    padding: 18px !important;
+  }
+
+  .custom-modal-body,
+  .modal-body,
+  .admin-modal-body,
+  .complaint-modal-body,
+  .complaint-map-body,
+  .invoice-workflow-body,
+  .invoice-tracking-body {
+    padding: 18px !important;
+  }
+
+  .custom-modal-footer,
+  .modal-footer,
+  .admin-modal-footer,
+  .complaint-details-action-bar,
+  .complaint-modal-footer,
+  #complaintDetailsModal .complaint-details-action-bar {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    padding: 14px 18px 18px !important;
+  }
+
+  .admin-btn,
+  .modal-btn,
+  .action-btn,
+  .view-btn,
+  .table-view-btn,
+  .complaint-action-btn,
+  .complaint-history-view-btn,
+  .invoice-view-btn,
+  .invoice-action-btn,
+  .orientation-view-btn,
+  .tracking-view-btn {
+    width: 100% !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .custom-modal:not(.hidden),
+  .modal:not(.hidden),
+  .admin-modal:not(.hidden),
+  .other-modal:not(.hidden),
+  #complaintDetailsModal:not(.hidden),
+  #complaintMapModal:not(.hidden),
+  #complaintHistoryModal:not(.hidden),
+  #complaintResolutionModal:not(.hidden),
+  #incomingInvoiceModal:not(.hidden),
+  #invoiceTrackingModal:not(.hidden),
+  #calendarActivitiesModal:not(.hidden),
+  #calendarAddActivityModal:not(.hidden),
+  #orientationQrModal:not(.hidden),
+  #orientationReportModal:not(.hidden),
+  #deactivatedAccountsModal:not(.hidden) {
+    padding: 10px !important;
+  }
+
+  .custom-modal:not(.hidden) .custom-modal-content,
+  .modal:not(.hidden) .custom-modal-content,
+  .modal:not(.hidden) .modal-content,
+  .admin-modal:not(.hidden) .custom-modal-content,
+  #complaintDetailsModal:not(.hidden) .custom-modal-content,
+  #complaintDetailsModal:not(.hidden) .complaint-modal-content,
+  #complaintDetailsModal:not(.hidden) .modal-content,
+  #complaintMapModal:not(.hidden) .custom-modal-content,
+  #complaintMapModal:not(.hidden) .complaint-map-modal-content,
+  #incomingInvoiceModal:not(.hidden) .custom-modal-content,
+  #invoiceTrackingModal:not(.hidden) .custom-modal-content {
+    width: calc(100vw - 20px) !important;
+    max-width: calc(100vw - 20px) !important;
+    max-height: calc(100dvh - 20px) !important;
+    border-radius: 18px !important;
+  }
+
+  .custom-modal-header h3,
+  .modal-header h3,
+  .admin-modal-header h3 {
+    font-size: 19px !important;
+  }
+
+  .modal-close-btn,
+  .close-modal-btn,
+  button[id^="close"][id$="Btn"],
+  button[id^="close"][id$="Modal"] {
+    width: 46px !important;
+    height: 46px !important;
+    min-width: 46px !important;
+    min-height: 46px !important;
+  }
+}
+
+/* =========================================================
+   GLOBAL MODAL FOOTER CLOSE BUTTON HIDE
+   Paste at the VERY BOTTOM of css/admin/admin-overrides.css
+
+   Goal:
+   - Hide footer/bottom Close buttons in all modals
+   - Keep the top-right X close button visible
+   - Keep important action buttons visible:
+     Open Map, Validate, Save, Assign, Confirm, View, etc.
+========================================================= */
+
+/* Hide known footer close buttons only */
+#btnCloseComplaintModalFooter,
+#btnCloseComplaintResolutionFooter,
+#btnCloseComplaintHistoryFooter,
+#btnCloseInvoiceModalFooter,
+#btnCloseIncomingInvoiceFooter,
+#btnCloseCalendarFooter,
+#btnCloseOrientationReportFooter,
+#btnCloseOrientationQrFooter,
+#btnCloseUserHistoryFooter {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+/* Hide footer buttons that are clearly close-only */
+.custom-modal-footer button.close,
+.custom-modal-footer button.close-btn,
+.custom-modal-footer button.close-modal-btn,
+.custom-modal-footer button[data-action="close"],
+.custom-modal-footer .modal-btn.close,
+.custom-modal-footer .modal-btn.danger.close,
+.modal-footer button.close,
+.modal-footer button.close-btn,
+.modal-footer button.close-modal-btn,
+.modal-footer button[data-action="close"],
+.modal-footer .modal-btn.close,
+.modal-footer .modal-btn.danger.close,
+.complaint-details-action-bar button.close,
+.complaint-details-action-bar #btnCloseComplaintModalFooter,
+.complaint-modal-footer button.close,
+.admin-modal-footer button.close {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+/* Do NOT hide top-right X buttons */
+.custom-modal-header .modal-close-btn,
+.custom-modal-header .close-modal-btn,
+.custom-modal-header button[id^="close"],
+.modal-header .modal-close-btn,
+.modal-header .close-modal-btn,
+.modal-header button[id^="close"],
+#closeComplaintDetailsModal,
+#closeComplaintMapModal,
+#closeComplaintHistoryBtn,
+#closeComplaintResolutionModal,
+#closeIncomingInvoiceBtn,
+#closeInvoiceTrackingBtn,
+#closeCalendarActivitiesBtn,
+#closeCalendarAddActivityBtn,
+#closeOrientationQrBtn {
+  display: inline-flex !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+}
+
+/* If footer now has only 1 or 2 action buttons, make layout clean */
+.custom-modal-footer,
+.modal-footer,
+.admin-modal-footer,
+.complaint-details-action-bar,
+.complaint-modal-footer {
+  display: flex !important;
+  justify-content: flex-end !important;
+  align-items: center !important;
+  gap: 12px !important;
+}
+
+/* Complaint modal usually has Open Map + Validate left after hiding Close */
+#complaintDetailsModal .complaint-details-action-bar {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
+/* If Validate is disabled/hidden and only Open Map remains, keep it not too wide */
+#complaintDetailsModal .complaint-details-action-bar:has(#btnOpenComplaintMap):not(:has(#btnValidateForwardComplaint:not([disabled]))) {
+  display: flex !important;
+  justify-content: flex-end !important;
+}
+
+#complaintDetailsModal .complaint-details-action-bar:has(#btnOpenComplaintMap):not(:has(#btnValidateForwardComplaint:not([disabled]))) #btnOpenComplaintMap {
+  width: min(260px, 100%) !important;
+}
+
+/* Keep footer actions professional size */
+.custom-modal-footer button:not([id^="close"]),
+.modal-footer button:not([id^="close"]),
+.admin-modal-footer button:not([id^="close"]),
+.complaint-details-action-bar button:not([id^="close"]) {
+  min-width: 160px !important;
+}
+
+/* Mobile: remaining action buttons stack full width */
+@media (max-width: 768px) {
+  .custom-modal-footer,
+  .modal-footer,
+  .admin-modal-footer,
+  .complaint-details-action-bar,
+  .complaint-modal-footer,
+  #complaintDetailsModal .complaint-details-action-bar {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+  }
+
+  .custom-modal-footer button:not([id^="close"]),
+  .modal-footer button:not([id^="close"]),
+  .admin-modal-footer button:not([id^="close"]),
+  .complaint-details-action-bar button:not([id^="close"]) {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+}
