@@ -1789,49 +1789,179 @@
 </div>
 </div>
 
-<div id="incomingInvoiceModal" class="custom-modal hidden other-modal">
+<div id="incomingInvoiceModal" class="custom-modal hidden other-modal invoice-workflow-modal">
   <div class="custom-modal-overlay" id="incomingInvoiceOverlay"></div>
 
-  <div class="custom-modal-content other-modal-content">
-    <div class="custom-modal-header">
+  <div class="custom-modal-content invoice-workflow-content">
+    <div class="custom-modal-header invoice-workflow-header">
       <div>
-        <h3>Incoming Invoice</h3>
-        <p>Preview of incoming billing, collection-related invoices, or office transaction requests.</p>
+        <h3>Incoming Invoice Workflow</h3>
+        <p>Route invoice subjects from Head Admin → Clerk Admin → Supervisor → Division Admin → Report.</p>
       </div>
-
       <button type="button" class="modal-close-btn" id="closeIncomingInvoiceBtn">&times;</button>
     </div>
 
-    <div class="custom-modal-body other-modal-body">
-      <div class="other-modal-summary-grid">
-        <div class="other-summary-card">
-          <span>Total Incoming</span>
-          <strong>0</strong>
-          <small>Invoice records</small>
+    <div class="custom-modal-body invoice-workflow-body">
+      <div class="invoice-role-banner">
+        <div>
+          <span>Current Account</span>
+          <strong id="invoiceCurrentRoleLabel">-</strong>
+          <p id="invoiceRoleInstruction">Loading role access...</p>
         </div>
+        <button type="button" class="invoice-refresh-btn" id="refreshInvoiceWorkflowBtn">Refresh Workflow</button>
+      </div>
 
-        <div class="other-summary-card blue">
-          <span>Pending</span>
-          <strong>0</strong>
-          <small>For review</small>
+      <div class="invoice-summary-grid">
+        <div class="invoice-summary-card">
+          <span>Total Invoices</span>
+          <strong id="invoiceTotalCount">0</strong>
+          <small>All active and completed invoices</small>
         </div>
-
-        <div class="other-summary-card amber">
-          <span>Processed</span>
-          <strong>0</strong>
-          <small>Completed invoices</small>
+        <div class="invoice-summary-card blue">
+          <span>Needs My Action</span>
+          <strong id="invoiceMyActionCount">0</strong>
+          <small>Based on your current role</small>
+        </div>
+        <div class="invoice-summary-card amber">
+          <span>Completed Reports</span>
+          <strong id="invoiceCompletedCount">0</strong>
+          <small>Confirmed by Clerk Admin</small>
         </div>
       </div>
 
-      <div class="other-empty-panel">
-        <div class="other-empty-icon">🧾</div>
-        <h4>No incoming invoices yet</h4>
-        <p>This modal is ready for the Incoming Invoice feature. Connect this later to your invoice table or API.</p>
+      <div class="invoice-workflow-layout">
+        <section class="invoice-panel invoice-create-panel" id="invoiceCreatePanel">
+          <div class="invoice-panel-header">
+            <div>
+              <h4>Create Invoice Subject</h4>
+              <p>Head Admin assigns a Clerk Admin and sends the invoice subject for acceptance.</p>
+            </div>
+          </div>
+
+          <form id="invoiceCreateForm" class="invoice-form">
+            <div class="invoice-form-group">
+              <label for="invoiceSubjectInput">Subject</label>
+              <input type="text" id="invoiceSubjectInput" placeholder="Example: Collection Billing Request" required />
+            </div>
+
+            <div class="invoice-form-group">
+              <label for="invoiceDescriptionInput">Details / Description</label>
+              <textarea id="invoiceDescriptionInput" placeholder="Enter invoice details, remarks, or transaction request..." required></textarea>
+            </div>
+
+            <div class="invoice-form-group">
+              <label for="invoiceAssignedClerkSelect">Assign Clerk Admin</label>
+              <select id="invoiceAssignedClerkSelect" required>
+                <option value="">Loading Clerk Admin accounts...</option>
+              </select>
+              <small class="invoice-field-hint">
+                Select from registered Clerk Admin accounts. The dropdown shows full names, not roles.
+              </small>
+            </div>
+
+            <button type="submit" class="invoice-primary-btn">Send to Clerk Admin</button>
+          </form>
+        </section>
+
+        <section class="invoice-panel invoice-queue-panel">
+          <div class="invoice-panel-header">
+            <div>
+              <h4>My Invoice Queue</h4>
+              <p>Invoices that are waiting for your role action.</p>
+            </div>
+          </div>
+
+          <div class="invoice-table-shell">
+            <table class="invoice-table">
+              <thead>
+                <tr>
+                  <th>Tracking No.</th>
+                  <th>Subject</th>
+                  <th>Status</th>
+                  <th>Assigned To</th>
+                  <th>Updated</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="invoiceQueueTableBody">
+                <tr><td colspan="6" class="invoice-empty-cell">No invoices waiting for your action.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <section class="invoice-panel invoice-history-panel">
+        <div class="invoice-panel-header invoice-history-header">
+          <div>
+            <h4>Invoice Report / History</h4>
+            <p>Confirmed invoices with tracking numbers and validation trail.</p>
+          </div>
+          <div class="invoice-history-actions">
+            <input type="text" id="invoiceHistorySearchInput" placeholder="Search tracking no., subject, validator..." />
+          </div>
+        </div>
+
+        <div class="invoice-table-shell">
+          <table class="invoice-table">
+            <thead>
+              <tr>
+                <th>Tracking No.</th>
+                <th>Subject</th>
+                <th>Head Admin</th>
+                <th>Clerk Admin</th>
+                <th>Supervisor</th>
+                <th>Division Admin</th>
+                <th>Completed Date</th>
+                <th>View</th>
+              </tr>
+            </thead>
+            <tbody id="invoiceHistoryTableBody">
+              <tr><td colspan="8" class="invoice-empty-cell">No confirmed invoice reports yet.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+</div>
+
+
+<div id="invoiceTrackingModal" class="custom-modal hidden invoice-tracking-modal">
+  <div class="custom-modal-overlay" id="invoiceTrackingOverlay"></div>
+
+  <div class="custom-modal-content invoice-tracking-content">
+    <div class="custom-modal-header">
+      <div>
+        <h3 id="invoiceTrackingTitle">Invoice Tracking Details</h3>
+        <p id="invoiceTrackingSubtitle">Full validation and routing trail.</p>
+      </div>
+      <button type="button" class="modal-close-btn" id="closeInvoiceTrackingBtn">&times;</button>
+    </div>
+
+    <div class="custom-modal-body invoice-tracking-body">
+      <div class="invoice-tracking-summary">
+        <div><span>Tracking No.</span><strong id="invoiceViewTrackingNo">-</strong></div>
+        <div><span>Status</span><strong id="invoiceViewStatus">-</strong></div>
+        <div><span>Current / Final Handler</span><strong id="invoiceViewHandler">-</strong></div>
+      </div>
+
+      <div class="invoice-view-subject-card">
+        <span>Subject</span>
+        <h4 id="invoiceViewSubject">-</h4>
+        <p id="invoiceViewDescription">-</p>
+      </div>
+
+      <div class="invoice-trail-section">
+        <h4>Validation Trail</h4>
+        <div id="invoiceTrackingTimeline" class="invoice-tracking-timeline">
+          <div class="invoice-empty-cell">No tracking logs available.</div>
+        </div>
       </div>
     </div>
   </div>
 </div>
-
 
 <div id="calendarAddActivityModal" class="custom-modal hidden calendar-add-activity-modal">
   <div class="custom-modal-overlay" id="calendarAddActivityOverlay"></div>
@@ -1971,6 +2101,7 @@
 <script src="js/admin/admin-tracking.js"></script>
 <script src="js/admin/admin-users.js"></script>
 <script src="js/admin/admin-role-fix.js"></script>
+<script src="js/admin/admin-invoices.js"></script>
 <script src="js/admin/admin-other.js"></script>
 <script src="js/admin/admin-init.js"></script>
 
