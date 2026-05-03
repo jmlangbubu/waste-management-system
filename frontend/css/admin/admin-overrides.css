@@ -10272,3 +10272,670 @@ td:last-child {
     min-height: auto !important;
   }
 }
+
+/* =========================================================
+   APPOINTMENT RESCHEDULE MODAL FIX
+   Paste at the VERY BOTTOM of css/admin/admin-overrides.css
+
+   Fix:
+   - Reschedule modal appears above sidebar
+   - Modal is centered properly
+   - Prevents the modal title/content from being covered by sidebar
+   - Hides bottom Cancel/Close footer button because top-right X already exists
+   - Keeps actual reschedule/save/confirm buttons visible
+========================================================= */
+
+#appointmentRescheduleModal:not(.hidden),
+#rescheduleAppointmentModal:not(.hidden),
+#rescheduleModal:not(.hidden),
+.appointment-reschedule-modal:not(.hidden) {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+
+  padding: 24px !important;
+  margin: 0 !important;
+
+  background: rgba(15, 23, 42, 0.66) !important;
+  backdrop-filter: blur(8px) !important;
+
+  overflow: hidden !important;
+  z-index: 250000 !important;
+}
+
+#appointmentRescheduleModal .custom-modal-content,
+#appointmentRescheduleModal .modal-content,
+#appointmentRescheduleModal .appointment-modal-content,
+#rescheduleAppointmentModal .custom-modal-content,
+#rescheduleAppointmentModal .modal-content,
+#rescheduleAppointmentModal .appointment-modal-content,
+#rescheduleModal .custom-modal-content,
+#rescheduleModal .modal-content,
+#rescheduleModal .appointment-modal-content,
+.appointment-reschedule-modal .custom-modal-content,
+.appointment-reschedule-modal .modal-content {
+  position: relative !important;
+  inset: auto !important;
+  transform: none !important;
+
+  width: min(880px, calc(100vw - 48px)) !important;
+  max-width: calc(100vw - 48px) !important;
+  max-height: calc(100dvh - 48px) !important;
+
+  display: flex !important;
+  flex-direction: column !important;
+
+  margin: 0 auto !important;
+
+  border-radius: 24px !important;
+  background: #ffffff !important;
+  border: 1px solid rgba(226, 232, 240, 0.95) !important;
+  box-shadow: 0 34px 100px rgba(15, 23, 42, 0.34) !important;
+
+  overflow: hidden !important;
+  z-index: 250010 !important;
+}
+
+#appointmentRescheduleModal .custom-modal-header,
+#appointmentRescheduleModal .modal-header,
+#rescheduleAppointmentModal .custom-modal-header,
+#rescheduleAppointmentModal .modal-header,
+#rescheduleModal .custom-modal-header,
+#rescheduleModal .modal-header,
+.appointment-reschedule-modal .custom-modal-header,
+.appointment-reschedule-modal .modal-header {
+  flex: 0 0 auto !important;
+
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) 52px !important;
+  gap: 18px !important;
+  align-items: start !important;
+
+  padding: 24px 28px !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+  background: #ffffff !important;
+}
+
+#appointmentRescheduleModal .custom-modal-header h3,
+#appointmentRescheduleModal .modal-header h3,
+#rescheduleAppointmentModal .custom-modal-header h3,
+#rescheduleAppointmentModal .modal-header h3,
+#rescheduleModal .custom-modal-header h3,
+#rescheduleModal .modal-header h3,
+.appointment-reschedule-modal .custom-modal-header h3,
+.appointment-reschedule-modal .modal-header h3 {
+  margin: 0 0 6px !important;
+  color: #173c2a !important;
+  font-size: 24px !important;
+  line-height: 1.15 !important;
+  font-weight: 950 !important;
+  letter-spacing: -0.035em !important;
+}
+
+#appointmentRescheduleModal .custom-modal-header p,
+#appointmentRescheduleModal .modal-header p,
+#rescheduleAppointmentModal .custom-modal-header p,
+#rescheduleAppointmentModal .modal-header p,
+#rescheduleModal .custom-modal-header p,
+#rescheduleModal .modal-header p,
+.appointment-reschedule-modal .custom-modal-header p,
+.appointment-reschedule-modal .modal-header p {
+  margin: 0 !important;
+  color: #64748b !important;
+  font-size: 14px !important;
+  line-height: 1.45 !important;
+}
+
+/* Keep top-right X visible */
+#appointmentRescheduleModal .custom-modal-header button,
+#appointmentRescheduleModal .modal-header button,
+#rescheduleAppointmentModal .custom-modal-header button,
+#rescheduleAppointmentModal .modal-header button,
+#rescheduleModal .custom-modal-header button,
+#rescheduleModal .modal-header button,
+.appointment-reschedule-modal .custom-modal-header button,
+.appointment-reschedule-modal .modal-header button {
+  width: 52px !important;
+  height: 52px !important;
+  min-width: 52px !important;
+  min-height: 52px !important;
+
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: #eef2f7 !important;
+  color: #475569 !important;
+
+  font-size: 24px !important;
+  font-weight: 900 !important;
+  cursor: pointer !important;
+}
+
+#appointmentRescheduleModal .custom-modal-body,
+#appointmentRescheduleModal .modal-body,
+#rescheduleAppointmentModal .custom-modal-body,
+#rescheduleAppointmentModal .modal-body,
+#rescheduleModal .custom-modal-body,
+#rescheduleModal .modal-body,
+.appointment-reschedule-modal .custom-modal-body,
+.appointment-reschedule-modal .modal-body {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+
+  padding: 24px 28px !important;
+}
+
+#appointmentRescheduleModal input,
+#appointmentRescheduleModal select,
+#rescheduleAppointmentModal input,
+#rescheduleAppointmentModal select,
+#rescheduleModal input,
+#rescheduleModal select,
+.appointment-reschedule-modal input,
+.appointment-reschedule-modal select {
+  width: 100% !important;
+  min-height: 52px !important;
+
+  border: 1px solid #dbe3ee !important;
+  border-radius: 14px !important;
+  background: #ffffff !important;
+
+  padding: 0 14px !important;
+
+  color: #0f172a !important;
+  font-size: 14px !important;
+  font-weight: 650 !important;
+  outline: none !important;
+}
+
+#appointmentRescheduleModal input:focus,
+#appointmentRescheduleModal select:focus,
+#rescheduleAppointmentModal input:focus,
+#rescheduleAppointmentModal select:focus,
+#rescheduleModal input:focus,
+#rescheduleModal select:focus,
+.appointment-reschedule-modal input:focus,
+.appointment-reschedule-modal select:focus {
+  border-color: #22c55e !important;
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.12) !important;
+}
+
+#appointmentRescheduleModal .custom-modal-footer,
+#appointmentRescheduleModal .modal-footer,
+#appointmentRescheduleModal .appointment-modal-footer,
+#rescheduleAppointmentModal .custom-modal-footer,
+#rescheduleAppointmentModal .modal-footer,
+#rescheduleAppointmentModal .appointment-modal-footer,
+#rescheduleModal .custom-modal-footer,
+#rescheduleModal .modal-footer,
+#rescheduleModal .appointment-modal-footer,
+.appointment-reschedule-modal .custom-modal-footer,
+.appointment-reschedule-modal .modal-footer {
+  flex: 0 0 auto !important;
+
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 12px !important;
+
+  padding: 16px 28px 22px !important;
+
+  border-top: 1px solid #e2e8f0 !important;
+  background: #ffffff !important;
+}
+
+/* Hide bottom Cancel / Close button only. Top X remains. */
+#appointmentRescheduleModal #cancelRescheduleBtn,
+#appointmentRescheduleModal #cancelRescheduleAppointmentBtn,
+#appointmentRescheduleModal #closeRescheduleFooterBtn,
+#appointmentRescheduleModal #cancelAppointmentRescheduleBtn,
+#rescheduleAppointmentModal #cancelRescheduleBtn,
+#rescheduleAppointmentModal #cancelRescheduleAppointmentBtn,
+#rescheduleAppointmentModal #closeRescheduleFooterBtn,
+#rescheduleAppointmentModal #cancelAppointmentRescheduleBtn,
+#rescheduleModal #cancelRescheduleBtn,
+#rescheduleModal #cancelRescheduleAppointmentBtn,
+#rescheduleModal #closeRescheduleFooterBtn,
+#rescheduleModal #cancelAppointmentRescheduleBtn,
+.appointment-reschedule-modal #cancelRescheduleBtn,
+.appointment-reschedule-modal #cancelRescheduleAppointmentBtn,
+.appointment-reschedule-modal #closeRescheduleFooterBtn,
+.appointment-reschedule-modal #cancelAppointmentRescheduleBtn,
+#appointmentRescheduleModal .custom-modal-footer .cancel-btn,
+#appointmentRescheduleModal .modal-footer .cancel-btn,
+#appointmentRescheduleModal .custom-modal-footer .close-btn,
+#appointmentRescheduleModal .modal-footer .close-btn,
+#appointmentRescheduleModal .custom-modal-footer .danger-btn.close,
+#appointmentRescheduleModal .modal-footer .danger-btn.close,
+#rescheduleAppointmentModal .custom-modal-footer .cancel-btn,
+#rescheduleAppointmentModal .modal-footer .cancel-btn,
+#rescheduleAppointmentModal .custom-modal-footer .close-btn,
+#rescheduleAppointmentModal .modal-footer .close-btn,
+#rescheduleAppointmentModal .custom-modal-footer .danger-btn.close,
+#rescheduleAppointmentModal .modal-footer .danger-btn.close,
+#rescheduleModal .custom-modal-footer .cancel-btn,
+#rescheduleModal .modal-footer .cancel-btn,
+#rescheduleModal .custom-modal-footer .close-btn,
+#rescheduleModal .modal-footer .close-btn,
+#rescheduleModal .custom-modal-footer .danger-btn.close,
+#rescheduleModal .modal-footer .danger-btn.close,
+.appointment-reschedule-modal .custom-modal-footer .cancel-btn,
+.appointment-reschedule-modal .modal-footer .cancel-btn,
+.appointment-reschedule-modal .custom-modal-footer .close-btn,
+.appointment-reschedule-modal .modal-footer .close-btn,
+.appointment-reschedule-modal .custom-modal-footer .danger-btn.close,
+.appointment-reschedule-modal .modal-footer .danger-btn.close {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+/* Make real save/reschedule button clean if present */
+#appointmentRescheduleModal .custom-modal-footer button:not(.cancel-btn):not(.close-btn),
+#appointmentRescheduleModal .modal-footer button:not(.cancel-btn):not(.close-btn),
+#rescheduleAppointmentModal .custom-modal-footer button:not(.cancel-btn):not(.close-btn),
+#rescheduleAppointmentModal .modal-footer button:not(.cancel-btn):not(.close-btn),
+#rescheduleModal .custom-modal-footer button:not(.cancel-btn):not(.close-btn),
+#rescheduleModal .modal-footer button:not(.cancel-btn):not(.close-btn),
+.appointment-reschedule-modal .custom-modal-footer button:not(.cancel-btn):not(.close-btn),
+.appointment-reschedule-modal .modal-footer button:not(.cancel-btn):not(.close-btn) {
+  min-width: 180px !important;
+  min-height: 50px !important;
+
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+
+  border-radius: 15px !important;
+
+  font-size: 14px !important;
+  font-weight: 950 !important;
+}
+
+@media (max-width: 992px) {
+  #appointmentRescheduleModal:not(.hidden),
+  #rescheduleAppointmentModal:not(.hidden),
+  #rescheduleModal:not(.hidden),
+  .appointment-reschedule-modal:not(.hidden) {
+    padding: 14px !important;
+  }
+
+  #appointmentRescheduleModal .custom-modal-content,
+  #appointmentRescheduleModal .modal-content,
+  #rescheduleAppointmentModal .custom-modal-content,
+  #rescheduleAppointmentModal .modal-content,
+  #rescheduleModal .custom-modal-content,
+  #rescheduleModal .modal-content,
+  .appointment-reschedule-modal .custom-modal-content,
+  .appointment-reschedule-modal .modal-content {
+    width: calc(100vw - 28px) !important;
+    max-width: calc(100vw - 28px) !important;
+    max-height: calc(100dvh - 28px) !important;
+  }
+}
+
+@media (max-width: 640px) {
+  #appointmentRescheduleModal:not(.hidden),
+  #rescheduleAppointmentModal:not(.hidden),
+  #rescheduleModal:not(.hidden),
+  .appointment-reschedule-modal:not(.hidden) {
+    padding: 10px !important;
+  }
+
+  #appointmentRescheduleModal .custom-modal-header,
+  #appointmentRescheduleModal .modal-header,
+  #rescheduleAppointmentModal .custom-modal-header,
+  #rescheduleAppointmentModal .modal-header,
+  #rescheduleModal .custom-modal-header,
+  #rescheduleModal .modal-header,
+  .appointment-reschedule-modal .custom-modal-header,
+  .appointment-reschedule-modal .modal-header {
+    padding: 18px !important;
+    grid-template-columns: minmax(0, 1fr) 46px !important;
+  }
+
+  #appointmentRescheduleModal .custom-modal-body,
+  #appointmentRescheduleModal .modal-body,
+  #rescheduleAppointmentModal .custom-modal-body,
+  #rescheduleAppointmentModal .modal-body,
+  #rescheduleModal .custom-modal-body,
+  #rescheduleModal .modal-body,
+  .appointment-reschedule-modal .custom-modal-body,
+  .appointment-reschedule-modal .modal-body {
+    padding: 18px !important;
+  }
+
+  #appointmentRescheduleModal .custom-modal-footer,
+  #appointmentRescheduleModal .modal-footer,
+  #rescheduleAppointmentModal .custom-modal-footer,
+  #rescheduleAppointmentModal .modal-footer,
+  #rescheduleModal .custom-modal-footer,
+  #rescheduleModal .modal-footer,
+  .appointment-reschedule-modal .custom-modal-footer,
+  .appointment-reschedule-modal .modal-footer {
+    padding: 14px 18px 18px !important;
+  }
+
+  #appointmentRescheduleModal .custom-modal-footer button:not(.cancel-btn):not(.close-btn),
+  #appointmentRescheduleModal .modal-footer button:not(.cancel-btn):not(.close-btn),
+  #rescheduleAppointmentModal .custom-modal-footer button:not(.cancel-btn):not(.close-btn),
+  #rescheduleAppointmentModal .modal-footer button:not(.cancel-btn):not(.close-btn),
+  #rescheduleModal .custom-modal-footer button:not(.cancel-btn):not(.close-btn),
+  #rescheduleModal .modal-footer button:not(.cancel-btn):not(.close-btn),
+  .appointment-reschedule-modal .custom-modal-footer button:not(.cancel-btn):not(.close-btn),
+  .appointment-reschedule-modal .modal-footer button:not(.cancel-btn):not(.close-btn) {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+}
+/* =========================================
+   RESCHEDULE MODAL FORM SPACING FIX
+   Fix label + input/select spacing
+========================================= */
+
+#appointmentRescheduleModal .form-group,
+#appointmentRescheduleModal .modal-form-group,
+#appointmentRescheduleModal .appointment-form-group,
+#rescheduleAppointmentModal .form-group,
+#rescheduleAppointmentModal .modal-form-group,
+#rescheduleAppointmentModal .appointment-form-group,
+#rescheduleModal .form-group,
+#rescheduleModal .modal-form-group,
+#rescheduleModal .appointment-form-group {
+  display: grid !important;
+  gap: 8px !important;
+  margin-bottom: 18px !important;
+}
+
+/* If labels are not inside form-group, still add spacing */
+#appointmentRescheduleModal label,
+#rescheduleAppointmentModal label,
+#rescheduleModal label,
+.appointment-reschedule-modal label {
+  display: block !important;
+  margin-bottom: 8px !important;
+  color: #173c2a !important;
+  font-size: 14px !important;
+  font-weight: 800 !important;
+  line-height: 1.25 !important;
+}
+
+/* Inputs/selects should not stick to next label */
+#appointmentRescheduleModal input,
+#appointmentRescheduleModal select,
+#rescheduleAppointmentModal input,
+#rescheduleAppointmentModal select,
+#rescheduleModal input,
+#rescheduleModal select,
+.appointment-reschedule-modal input,
+.appointment-reschedule-modal select {
+  margin-bottom: 14px !important;
+}
+
+/* Remove extra margin on last field */
+#appointmentRescheduleModal input:last-child,
+#appointmentRescheduleModal select:last-child,
+#rescheduleAppointmentModal input:last-child,
+#rescheduleAppointmentModal select:last-child,
+#rescheduleModal input:last-child,
+#rescheduleModal select:last-child {
+  margin-bottom: 0 !important;
+}
+/* =========================================================
+   APPOINTMENT CUSTOM DROPDOWN UI
+   Paste at the VERY BOTTOM of css/admin/admin-overrides.css
+
+   Scope:
+   - Appointment reschedule modal time dropdown
+   - Future appointment modal selects
+   - Uses custom dropdown so it matches the other dashboard/invoice dropdowns
+========================================================= */
+
+/* Hide native appointment select, but keep it functional for JS */
+.appointment-native-select-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  overflow: hidden !important;
+}
+
+/* Custom select wrapper */
+.appointment-custom-select {
+  position: relative !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  z-index: 20 !important;
+}
+
+/* Visible button */
+.appointment-custom-select-btn {
+  width: 100% !important;
+  min-height: 56px !important;
+
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+
+  padding: 0 14px 0 18px !important;
+
+  border: 1px solid #dbe3ee !important;
+  border-radius: 16px !important;
+  background: #ffffff !important;
+  color: #0f172a !important;
+
+  font-size: 14px !important;
+  font-weight: 850 !important;
+  line-height: 1 !important;
+  text-align: left !important;
+
+  cursor: pointer !important;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.045) !important;
+
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    transform 0.16s ease,
+    background 0.16s ease !important;
+}
+
+.appointment-custom-select-btn:hover {
+  transform: translateY(-1px) !important;
+  border-color: #86efac !important;
+  box-shadow: 0 14px 30px rgba(22, 163, 74, 0.12) !important;
+}
+
+.appointment-custom-select.open .appointment-custom-select-btn {
+  border-color: #22c55e !important;
+  box-shadow:
+    0 0 0 4px rgba(34, 197, 94, 0.14),
+    0 14px 30px rgba(15, 23, 42, 0.08) !important;
+}
+
+.appointment-custom-select-label {
+  min-width: 0 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+/* Arrow */
+.appointment-custom-select-arrow {
+  width: 30px !important;
+  height: 30px !important;
+  min-width: 30px !important;
+
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+
+  border-radius: 999px !important;
+  background: #f1f5f9 !important;
+  color: #475569 !important;
+
+  font-size: 14px !important;
+  font-weight: 950 !important;
+  line-height: 1 !important;
+
+  transition:
+    transform 0.16s ease,
+    background 0.16s ease,
+    color 0.16s ease !important;
+}
+
+.appointment-custom-select.open .appointment-custom-select-arrow {
+  transform: rotate(180deg) !important;
+  background: #dcfce7 !important;
+  color: #15803d !important;
+}
+
+/* Portal menu appended to body so it will not be clipped by modal overflow */
+.appointment-custom-select-portal-menu {
+  position: fixed !important;
+
+  display: grid !important;
+  gap: 5px !important;
+
+  max-height: 280px !important;
+  overflow-y: auto !important;
+
+  padding: 8px !important;
+
+  border: 1px solid #dbe3ee !important;
+  border-radius: 18px !important;
+  background: #ffffff !important;
+
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.24) !important;
+
+  z-index: 300000 !important;
+
+  animation: appointmentDropdownPop 0.15s ease both !important;
+}
+
+@keyframes appointmentDropdownPop {
+  from {
+    opacity: 0;
+    transform: translateY(-5px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Options */
+.appointment-custom-select-option {
+  width: 100% !important;
+  min-height: 42px !important;
+
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 10px !important;
+
+  border: 0 !important;
+  border-radius: 13px !important;
+
+  padding: 0 12px !important;
+
+  background: transparent !important;
+  color: #334155 !important;
+
+  font-size: 13.5px !important;
+  font-weight: 850 !important;
+  text-align: left !important;
+  white-space: nowrap !important;
+
+  cursor: pointer !important;
+
+  transition:
+    background 0.14s ease,
+    color 0.14s ease,
+    transform 0.14s ease !important;
+}
+
+.appointment-custom-select-option:hover {
+  background: #f0fdf4 !important;
+  color: #15803d !important;
+  transform: translateX(2px) !important;
+}
+
+.appointment-custom-select-option.active {
+  background: linear-gradient(135deg, #15803d, #16a34a) !important;
+  color: #ffffff !important;
+  box-shadow: 0 10px 20px rgba(22, 163, 74, 0.18) !important;
+}
+
+.appointment-custom-select-option.active::after {
+  content: "✓" !important;
+  font-size: 13px !important;
+  font-weight: 950 !important;
+}
+
+.appointment-custom-select-option.is-disabled,
+.appointment-custom-select-option:disabled {
+  opacity: 0.55 !important;
+  cursor: not-allowed !important;
+  transform: none !important;
+}
+
+/* Keep custom select aligned inside appointment modals */
+#appointmentRescheduleModal .appointment-custom-select,
+#rescheduleAppointmentModal .appointment-custom-select,
+#rescheduleModal .appointment-custom-select,
+.appointment-reschedule-modal .appointment-custom-select {
+  margin-bottom: 14px !important;
+}
+
+/* Mobile */
+@media (max-width: 768px) {
+  .appointment-custom-select-portal-menu {
+    max-height: 240px !important;
+  }
+
+  .appointment-custom-select-btn {
+    min-height: 52px !important;
+  }
+}
+
+/* =========================================================
+   APPOINTMENT DROPDOWN COMPACT HEIGHT FIX
+   Paste at the VERY BOTTOM of css/admin/admin-overrides.css
+
+   Fix:
+   - Dropdown box no longer reaches the bottom of the screen
+   - Top and bottom border of the dropdown remain visible
+   - Options scroll inside the dropdown
+========================================================= */
+
+.appointment-custom-select-portal-menu {
+  max-height: 220px !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain !important;
+  scrollbar-width: thin !important;
+  z-index: 350000 !important;
+  padding: 6px !important;
+}
+
+.appointment-custom-select-option {
+  min-height: 40px !important;
+  padding: 0 12px !important;
+}
+
+.appointment-custom-select-btn {
+  min-height: 54px !important;
+}
