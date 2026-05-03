@@ -12,13 +12,13 @@
 <link rel="stylesheet" href="css/admin/admin-tables.css">
 <link rel="stylesheet" href="css/admin/admin-waste-records.css">
 <link rel="stylesheet" href="css/admin/admin-appointments.css">
-<link rel="stylesheet" href="css/admin/admin-complaints.css">
 <link rel="stylesheet" href="css/admin/admin-tracking.css">
 <link rel="stylesheet" href="css/admin/admin-users.css">
 <link rel="stylesheet" href="css/admin/admin-modals.css">
 <link rel="stylesheet" href="css/admin/admin-responsive.css">
 <link rel="stylesheet" href="css/admin/admin-orientation.css">
 <link rel="stylesheet" href="css/admin/admin-overrides.css">
+<link rel="stylesheet" href="css/admin/admin-complaints.css">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
 
@@ -1206,104 +1206,205 @@
     </div>
   </div>
 
-  <div id="complaintDetailsModal" class="custom-modal hidden">
+  <!-- COMPLAINT DETAILS MODAL - UPDATED UI/UX -->
+<div id="complaintDetailsModal" class="custom-modal hidden">
   <div class="custom-modal-overlay" id="complaintDetailsOverlay"></div>
 
-  <div class="custom-modal-content complaint-modal-content">
-    <div class="custom-modal-header">
-      <div>
-        <h3>Complaint Details</h3>
-        <p>Review complaint information and evidence before validation.</p>
-      </div>
-      <button type="button" id="closeComplaintDetailsModal" class="modal-close-btn">&times;</button>
-    </div>
+  <div class="custom-modal-content complaint-modal-content complaint-details-pro-modal">
+    <div class="custom-modal-header complaint-details-pro-header">
+      <div class="complaint-details-title-wrap">
+        <div class="complaint-details-title-icon">📄</div>
 
-    <div class="custom-modal-body complaint-modal-body">
-      <div class="complaint-modal-grid">
-        <div class="complaint-modal-left">
-          <div class="complaint-field-group">
-            <label>Subject</label>
-            <div id="complaintModalSubject" class="complaint-field-value">-</div>
-          </div>
-
-          <div class="complaint-field-group">
-            <label>Description</label>
-            <div id="complaintModalDescription" class="complaint-field-value">-</div>
-          </div>
-
-          <div class="complaint-field-group">
-            <label>Citizen Name</label>
-            <div id="complaintModalCitizenName" class="complaint-field-value">-</div>
-          </div>
-
-          <div class="complaint-field-group">
-            <label>Username</label>
-            <div id="complaintModalUsername" class="complaint-field-value">-</div>
-          </div>
-
-          <div class="complaint-field-group">
-            <label>Assigned Barangay</label>
-            <div id="complaintModalBarangay" class="complaint-field-value">-</div>
-          </div>
-
-          <div class="complaint-field-group">
-            <label>Status</label>
-            <div id="complaintModalStatus" class="complaint-field-value">-</div>
-          </div>
-
-          <div class="complaint-field-group">
-            <label>Coordinates</label>
-            <div id="complaintModalCoordinates" class="complaint-field-value">-</div>
-          </div>
-
-          <div class="complaint-field-group">
-            <label>Submitted At</label>
-            <div id="complaintModalCreatedAt" class="complaint-field-value">-</div>
-          </div>
-        </div>
-
-        <div class="complaint-modal-right">
-          <div class="complaint-evidence-wrapper">
-  <div id="complaintImageSkeleton" class="complaint-image-skeleton"></div>
-
-  <img
-    id="complaintModalImage"
-    class="complaint-evidence-image"
-    src=""
-    alt="Complaint evidence"
-    style="display:none;"
-  />
-
-  <div id="noImageText" class="no-image-placeholder" style="display:none;">
-    No image available
-  </div>
-</div>
-
-<div id="imagePreviewOverlay" class="image-preview-overlay hidden">
-  <button type="button" id="closeImagePreviewBtn" class="image-preview-close">&times;</button>
-  <img id="imagePreviewFull" class="image-preview-full" src="" alt="Preview image">
-</div>
+        <div>
+          <h3>Complaint Details</h3>
+          <p>Review complaint information and evidence before validation.</p>
         </div>
       </div>
 
-      <div id="manualBarangayContainer" style="display:none; margin-bottom:10px;">
-        <label>Select Barangay:</label>
-        <select id="manualBarangaySelect">
-          <option value="">-- Select Barangay --</option>
-          <option value="Bula">Bula</option>
-          <option value="Lagao">Lagao</option>
-          <option value="San Isidro">San Isidro</option>
-          <option value="Calumpang">Calumpang</option>
-        </select>
+      <div class="complaint-details-header-actions">
+        <span id="complaintModalStatus" class="complaint-details-status-pill">Pending</span>
+        <button type="button" id="closeComplaintDetailsModal" class="modal-close-btn">&times;</button>
+      </div>
+    </div>
+
+    <div class="custom-modal-body complaint-modal-body complaint-details-pro-body">
+      <div class="complaint-details-pro-grid">
+
+        <!-- LEFT COLUMN -->
+        <div class="complaint-details-left-stack">
+
+          <!-- COMPLAINT SUMMARY -->
+          <section class="complaint-pro-card complaint-summary-card-pro">
+            <div class="complaint-pro-card-header">
+              <span class="complaint-pro-icon blue">▣</span>
+              <h4>Complaint Summary</h4>
+            </div>
+
+            <div class="complaint-summary-fields">
+              <div class="complaint-pro-field full">
+                <label>Subject</label>
+                <div id="complaintModalSubject" class="complaint-field-value">-</div>
+              </div>
+
+              <div class="complaint-pro-field full">
+                <label>Description</label>
+                <div id="complaintModalDescription" class="complaint-field-value">-</div>
+              </div>
+            </div>
+          </section>
+
+          <!-- REPORTER INFORMATION -->
+          <section class="complaint-pro-card">
+            <div class="complaint-pro-card-header">
+              <span class="complaint-pro-icon cyan">👤</span>
+              <h4>Reporter Information</h4>
+            </div>
+
+            <div class="complaint-pro-two-grid">
+              <div class="complaint-pro-field with-icon">
+                <span class="complaint-mini-icon">👤</span>
+                <div>
+                  <label>Citizen Name</label>
+                  <div id="complaintModalCitizenName" class="complaint-field-value">-</div>
+                </div>
+              </div>
+
+              <div class="complaint-pro-field with-icon">
+                <span class="complaint-mini-icon">＠</span>
+                <div>
+                  <label>Username</label>
+                  <div id="complaintModalUsername" class="complaint-field-value">-</div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- LOCATION DETAILS -->
+          <section class="complaint-pro-card">
+            <div class="complaint-pro-card-header">
+              <span class="complaint-pro-icon green">📍</span>
+              <h4>Location Details</h4>
+            </div>
+
+            <div class="complaint-pro-two-grid">
+              <div class="complaint-pro-field with-icon">
+                <span class="complaint-mini-icon">🏠</span>
+                <div>
+                  <label>Assigned Barangay</label>
+                  <div id="complaintModalBarangay" class="complaint-field-value">-</div>
+                </div>
+              </div>
+
+              <div class="complaint-pro-field with-icon">
+                <span class="complaint-mini-icon">◎</span>
+                <div>
+                  <label>Coordinates</label>
+                  <div id="complaintModalCoordinates" class="complaint-field-value">-</div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- SUBMITTED AT -->
+          <section class="complaint-pro-card submitted-card">
+            <div class="complaint-pro-field with-icon no-border">
+              <span class="complaint-mini-icon purple">🗓</span>
+              <div>
+                <label>Submitted At</label>
+                <div id="complaintModalCreatedAt" class="complaint-field-value">-</div>
+              </div>
+            </div>
+          </section>
+
+          <!-- MANUAL BARANGAY FALLBACK -->
+          <div id="manualBarangayContainer" class="manual-barangay-container" style="display:none;">
+            <label for="manualBarangaySelect">Select Barangay</label>
+            <select id="manualBarangaySelect">
+              <option value="">-- Select Barangay --</option>
+              <option value="Bula">Bula</option>
+              <option value="Lagao">Lagao</option>
+              <option value="San Isidro">San Isidro</option>
+              <option value="Calumpang">Calumpang</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- RIGHT COLUMN -->
+        <div class="complaint-details-right-stack">
+
+          <!-- EVIDENCE -->
+          <section class="complaint-pro-card evidence-card">
+            <div class="complaint-pro-card-header">
+              <span class="complaint-pro-icon violet">🖼</span>
+              <h4>Evidence</h4>
+            </div>
+
+            <div class="complaint-evidence-wrapper">
+              <div id="complaintImageSkeleton" class="complaint-image-skeleton"></div>
+
+              <img
+                id="complaintModalImage"
+                class="complaint-evidence-image"
+                src=""
+                alt="Complaint evidence"
+                style="display:none;"
+              />
+
+              <div id="noImageText" class="no-image-placeholder" style="display:none;">
+                <div class="no-image-icon">🖼</div>
+                <strong>No evidence uploaded</strong>
+                <span>Photos, videos, or documents will appear here.</span>
+              </div>
+            </div>
+          </section>
+
+          <!-- MAP PREVIEW -->
+          <section class="complaint-pro-card map-preview-card">
+            <div class="complaint-pro-card-header map-preview-header">
+              <div>
+                <span class="complaint-pro-icon green">🗺</span>
+                <h4>Map Preview</h4>
+              </div>
+
+              <button type="button" id="btnOpenComplaintMap" class="complaint-map-small-btn">
+                Open Map
+              </button>
+            </div>
+
+            <div class="complaint-map-preview-box">
+              <div class="map-preview-pin">📍</div>
+              <div class="map-preview-lines"></div>
+            </div>
+          </section>
+        </div>
       </div>
 
-      <div class="complaint-modal-actions">
-        <button type="button" id="btnOpenComplaintMap" class="view-all-btn">Open Map</button>
-        <button type="button" id="btnCloseComplaintModalFooter" class="logout-btn">Close</button>
+      <div class="complaint-details-footer">
+        <button type="button" id="btnCloseComplaintModalFooter" class="complaint-secondary-btn">
+          Close
+        </button>
+
+        <button type="button" id="btnRequestComplaintReview" class="complaint-review-btn">
+          Request Review
+        </button>
+
+        <button
+          type="button"
+          id="btnValidateComplaintFromDetails"
+          class="complaint-primary-btn"
+          onclick="document.getElementById('btnValidateForwardComplaint')?.click();">
+          Validate Complaint
+        </button>
       </div>
     </div>
   </div>
+
+  <div id="imagePreviewOverlay" class="image-preview-overlay hidden">
+    <button type="button" id="closeImagePreviewBtn" class="image-preview-close">&times;</button>
+    <img id="imagePreviewFull" class="imagePreviewFull image-preview-full" src="" alt="Preview image">
+  </div>
 </div>
+
 
 <div id="complaintMapModal" class="custom-modal hidden">
   <div class="custom-modal-overlay" id="complaintMapOverlay"></div>
