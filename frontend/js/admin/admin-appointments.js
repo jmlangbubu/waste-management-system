@@ -633,3 +633,407 @@ window.handleAppointmentDecision = handleAppointmentDecision;
 window.handleReschedule = handleReschedule;
 window.handleCancel = handleCancel;
 window.confirmRescheduleAppointment = confirmRescheduleAppointment;
+
+/* =========================================================
+   APPOINTMENT CUSTOM DROPDOWN UI - FULL INTEGRATED
+   Added for:
+   - Reschedule Appointment time dropdown
+   - Appointment-related modal selects
+
+   Notes:
+   - Original native <select> remains active behind the custom UI.
+   - Existing appointment logic still reads the real select value.
+   - Dropdown menu is rendered as a portal to avoid being clipped by modal overflow.
+========================================================= */
+
+let activeAppointmentCustomSelect = null;
+let activeAppointmentPortalMenu = null;
+
+function isAppointmentSelectTarget(select) {
+  if (!select || select.tagName !== "SELECT") return false;
+
+  return Boolean(
+    select.closest("#rescheduleAppointmentModal") ||
+    select.closest("#appointmentRescheduleModal") ||
+    select.closest("#rescheduleModal") ||
+    select.closest(".appointment-reschedule-modal") ||
+    select.closest("#appointmentDetailsModal") ||
+    select.closest(".appointment-modal") ||
+    select.id === "rescheduleAppointmentTime"
+  );
+}
+
+function getAppointmentSelectLabel(select) {
+  if (!select) return "-";
+
+  const selectedOption = select.options[select.selectedIndex];
+  return selectedOption ? selectedOption.textContent.trim() : "-";
+}
+
+function closeAppointmentCustomDropdown() {
+  if (activeAppointmentPortalMenu) {
+    activeAppointmentPortalMenu.remove();
+    activeAppointmentPortalMenu = null;
+  }
+
+  if (activeAppointmentCustomSelect) {
+    activeAppointmentCustomSelect.classList.remove("open");
+
+    const btn = activeAppointmentCustomSelect.querySelector(".appointment-custom-select-btn");
+    if (btn) btn.setAttribute("aria-expanded", "false");
+
+    activeAppointmentCustomSelect = null;
+  }
+}
+
+function syncAppointmentCustomDropdown(select) {
+  if (!select || !select.id) return;
+
+  const wrapper = document.querySelector(
+    `.appointment-custom-select[data-for="${select.id}"]`
+  );
+
+  if (!wrapper) return;
+
+  const label = wrapper.querySelector(".appointment-custom-select-label");
+  if (label) label.textContent = getAppointmentSelectLabel(select);
+
+  const btn = wrapper.querySelector(".appointment-custom-select-btn");
+  if (btn) {
+    btn.disabled = !!select.disabled;
+    btn.classList.toggle("is-disabled", !!select.disabled);
+  }
+}
+
+function positionAppointmentPortalMenu(wrapper, portal) {
+  if (!wrapper || !portal) return;
+
+  const button = wrapper.querySelector(".appointment-custom-select-btn");
+  if (!button) return;
+
+  const rect = button.getBoundingClientRect();
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+
+  const menuWidth = Math.max(rect.width, 230);
+
+  let left = rect.left;
+  const top = rect.bottom + 8; // Always open below the Select Time field
+
+  if (left + menuWidth > viewportWidth - 12) {
+    left = viewportWidth - menuWidth - 12;
+  }
+
+  /*
+    Keep the dropdown compact so the top and bottom of the dropdown box
+    remain visible. The list scrolls internally when there are more options.
+  */
+  const compactMaxHeight = 220;
+  const availableBelow = Math.max(130, viewportHeight - top - 18);
+  const naturalMenuHeight = portal.scrollHeight || compactMaxHeight;
+  const finalMenuHeight = Math.min(naturalMenuHeight, compactMaxHeight, availableBelow);
+
+  portal.style.left = `${Math.max(12, left)}px`;
+  portal.style.top = `${Math.max(12, top)}px`;
+  portal.style.width = `${menuWidth}px`;
+  portal.style.maxHeight = `${finalMenuHeight}px`;
+  portal.style.overflowY = naturalMenuHeight > finalMenuHeight ? "auto" : "visible";
+}
+
+function openAppointmentCustomDropdown(select, wrapper) {
+  closeAppointmentCustomDropdown();
+
+  if (!select || !wrapper || select.disabled) return;
+
+  wrapper.classList.add("open");
+
+  const btn = wrapper.querySelector(".appointment-custom-select-btn");
+  if (btn) btn.setAttribute("aria-expanded", "true");
+
+  const portal = document.createElement("div");
+  portal.className = "appointment-custom-select-portal-menu";
+  portal.setAttribute("role", "listbox");
+  portal.dataset.for = select.id;
+
+  Array.from(select.options).forEach((option) => {
+    const optionBtn = document.createElement("button");
+    optionBtn.type = "button";
+    optionBtn.className = "appointment-custom-select-option";
+    optionBtn.dataset.value = option.value;
+    optionBtn.textContent = option.textContent;
+    optionBtn.setAttribute("role", "option");
+
+    const isActive = option.value === select.value;
+    optionBtn.classList.toggle("active", isActive);
+    optionBtn.setAttribute("aria-selected", isActive ? "true" : "false");
+
+    if (option.disabled) {
+      optionBtn.disabled = true;
+      optionBtn.classList.add("is-disabled");
+    }
+
+    optionBtn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (option.disabled) return;
+
+      select.value = option.value;
+
+      select.dispatchEvent(
+        new Event("change", {
+          bubbles: true
+        })
+      );
+
+      syncAppointmentCustomDropdown(select);
+      closeAppointmentCustomDropdown();
+    });
+
+    portal.appendChild(optionBtn);
+  });
+
+  document.body.appendChild(portal);
+
+  activeAppointmentCustomSelect = wrapper;
+  activeAppointmentPortalMenu = portal;
+
+  positionAppointmentPortalMenu(wrapper, portal);
+
+  requestAnimationFrame(() => {
+    positionAppointmentPortalMenu(wrapper, portal);
+  });
+}
+
+function buildAppointmentCustomDropdown(select) {
+  if (!isAppointmentSelectTarget(select)) return;
+
+  if (!select.id) {
+    select.id = `appointmentSelect_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  const existingWrapper = document.querySelector(
+    `.appointment-custom-select[data-for="${select.id}"]`
+  );
+
+  if (existingWrapper) {
+    select.classList.add("appointment-native-select-hidden");
+    syncAppointmentCustomDropdown(select);
+    return;
+  }
+
+  select.classList.add("appointment-native-select-hidden");
+
+  const wrapper = document.createElement("div");
+  wrapper.className = "appointment-custom-select";
+  wrapper.dataset.for = select.id;
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "appointment-custom-select-btn";
+  button.setAttribute("aria-haspopup", "listbox");
+  button.setAttribute("aria-expanded", "false");
+
+  button.innerHTML = `
+    <span class="appointment-custom-select-label">${getAppointmentSelectLabel(select)}</span>
+    <span class="appointment-custom-select-arrow">⌄</span>
+  `;
+
+  button.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (select.disabled) return;
+
+    if (wrapper.classList.contains("open")) {
+      closeAppointmentCustomDropdown();
+      return;
+    }
+
+    openAppointmentCustomDropdown(select, wrapper);
+  });
+
+  wrapper.appendChild(button);
+  select.insertAdjacentElement("afterend", wrapper);
+
+  select.addEventListener("change", () => {
+    syncAppointmentCustomDropdown(select);
+  });
+
+  syncAppointmentCustomDropdown(select);
+}
+
+function setupAppointmentCustomDropdowns(root = document) {
+  if (!root || !root.querySelectorAll) return;
+
+  root.querySelectorAll("select").forEach((select) => {
+    if (isAppointmentSelectTarget(select)) {
+      buildAppointmentCustomDropdown(select);
+    }
+  });
+}
+
+function observeAppointmentCustomDropdowns() {
+  if (window.__appointmentCustomDropdownObserverBound === true) return;
+  window.__appointmentCustomDropdownObserverBound = true;
+
+  const observer = new MutationObserver((mutations) => {
+    let shouldSetup = false;
+
+    mutations.forEach((mutation) => {
+      mutation.addedNodes.forEach((node) => {
+        if (!(node instanceof HTMLElement)) return;
+
+        if (
+          node.matches?.("select") ||
+          node.querySelector?.("select") ||
+          node.id === "rescheduleAppointmentModal" ||
+          node.id === "appointmentRescheduleModal" ||
+          node.id === "rescheduleModal" ||
+          node.closest?.("#rescheduleAppointmentModal, #appointmentRescheduleModal, #rescheduleModal")
+        ) {
+          shouldSetup = true;
+        }
+      });
+    });
+
+    if (shouldSetup) {
+      setTimeout(() => setupAppointmentCustomDropdowns(), 40);
+      setTimeout(() => setupAppointmentCustomDropdowns(), 160);
+    }
+  });
+
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true
+  });
+
+  window.appointmentCustomDropdownObserver = observer;
+}
+
+/*
+  Wrap handleReschedule so the custom dropdown is initialized immediately
+  when the Reschedule modal opens.
+*/
+if (typeof handleReschedule === "function" && !window.__handleRescheduleAppointmentDropdownWrapped) {
+  window.__handleRescheduleAppointmentDropdownWrapped = true;
+
+  const originalHandleReschedule = handleReschedule;
+
+  handleReschedule = function patchedHandleReschedule(...args) {
+    const result = originalHandleReschedule.apply(this, args);
+
+    setTimeout(() => setupAppointmentCustomDropdowns(), 30);
+    setTimeout(() => setupAppointmentCustomDropdowns(), 120);
+
+    return result;
+  };
+
+  window.handleReschedule = handleReschedule;
+}
+
+/*
+  Wrap closeRescheduleModal so open dropdown portals are removed when modal closes.
+*/
+if (typeof closeRescheduleModal === "function" && !window.__closeRescheduleAppointmentDropdownWrapped) {
+  window.__closeRescheduleAppointmentDropdownWrapped = true;
+
+  const originalCloseRescheduleModal = closeRescheduleModal;
+
+  closeRescheduleModal = function patchedCloseRescheduleModal(...args) {
+    closeAppointmentCustomDropdown();
+
+    const result = originalCloseRescheduleModal.apply(this, args);
+
+    return result;
+  };
+
+  window.closeRescheduleModal = closeRescheduleModal;
+}
+
+/*
+  Wrap initializeAppointments so custom dropdowns and observers are registered
+  together with the appointment module.
+*/
+if (typeof initializeAppointments === "function" && !window.__initializeAppointmentsDropdownWrapped) {
+  window.__initializeAppointmentsDropdownWrapped = true;
+
+  const originalInitializeAppointments = initializeAppointments;
+
+  initializeAppointments = function patchedInitializeAppointments(...args) {
+    const result = originalInitializeAppointments.apply(this, args);
+
+    setupAppointmentCustomDropdowns();
+    observeAppointmentCustomDropdowns();
+
+    setTimeout(() => setupAppointmentCustomDropdowns(), 250);
+    setTimeout(() => setupAppointmentCustomDropdowns(), 800);
+
+    return result;
+  };
+
+  window.initializeAppointments = initializeAppointments;
+}
+
+/*
+  Wrap table/history renderers only to keep observers alive after dynamic renders.
+*/
+[
+  "renderAppointmentsTable",
+  "renderAppointmentHistory",
+  "loadAppointments"
+].forEach((fnName) => {
+  if (typeof window[fnName] === "function" && !window[`__${fnName}AppointmentDropdownWrapped`]) {
+    window[`__${fnName}AppointmentDropdownWrapped`] = true;
+
+    const originalFn = window[fnName];
+
+    window[fnName] = function patchedAppointmentDropdownFunction(...args) {
+      const result = originalFn.apply(this, args);
+
+      setTimeout(() => setupAppointmentCustomDropdowns(), 80);
+
+      return result;
+    };
+  }
+});
+
+document.addEventListener("click", (event) => {
+  const clickedCustomSelect = event.target.closest(".appointment-custom-select");
+  const clickedPortal = event.target.closest(".appointment-custom-select-portal-menu");
+
+  if (!clickedCustomSelect && !clickedPortal) {
+    closeAppointmentCustomDropdown();
+  }
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    closeAppointmentCustomDropdown();
+  }
+});
+
+window.addEventListener("resize", () => {
+  if (activeAppointmentCustomSelect && activeAppointmentPortalMenu) {
+    positionAppointmentPortalMenu(activeAppointmentCustomSelect, activeAppointmentPortalMenu);
+  }
+});
+
+window.addEventListener("scroll", () => {
+  if (activeAppointmentCustomSelect && activeAppointmentPortalMenu) {
+    positionAppointmentPortalMenu(activeAppointmentCustomSelect, activeAppointmentPortalMenu);
+  }
+}, true);
+
+document.addEventListener("DOMContentLoaded", () => {
+  setupAppointmentCustomDropdowns();
+  observeAppointmentCustomDropdowns();
+
+  setTimeout(setupAppointmentCustomDropdowns, 250);
+  setTimeout(setupAppointmentCustomDropdowns, 800);
+  setTimeout(setupAppointmentCustomDropdowns, 1400);
+});
+
+window.setupAppointmentCustomDropdowns = setupAppointmentCustomDropdowns;
+window.closeAppointmentCustomDropdown = closeAppointmentCustomDropdown;
+window.syncAppointmentCustomDropdown = syncAppointmentCustomDropdown;
