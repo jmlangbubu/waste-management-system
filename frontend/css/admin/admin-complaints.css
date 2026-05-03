@@ -1,761 +1,1305 @@
-/* =========================
-   COMPLAINTS
-========================= */
-#complaintsSection table {
-  min-width: 1150px;
+// =========================
+// COMPLAINT MAP HELPERS
+// =========================
+
+const issueRedIcon = L.icon({
+  iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png",
+  shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
+});
+
+const barangayBlueIcon = L.icon({
+  iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-blue.png",
+  shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
+});
+
+function formatComplaintStatus(status) {
+  if (!status) return "pending";
+  return String(status).toLowerCase();
 }
 
-.complaint-row {
-  transition: background 0.2s ease;
+function getComplaintStatusBadge(status) {
+  const s = String(status || "").toLowerCase();
+
+  if (s === "pending") return `<span class="status-badge pending">Pending</span>`;
+  if (s === "validated") return `<span class="status-badge forwarded">Validated</span>`;
+  if (s === "forwarded") return `<span class="status-badge forwarded">Forwarded</span>`;
+  if (s === "in_progress") return `<span class="status-badge in-progress">In Progress</span>`;
+  if (s === "resolved") return `<span class="status-badge resolved">Resolved</span>`;
+  if (s === "rejected") return `<span class="status-badge rejected">Rejected</span>`;
+
+  return `<span class="status-badge unknown">${escapeHtml(status || "-")}</span>`;
 }
 
-.complaint-row:hover {
-  background: #f9fafb;
-}
+function clearComplaintMapLayers() {
+  if (!complaintMapInstance) return;
 
-.complaint-subject-cell {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.complaint-subject-main {
-  font-weight: 700;
-  color: #173126;
-}
-
-.complaint-subject-sub {
-  font-size: 12px;
-  color: #667085;
-}
-
-.complaint-citizen {
-  font-weight: 600;
-}
-
-.complaint-date {
-  font-size: 12px;
-  color: #667085;
-}
-
-.complaint-action-btn {
-  background: #e8f5ea;
-  color: #146c43;
-  border: none;
-  padding: 8px 14px;
-  border-radius: 10px;
-  cursor: pointer;
-  font-size: 12px;
-}
-
-.complaint-action-btn:hover {
-  background: #d7f0dc;
-}
-
-/* =========================
-   MAP + BARANGAY LIST
-========================= */
-#complaintLeafletMap {
-  width: 100%;
-  height: 420px;
-  border-radius: 12px;
-}
-
-.nearby-candidate-item {
-  padding: 10px;
-  border-radius: 10px;
-  border: 1px solid #e5e7eb;
-  margin-bottom: 8px;
-  cursor: pointer;
-}
-
-.nearby-candidate-item.active {
-  background: #dff7e6;
-  border-color: #2f8a34;
-}
-
-.nearby-candidate-name {
-  font-weight: 700;
-  color: #163d2d;
-}
-
-.nearby-candidate-distance {
-  font-size: 12px;
-  color: #667085;
-}
-
-.nearby-empty {
-  text-align: center;
-  padding: 14px;
-  color: #98a2b3;
-}
-
-/* =========================
-   CHOSEN BARANGAY
-========================= */
-#chosenBarangayText {
-  font-weight: 700;
-  color: #163d2d;
-}
-
-#chosenBarangayMeta {
-  font-size: 12px;
-  color: #667085;
-}
-
-/* =========================
-   COMPLAINTS PAGE UI/UX FIX
-========================= */
-
-.complaints-page-card {
-  padding: 26px;
-  border-radius: 24px;
-}
-
-.complaints-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 20px;
-  margin-bottom: 22px;
-}
-
-.complaints-header-copy h2 {
-  font-size: 24px;
-  font-weight: 900;
-  color: #061226;
-  margin: 0;
-}
-
-.complaints-header-copy p {
-  max-width: 780px;
-  margin-top: 6px;
-  font-size: 14px;
-  color: #64748b;
-  line-height: 1.5;
-}
-
-.complaints-header-actions {
-  display: flex;
-  gap: 10px;
-  flex-shrink: 0;
-}
-
-/* SUMMARY CARDS */
-.complaints-summary-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(180px, 1fr));
-  gap: 16px;
-  margin-bottom: 22px;
-}
-
-.complaint-summary-card {
-  background: #f8fafc;
-  border: 1px solid #e5e7eb;
-  border-radius: 18px;
-  padding: 18px;
-}
-
-.complaint-summary-card .summary-label {
-  display: block;
-  font-size: 13px;
-  color: #64748b;
-  margin-bottom: 8px;
-}
-
-.complaint-summary-card strong {
-  font-size: 28px;
-  font-weight: 900;
-  color: #061226;
-}
-
-/* TOOLBAR */
-.complaints-toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: end;
-  gap: 16px;
-  margin-bottom: 20px;
-  flex-wrap: wrap;
-}
-
-.complaints-search-wrap {
-  flex: 1;
-  min-width: 280px;
-}
-
-.complaints-filter-wrap {
-  width: 220px;
-}
-
-.complaints-search-wrap label,
-.complaints-filter-wrap label {
-  display: block;
-  font-size: 12px;
-  font-weight: 800;
-  color: #64748b;
-  margin-bottom: 6px;
-}
-
-.complaints-search-input,
-.complaints-filter-select {
-  width: 100%;
-  height: 44px;
-  border: 1px solid #e5e7eb;
-  border-radius: 14px;
-  padding: 0 14px;
-  background: #ffffff;
-  font-size: 14px;
-  outline: none;
-}
-
-.complaints-search-input:focus,
-.complaints-filter-select:focus {
-  border-color: #22c55e;
-  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.12);
-}
-
-/* TABLE */
-.complaints-table-shell {
-  overflow: auto;
-  border: 1px solid #e5e7eb;
-  border-radius: 18px;
-  background: #ffffff;
-}
-
-.complaints-table {
-  width: 100%;
-  border-collapse: collapse;
-  min-width: 900px;
-}
-
-.complaints-table th {
-  background: #f8fafc;
-  padding: 16px;
-  font-size: 13px;
-  font-weight: 900;
-  color: #0f172a;
-  text-align: center;
-  border-bottom: 1px solid #e5e7eb;
-}
-
-.complaints-table td {
-  padding: 16px;
-  font-size: 14px;
-  color: #0f172a;
-  text-align: center;
-  border-bottom: 1px solid #edf0f2;
-}
-
-.complaints-table td:first-child {
-  text-align: left;
-  font-weight: 800;
-}
-
-.complaints-table tr:hover td {
-  background: #f8fafc;
-}
-
-.th-action,
-.complaints-table td:last-child {
-  text-align: center;
-}
-
-/* RESPONSIVE */
-@media (max-width: 900px) {
-  .complaints-header {
-    flex-direction: column;
+  if (complaintMapMarker) {
+    complaintMapInstance.removeLayer(complaintMapMarker);
+    complaintMapMarker = null;
   }
 
-  .complaints-header-actions {
-    width: 100%;
+  if (complaintRoutingControl) {
+    complaintMapInstance.removeControl(complaintRoutingControl);
+    complaintRoutingControl = null;
   }
 
-  .complaints-header-actions .view-all-btn {
-    flex: 1;
+  complaintNearbyMarkers.forEach((marker) => {
+    if (complaintMapInstance.hasLayer(marker)) {
+      complaintMapInstance.removeLayer(marker);
+    }
+  });
+
+  complaintNearbyMarkers = [];
+}
+
+function calculateDistanceMetersLocal(lat1, lng1, lat2, lng2) {
+  const toRad = (value) => (value * Math.PI) / 180;
+  const earthRadius = 6371000;
+
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) *
+      Math.cos(toRad(lat2)) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.round(earthRadius * c);
+}
+
+function renderNearbyBarangayList(candidates) {
+  const listEl = document.getElementById("nearbyBarangayList");
+  if (!listEl) return;
+
+  if (!Array.isArray(candidates) || !candidates.length) {
+    listEl.innerHTML = `<div class="nearby-empty">No nearby barangays found.</div>`;
+    return;
   }
 
-  .complaints-summary-grid {
-    grid-template-columns: 1fr;
+  listEl.innerHTML = candidates.map((candidate, index) => {
+    const isActive =
+      selectedBarangayCandidate &&
+      selectedBarangayCandidate.barangay_name === candidate.barangay_name &&
+      selectedBarangayCandidate.reference_name === candidate.reference_name;
+
+    const distanceText =
+      Number(candidate.distance_meters) > 0
+        ? `${candidate.distance_meters} meters away`
+        : "Distance unavailable";
+
+    return `
+      <div class="nearby-candidate-item ${isActive ? "active" : ""}" data-index="${index}">
+        <div class="nearby-candidate-name">${escapeHtml(candidate.barangay_name || "-")}</div>
+        <div class="nearby-candidate-ref">${escapeHtml(candidate.reference_name || "-")}</div>
+        <div class="nearby-candidate-distance">${escapeHtml(distanceText)}</div>
+      </div>
+    `;
+  }).join("");
+
+  listEl.querySelectorAll(".nearby-candidate-item").forEach((item) => {
+    item.addEventListener("click", () => {
+      const index = Number(item.dataset.index);
+      const candidate = candidates[index];
+
+      if (candidate) {
+        selectBarangayCandidate(candidate, candidates);
+      }
+    });
+  });
+}
+
+function updateChosenBarangayUI() {
+  const chosenText = document.getElementById("chosenBarangayText");
+  const chosenMeta = document.getElementById("chosenBarangayMeta");
+
+  if (!chosenText || !chosenMeta) return;
+
+  if (!selectedBarangayCandidate) {
+    chosenText.textContent = "None selected";
+    chosenMeta.textContent = "";
+    return;
   }
 
-  .complaints-filter-wrap {
-    width: 100%;
-  }
+  const distanceText =
+    Number(selectedBarangayCandidate.distance_meters) > 0
+      ? `${selectedBarangayCandidate.distance_meters} meters away`
+      : "Distance unavailable";
+
+  chosenText.textContent = `Suggested: ${selectedBarangayCandidate.barangay_name || "-"}`;
+  chosenMeta.textContent =
+    `${selectedBarangayCandidate.reference_name || "-"} • ${distanceText}`;
 }
 
-/* =========================
-   COMPLAINT DETAILS MODAL UI FIX
-========================= */
+function selectBarangayCandidate(candidate, candidates = []) {
+  if (!currentComplaint || !complaintMapInstance) return;
 
-.complaint-modal-content {
-  width: min(1050px, 94vw);
-  max-height: 90vh;
-  overflow: hidden;
-  border-radius: 24px;
-}
-
-.complaint-modal-body {
-  max-height: calc(90vh - 95px);
-  overflow-y: auto;
-  padding: 24px;
-}
-
-.complaint-modal-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(360px, 1.1fr);
-  gap: 24px;
-  align-items: start;
-}
-
-.complaint-modal-left {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
-}
-
-.complaint-field-group {
-  background: #f8fafc;
-  border: 1px solid #e5e7eb;
-  border-radius: 16px;
-  padding: 14px 16px;
-}
-
-.complaint-field-group:nth-child(1),
-.complaint-field-group:nth-child(2),
-.complaint-field-group:nth-child(7) {
-  grid-column: 1 / -1;
-}
-
-.complaint-field-group label {
-  display: block;
-  margin-bottom: 6px;
-  font-size: 12px;
-  font-weight: 800;
-  color: #64748b;
-}
-
-.complaint-field-value {
-  font-size: 14px;
-  font-weight: 800;
-  color: #0f172a;
-  line-height: 1.4;
-  word-break: break-word;
-}
-
-.complaint-evidence-wrapper {
-  width: 100%;
-  min-height: 420px;
-  border-radius: 18px;
-  border: 1px solid #e5e7eb;
-  background: #f8fafc;
-  overflow: hidden;
-
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.complaint-evidence-image {
-  width: 100%;
-  height: 100%;
-  max-height: 520px;
-  object-fit: contain;
-  background: #f8fafc;
-}
-
-.complaint-modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  margin-top: 22px;
-  padding-top: 18px;
-  border-top: 1px solid #e5e7eb;
-}
-
-@media (max-width: 900px) {
-  .complaint-modal-grid {
-    grid-template-columns: 1fr;
+  if (!window.L || !L.Routing) {
+    console.error("Leaflet Routing Machine is not loaded.");
+    alert("Routing library is not loaded. Please refresh the page.");
+    return;
   }
 
-  .complaint-modal-left {
-    grid-template-columns: 1fr;
+  const issueLat = parseFloat(currentComplaint.latitude);
+  const issueLng = parseFloat(currentComplaint.longitude);
+  const destLat = parseFloat(candidate.latitude);
+  const destLng = parseFloat(candidate.longitude);
+
+  let fallbackDistance =
+    Number(candidate.distance_meters) > 0
+      ? Number(candidate.distance_meters)
+      : (!Number.isNaN(issueLat) &&
+         !Number.isNaN(issueLng) &&
+         !Number.isNaN(destLat) &&
+         !Number.isNaN(destLng))
+      ? calculateDistanceMetersLocal(issueLat, issueLng, destLat, destLng)
+      : null;
+
+  selectedBarangayCandidate = {
+    ...candidate,
+    distance_meters: fallbackDistance
+  };
+
+  updateChosenBarangayUI();
+  renderNearbyBarangayList(candidates);
+
+  if (
+    Number.isNaN(issueLat) ||
+    Number.isNaN(issueLng) ||
+    Number.isNaN(destLat) ||
+    Number.isNaN(destLng)
+  ) {
+    return;
   }
 
-  .complaint-evidence-wrapper {
-    min-height: 300px;
+  if (complaintRoutingControl) {
+    try {
+      complaintMapInstance.removeControl(complaintRoutingControl);
+    } catch (err) {
+      console.warn("Failed removing old routing control:", err);
+    }
+
+    complaintRoutingControl = null;
+  }
+
+  const initialBounds = L.latLngBounds([
+    [issueLat, issueLng],
+    [destLat, destLng]
+  ]);
+
+  complaintMapInstance.fitBounds(initialBounds, { padding: [50, 50] });
+
+  complaintRoutingControl = L.Routing.control({
+    waypoints: [
+      L.latLng(issueLat, issueLng),
+      L.latLng(destLat, destLng)
+    ],
+    router: L.Routing.osrmv1({
+      serviceUrl: "https://router.project-osrm.org/route/v1"
+    }),
+    routeWhileDragging: false,
+    addWaypoints: false,
+    draggableWaypoints: false,
+    fitSelectedRoutes: true,
+    showAlternatives: false,
+    show: false,
+    createMarker: function () {
+      return null;
+    },
+    lineOptions: {
+      addWaypoints: false,
+      extendToWaypoints: true,
+      missingRouteTolerance: 0,
+      styles: [
+        {
+          color: "#2563eb",
+          opacity: 0.95,
+          weight: 6
+        }
+      ]
+    }
+  }).addTo(complaintMapInstance);
+
+  complaintRoutingControl.on("routesfound", function (e) {
+    const route = e.routes && e.routes[0];
+    if (!route) return;
+
+    const totalDistanceMeters = Math.round(route.summary?.totalDistance || 0);
+
+    if (totalDistanceMeters > 0) {
+      selectedBarangayCandidate = {
+        ...selectedBarangayCandidate,
+        distance_meters: totalDistanceMeters
+      };
+
+      updateChosenBarangayUI();
+      renderNearbyBarangayList(candidates);
+    }
+
+    if (route.coordinates && route.coordinates.length > 0) {
+      const routeBounds = L.latLngBounds(
+        route.coordinates.map((coord) => [coord.lat, coord.lng])
+      );
+
+      complaintMapInstance.fitBounds(routeBounds, { padding: [50, 50] });
+    }
+  });
+
+  complaintRoutingControl.on("routingerror", function (e) {
+    console.error("Routing failed:", e);
+
+    const fallbackBounds = L.latLngBounds([
+      [issueLat, issueLng],
+      [destLat, destLng]
+    ]);
+
+    complaintMapInstance.fitBounds(fallbackBounds, { padding: [50, 50] });
+
+    updateChosenBarangayUI();
+    renderNearbyBarangayList(candidates);
+  });
+}
+
+function enableImagePreview(imgElement) {
+  if (!imgElement) return;
+
+  imgElement.onclick = () => {
+    if (!imgElement.src) return;
+
+    const existingOverlay = document.getElementById("imagePreviewOverlay");
+    const existingImage = document.getElementById("imagePreviewFull");
+
+    if (existingOverlay && existingImage) {
+      existingImage.src = imgElement.src;
+      existingOverlay.classList.remove("hidden");
+      return;
+    }
+
+    // Fallback for older HTML structure
+    const modal = document.createElement("div");
+    modal.className = "image-preview-modal";
+    modal.innerHTML = `<img src="${imgElement.src}" alt="Evidence Preview">`;
+
+    modal.addEventListener("click", () => {
+      modal.remove();
+    });
+
+    document.body.appendChild(modal);
+  };
+}
+
+// =========================
+// COMPLAINT SUMMARY + LOAD
+// =========================
+
+function updateComplaintSummary(complaints = []) {
+  const safeComplaints = Array.isArray(complaints) ? complaints : [];
+
+  const total = safeComplaints.length;
+  const pending = safeComplaints.filter(item =>
+    String(item.status || "").toLowerCase() === "pending"
+  ).length;
+  const resolved = safeComplaints.filter(item =>
+    String(item.status || "").toLowerCase() === "resolved"
+  ).length;
+
+  const totalEl = document.getElementById("complaintsTotalCount");
+  const pendingEl = document.getElementById("complaintsPendingCount");
+  const resolvedEl = document.getElementById("complaintsResolvedCount");
+  const validatedEl = document.getElementById("complaintsValidatedCount");
+  const forwardedEl = document.getElementById("complaintsForwardedCount");
+
+  if (totalEl) totalEl.textContent = total;
+  if (pendingEl) pendingEl.textContent = pending;
+  if (resolvedEl) resolvedEl.textContent = resolved;
+
+  if (validatedEl) {
+    validatedEl.textContent = safeComplaints.filter(item =>
+      String(item.status || "").toLowerCase() === "validated"
+    ).length;
+  }
+
+  if (forwardedEl) {
+    forwardedEl.textContent = safeComplaints.filter(item =>
+      ["forwarded", "in_progress"].includes(String(item.status || "").toLowerCase())
+    ).length;
   }
 }
 
-/* =========================
-   COMPLAINT MAP MODAL FIX
-========================= */
+async function loadComplaints() {
+  const tableBody = document.getElementById("complaintsTableBody");
+  if (!tableBody) return;
 
-.complaint-map-modal-content {
-  width: min(1100px, 94vw);
-  max-height: 90vh;
-  overflow: hidden;
-  border-radius: 24px;
-}
+  tableBody.innerHTML = `
+    <tr>
+      <td colspan="6" class="loading-state">Loading complaints...</td>
+    </tr>
+  `;
 
-.complaint-map-modal-body {
-  max-height: calc(90vh - 96px);
-  overflow-y: auto;
-  padding: 24px;
-}
+  try {
+    const response = await fetch(getComplaintsApiUrl(), {
+      method: "GET",
+      headers: {
+        "Accept": "application/json"
+      }
+    });
 
-.complaint-map-summary {
-  display: grid;
-  grid-template-columns: 1.4fr 0.8fr 1fr;
-  gap: 12px;
-  margin-bottom: 16px;
-}
+    const rawText = await response.text();
+    let data = {};
 
-.complaint-map-summary-item {
-  background: #f8fafc;
-  border: 1px solid #e5e7eb;
-  border-radius: 14px;
-  padding: 12px 14px;
-}
+    try {
+      data = rawText ? JSON.parse(rawText) : {};
+    } catch (parseError) {
+      console.error("Complaints raw response:", rawText);
+      throw new Error("Complaints API did not return valid JSON.");
+    }
 
-.complaint-map-summary-item span {
-  display: block;
-  font-size: 12px;
-  font-weight: 800;
-  color: #64748b;
-  margin-bottom: 4px;
-}
+    if (!response.ok || data.success === false) {
+      throw new Error(data.message || "Failed to load complaints.");
+    }
 
-.complaint-map-summary-item strong {
-  font-size: 14px;
-  color: #0f172a;
-}
+    allComplaints = Array.isArray(data.complaints)
+      ? data.complaints
+      : Array.isArray(data.data)
+      ? data.data
+      : Array.isArray(data)
+      ? data
+      : [];
 
-.complaint-map-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1.7fr) minmax(280px, 0.7fr);
-  gap: 18px;
-  align-items: start;
-}
+    updateComplaintSummary(allComplaints);
 
-.complaint-map-panel {
-  border: 1px solid #e5e7eb;
-  border-radius: 18px;
-  overflow: hidden;
-  background: #f8fafc;
-}
+    const activeComplaints = allComplaints.filter((item) => {
+      const status = String(item.status || "").toLowerCase();
+      return ["pending", "validated", "forwarded", "in_progress", "rejected"].includes(status);
+    });
 
-#complaintLeafletMap {
-  width: 100%;
-  height: 480px;
-}
+    renderComplaintsTable(activeComplaints);
+  } catch (error) {
+    console.error("loadComplaints error:", error);
 
-.complaint-side-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
+    allComplaints = [];
+    updateComplaintSummary([]);
 
-.chosen-barangay-box,
-.nearby-list-box {
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
-  border-radius: 18px;
-  padding: 16px;
-}
-
-.chosen-barangay-box .label,
-.nearby-list-box .label {
-  font-size: 12px;
-  font-weight: 900;
-  color: #64748b;
-  margin-bottom: 8px;
-}
-
-.chosen-barangay-text {
-  font-size: 18px;
-  font-weight: 900;
-  color: #15803d;
-}
-
-.nearby-barangay-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  max-height: 320px;
-  overflow-y: auto;
-}
-
-.nearby-barangay-list > div {
-  border: 1px solid #e5e7eb;
-  border-radius: 14px;
-  padding: 12px 14px;
-  background: #f8fafc;
-}
-
-.complaint-map-footer-actions {
-  margin-top: 4px;
-}
-
-.complaint-map-footer-actions .view-all-btn {
-  width: 100%;
-}
-
-@media (max-width: 900px) {
-  .complaint-map-summary,
-  .complaint-map-layout {
-    grid-template-columns: 1fr;
-  }
-
-  #complaintLeafletMap {
-    height: 340px;
+    tableBody.innerHTML = `
+      <tr>
+        <td colspan="6" class="empty-state-cell">
+          Failed to load complaints.
+        </td>
+      </tr>
+    `;
   }
 }
 
-.resolved-history-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
-  margin-bottom: 16px;
+// =========================
+// COMPLAINT TABLE
+// =========================
+
+function getFilteredComplaints() {
+  const searchValue = (document.getElementById("complaintsSearchInput")?.value || "")
+    .trim()
+    .toLowerCase();
+
+  const statusValue = (document.getElementById("complaintsStatusFilter")?.value || "all")
+    .trim()
+    .toLowerCase();
+
+  const activeComplaints = allComplaints.filter((item) => {
+    const status = String(item.status || "").toLowerCase();
+    return ["pending", "validated", "forwarded", "in_progress", "rejected"].includes(status);
+  });
+
+  return activeComplaints.filter((item) => {
+    const status = String(item.status || "").toLowerCase();
+
+    const haystack = [
+      item.subject,
+      item.description,
+      item.citizen_name,
+      item.username,
+      item.assigned_barangay,
+      status,
+      item.created_at
+    ].map(value => String(value || "").toLowerCase()).join(" ");
+
+    const matchesSearch = !searchValue || haystack.includes(searchValue);
+    const matchesStatus = statusValue === "all" || status === statusValue;
+
+    return matchesSearch && matchesStatus;
+  });
 }
 
-.resolved-info-card {
-  background: #f9fafb;
-  padding: 12px 14px;
-  border-radius: 10px;
-  display: flex;
-  flex-direction: column;
+function applyComplaintFilters() {
+  renderComplaintsTable(getFilteredComplaints());
 }
 
-.resolved-label {
-  font-size: 12px;
-  color: #666;
-  margin-bottom: 4px;
-}
+function renderComplaintsTable(complaints) {
+  const tableBody = document.getElementById("complaintsTableBody");
+  if (!tableBody) return;
 
-.resolved-info-card strong {
-  font-size: 14px;
-  color: #222;
-}
+  const safeComplaints = Array.isArray(complaints) ? complaints : [];
 
-/* STATUS STYLE */
-#resolutionModalStatus {
-  background: #e6f7ec;
-  color: #16a34a;
-  padding: 4px 10px;
-  border-radius: 12px;
-  width: fit-content;
-}
+  const activeComplaints = safeComplaints.filter((item) => {
+    const status = String(item.status || "").toLowerCase();
+    return ["pending", "validated", "forwarded", "in_progress", "rejected"].includes(status);
+  });
 
-/* DETAIL BLOCK */
-.resolved-detail-block {
-  margin-top: 10px;
-}
-
-.resolved-detail-block h4 {
-  font-size: 14px;
-  margin-bottom: 4px;
-  color: #333;
-}
-
-.resolved-detail-block p {
-  font-size: 13px;
-  color: #555;
-}
-
-/* IMAGE FIX */
-.resolved-evidence-frame {
-  width: 100%;
-  height: 220px;
-  background: #f3f4f6;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-}
-
-.resolved-evidence-image {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.resolution-pro-modal {
-  max-width: 980px;
-  width: 92%;
-  border-radius: 22px;
-  overflow: hidden;
-}
-
-.resolution-pro-header {
-  padding: 22px 24px;
-  border-bottom: 1px solid #eef2f7;
-}
-
-.resolution-kicker {
-  display: inline-block;
-  margin-bottom: 4px;
-  font-size: 12px;
-  font-weight: 700;
-  color: #16a34a;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.resolution-pro-body {
-  padding: 22px 24px 26px;
-}
-
-.resolution-summary-row {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 14px;
-  margin-bottom: 18px;
-}
-
-.resolution-summary-card,
-.resolution-detail-card,
-.resolution-evidence-panel,
-.resolution-status-line {
-  background: #f8fafc;
-  border: 1px solid #eef2f7;
-  border-radius: 16px;
-}
-
-.resolution-summary-card {
-  padding: 14px;
-}
-
-.resolution-summary-card span,
-.resolution-status-line span {
-  display: block;
-  font-size: 12px;
-  color: #64748b;
-  margin-bottom: 6px;
-}
-
-.resolution-summary-card strong {
-  font-size: 14px;
-  color: #111827;
-}
-
-.resolution-main-grid {
-  display: grid;
-  grid-template-columns: 0.9fr 1.25fr;
-  gap: 18px;
-  align-items: start;
-}
-
-.resolution-left-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.resolution-status-line {
-  padding: 14px;
-}
-
-.resolution-status-pill {
-  display: inline-flex;
-  width: fit-content;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: #dcfce7;
-  color: #15803d;
-  font-size: 13px;
-}
-
-.resolution-detail-card {
-  padding: 14px;
-}
-
-.resolution-detail-card h4,
-.resolution-evidence-heading h4 {
-  margin: 0 0 6px;
-  font-size: 14px;
-  color: #111827;
-}
-
-.resolution-detail-card p,
-.resolution-evidence-heading p {
-  margin: 0;
-  font-size: 14px;
-  color: #475569;
-  line-height: 1.5;
-}
-
-.resolution-evidence-panel {
-  padding: 14px;
-}
-
-.resolution-evidence-heading {
-  margin-bottom: 12px;
-}
-
-.resolved-evidence-wrap {
-  width: 100%;
-}
-
-.resolved-evidence-frame {
-  display: none;
-  width: 100%;
-  min-height: 280px;
-  max-height: 380px;
-  border-radius: 18px;
-  overflow: hidden;
-  background: #e5e7eb;
-  align-items: center;
-  justify-content: center;
-}
-
-.resolved-evidence-image {
-  width: 100%;
-  height: 100%;
-  max-height: 380px;
-  object-fit: cover;
-  display: block;
-  cursor: pointer;
-}
-
-.resolved-evidence-image:hover {
-  transform: scale(1.015);
-  transition: 0.2s ease;
-}
-
-.muted-text {
-  margin: 10px 0 0;
-  color: #64748b;
-  font-size: 13px;
-}
-
-@media (max-width: 900px) {
-  .resolution-summary-row {
-    grid-template-columns: repeat(2, 1fr);
+  // ✅ EMPTY STATE (UPDATED colspan = 7)
+  if (!activeComplaints.length) {
+    tableBody.innerHTML = `
+      <tr>
+        <td colspan="7" class="empty-state-cell">
+          No active complaints found.
+        </td>
+      </tr>
+    `;
+    return;
   }
 
-  .resolution-main-grid {
-    grid-template-columns: 1fr;
+  tableBody.innerHTML = activeComplaints.map(item => {
+    const subject = escapeHtml(item.subject || "No Subject");
+    const descriptionRaw = item.description || "";
+    const description = escapeHtml(truncateText(descriptionRaw, 60));
+    const citizen = escapeHtml(item.citizen_name || item.username || "-");
+    const barangay = escapeHtml(item.assigned_barangay || "For Verification");
+    const status = String(item.status || "").toLowerCase();
+
+    return `
+      <tr class="complaint-row complaint-${escapeHtml(status)}">
+
+        <!-- SUBJECT -->
+        <td>
+          <span class="complaint-subject-main">${subject}</span>
+        </td>
+
+        <!-- DESCRIPTION (NEW COLUMN) -->
+        <td class="complaint-description-cell" title="${escapeHtml(descriptionRaw)}">
+          ${description || "-"}
+        </td>
+
+        <!-- CITIZEN -->
+        <td class="complaint-citizen">
+          ${citizen}
+        </td>
+
+        <!-- BARANGAY -->
+        <td>
+          <span class="barangay-badge">${barangay}</span>
+        </td>
+
+        <!-- STATUS -->
+        <td>
+          ${getComplaintStatusBadge(status)}
+        </td>
+
+        <!-- DATE -->
+        <td class="complaint-date">
+          ${formatDate(item.created_at)}
+        </td>
+
+        <!-- ACTION -->
+        <td>
+          <button class="complaint-action-btn" data-id="${escapeHtml(item.id)}">
+            View
+          </button>
+        </td>
+
+      </tr>
+    `;
+  }).join("");
+
+  bindComplaintButtons();
+}
+
+function bindComplaintButtons() {
+  document.querySelectorAll(".complaint-action-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.id;
+      const complaint = allComplaints.find(c => String(c.id) === String(id));
+
+      if (complaint) {
+        openComplaintModal(complaint);
+      }
+    });
+  });
+}
+
+// =========================
+// COMPLAINT DETAILS MODAL
+// =========================
+
+function formatComplaintStatusLabel(status) {
+  const normalized = String(status || "pending").trim().toLowerCase();
+
+  const labels = {
+    pending: "Pending",
+    validated: "Validated",
+    forwarded: "Forwarded",
+    in_progress: "In Progress",
+    resolved: "Resolved",
+    rejected: "Rejected"
+  };
+
+  return labels[normalized] || (status || "Pending");
+}
+
+function setComplaintDetailsStatusUI(status) {
+  const statusEl = document.getElementById("complaintModalStatus");
+  if (!statusEl) return;
+
+  const normalized = String(status || "pending").trim().toLowerCase();
+  statusEl.textContent = formatComplaintStatusLabel(normalized);
+
+  statusEl.className = "complaint-details-status-pill";
+  statusEl.classList.add(normalized.replaceAll("_", "-"));
+}
+
+function updateManualBarangayVisibility(complaint) {
+  const container = document.getElementById("manualBarangayContainer");
+  const select = document.getElementById("manualBarangaySelect");
+
+  if (!container) return;
+
+  const assignedBarangay = String(complaint?.assigned_barangay || "").trim();
+  const needsManualSelection =
+    !assignedBarangay || assignedBarangay.toLowerCase() === "for verification";
+
+  container.style.display = needsManualSelection ? "block" : "none";
+
+  if (select && !needsManualSelection) {
+    select.value = "";
   }
 }
 
-@media (max-width: 560px) {
-  .resolution-summary-row {
-    grid-template-columns: 1fr;
+function closeImagePreviewOverlay() {
+  const overlay = document.getElementById("imagePreviewOverlay");
+  const image = document.getElementById("imagePreviewFull");
+
+  if (image) image.removeAttribute("src");
+  overlay?.classList.add("hidden");
+}
+
+async function requestComplaintReviewFromDetails() {
+  if (!currentComplaint) {
+    alert("No complaint selected.");
+    return;
+  }
+
+  // In this system, review means checking the map/barangay assignment first.
+  await openComplaintMapModal();
+}
+
+async function validateComplaintFromDetails() {
+  if (!currentComplaint || !currentComplaint.id) {
+    alert("No complaint selected.");
+    return;
+  }
+
+  const assignedBarangay = String(currentComplaint.assigned_barangay || "").trim();
+  const needsManualSelection =
+    !assignedBarangay || assignedBarangay.toLowerCase() === "for verification";
+
+  if (needsManualSelection && !selectedBarangayCandidate) {
+    const proceedToMap = confirm(
+      "This complaint needs barangay verification before validation. Open the map now?"
+    );
+
+    if (proceedToMap) {
+      await openComplaintMapModal();
+    }
+
+    return;
+  }
+
+  await validateAndForwardComplaint();
+}
+
+function openComplaintModal(data) {
+  currentComplaint = data;
+  selectedBarangayCandidate = null;
+
+  const setText = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
+  };
+
+  setText("complaintModalSubject", data.subject || "-");
+  setText("complaintModalDescription", data.description || "-");
+  setText("complaintModalCitizenName", data.citizen_name || "-");
+  setText("complaintModalUsername", data.username || "-");
+  setText("complaintModalBarangay", data.assigned_barangay || "-");
+  setComplaintDetailsStatusUI(data.status || "pending");
+  setText("complaintModalCreatedAt", formatModalDateTime(data.created_at));
+
+  const lat = data.latitude ?? "-";
+  const lng = data.longitude ?? "-";
+  setText("complaintModalCoordinates", `${lat}, ${lng}`);
+
+  updateManualBarangayVisibility(data);
+
+  const imageEl = document.getElementById("complaintModalImage");
+  const skeletonEl = document.getElementById("complaintImageSkeleton");
+  const noImageText = document.getElementById("noImageText");
+
+  if (imageEl) {
+    const rawPath = data.image_url || data.evidence_url || data.photo_url;
+    const imageUrl = getImageUrl(rawPath);
+
+    imageEl.onload = null;
+    imageEl.onerror = null;
+    imageEl.onclick = null;
+
+    imageEl.style.display = "none";
+    imageEl.removeAttribute("src");
+
+    if (skeletonEl) skeletonEl.style.display = "block";
+    if (noImageText) noImageText.style.display = "none";
+
+    imageEl.onload = () => {
+      if (skeletonEl) skeletonEl.style.display = "none";
+      if (noImageText) noImageText.style.display = "none";
+      imageEl.style.display = "block";
+      enableImagePreview(imageEl);
+    };
+
+    imageEl.onerror = () => {
+      if (skeletonEl) skeletonEl.style.display = "none";
+      imageEl.style.display = "none";
+      if (noImageText) noImageText.style.display = "flex";
+    };
+
+    if (imageUrl) {
+      imageEl.src = `${imageUrl}?t=${Date.now()}`;
+    } else {
+      if (skeletonEl) skeletonEl.style.display = "none";
+      if (noImageText) noImageText.style.display = "flex";
+    }
+  }
+
+  document.getElementById("complaintDetailsModal")?.classList.remove("hidden");
+}
+
+function closeComplaintModal() {
+  document.getElementById("complaintDetailsModal")?.classList.add("hidden");
+}
+
+function closeComplaintMapModal() {
+  document.getElementById("complaintMapModal")?.classList.add("hidden");
+}
+
+// =========================
+// COMPLAINT MAP MODAL
+// =========================
+
+async function openComplaintMapModal() {
+  if (!currentComplaint) {
+    alert("No complaint selected.");
+    return;
+  }
+
+  const lat = parseFloat(currentComplaint.latitude);
+  const lng = parseFloat(currentComplaint.longitude);
+
+  if (Number.isNaN(lat) || Number.isNaN(lng)) {
+    alert("Invalid complaint coordinates.");
+    return;
+  }
+
+  selectedBarangayCandidate = null;
+  updateChosenBarangayUI();
+
+  const setText = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
+  };
+
+  setText("complaintMapSubject", currentComplaint.subject || "-");
+  setText("complaintMapBarangay", currentComplaint.assigned_barangay || "-");
+  setText("complaintMapCoordinates", `${lat}, ${lng}`);
+
+  const nearbyListEl = document.getElementById("nearbyBarangayList");
+  if (nearbyListEl) {
+    nearbyListEl.innerHTML = `<div class="nearby-empty">Loading nearby barangays...</div>`;
+  }
+
+  const mapModal = document.getElementById("complaintMapModal");
+  mapModal?.classList.remove("hidden");
+
+  setTimeout(async () => {
+    try {
+      if (!complaintMapInstance) {
+        complaintMapInstance = L.map("complaintLeafletMap").setView([lat, lng], 15);
+
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          attribution: "&copy; OpenStreetMap contributors"
+        }).addTo(complaintMapInstance);
+      } else {
+        complaintMapInstance.invalidateSize();
+        complaintMapInstance.setView([lat, lng], 15);
+      }
+
+      clearComplaintMapLayers();
+
+      complaintMapMarker = L.marker([lat, lng], { icon: issueRedIcon })
+        .addTo(complaintMapInstance);
+
+      complaintMapMarker.bindPopup(`
+        <div>
+          <strong>${escapeHtml(currentComplaint.subject || "Complaint Issue")}</strong><br>
+          Citizen: ${escapeHtml(currentComplaint.citizen_name || currentComplaint.username || "-")}<br>
+          Barangay: ${escapeHtml(currentComplaint.assigned_barangay || "-")}<br>
+          Coordinates: ${escapeHtml(String(lat))}, ${escapeHtml(String(lng))}
+        </div>
+      `).openPopup();
+
+      const candidates = await loadNearbyBarangaysForComplaint(lat, lng);
+
+      if (!Array.isArray(candidates) || candidates.length === 0) {
+        if (nearbyListEl) {
+          nearbyListEl.innerHTML = `<div class="nearby-empty">No nearby barangays found.</div>`;
+        }
+        return;
+      }
+
+      complaintNearbyMarkers = candidates.map((candidate) => {
+        const markerLat = parseFloat(candidate.latitude);
+        const markerLng = parseFloat(candidate.longitude);
+
+        if (Number.isNaN(markerLat) || Number.isNaN(markerLng)) {
+          return null;
+        }
+
+        const marker = L.marker(
+          [markerLat, markerLng],
+          { icon: barangayBlueIcon }
+        ).addTo(complaintMapInstance);
+
+        const popupDistance =
+          Number(candidate.distance_meters) > 0
+            ? `${candidate.distance_meters} meters away`
+            : "Distance unavailable";
+
+        marker.bindPopup(`
+          <div>
+            <strong>${escapeHtml(candidate.barangay_name || "-")}</strong><br>
+            ${escapeHtml(candidate.reference_name || "-")}<br>
+            ${escapeHtml(popupDistance)}
+          </div>
+        `);
+
+        marker.on("click", () => {
+          complaintMapInstance.flyTo([markerLat, markerLng], 16, {
+            duration: 0.8
+          });
+
+          selectBarangayCandidate(candidate, candidates);
+          marker.openPopup();
+        });
+
+        return marker;
+      }).filter(Boolean);
+
+      renderNearbyBarangayList(candidates);
+
+      const nearestCandidate = candidates[0];
+
+      if (nearestCandidate) {
+  selectBarangayCandidate(nearestCandidate, candidates);
+      } else {
+      updateChosenBarangayUI();
+      } 
+
+      const boundsPoints = [
+        [lat, lng],
+        ...candidates
+          .map((candidate) => [
+            parseFloat(candidate.latitude),
+            parseFloat(candidate.longitude)
+          ])
+          .filter(([cLat, cLng]) => !Number.isNaN(cLat) && !Number.isNaN(cLng))
+      ];
+
+      if (boundsPoints.length > 1) {
+        const bounds = L.latLngBounds(boundsPoints);
+        complaintMapInstance.fitBounds(bounds, { padding: [40, 40] });
+      } else {
+        complaintMapInstance.setView([lat, lng], 15);
+      }
+    } catch (error) {
+      console.error("Error opening complaint map modal:", error);
+
+      if (nearbyListEl) {
+        nearbyListEl.innerHTML = `
+          <div class="nearby-empty">${escapeHtml(error.message || "Failed to load nearby barangays.")}</div>
+        `;
+      }
+    }
+  }, 150);
+}
+
+async function loadNearbyBarangaysForComplaint(lat, lng) {
+  try {
+    const response = await fetch(
+      `${getComplaintsApiUrl()}/nearby-barangays?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lng)}`,
+      {
+        headers: {
+          "Accept": "application/json"
+        }
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || "Failed to load nearby barangays.");
+    }
+
+    const rawCandidates = Array.isArray(data.candidates) ? data.candidates : [];
+
+    const normalizedCandidates = rawCandidates.map((candidate) => {
+      const refLat = parseFloat(candidate.latitude);
+      const refLng = parseFloat(candidate.longitude);
+
+      let distanceMeters = Number(candidate.distance_meters) || 0;
+
+      if (
+        distanceMeters <= 0 &&
+        !Number.isNaN(refLat) &&
+        !Number.isNaN(refLng)
+      ) {
+        distanceMeters = calculateDistanceMetersLocal(lat, lng, refLat, refLng);
+      }
+
+      return {
+        ...candidate,
+        distance_meters: distanceMeters
+      };
+    });
+
+    normalizedCandidates.sort((a, b) => a.distance_meters - b.distance_meters);
+
+    return normalizedCandidates;
+  } catch (error) {
+    console.error("Nearby barangay error:", error);
+    return [];
   }
 }
 
-.complaint-subject-main {
-  font-weight: 600;
-  color: #111827;
+// =========================
+// COMPLAINT VALIDATION
+// =========================
+
+async function validateComplaint() {
+  if (!currentComplaint) return;
+
+  if (!confirm("Validate and forward this complaint?")) return;
+
+  try {
+    const res = await fetch(
+      `${getComplaintsApiUrl()}/${currentComplaint.id}/validate`,
+      {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          validated_by: currentUser?.id || null
+        })
+      }
+    );
+
+    const data = await res.json();
+
+    if (!res.ok || !data.success) {
+      throw new Error(data.message || "Failed to validate complaint.");
+    }
+
+    alert("Complaint forwarded successfully.");
+    document.getElementById("complaintDetailsModal")?.classList.add("hidden");
+    await loadComplaints();
+  } catch (err) {
+    console.error("validateComplaint error:", err);
+    alert(err.message || "Error validating complaint.");
+  }
 }
 
-.complaint-description-cell {
-  max-width: 260px;
-  font-size: 13px;
-  color: #64748b;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+async function validateAndForwardComplaint() {
+  if (!currentComplaint || !currentComplaint.id) {
+    alert("No complaint selected.");
+    return;
+  }
+
+  const assignedBarangay = String(currentComplaint.assigned_barangay || "").trim();
+  const needsManualSelection =
+    !assignedBarangay || assignedBarangay === "For Verification";
+
+  if (needsManualSelection && !selectedBarangayCandidate) {
+    alert("Please choose a barangay from the map first.");
+    return;
+  }
+
+  try {
+    const response = await fetch(
+      `${getComplaintsApiUrl()}/${currentComplaint.id}/validate-forward`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
+        body: JSON.stringify({
+          selected_barangay: selectedBarangayCandidate
+            ? selectedBarangayCandidate.barangay_name
+            : null
+        })
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || "Failed to validate complaint.");
+    }
+
+    alert(data.message || "Complaint validated and forwarded.");
+
+    document.getElementById("complaintMapModal")?.classList.add("hidden");
+    document.getElementById("complaintDetailsModal")?.classList.add("hidden");
+
+    selectedBarangayCandidate = null;
+
+    await loadComplaints();
+  } catch (error) {
+    console.error("Validate complaint error:", error);
+    alert(error.message || "Failed to validate complaint.");
+  }
+}
+
+// =========================
+// COMPLAINT HISTORY
+// =========================
+
+function formatComplaintHistoryStatus(status) {
+  const normalized = String(status || "").toLowerCase().trim();
+
+  if (normalized === "forwarded") return "Forwarded";
+  if (normalized === "accepted_by_barangay") return "Accepted";
+  if (normalized === "in_progress") return "In Progress";
+  if (normalized === "resolved") return "Resolved";
+
+  return status || "-";
+}
+
+async function loadComplaintHistory() {
+  const tbody = document.getElementById("complaintHistoryTableBody");
+  if (!tbody) return;
+
+  tbody.innerHTML = `
+    <tr>
+      <td colspan="6" class="loading-state">Loading complaint history...</td>
+    </tr>
+  `;
+
+  try {
+    const response = await fetch(`${getComplaintsApiUrl()}/history/resolved`);
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || "Failed to load complaint history.");
+    }
+
+    complaintHistoryRecords = Array.isArray(data.complaints) ? data.complaints : [];
+    renderComplaintHistoryTable(complaintHistoryRecords);
+  } catch (error) {
+    console.error("loadComplaintHistory error:", error);
+
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="6" class="empty-state-cell">Failed to load complaint history.</td>
+      </tr>
+    `;
+  }
+}
+
+function renderComplaintHistoryTable(records) {
+  const tbody = document.getElementById("complaintHistoryTableBody");
+  if (!tbody) return;
+
+  const safeRecords = Array.isArray(records) ? records : [];
+
+  if (!safeRecords.length) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="6" class="empty-state-cell">No complaint history found.</td>
+      </tr>
+    `;
+    return;
+  }
+
+  tbody.innerHTML = safeRecords.map(item => `
+    <tr>
+      <td>${escapeHtml(item.subject || "-")}</td>
+      <td>${escapeHtml(item.citizen_name || item.username || "-")}</td>
+      <td>${escapeHtml(item.assigned_barangay || "-")}</td>
+      <td>
+        <span class="complaint-history-status resolved">
+          ${escapeHtml(formatComplaintHistoryStatus(item.status))}
+        </span>
+      </td>
+      <td>${escapeHtml(formatDateTimeDisplay(item.resolved_at || item.created_at))}</td>
+      <td>
+        <button
+          type="button"
+          class="complaint-history-view-btn"
+          data-resolution-id="${escapeHtml(item.id)}"
+        >
+          View
+        </button>
+      </td>
+    </tr>
+  `).join("");
+}
+
+function openComplaintHistoryModal() {
+  document.getElementById("complaintHistoryModal")?.classList.remove("hidden");
+  loadComplaintHistory();
+}
+
+function closeComplaintHistoryModal() {
+  document.getElementById("complaintHistoryModal")?.classList.add("hidden");
+}
+
+// =========================
+// COMPLAINT RESOLUTION MODAL
+// =========================
+
+function getValidResolutionImagePath(record) {
+  const candidates = [
+    record?.resolution_evidence_url,
+    record?.image_url,
+    record?.evidence_url,
+    record?.photo_url
+  ];
+
+  return candidates.find((path) => {
+    if (!path) return false;
+
+    const value = String(path).trim().toLowerCase();
+
+    if (!value || value === "null" || value === "undefined") return false;
+
+    if (
+      value === "/uploads/complaints" ||
+      value === "uploads/complaints" ||
+      value.endsWith("/uploads/complaints/")
+    ) {
+      return false;
+    }
+
+    return true;
+  }) || "";
+}
+
+function renderResolutionEvidenceImage(record) {
+  const evidenceImg = document.getElementById("resolutionModalEvidenceImage");
+  const noEvidence = document.getElementById("resolutionModalNoEvidence");
+  const evidenceFrame = document.getElementById("resolutionEvidenceFrame");
+
+  if (!evidenceImg) return;
+
+  const rawImage = getValidResolutionImagePath(record);
+  const evidenceUrl = getImageUrl(rawImage);
+
+  console.log("CURRENT RESOLUTION DATA:", record);
+  console.log("RAW IMAGE PATH:", rawImage);
+  console.log("FINAL IMAGE URL:", evidenceUrl);
+
+  evidenceImg.onload = null;
+  evidenceImg.onerror = null;
+  evidenceImg.onclick = null;
+  evidenceImg.removeAttribute("src");
+  evidenceImg.classList.add("hidden");
+  evidenceImg.style.display = "none";
+
+  if (evidenceFrame) evidenceFrame.style.display = "none";
+
+  if (noEvidence) {
+    noEvidence.textContent = "Loading evidence image...";
+    noEvidence.classList.remove("hidden");
+  }
+
+  if (!evidenceUrl) {
+    if (noEvidence) noEvidence.textContent = "No evidence image submitted.";
+    return;
+  }
+
+  evidenceImg.onload = () => {
+    evidenceImg.classList.remove("hidden");
+    evidenceImg.style.display = "block";
+
+    if (evidenceFrame) evidenceFrame.style.display = "flex";
+    if (noEvidence) noEvidence.classList.add("hidden");
+
+    if (typeof enableImagePreview === "function") {
+      enableImagePreview(evidenceImg);
+    }
+  };
+
+  evidenceImg.onerror = () => {
+    console.error("Image failed to load:", evidenceUrl);
+
+    evidenceImg.removeAttribute("src");
+    evidenceImg.classList.add("hidden");
+    evidenceImg.style.display = "none";
+
+    if (evidenceFrame) evidenceFrame.style.display = "none";
+
+    if (noEvidence) {
+      noEvidence.textContent = "Image failed to load.";
+      noEvidence.classList.remove("hidden");
+    }
+  };
+
+  evidenceImg.src = evidenceUrl;
+}
+
+function openComplaintResolutionModal(complaintId) {
+  document.getElementById("complaintHistoryModal")?.classList.add("hidden");
+
+  const modal = document.getElementById("complaintResolutionModal");
+  if (!modal) return;
+
+  currentComplaintResolution = complaintHistoryRecords.find(
+    item => Number(item.id) === Number(complaintId)
+  );
+
+  if (!currentComplaintResolution) {
+    console.error("Complaint not found:", complaintId);
+    return;
+  }
+
+  const setText = (id, value, fallback = "-") => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = cleanText(value, fallback);
+  };
+
+  setText("resolutionModalSubject", currentComplaintResolution.subject);
+  setText("resolutionModalAssignedBarangay", currentComplaintResolution.assigned_barangay);
+  setText("resolutionModalReporterBarangay", currentComplaintResolution.reporter_barangay);
+  setText("resolutionModalHandledBy", currentComplaintResolution.handled_by_barangay_name);
+  setText("resolutionModalStatus", "Resolved");
+  setText("resolutionModalResolvedAt", formatDateTimeDisplay(currentComplaintResolution.resolved_at));
+  setText("resolutionModalDescription", currentComplaintResolution.description, "No description provided.");
+  setText("resolutionModalReport", currentComplaintResolution.resolution_report, "No resolution report provided.");
+
+  setText(
+    "resolutionModalCoordinates",
+    `${cleanText(currentComplaintResolution.latitude, "-")}, ${cleanText(currentComplaintResolution.longitude, "-")}`
+  );
+
+  renderResolutionEvidenceImage(currentComplaintResolution);
+
+  modal.classList.remove("hidden");
+}
+
+function closeComplaintResolutionModal() {
+  const modal = document.getElementById("complaintResolutionModal");
+  if (!modal) return;
+
+  modal.classList.add("hidden");
+  currentComplaintResolution = null;
+}
+
+function setupComplaintResolutionModal() {
+  const tbody = document.getElementById("complaintHistoryTableBody");
+  const closeBtn = document.getElementById("closeComplaintResolutionModal");
+  const overlay = document.getElementById("complaintResolutionOverlay");
+
+  if (tbody && tbody.dataset.bound !== "true") {
+    tbody.dataset.bound = "true";
+
+    tbody.addEventListener("click", (event) => {
+      const viewBtn = event.target.closest("[data-resolution-id]");
+      if (!viewBtn) return;
+
+      openComplaintResolutionModal(viewBtn.getAttribute("data-resolution-id"));
+    });
+  }
+
+  closeBtn?.addEventListener("click", closeComplaintResolutionModal);
+  overlay?.addEventListener("click", closeComplaintResolutionModal);
+}
+
+// =========================
+// COMPLAINT MODULE SETUP
+// =========================
+
+function setupComplaintsModule() {
+  document.getElementById("btnRefreshComplaints")
+    ?.addEventListener("click", loadComplaints);
+
+  document.getElementById("btnOpenComplaintMap")
+    ?.addEventListener("click", openComplaintMapModal);
+
+  document.getElementById("btnValidateForwardComplaint")
+    ?.addEventListener("click", validateAndForwardComplaint);
+
+  const detailsValidateBtn = document.getElementById("btnValidateComplaintFromDetails");
+  if (detailsValidateBtn) {
+    // Remove old inline click from the updated HTML so validation is controlled here.
+    detailsValidateBtn.removeAttribute("onclick");
+    detailsValidateBtn.addEventListener("click", validateComplaintFromDetails);
+  }
+
+  document.getElementById("btnRequestComplaintReview")
+    ?.addEventListener("click", requestComplaintReviewFromDetails);
+
+  document.getElementById("btnCloseComplaintModalFooter")
+    ?.addEventListener("click", closeComplaintModal);
+
+  document.getElementById("closeComplaintDetailsModal")
+    ?.addEventListener("click", closeComplaintModal);
+
+  document.getElementById("complaintDetailsOverlay")
+    ?.addEventListener("click", closeComplaintModal);
+
+  document.getElementById("closeComplaintMapModal")
+    ?.addEventListener("click", closeComplaintMapModal);
+
+  document.getElementById("complaintMapOverlay")
+    ?.addEventListener("click", closeComplaintMapModal);
+
+  document.getElementById("btnOpenComplaintHistory")
+    ?.addEventListener("click", openComplaintHistoryModal);
+
+  document.getElementById("closeComplaintHistoryBtn")
+    ?.addEventListener("click", closeComplaintHistoryModal);
+
+  document.getElementById("complaintHistoryOverlay")
+    ?.addEventListener("click", closeComplaintHistoryModal);
+
+  document.getElementById("complaintsSearchInput")
+    ?.addEventListener("input", applyComplaintFilters);
+
+  document.getElementById("complaintsStatusFilter")
+    ?.addEventListener("change", applyComplaintFilters);
+
+  document.getElementById("closeImagePreviewBtn")
+    ?.addEventListener("click", closeImagePreviewOverlay);
+
+  document.getElementById("imagePreviewOverlay")
+    ?.addEventListener("click", (event) => {
+      if (event.target?.id === "imagePreviewOverlay") {
+        closeImagePreviewOverlay();
+      }
+    });
 }
