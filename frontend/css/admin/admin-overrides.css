@@ -11345,3 +11345,357 @@ body #sidebarOtherMenu.sidebar-other-menu-portal.open:not(.hidden) {
   }
 }
 
+/* =========================================================
+   FINAL TIGHT FIX: COMPLAINT MODAL FILL AVAILABLE SPACE
+   File: css/admin/admin-overrides.css
+   Paste at the VERY BOTTOM.
+========================================================= */
+
+@media (min-width: 1201px) {
+  :root {
+    --complaint-sidebar-width: 325px;
+    --complaint-modal-side-gap: 14px;
+    --complaint-modal-top-gap: 48px;
+  }
+
+  #complaintDetailsModal.custom-modal:not(.hidden),
+  #complaintResolutionModal.custom-modal:not(.hidden),
+  #complaintMapModal.custom-modal:not(.hidden) {
+    position: fixed !important;
+
+    top: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    left: var(--complaint-sidebar-width) !important;
+
+    width: calc(100vw - var(--complaint-sidebar-width)) !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+
+    padding:
+      var(--complaint-modal-top-gap)
+      var(--complaint-modal-side-gap)
+      var(--complaint-modal-top-gap)
+      var(--complaint-modal-side-gap) !important;
+
+    margin: 0 !important;
+    overflow: hidden !important;
+
+    z-index: 999999 !important;
+    box-sizing: border-box !important;
+  }
+
+  #complaintDetailsModal .custom-modal-overlay,
+  #complaintResolutionModal .custom-modal-overlay,
+  #complaintMapModal .custom-modal-overlay {
+    position: fixed !important;
+
+    top: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    left: var(--complaint-sidebar-width) !important;
+
+    width: calc(100vw - var(--complaint-sidebar-width)) !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+
+    background: rgba(15, 23, 42, 0.72) !important;
+    backdrop-filter: blur(4px) !important;
+    -webkit-backdrop-filter: blur(4px) !important;
+
+    z-index: 1 !important;
+  }
+
+  #complaintDetailsModal .custom-modal-content,
+  #complaintResolutionModal .custom-modal-content,
+  #complaintMapModal .custom-modal-content {
+    position: relative !important;
+
+    top: auto !important;
+    left: auto !important;
+    right: auto !important;
+    bottom: auto !important;
+    transform: none !important;
+
+    width: calc(100vw - var(--complaint-sidebar-width) - 28px) !important;
+    max-width: calc(100vw - var(--complaint-sidebar-width) - 28px) !important;
+    max-height: calc(100dvh - 96px) !important;
+
+    margin: 0 !important;
+
+    overflow: hidden !important;
+
+    background: #ffffff !important;
+    border-radius: 24px !important;
+    box-shadow: 0 28px 80px rgba(15, 23, 42, 0.32) !important;
+
+    z-index: 2 !important;
+  }
+
+  #complaintDetailsModal .custom-modal-body,
+  #complaintResolutionModal .custom-modal-body,
+  #complaintMapModal .custom-modal-body {
+    max-height: calc(100dvh - 210px) !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+  }
+
+  #complaintDetailsModal .complaint-details-footer,
+  #complaintResolutionModal .complaint-details-footer {
+    position: static !important;
+    inset: auto !important;
+
+    width: 100% !important;
+
+    display: flex !important;
+    justify-content: flex-end !important;
+    gap: 12px !important;
+
+    margin: 20px 0 0 !important;
+    padding: 16px 0 0 !important;
+
+    border-top: 1px solid #e5e7eb !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+}
+
+@media (max-width: 1200px) {
+  #complaintDetailsModal.custom-modal:not(.hidden),
+  #complaintResolutionModal.custom-modal:not(.hidden),
+  #complaintMapModal.custom-modal:not(.hidden) {
+    position: fixed !important;
+    inset: 0 !important;
+
+    width: 100vw !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+
+    display: flex !important;
+    align-items: flex-start !important;
+    justify-content: center !important;
+
+    padding: 12px !important;
+    margin: 0 !important;
+
+    z-index: 999999 !important;
+
+    overflow: hidden !important;
+  }
+
+  #complaintDetailsModal .custom-modal-overlay,
+  #complaintResolutionModal .custom-modal-overlay,
+  #complaintMapModal .custom-modal-overlay {
+    position: fixed !important;
+    inset: 0 !important;
+
+    width: 100vw !important;
+    height: 100dvh !important;
+  }
+
+  #complaintDetailsModal .custom-modal-content,
+  #complaintResolutionModal .custom-modal-content,
+  #complaintMapModal .custom-modal-content {
+    position: relative !important;
+
+    top: auto !important;
+    left: auto !important;
+    transform: none !important;
+
+    width: calc(100vw - 24px) !important;
+    max-width: calc(100vw - 24px) !important;
+    max-height: calc(100dvh - 24px) !important;
+
+    margin: 0 auto !important;
+    overflow-y: auto !important;
+  }
+}
+
+#btnRequestComplaintReview {
+  display: none !important;
+}
+
+/* =========================================================
+   FINAL FIX: CALENDAR / INVOICE MODALS ABOVE SIDEBAR
+   File: css/admin/admin-overrides.css
+   Put at the VERY BOTTOM.
+
+   Why:
+   - admin-overrides.css loads after admin-modals.css
+   - old .other-modal rules use lower z-index than sidebar/flyout
+   - actual HTML uses:
+     #calendarActivitiesModal.custom-modal.other-modal.calendar-pro-modal
+     #incomingInvoiceModal.custom-modal.other-modal.invoice-workflow-modal
+========================================================= */
+
+#calendarActivitiesModal.other-modal:not(.hidden),
+#calendarAddActivityModal:not(.hidden),
+#calendarMonthlyReportModal:not(.hidden),
+#incomingInvoiceModal.other-modal:not(.hidden),
+#invoiceTrackingModal:not(.hidden) {
+  position: fixed !important;
+  inset: 0 !important;
+
+  width: 100vw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+
+  padding: 24px !important;
+  margin: 0 !important;
+
+  z-index: 2147483000 !important;
+
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+  isolation: isolate !important;
+}
+
+/* Hide state must still win */
+#calendarActivitiesModal.hidden,
+#calendarAddActivityModal.hidden,
+#calendarMonthlyReportModal.hidden,
+#incomingInvoiceModal.hidden,
+#invoiceTrackingModal.hidden {
+  display: none !important;
+}
+
+/* Full overlay */
+#calendarActivitiesModal .custom-modal-overlay,
+#calendarAddActivityModal .custom-modal-overlay,
+#calendarMonthlyReportModal .custom-modal-overlay,
+#incomingInvoiceModal .custom-modal-overlay,
+#invoiceTrackingModal .custom-modal-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+
+  width: 100vw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+
+  z-index: 1 !important;
+
+  background: rgba(15, 23, 42, 0.72) !important;
+  backdrop-filter: blur(5px) !important;
+  -webkit-backdrop-filter: blur(5px) !important;
+}
+
+/* Actual modal boxes based on your HTML classes */
+#calendarActivitiesModal .custom-modal-content,
+#calendarActivitiesModal .calendar-pro-content,
+#calendarActivitiesModal .calendar-main-report-content,
+#calendarAddActivityModal .custom-modal-content,
+#calendarMonthlyReportModal .custom-modal-content,
+#calendarMonthlyReportModal .calendar-report-content,
+#incomingInvoiceModal .custom-modal-content,
+#incomingInvoiceModal .invoice-workflow-content,
+#invoiceTrackingModal .custom-modal-content,
+#invoiceTrackingModal .invoice-tracking-content {
+  position: relative !important;
+
+  top: auto !important;
+  left: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  transform: none !important;
+
+  z-index: 2 !important;
+
+  width: min(1420px, calc(100vw - 48px)) !important;
+  max-width: calc(100vw - 48px) !important;
+
+  max-height: calc(100vh - 48px) !important;
+  max-height: calc(100dvh - 48px) !important;
+
+  margin: 0 auto !important;
+  overflow: hidden !important;
+
+  border: 1px solid rgba(226, 232, 240, 0.95) !important;
+  border-radius: 24px !important;
+  background: #ffffff !important;
+
+  box-shadow: 0 34px 90px rgba(15, 23, 42, 0.34) !important;
+}
+
+/* Scroll inside body, not whole modal */
+#calendarActivitiesModal .custom-modal-body,
+#calendarActivitiesModal .calendar-pro-body,
+#calendarActivitiesModal .calendar-main-report-body,
+#calendarAddActivityModal .custom-modal-body,
+#calendarMonthlyReportModal .custom-modal-body,
+#calendarMonthlyReportModal .calendar-report-body,
+#incomingInvoiceModal .custom-modal-body,
+#incomingInvoiceModal .invoice-workflow-body,
+#invoiceTrackingModal .custom-modal-body {
+  max-height: calc(100vh - 120px) !important;
+  max-height: calc(100dvh - 120px) !important;
+
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+}
+
+/* Calendar main modal should be wide like the reference */
+#calendarActivitiesModal .calendar-pro-content,
+#calendarActivitiesModal .calendar-main-report-content {
+  width: min(1420px, calc(100vw - 48px)) !important;
+}
+
+/* Invoice reference modal stays wide too */
+#incomingInvoiceModal .invoice-workflow-content {
+  width: min(1420px, calc(100vw - 48px)) !important;
+}
+
+/* Add Activity / Report smaller */
+#calendarAddActivityModal .custom-modal-content,
+#calendarMonthlyReportModal .calendar-report-content,
+#invoiceTrackingModal .invoice-tracking-content {
+  width: min(980px, calc(100vw - 48px)) !important;
+}
+
+/* Mobile */
+@media (max-width: 768px) {
+  #calendarActivitiesModal.other-modal:not(.hidden),
+  #calendarAddActivityModal:not(.hidden),
+  #calendarMonthlyReportModal:not(.hidden),
+  #incomingInvoiceModal.other-modal:not(.hidden),
+  #invoiceTrackingModal:not(.hidden) {
+    align-items: flex-start !important;
+    padding: 12px !important;
+  }
+
+  #calendarActivitiesModal .custom-modal-content,
+  #calendarActivitiesModal .calendar-pro-content,
+  #calendarActivitiesModal .calendar-main-report-content,
+  #calendarAddActivityModal .custom-modal-content,
+  #calendarMonthlyReportModal .custom-modal-content,
+  #calendarMonthlyReportModal .calendar-report-content,
+  #incomingInvoiceModal .custom-modal-content,
+  #incomingInvoiceModal .invoice-workflow-content,
+  #invoiceTrackingModal .custom-modal-content,
+  #invoiceTrackingModal .invoice-tracking-content {
+    width: calc(100vw - 24px) !important;
+    max-width: calc(100vw - 24px) !important;
+    max-height: calc(100dvh - 24px) !important;
+    border-radius: 20px !important;
+  }
+
+  #calendarActivitiesModal .custom-modal-body,
+  #calendarActivitiesModal .calendar-pro-body,
+  #calendarActivitiesModal .calendar-main-report-body,
+  #calendarAddActivityModal .custom-modal-body,
+  #calendarMonthlyReportModal .custom-modal-body,
+  #calendarMonthlyReportModal .calendar-report-body,
+  #incomingInvoiceModal .custom-modal-body,
+  #incomingInvoiceModal .invoice-workflow-body,
+  #invoiceTrackingModal .custom-modal-body {
+    max-height: calc(100dvh - 120px) !important;
+  }
+}
+
