@@ -682,7 +682,7 @@
   min-height: 66px !important;
 
   display: grid !important;
-  grid-template-columns: 44px minmax(0, 1fr) 74px 42px !important;
+  grid-template-columns: 44px minmax(0, 1fr) 74px !important;
   align-items: center !important;
   gap: 12px !important;
 
@@ -743,9 +743,7 @@
 #wasteBreakdownModal .breakdown-row span:first-child {
   min-width: 0 !important;
 
-  display: flex !important;
-  align-items: center !important;
-  gap: 12px !important;
+  display: block !important;
 
   color: #1f2937 !important;
   font-size: 15px !important;
@@ -753,17 +751,10 @@
   line-height: 1.35 !important;
 }
 
+/* Removed because this row is not a real drill-down action */
 #wasteBreakdownModal .breakdown-row span:first-child::after {
-  content: "Tap to view details" !important;
-
-  margin-left: 2px !important;
-  padding-left: 12px !important;
-  border-left: 1px solid #d7dee8 !important;
-
-  color: #7b8798 !important;
-  font-size: 13px !important;
-  font-weight: 500 !important;
-  white-space: nowrap !important;
+  content: none !important;
+  display: none !important;
 }
 
 /* KG pill */
@@ -776,6 +767,8 @@
   align-items: center !important;
   justify-content: center !important;
 
+  justify-self: end !important;
+
   border-radius: 10px !important;
   background: #eef7f0 !important;
   color: #14532d !important;
@@ -783,31 +776,15 @@
   font-weight: 900 !important;
 }
 
-/* Arrow */
+/* Removed: no arrow because the row is informational only */
 #wasteBreakdownModal .breakdown-row::after {
-  content: "›" !important;
-
-  width: 38px !important;
-  height: 38px !important;
-  min-width: 38px !important;
-
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-
-  border-radius: 999px !important;
-  border: 1px solid #e5e7eb !important;
-  background: #ffffff !important;
-  color: #173c2a !important;
-  font-size: 26px !important;
-  font-weight: 600 !important;
-  line-height: 1 !important;
+  content: none !important;
+  display: none !important;
 }
 
 #wasteBreakdownModal .breakdown-row:hover::after {
-  background: #14532d !important;
-  color: #ffffff !important;
-  border-color: #14532d !important;
+  content: none !important;
+  display: none !important;
 }
 
 /* Highlight active row like reference */
@@ -819,9 +796,8 @@
 }
 
 #wasteBreakdownModal .breakdown-row:nth-child(2)::after {
-  background: #14532d !important;
-  color: #ffffff !important;
-  border-color: #14532d !important;
+  content: none !important;
+  display: none !important;
 }
 
 /* Empty state */
@@ -980,6 +956,7 @@
   }
 
   #wasteBreakdownModal .breakdown-row span:first-child::after {
+    content: none !important;
     display: none !important;
   }
 
