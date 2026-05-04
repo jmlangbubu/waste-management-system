@@ -488,15 +488,9 @@ body {
   font-size: 14px;
 }
 
-.dashboard-sidebar {
-  width: 260px;
-}
 
-.main-content {
-  margin-left: 260px;
-  padding: 28px 34px;
-  max-width: none;
-}
+
+
 
 .page-card {
   padding: 22px;
@@ -1009,9 +1003,7 @@ table td {
 ================================ */
 @media print {
   @page {
-    size: A4 portrait;
-    margin: 8mm;
-  }
+    }
 
   html,
   body {
@@ -1249,11 +1241,7 @@ body {
 }
 
 /* Make wide sections behave properly */
-.main-content,
-.content-section,
-.page-card {
-  min-width: 0;
-}
+
 
 /* Tables should scroll instead of destroying layout */
 .table-shell,
@@ -1279,11 +1267,7 @@ body {
     display: block !important;
   }
 
-  .main-content {
-    width: 100% !important;
-    margin-left: 0 !important;
-    padding: 22px !important;
-  }
+  
 
   .topbar {
     width: 100%;
@@ -1382,11 +1366,7 @@ body {
     background: #f6fbf8;
   }
 
-  .main-content {
-    padding: 14px !important;
-    width: 100% !important;
-    margin-left: 0 !important;
-  }
+  
 
   .content-section {
     width: 100% !important;
@@ -1756,9 +1736,7 @@ body {
    SMALL MOBILE
 ========================================================= */
 @media (max-width: 480px) {
-  .main-content {
-    padding: 12px !important;
-  }
+  
 
   .page-card {
     padding: 15px !important;
@@ -2217,23 +2195,11 @@ body {
   min-height: 100dvh !important;
 }
 
-.admin-layout,
-.main-content,
-.content-section,
-.page-card {
-  min-width: 0 !important;
-}
 
-.dashboard-sidebar {
-  width: 260px !important;
-  max-width: 260px !important;
-}
 
-.main-content {
-  margin-left: 260px !important;
-  width: calc(100% - 260px) !important;
-  max-width: calc(100% - 260px) !important;
-}
+
+
+
 
 /* Better scrolling for all tables */
 .table-shell,
@@ -2250,25 +2216,9 @@ body {
 ================================ */
 
 @media (max-width: 1180px) {
-  .dashboard-sidebar {
-    position: fixed !important;
-    top: 0 !important;
-    left: -280px !important;
-    z-index: 99980 !important;
-    width: 280px !important;
-    max-width: 280px !important;
-    height: 100vh !important;
-    height: 100dvh !important;
-    transform: translateX(0) !important;
-    transition: left 0.25s ease !important;
-  }
+  
 
-  .dashboard-sidebar.open,
-  .dashboard-sidebar.active,
-  .dashboard-sidebar.show,
-  body.sidebar-open .dashboard-sidebar {
-    left: 0 !important;
-  }
+  
 
   .sidebar-backdrop {
     position: fixed !important;
@@ -2282,12 +2232,7 @@ body {
     display: none !important;
   }
 
-  .main-content {
-    width: 100% !important;
-    max-width: 100% !important;
-    margin-left: 0 !important;
-    padding: 22px !important;
-  }
+  
 
   #sidebarToggleBtn,
   .sidebar-toggle-btn {
@@ -2353,9 +2298,7 @@ body {
     background: #f6fbf8 !important;
   }
 
-  .main-content {
-    padding: 14px !important;
-  }
+  
 
   .topbar {
     width: 100% !important;
@@ -2756,9 +2699,7 @@ body {
 ================================ */
 
 @media (max-width: 480px) {
-  .main-content {
-    padding: 12px !important;
-  }
+  
 
   .page-card {
     padding: 15px !important;
@@ -3321,10 +3262,7 @@ body {
     overflow: visible !important;
   }
 
-  .dashboard-sidebar {
-    overflow: visible !important;
-    z-index: 999999 !important;
-  }
+  
 
   .sidebar-top,
   .sidebar-bottom,
@@ -3333,10 +3271,7 @@ body {
     z-index: 999999 !important;
   }
 
-  .main-content {
-    position: relative !important;
-    z-index: 1 !important;
-  }
+  
 
   .sidebar-other-menu {
     position: absolute !important;
@@ -3394,10 +3329,7 @@ body {
 
 /* Keep responsive behavior safe */
 @media (max-width: 1180px) {
-  .dashboard-sidebar {
-    overflow-y: auto !important;
-    overflow-x: hidden !important;
-  }
+  
 
   .sidebar-other-menu {
     position: relative !important;
@@ -4930,17 +4862,10 @@ body {
   text-shadow: none !important;
 }
 
-.dashboard-sidebar::after,
-.sidebar-brand::after,
-.sidebar-brand .brand-logo::after {
-  content: none !important;
-}
+
 
 /* Extra guard: no image inside sidebar should become a background-like giant image */
-.dashboard-sidebar img.sidebar-logo-img {
-  float: none !important;
-  clear: both !important;
-}
+
 
 /* Mobile/tablet keeps same safe size */
 @media (max-width: 768px) {
@@ -4983,34 +4908,13 @@ body {
 }
 
 /* Keep layout stable */
-.admin-layout,
-.main-content,
-.content-section,
-.page-card {
-  min-width: 0 !important;
-}
+
 
 /* =========================
    DESKTOP SIDEBAR SAFE FIX
 ========================= */
 @media (min-width: 1181px) {
-  .dashboard-sidebar {
-    position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
-    bottom: 0 !important;
-
-    width: var(--safe-sidebar-width) !important;
-    max-width: var(--safe-sidebar-width) !important;
-    height: 100vh !important;
-    height: 100dvh !important;
-
-    display: flex !important;
-    flex-direction: column !important;
-
-    overflow: hidden !important;
-    z-index: 9990 !important;
-  }
+  
 
   /* Top area scrolls, bottom area remains visible */
   .sidebar-top {
@@ -5064,19 +4968,12 @@ body {
     margin: 0 !important;
   }
 
-  .main-content {
-    margin-left: var(--safe-sidebar-width) !important;
-    width: calc(100% - var(--safe-sidebar-width)) !important;
-    max-width: calc(100% - var(--safe-sidebar-width)) !important;
-  }
+  
 }
 
 /* Compact desktop height only */
 @media (min-width: 1181px) and (max-height: 820px) {
-  .dashboard-sidebar {
-    padding-top: 18px !important;
-    padding-bottom: 12px !important;
-  }
+  
 
   .sidebar-brand {
     margin-bottom: 10px !important;
@@ -5132,33 +5029,9 @@ body {
    TABLET/MOBILE SIDEBAR SAFE FIX
 ========================= */
 @media (max-width: 1180px) {
-  .dashboard-sidebar {
-    position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
+  
 
-    width: min(86vw, 300px) !important;
-    max-width: min(86vw, 300px) !important;
-    height: 100vh !important;
-    height: 100dvh !important;
-
-    display: flex !important;
-    flex-direction: column !important;
-
-    transform: translateX(-105%) !important;
-    transition: transform 0.25s ease !important;
-
-    overflow: hidden !important;
-    z-index: 99980 !important;
-  }
-
-  .dashboard-sidebar.open,
-  .dashboard-sidebar.active,
-  .dashboard-sidebar.show,
-  .dashboard-sidebar.is-open,
-  body.sidebar-open .dashboard-sidebar {
-    transform: translateX(0) !important;
-  }
+  
 
   .sidebar-top {
     flex: 1 1 auto !important;
@@ -5186,11 +5059,7 @@ body {
     justify-content: center !important;
   }
 
-  .main-content {
-    width: 100% !important;
-    max-width: 100% !important;
-    margin-left: 0 !important;
-  }
+  
 
   #sidebarToggleBtn,
   .sidebar-toggle-btn {
@@ -5249,9 +5118,7 @@ body {
    MOBILE SMALL SAFE FIX
 ========================= */
 @media (max-width: 768px) {
-  .main-content {
-    padding: 14px !important;
-  }
+  
 
   .topbar {
     width: 100% !important;
@@ -5331,10 +5198,7 @@ body {
 
 /* Desktop: allow Other flyout to escape sidebar */
 @media (min-width: 1181px) {
-  .dashboard-sidebar {
-    overflow: visible !important;
-    z-index: 99990 !important;
-  }
+  
 
   .sidebar-top {
     overflow-y: auto !important;
@@ -5348,10 +5212,7 @@ body {
     z-index: 100000 !important;
   }
 
-  .main-content {
-    position: relative !important;
-    z-index: 1 !important;
-  }
+  
 
   .sidebar-other-menu {
     position: absolute !important;
@@ -5411,9 +5272,7 @@ body {
 
 /* Tablet/mobile: keep Other menu inside sidebar */
 @media (max-width: 1180px) {
-  .dashboard-sidebar {
-    overflow: hidden !important;
-  }
+  
 
   .sidebar-top {
     overflow-y: auto !important;
@@ -5458,9 +5317,7 @@ body {
 ========================================================= */
 
 /* Main sidebar spacing */
-.dashboard-sidebar {
-  padding: 26px 16px 18px !important;
-}
+
 
 /* Brand area: cleaner and bigger */
 .sidebar-brand {
@@ -5595,16 +5452,9 @@ body {
 
 /* Desktop: keep logout visible on normal screens */
 @media (min-width: 1181px) {
-  .dashboard-sidebar {
-    width: 270px !important;
-    max-width: 270px !important;
-  }
+  
 
-  .main-content {
-    margin-left: 270px !important;
-    width: calc(100% - 270px) !important;
-    max-width: calc(100% - 270px) !important;
-  }
+  
 
   .sidebar-top {
     overflow-y: auto !important;
@@ -5619,9 +5469,7 @@ body {
 
 /* Short screens: compact but still not tiny */
 @media (min-width: 1181px) and (max-height: 820px) {
-  .dashboard-sidebar {
-    padding: 18px 14px 12px !important;
-  }
+  
 
   .sidebar-brand {
     grid-template-columns: 54px minmax(0, 1fr) !important;
@@ -5704,11 +5552,7 @@ body {
 
 /* Tablet/mobile sidebar keeps fuller look */
 @media (max-width: 1180px) {
-  .dashboard-sidebar {
-    width: min(88vw, 300px) !important;
-    max-width: min(88vw, 300px) !important;
-    padding: 24px 16px 18px !important;
-  }
+  
 
   .sidebar-brand {
     grid-template-columns: 62px minmax(0, 1fr) !important;
@@ -5736,11 +5580,7 @@ body {
 
 /* Very small phones */
 @media (max-width: 420px) {
-  .dashboard-sidebar {
-    width: min(90vw, 290px) !important;
-    max-width: min(90vw, 290px) !important;
-    padding: 20px 14px 14px !important;
-  }
+  
 
   .sidebar-brand {
     grid-template-columns: 56px minmax(0, 1fr) !important;
@@ -10939,3 +10779,6 @@ td:last-child {
 .appointment-custom-select-btn {
   min-height: 54px !important;
 }
+
+
+
