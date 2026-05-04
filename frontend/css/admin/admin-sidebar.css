@@ -1318,114 +1318,79 @@
 }
 
 /* =========================================================
-   OTHER MENU SIDE FLYOUT FOR EXPANDED SIDEBAR
+   MOBILE SIDEBAR DRAWER Z-INDEX / BLUR FIX
    File: css/admin/admin-sidebar.css
 
-   Goal:
-   - In expanded sidebar, the Other submenu should open on the side
-     instead of above the Other button.
+   Issue:
+   - On mobile, the sidebar looks blurred because the backdrop layer
+     can sit above the sidebar or apply blur over it.
+
+   Fix:
+   - Sidebar must always be above the backdrop.
+   - Backdrop must darken only the page behind the sidebar.
+   - Disable blur/filter on sidebar itself.
 ========================================================= */
 
-@media (min-width: 993px) {
-  .dashboard-sidebar {
-    overflow: visible !important;
+@media (max-width: 992px) {
+  body .dashboard-sidebar,
+  body .admin-layout.sidebar-collapsed .dashboard-sidebar {
+    z-index: 10050 !important;
+
+    width: 280px !important;
+    max-width: 84vw !important;
+    height: 100dvh !important;
+
+    filter: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+
+    opacity: 1 !important;
+
+    transform: translateX(-100%) !important;
+    will-change: transform !important;
+
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
   }
 
-  .sidebar-bottom {
-    overflow: visible !important;
+  body .dashboard-sidebar.open,
+  body .admin-layout.sidebar-collapsed .dashboard-sidebar.open {
+    transform: translateX(0) !important;
+
+    filter: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+
+    opacity: 1 !important;
   }
 
-  .sidebar-other-group {
-    position: relative !important;
-    overflow: visible !important;
-    z-index: 45000 !important;
+  body .sidebar-backdrop {
+    z-index: 10000 !important;
+
+    background: rgba(15, 23, 42, 0.52) !important;
+
+    filter: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
   }
 
-  .admin-layout:not(.sidebar-collapsed) #sidebarOtherMenu.sidebar-other-menu {
-    position: absolute !important;
-
-    left: calc(100% + 14px) !important;
-    right: auto !important;
-    top: 50% !important;
-    bottom: auto !important;
-
-    transform: translateY(-50%) !important;
-
-    width: 250px !important;
-    min-width: 250px !important;
-    max-width: 250px !important;
-
-    display: grid !important;
-    grid-template-columns: 1fr !important;
-    gap: 10px !important;
-
-    padding: 12px !important;
-    margin: 0 !important;
-
-    border: 1px solid rgba(255, 255, 255, 0.12) !important;
-    border-radius: 18px !important;
-
-    background:
-      linear-gradient(180deg, rgba(25, 88, 57, 0.98), rgba(16, 64, 42, 0.98)) !important;
-
-    box-shadow:
-      0 18px 34px rgba(0, 0, 0, 0.28),
-      inset 0 1px 0 rgba(255, 255, 255, 0.07) !important;
-
-    z-index: 50000 !important;
-  }
-
-  .admin-layout:not(.sidebar-collapsed) #sidebarOtherMenu.sidebar-other-menu.hidden {
+  body .sidebar-backdrop.hidden {
     display: none !important;
   }
 
-  .admin-layout:not(.sidebar-collapsed) #sidebarOtherMenu.sidebar-other-menu:not(.hidden) {
-    display: grid !important;
-    opacity: 1 !important;
-    visibility: visible !important;
-    pointer-events: auto !important;
+  body .dashboard-sidebar *,
+  body .admin-layout.sidebar-collapsed .dashboard-sidebar * {
+    filter: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
   }
+}
 
-  .admin-layout:not(.sidebar-collapsed) #sidebarOtherMenu .sidebar-other-btn {
-    width: 100% !important;
-    min-height: 48px !important;
-
-    display: flex !important;
-    align-items: center !important;
-    justify-content: flex-start !important;
-    gap: 11px !important;
-
-    padding: 0 14px !important;
-
-    border: none !important;
-    border-radius: 14px !important;
-
-    background: rgba(255, 255, 255, 0.08) !important;
-    color: rgba(255, 255, 255, 0.94) !important;
-
-    font-size: 14px !important;
-    font-weight: 800 !important;
-    text-align: left !important;
-    white-space: nowrap !important;
-  }
-
-  .admin-layout:not(.sidebar-collapsed) #sidebarOtherMenu .sidebar-other-btn:hover {
-    background: rgba(255, 255, 255, 0.14) !important;
-    color: #ffffff !important;
-  }
-
-  .admin-layout:not(.sidebar-collapsed) #sidebarOtherMenu .sidebar-other-btn svg,
-  .admin-layout:not(.sidebar-collapsed) #sidebarOtherMenu .sidebar-other-btn i {
-    width: 18px !important;
-    height: 18px !important;
-    flex: 0 0 18px !important;
-    display: block !important;
-  }
-
-  .admin-layout:not(.sidebar-collapsed) #sidebarOtherMenu .sidebar-other-btn span {
-    display: inline !important;
-    opacity: 1 !important;
-    visibility: visible !important;
+@media (max-width: 480px) {
+  body .dashboard-sidebar,
+  body .admin-layout.sidebar-collapsed .dashboard-sidebar {
+    width: 82vw !important;
+    max-width: 82vw !important;
   }
 }
 
