@@ -276,6 +276,16 @@ function enableImagePreview(imgElement) {
   imgElement.onclick = () => {
     if (!imgElement.src) return;
 
+    const existingOverlay = document.getElementById("imagePreviewOverlay");
+    const existingImage = document.getElementById("imagePreviewFull");
+
+    if (existingOverlay && existingImage) {
+      existingImage.src = imgElement.src;
+      existingOverlay.classList.remove("hidden");
+      return;
+    }
+
+    // Fallback for older HTML structure
     const modal = document.createElement("div");
     modal.className = "image-preview-modal";
     modal.innerHTML = `<img src="${imgElement.src}" alt="Evidence Preview">`;
@@ -443,7 +453,7 @@ function renderComplaintsTable(complaints) {
     return ["pending", "validated", "forwarded", "in_progress", "rejected"].includes(status);
   });
 
-  // ✅ EMPTY STATE (UPDATED colspan = 7)
+  // EMPTY STATE
   if (!activeComplaints.length) {
     tableBody.innerHTML = `
       <tr>
@@ -471,7 +481,7 @@ function renderComplaintsTable(complaints) {
           <span class="complaint-subject-main">${subject}</span>
         </td>
 
-        <!-- DESCRIPTION (NEW COLUMN) -->
+        <!-- DESCRIPTION -->
         <td class="complaint-description-cell" title="${escapeHtml(descriptionRaw)}">
           ${description || "-"}
         </td>
@@ -524,11 +534,236 @@ function bindComplaintButtons() {
 }
 
 // =========================
+// COMPLAINT MODAL PORTAL FIX
+// =========================
+
+const COMPLAINT_PORTAL_MODAL_IDS = [
+  "complaintDetailsModal",
+  "complaintResolutionModal",
+  "complaintMapModal",
+  "complaintHistoryModal"
+];
+
+function mountComplaintModalsToBody() {
+  COMPLAINT_PORTAL_MODAL_IDS.forEach((modalId) => {
+    const modal = document.getElementById(modalId);
+
+    if (!modal) return;
+
+    /*
+      Moving the same DOM node keeps existing listeners.
+      This only prevents sidebar/main-content stacking issues.
+    */
+    if (modal.parentElement !== document.body) {
+      document.body.appendChild(modal);
+    }
+  });
+}
+
+function applyComplaintModalPosition(modalId) {
+  try {
+    const modal = document.getElementById(modalId);
+    if (!modal) return;
+
+    const isMobile = window.matchMedia("(max-width: 992px)").matches;
+
+    const overlay =
+      modal.querySelector(".custom-modal-overlay") ||
+      modal.querySelector(".history-modal-overlay");
+
+    const content =
+      modal.querySelector(".custom-modal-content") ||
+      modal.querySelector(".history-modal-content");
+
+    // Outer modal: center like Incoming Invoice Workflow
+    modal.style.setProperty("position", "fixed", "important");
+    modal.style.setProperty("inset", "0", "important");
+    modal.style.setProperty("top", "0", "important");
+    modal.style.setProperty("right", "0", "important");
+    modal.style.setProperty("bottom", "0", "important");
+    modal.style.setProperty("left", "0", "important");
+    modal.style.setProperty("width", "100vw", "important");
+    modal.style.setProperty("height", "100vh", "important");
+    modal.style.setProperty("height", "100dvh", "important");
+    modal.style.setProperty("margin", "0", "important");
+    modal.style.setProperty("display", "flex", "important");
+    modal.style.setProperty("align-items", isMobile ? "flex-start" : "center", "important");
+    modal.style.setProperty("justify-content", "center", "important");
+    modal.style.setProperty("z-index", "2147483600", "important");
+    modal.style.setProperty("overflow", "hidden", "important");
+    modal.style.setProperty("padding", isMobile ? "12px" : "24px", "important");
+    modal.style.setProperty("box-sizing", "border-box", "important");
+
+    if (overlay) {
+      overlay.style.setProperty("position", "fixed", "important");
+      overlay.style.setProperty("inset", "0", "important");
+      overlay.style.setProperty("top", "0", "important");
+      overlay.style.setProperty("right", "0", "important");
+      overlay.style.setProperty("bottom", "0", "important");
+      overlay.style.setProperty("left", "0", "important");
+      overlay.style.setProperty("width", "100vw", "important");
+      overlay.style.setProperty("height", "100vh", "important");
+      overlay.style.setProperty("height", "100dvh", "important");
+      overlay.style.setProperty("z-index", "1", "important");
+    }
+
+    if (content) {
+      content.style.setProperty("position", "relative", "important");
+      content.style.setProperty("top", "auto", "important");
+      content.style.setProperty("left", "auto", "important");
+      content.style.setProperty("right", "auto", "important");
+      content.style.setProperty("bottom", "auto", "important");
+      content.style.setProperty("transform", "none", "important");
+      content.style.setProperty("z-index", "2", "important");
+      content.style.setProperty("overflow", "hidden", "important");
+      content.style.setProperty("margin", "0 auto", "important");
+
+      if (isMobile) {
+        content.style.setProperty("width", "calc(100vw - 24px)", "important");
+        content.style.setProperty("max-width", "calc(100vw - 24px)", "important");
+        content.style.setProperty("max-height", "calc(100dvh - 24px)", "important");
+      } else {
+        if (modalId === "complaintHistoryModal") {
+          content.style.setProperty("width", "min(1180px, calc(100vw - 48px))", "important");
+          content.style.setProperty("max-width", "1180px", "important");
+        } else {
+          content.style.setProperty("width", "min(1220px, calc(100vw - 48px))", "important");
+          content.style.setProperty("max-width", "1220px", "important");
+        }
+
+        content.style.setProperty("max-height", "calc(100dvh - 48px)", "important");
+      }
+    }
+  } catch (error) {
+    console.warn("Complaint modal positioning skipped:", error);
+  }
+}
+
+function openComplaintModalWithPosition(modalId) {
+  mountComplaintModalsToBody();
+
+  const modal = document.getElementById(modalId);
+  if (!modal) return;
+
+  modal.classList.remove("hidden");
+
+  requestAnimationFrame(() => {
+    applyComplaintModalPosition(modalId);
+  });
+}
+
+function resetComplaintModalDisplay(modalId) {
+  const modal = document.getElementById(modalId);
+  if (!modal) return;
+
+  modal.classList.add("hidden");
+  modal.style.removeProperty("display");
+}
+
+window.addEventListener("resize", () => {
+  COMPLAINT_PORTAL_MODAL_IDS.forEach((modalId) => {
+    const modal = document.getElementById(modalId);
+    if (modal && !modal.classList.contains("hidden")) {
+      applyComplaintModalPosition(modalId);
+    }
+  });
+});
+
+// =========================
 // COMPLAINT DETAILS MODAL
 // =========================
 
+function formatComplaintStatusLabel(status) {
+  const normalized = String(status || "pending").trim().toLowerCase();
+
+  const labels = {
+    pending: "Pending",
+    validated: "Validated",
+    forwarded: "Forwarded",
+    in_progress: "In Progress",
+    resolved: "Resolved",
+    rejected: "Rejected"
+  };
+
+  return labels[normalized] || (status || "Pending");
+}
+
+function setComplaintDetailsStatusUI(status) {
+  const statusEl = document.getElementById("complaintModalStatus");
+  if (!statusEl) return;
+
+  const normalized = String(status || "pending").trim().toLowerCase();
+  statusEl.textContent = formatComplaintStatusLabel(normalized);
+
+  statusEl.className = "complaint-details-status-pill";
+  statusEl.classList.add(normalized.replaceAll("_", "-"));
+}
+
+function updateManualBarangayVisibility(complaint) {
+  const container = document.getElementById("manualBarangayContainer");
+  const select = document.getElementById("manualBarangaySelect");
+
+  if (!container) return;
+
+  const assignedBarangay = String(complaint?.assigned_barangay || "").trim();
+  const needsManualSelection =
+    !assignedBarangay || assignedBarangay.toLowerCase() === "for verification";
+
+  container.style.display = needsManualSelection ? "block" : "none";
+
+  if (select && !needsManualSelection) {
+    select.value = "";
+  }
+}
+
+function closeImagePreviewOverlay() {
+  const overlay = document.getElementById("imagePreviewOverlay");
+  const image = document.getElementById("imagePreviewFull");
+
+  if (image) image.removeAttribute("src");
+  overlay?.classList.add("hidden");
+}
+
+async function requestComplaintReviewFromDetails() {
+  if (!currentComplaint) {
+    alert("No complaint selected.");
+    return;
+  }
+
+  // In this system, review means checking the map/barangay assignment first.
+  await openComplaintMapModal();
+}
+
+async function validateComplaintFromDetails() {
+  if (!currentComplaint || !currentComplaint.id) {
+    alert("No complaint selected.");
+    return;
+  }
+
+  const assignedBarangay = String(currentComplaint.assigned_barangay || "").trim();
+  const needsManualSelection =
+    !assignedBarangay || assignedBarangay.toLowerCase() === "for verification";
+
+  if (needsManualSelection && !selectedBarangayCandidate) {
+    const proceedToMap = confirm(
+      "This complaint needs barangay verification before validation. Open the map now?"
+    );
+
+    if (proceedToMap) {
+      await openComplaintMapModal();
+    }
+
+    return;
+  }
+
+  await validateAndForwardComplaint();
+}
+
 function openComplaintModal(data) {
+  mountComplaintModalsToBody();
+
   currentComplaint = data;
+  selectedBarangayCandidate = null;
 
   const setText = (id, value) => {
     const el = document.getElementById(id);
@@ -540,61 +775,63 @@ function openComplaintModal(data) {
   setText("complaintModalCitizenName", data.citizen_name || "-");
   setText("complaintModalUsername", data.username || "-");
   setText("complaintModalBarangay", data.assigned_barangay || "-");
-  setText("complaintModalStatus", data.status || "-");
+  setComplaintDetailsStatusUI(data.status || "pending");
   setText("complaintModalCreatedAt", formatModalDateTime(data.created_at));
 
   const lat = data.latitude ?? "-";
   const lng = data.longitude ?? "-";
   setText("complaintModalCoordinates", `${lat}, ${lng}`);
 
- const imageEl = document.getElementById("complaintModalImage");
-const skeletonEl = document.getElementById("complaintImageSkeleton");
-const noImageText = document.getElementById("noImageText");
+  updateManualBarangayVisibility(data);
 
-if (imageEl) {
-  const rawPath = data.image_url || data.evidence_url || data.photo_url;
-  const imageUrl = getImageUrl(rawPath);
+  const imageEl = document.getElementById("complaintModalImage");
+  const skeletonEl = document.getElementById("complaintImageSkeleton");
+  const noImageText = document.getElementById("noImageText");
 
-  imageEl.onload = null;
-  imageEl.onerror = null;
-  imageEl.onclick = null;
+  if (imageEl) {
+    const rawPath = data.image_url || data.evidence_url || data.photo_url;
+    const imageUrl = getImageUrl(rawPath);
 
-  imageEl.style.display = "none";
-  imageEl.removeAttribute("src");
+    imageEl.onload = null;
+    imageEl.onerror = null;
+    imageEl.onclick = null;
 
-  if (skeletonEl) skeletonEl.style.display = "block";
-  if (noImageText) noImageText.style.display = "none";
-
-  imageEl.onload = () => {
-    if (skeletonEl) skeletonEl.style.display = "none";
-    if (noImageText) noImageText.style.display = "none";
-    imageEl.style.display = "block";
-    enableImagePreview(imageEl);
-  };
-
-  imageEl.onerror = () => {
-    if (skeletonEl) skeletonEl.style.display = "none";
     imageEl.style.display = "none";
-    if (noImageText) noImageText.style.display = "flex";
-  };
+    imageEl.removeAttribute("src");
 
-  if (imageUrl) {
-    imageEl.src = `${imageUrl}?t=${Date.now()}`;
-  } else {
-    if (skeletonEl) skeletonEl.style.display = "none";
-    if (noImageText) noImageText.style.display = "flex";
+    if (skeletonEl) skeletonEl.style.display = "block";
+    if (noImageText) noImageText.style.display = "none";
+
+    imageEl.onload = () => {
+      if (skeletonEl) skeletonEl.style.display = "none";
+      if (noImageText) noImageText.style.display = "none";
+      imageEl.style.display = "block";
+      enableImagePreview(imageEl);
+    };
+
+    imageEl.onerror = () => {
+      if (skeletonEl) skeletonEl.style.display = "none";
+      imageEl.style.display = "none";
+      if (noImageText) noImageText.style.display = "flex";
+    };
+
+    if (imageUrl) {
+      imageEl.src = `${imageUrl}?t=${Date.now()}`;
+    } else {
+      if (skeletonEl) skeletonEl.style.display = "none";
+      if (noImageText) noImageText.style.display = "flex";
+    }
   }
-}
 
-  document.getElementById("complaintDetailsModal")?.classList.remove("hidden");
+  openComplaintModalWithPosition("complaintDetailsModal");
 }
 
 function closeComplaintModal() {
-  document.getElementById("complaintDetailsModal")?.classList.add("hidden");
+  resetComplaintModalDisplay("complaintDetailsModal");
 }
 
 function closeComplaintMapModal() {
-  document.getElementById("complaintMapModal")?.classList.add("hidden");
+  resetComplaintModalDisplay("complaintMapModal");
 }
 
 // =========================
@@ -602,6 +839,8 @@ function closeComplaintMapModal() {
 // =========================
 
 async function openComplaintMapModal() {
+  mountComplaintModalsToBody();
+
   if (!currentComplaint) {
     alert("No complaint selected.");
     return;
@@ -632,8 +871,7 @@ async function openComplaintMapModal() {
     nearbyListEl.innerHTML = `<div class="nearby-empty">Loading nearby barangays...</div>`;
   }
 
-  const mapModal = document.getElementById("complaintMapModal");
-  mapModal?.classList.remove("hidden");
+  openComplaintModalWithPosition("complaintMapModal");
 
   setTimeout(async () => {
     try {
@@ -714,10 +952,10 @@ async function openComplaintMapModal() {
       const nearestCandidate = candidates[0];
 
       if (nearestCandidate) {
-  selectBarangayCandidate(nearestCandidate, candidates);
+        selectBarangayCandidate(nearestCandidate, candidates);
       } else {
-      updateChosenBarangayUI();
-      } 
+        updateChosenBarangayUI();
+      }
 
       const boundsPoints = [
         [lat, lng],
@@ -825,7 +1063,7 @@ async function validateComplaint() {
     }
 
     alert("Complaint forwarded successfully.");
-    document.getElementById("complaintDetailsModal")?.classList.add("hidden");
+    resetComplaintModalDisplay("complaintDetailsModal");
     await loadComplaints();
   } catch (err) {
     console.error("validateComplaint error:", err);
@@ -873,8 +1111,8 @@ async function validateAndForwardComplaint() {
 
     alert(data.message || "Complaint validated and forwarded.");
 
-    document.getElementById("complaintMapModal")?.classList.add("hidden");
-    document.getElementById("complaintDetailsModal")?.classList.add("hidden");
+    resetComplaintModalDisplay("complaintMapModal");
+    resetComplaintModalDisplay("complaintDetailsModal");
 
     selectedBarangayCandidate = null;
 
@@ -971,12 +1209,14 @@ function renderComplaintHistoryTable(records) {
 }
 
 function openComplaintHistoryModal() {
-  document.getElementById("complaintHistoryModal")?.classList.remove("hidden");
+  mountComplaintModalsToBody();
+
+  openComplaintModalWithPosition("complaintHistoryModal");
   loadComplaintHistory();
 }
 
 function closeComplaintHistoryModal() {
-  document.getElementById("complaintHistoryModal")?.classList.add("hidden");
+  resetComplaintModalDisplay("complaintHistoryModal");
 }
 
 // =========================
@@ -1074,6 +1314,8 @@ function renderResolutionEvidenceImage(record) {
 }
 
 function openComplaintResolutionModal(complaintId) {
+  mountComplaintModalsToBody();
+
   document.getElementById("complaintHistoryModal")?.classList.add("hidden");
 
   const modal = document.getElementById("complaintResolutionModal");
@@ -1109,14 +1351,14 @@ function openComplaintResolutionModal(complaintId) {
 
   renderResolutionEvidenceImage(currentComplaintResolution);
 
-  modal.classList.remove("hidden");
+  openComplaintModalWithPosition("complaintResolutionModal");
 }
 
 function closeComplaintResolutionModal() {
   const modal = document.getElementById("complaintResolutionModal");
   if (!modal) return;
 
-  modal.classList.add("hidden");
+  resetComplaintModalDisplay("complaintResolutionModal");
   currentComplaintResolution = null;
 }
 
@@ -1145,6 +1387,8 @@ function setupComplaintResolutionModal() {
 // =========================
 
 function setupComplaintsModule() {
+  mountComplaintModalsToBody();
+
   document.getElementById("btnRefreshComplaints")
     ?.addEventListener("click", loadComplaints);
 
@@ -1153,6 +1397,16 @@ function setupComplaintsModule() {
 
   document.getElementById("btnValidateForwardComplaint")
     ?.addEventListener("click", validateAndForwardComplaint);
+
+  const detailsValidateBtn = document.getElementById("btnValidateComplaintFromDetails");
+  if (detailsValidateBtn) {
+    // Remove old inline click from the updated HTML so validation is controlled here.
+    detailsValidateBtn.removeAttribute("onclick");
+    detailsValidateBtn.addEventListener("click", validateComplaintFromDetails);
+  }
+
+  document.getElementById("btnRequestComplaintReview")
+    ?.addEventListener("click", requestComplaintReviewFromDetails);
 
   document.getElementById("btnCloseComplaintModalFooter")
     ?.addEventListener("click", closeComplaintModal);
@@ -1183,4 +1437,14 @@ function setupComplaintsModule() {
 
   document.getElementById("complaintsStatusFilter")
     ?.addEventListener("change", applyComplaintFilters);
+
+  document.getElementById("closeImagePreviewBtn")
+    ?.addEventListener("click", closeImagePreviewOverlay);
+
+  document.getElementById("imagePreviewOverlay")
+    ?.addEventListener("click", (event) => {
+      if (event.target?.id === "imagePreviewOverlay") {
+        closeImagePreviewOverlay();
+      }
+    });
 }
