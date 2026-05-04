@@ -29,11 +29,9 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-
   limits: {
-    fileSize: 5 * 1024 * 1024 // 5MB limit
+    fileSize: 5 * 1024 * 1024
   },
-
   fileFilter: (req, file, cb) => {
     const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
 
@@ -44,6 +42,70 @@ const upload = multer({
     cb(null, true);
   }
 });
+
+/* =========================
+   SMALL HELPERS
+========================= */
+
+function cleanText(value) {
+  if (value === null || value === undefined) return "";
+
+  const text = String(value).trim();
+
+  if (!text || text.toLowerCase() === "null" || text.toLowerCase() === "undefined") {
+    return "";
+  }
+
+  return text;
+}
+
+function parseOptionalCoordinate(value) {
+  const cleaned = cleanText(value);
+
+  if (!cleaned) return null;
+
+  const num = parseFloat(cleaned);
+
+  if (!Number.isFinite(num) || Number.isNaN(num) || num === 0) {
+    return null;
+  }
+
+  return num;
+}
+
+function getComplaintColumnSet(callback) {
+  const sql = `SHOW COLUMNS FROM complaints`;
+
+  db.query(sql, (err, rows) => {
+    if (err) {
+      console.error("Failed to inspect complaints columns:", err);
+      return callback(err, new Set());
+    }
+
+    const columnSet = new Set(
+      (rows || []).map((row) => String(row.Field || "").trim())
+    );
+
+    return callback(null, columnSet);
+  });
+}
+
+function hasColumn(columnSet, columnName) {
+  return columnSet && columnSet.has(columnName);
+}
+
+function logUploadedFile(prefix, file) {
+  console.log(prefix);
+
+  if (file) {
+    console.log("File name:", file.filename);
+    console.log("File path:", file.path);
+    console.log("File size:", file.size);
+    console.log("Mime type:", file.mimetype);
+  } else {
+    console.log("NO FILE RECEIVED");
+  }
+}
 
 /* =========================
    CREATE COMPLAINT
@@ -61,27 +123,26 @@ router.post("/", upload.single("image"), (req, res) => {
       longitude
     } = req.body;
 
-   if (!citizen_id || !subject || !latitude || !longitude) {
-  return res.status(400).json({
-    success: false,
-    message: "Missing required complaint fields."
-  });
-  }
+    if (!citizen_id || !subject || !latitude || !longitude) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing required complaint fields."
+      });
+    }
 
-  if (!req.file || !req.file.path) {
-  return res.status(400).json({
-    success: false,
-    message: "Image upload failed or missing."
-  });
-  }
+    if (!req.file || !req.file.path) {
+      return res.status(400).json({
+        success: false,
+        message: "Image upload failed or missing."
+      });
+    }
 
-    
-  if (req.file.size <= 0) {
-  return res.status(400).json({
-    success: false,
-    message: "Uploaded image is empty or corrupted."
-  });
-  }
+    if (req.file.size <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Uploaded image is empty or corrupted."
+      });
+    }
 
     const lat = parseFloat(latitude);
     const lng = parseFloat(longitude);
@@ -211,6 +272,8 @@ router.post("/", upload.single("image"), (req, res) => {
               console.error("WMO notification insert error:", notifErr);
             }
 
+            logUploadedFile("=== CREATE COMPLAINT UPLOAD DEBUG ===", req.file);
+
             return res.json({
               success: true,
               message:
@@ -242,17 +305,6 @@ router.post("/", upload.single("image"), (req, res) => {
       message: "Server error while submitting complaint."
     });
   }
-
-  console.log("=== CREATE COMPLAINT UPLOAD DEBUG ===");
-
-  if (req.file) {
-  console.log("File name:", req.file.filename);
-  console.log("File path:", req.file.path);
-  console.log("File size:", req.file.size);
-  console.log("Mime type:", req.file.mimetype);
-} else {
-  console.log("NO FILE RECEIVED");
-}
 });
 
 /* =========================
@@ -519,21 +571,24 @@ router.put("/:id/accept", (req, res) => {
 
 /* =========================
    RESOLVE BY BARANGAY
+   OPTIONAL GPS START POINT SUPPORT
 ========================= */
 router.put("/:id/resolve", upload.single("evidence"), (req, res) => {
   const complaintId = req.params.id;
+
   const {
     handled_by_barangay_name,
     resolution_report,
-    resolved_by
+    resolved_by,
+    resolver_latitude,
+    resolver_longitude
   } = req.body;
 
-  if (
-    !handled_by_barangay_name ||
-    !String(handled_by_barangay_name).trim() ||
-    !resolution_report ||
-    !String(resolution_report).trim()
-  ) {
+  const handledBy = cleanText(handled_by_barangay_name);
+  const report = cleanText(resolution_report);
+  const resolvedBy = cleanText(resolved_by) || null;
+
+  if (!handledBy || !report) {
     return res.status(400).json({
       success: false,
       message: "Personnel name and resolution report are required."
@@ -544,54 +599,105 @@ router.put("/:id/resolve", upload.single("evidence"), (req, res) => {
     ? `/uploads/complaints/${req.file.filename}`
     : null;
 
-  const sql = `
-    UPDATE complaints
-    SET status = 'resolved',
-        handled_by_barangay_name = ?,
-        resolution_report = ?,
-        resolution_evidence_url = ?,
-        resolved_by = ?,
-        resolved_at = NOW()
-    WHERE id = ?
-      AND status IN ('forwarded', 'in_progress')
-  `;
+  const resolverLat = parseOptionalCoordinate(resolver_latitude);
+  const resolverLng = parseOptionalCoordinate(resolver_longitude);
 
-  db.query(
-    sql,
-    [
-      String(handled_by_barangay_name).trim(),
-      String(resolution_report).trim(),
+  getComplaintColumnSet((columnErr, columnSet) => {
+    if (columnErr) {
+      return res.status(500).json({
+        success: false,
+        message: "Failed to inspect complaint table columns.",
+        error: columnErr.message
+      });
+    }
+
+    const setClauses = [
+      "status = 'resolved'",
+      "handled_by_barangay_name = ?",
+      "resolution_report = ?",
+      "resolution_evidence_url = ?",
+      "resolved_by = ?",
+      "resolved_at = NOW()"
+    ];
+
+    const values = [
+      handledBy,
+      report,
       evidenceUrl,
-      resolved_by || null,
-      complaintId
-    ],
-    (err, result) => {
+      resolvedBy
+    ];
+
+    const canSaveResolverLatitude = hasColumn(columnSet, "resolver_latitude");
+    const canSaveResolverLongitude = hasColumn(columnSet, "resolver_longitude");
+
+    if (resolverLat !== null && canSaveResolverLatitude) {
+      setClauses.push("resolver_latitude = ?");
+      values.push(resolverLat);
+    }
+
+    if (resolverLng !== null && canSaveResolverLongitude) {
+      setClauses.push("resolver_longitude = ?");
+      values.push(resolverLng);
+    }
+
+    const sql = `
+      UPDATE complaints
+      SET ${setClauses.join(",\n          ")}
+      WHERE id = ?
+        AND status IN ('forwarded', 'in_progress')
+    `;
+
+    values.push(complaintId);
+
+    db.query(sql, values, (err, result) => {
       if (err) {
         console.error("Resolve complaint error:", err);
         return res.status(500).json({
           success: false,
-          message: "Failed to resolve complaint."
+          message: "Failed to resolve complaint.",
+          error: err.message,
+          code: err.code
         });
       }
+
+      if (!result || result.affectedRows === 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Complaint could not be resolved. It may already be resolved or not forwarded yet."
+        });
+      }
+
+      logUploadedFile("=== RESOLUTION UPLOAD DEBUG ===", req.file);
+
+      console.log("=== RESOLUTION GPS DEBUG ===");
+      console.log("resolver_latitude from mobile:", resolver_latitude);
+      console.log("resolver_longitude from mobile:", resolver_longitude);
+      console.log("parsed resolverLat:", resolverLat);
+      console.log("parsed resolverLng:", resolverLng);
+      console.log("canSaveResolverLatitude:", canSaveResolverLatitude);
+      console.log("canSaveResolverLongitude:", canSaveResolverLongitude);
 
       return res.json({
         success: true,
         message: "Complaint resolved successfully.",
         complaint_id: complaintId,
-        resolution_evidence_url: evidenceUrl
+        resolution_evidence_url: evidenceUrl,
+        resolver_location_received: resolverLat !== null && resolverLng !== null,
+        resolver_location_saved:
+          resolverLat !== null &&
+          resolverLng !== null &&
+          canSaveResolverLatitude &&
+          canSaveResolverLongitude,
+        missing_columns:
+          !canSaveResolverLatitude || !canSaveResolverLongitude
+            ? {
+                resolver_latitude: !canSaveResolverLatitude,
+                resolver_longitude: !canSaveResolverLongitude
+              }
+            : null
       });
-    }
-  );
-  console.log("=== RESOLUTION UPLOAD DEBUG ===");
-
-if (req.file) {
-  console.log("File name:", req.file.filename);
-  console.log("File path:", req.file.path);
-  console.log("File size:", req.file.size);
-  console.log("Mime type:", req.file.mimetype);
-} else {
-  console.log("NO RESOLUTION FILE RECEIVED");
-}
+    });
+  });
 });
 
 /* =========================
@@ -633,7 +739,6 @@ router.get("/history/resolved", (req, res) => {
       complaints: rows || []
     });
   });
-
 });
 
 /* =========================
@@ -686,13 +791,12 @@ router.get("/barangay-analytics/:barangay", (req, res) => {
   }
 });
 
-
 /* =========================
    BARANGAY COMPLAINT LIST
    NOW INCLUDES REFERENCE POINT COORDINATES
 ========================= */
 router.get("/barangay/:barangayName", (req, res) => {
-   const barangayName = decodeURIComponent(req.params.barangayName || "").trim();
+  const barangayName = decodeURIComponent(req.params.barangayName || "").trim();
 
   console.log("Barangay complaint request:", barangayName);
 
@@ -819,7 +923,7 @@ router.put("/:id/in-progress", (req, res) => {
       AND status = 'forwarded'
   `;
 
-  db.query(sql, [complaintId], (err, result) => {
+  db.query(sql, [complaintId], (err) => {
     if (err) {
       console.error("Mark in progress error:", err);
       return res.status(500).json({
@@ -845,20 +949,20 @@ router.put("/:id/in-progress", (req, res) => {
 router.get("/:id", (req, res) => {
   const complaintId = req.params.id;
 
-const sql = `
-  SELECT
-    c.*,
-    brp.reference_name AS assigned_reference_name,
-    brp.latitude AS assigned_barangay_lat,
-    brp.longitude AS assigned_barangay_lng,
-    brp.image_url AS assigned_barangay_image_url
-  FROM complaints c
-  LEFT JOIN barangay_reference_points brp
-    ON TRIM(LOWER(brp.barangay_name)) = TRIM(LOWER(c.assigned_barangay))
-    AND brp.status = 'active'
-  WHERE c.id = ?
-  LIMIT 1
-`;
+  const sql = `
+    SELECT
+      c.*,
+      brp.reference_name AS assigned_reference_name,
+      brp.latitude AS assigned_barangay_lat,
+      brp.longitude AS assigned_barangay_lng,
+      brp.image_url AS assigned_barangay_image_url
+    FROM complaints c
+    LEFT JOIN barangay_reference_points brp
+      ON TRIM(LOWER(brp.barangay_name)) = TRIM(LOWER(c.assigned_barangay))
+      AND brp.status = 'active'
+    WHERE c.id = ?
+    LIMIT 1
+  `;
 
   db.query(sql, [complaintId], (err, rows) => {
     if (err) {
