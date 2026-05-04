@@ -12,7 +12,7 @@
 .history-modal.hidden {
   display: none !important;
 }
- 
+
 .custom-modal-overlay,
 .history-modal-overlay {
   position: absolute;
@@ -402,3 +402,171 @@
   from { opacity: 0; transform: translateY(-10px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* =========================
+   CALENDAR ACTIVITY MODAL LAYER FIX
+   File: css/admin/admin-modals.css
+
+   Purpose:
+   - Calendar of Activities modal must appear above the sidebar.
+   - This belongs here because it is modal layering, not admin-overrides.
+   - Incoming Invoice modal is not touched.
+========================= */
+
+#calendarActivitiesModal,
+#calendarAddActivityModal {
+  position: fixed !important;
+  inset: 0 !important;
+
+  width: 100vw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+
+  z-index: 120000 !important;
+
+  display: flex;
+  align-items: center !important;
+  justify-content: center !important;
+
+  padding: 24px !important;
+  margin: 0 !important;
+
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
+
+#calendarActivitiesModal.hidden,
+#calendarAddActivityModal.hidden {
+  display: none !important;
+}
+
+#calendarActivitiesModal:not(.hidden),
+#calendarAddActivityModal:not(.hidden) {
+  display: flex !important;
+}
+
+/* Calendar overlay */
+#calendarActivitiesModal .custom-modal-overlay,
+#calendarAddActivityModal .custom-modal-overlay {
+  position: absolute !important;
+  inset: 0 !important;
+
+  z-index: 1 !important;
+
+  background: rgba(15, 23, 42, 0.72) !important;
+  backdrop-filter: blur(4px) !important;
+  -webkit-backdrop-filter: blur(4px) !important;
+}
+
+/* Calendar main modal box */
+#calendarActivitiesModal .custom-modal-content,
+#calendarActivitiesModal .calendar-pro-content,
+#calendarActivitiesModal .calendar-main-report-content,
+#calendarActivitiesModal .other-modal-content,
+#calendarAddActivityModal .custom-modal-content,
+#calendarAddActivityModal .calendar-pro-content,
+#calendarAddActivityModal .calendar-main-report-content,
+#calendarAddActivityModal .other-modal-content {
+  position: relative !important;
+
+  z-index: 2 !important;
+
+  width: min(1180px, 94vw) !important;
+  max-width: 94vw !important;
+
+  max-height: 90vh !important;
+  max-height: 90dvh !important;
+
+  margin: 0 auto !important;
+
+  overflow: hidden !important;
+
+  background: #ffffff !important;
+  border-radius: 24px !important;
+}
+
+/* Calendar scrollable body */
+#calendarActivitiesModal .custom-modal-body,
+#calendarActivitiesModal .calendar-pro-body,
+#calendarActivitiesModal .calendar-main-report-body,
+#calendarAddActivityModal .custom-modal-body,
+#calendarAddActivityModal .calendar-pro-body,
+#calendarAddActivityModal .calendar-main-report-body {
+  overflow-y: auto !important;
+  max-height: calc(90dvh - 96px) !important;
+}
+
+/* Keep sidebar below calendar modal while calendar is open */
+body:has(#calendarActivitiesModal:not(.hidden)) .dashboard-sidebar,
+body:has(#calendarAddActivityModal:not(.hidden)) .dashboard-sidebar {
+  z-index: 10000 !important;
+}
+
+/* Keep topbar/sidebar buttons below calendar modal */
+body:has(#calendarActivitiesModal:not(.hidden)) .sidebar-backdrop,
+body:has(#calendarAddActivityModal:not(.hidden)) .sidebar-backdrop {
+  z-index: 9999 !important;
+}
+
+/* Tablet / mobile calendar modal */
+@media (max-width: 992px) {
+  #calendarActivitiesModal,
+  #calendarAddActivityModal {
+    padding: 16px !important;
+    align-items: flex-start !important;
+  }
+
+  #calendarActivitiesModal .custom-modal-content,
+  #calendarActivitiesModal .calendar-pro-content,
+  #calendarActivitiesModal .calendar-main-report-content,
+  #calendarActivitiesModal .other-modal-content,
+  #calendarAddActivityModal .custom-modal-content,
+  #calendarAddActivityModal .calendar-pro-content,
+  #calendarAddActivityModal .calendar-main-report-content,
+  #calendarAddActivityModal .other-modal-content {
+    width: 96vw !important;
+    max-width: 96vw !important;
+    max-height: 92dvh !important;
+  }
+
+  #calendarActivitiesModal .custom-modal-body,
+  #calendarActivitiesModal .calendar-pro-body,
+  #calendarActivitiesModal .calendar-main-report-body,
+  #calendarAddActivityModal .custom-modal-body,
+  #calendarAddActivityModal .calendar-pro-body,
+  #calendarAddActivityModal .calendar-main-report-body {
+    max-height: calc(92dvh - 92px) !important;
+  }
+}
+
+/* Small mobile calendar modal */
+@media (max-width: 480px) {
+  #calendarActivitiesModal,
+  #calendarAddActivityModal {
+    padding: 10px !important;
+  }
+
+  #calendarActivitiesModal .custom-modal-content,
+  #calendarActivitiesModal .calendar-pro-content,
+  #calendarActivitiesModal .calendar-main-report-content,
+  #calendarActivitiesModal .other-modal-content,
+  #calendarAddActivityModal .custom-modal-content,
+  #calendarAddActivityModal .calendar-pro-content,
+  #calendarAddActivityModal .calendar-main-report-content,
+  #calendarAddActivityModal .other-modal-content {
+    width: 98vw !important;
+    max-width: 98vw !important;
+    max-height: 94dvh !important;
+    border-radius: 18px !important;
+  }
+
+  #calendarActivitiesModal .custom-modal-body,
+  #calendarActivitiesModal .calendar-pro-body,
+  #calendarActivitiesModal .calendar-main-report-body,
+  #calendarAddActivityModal .custom-modal-body,
+  #calendarAddActivityModal .calendar-pro-body,
+  #calendarAddActivityModal .calendar-main-report-body {
+    max-height: calc(94dvh - 86px) !important;
+  }
+}
+
