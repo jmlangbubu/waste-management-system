@@ -12,7 +12,7 @@
 .history-modal.hidden {
   display: none !important;
 }
-
+ 
 .custom-modal-overlay,
 .history-modal-overlay {
   position: absolute;
