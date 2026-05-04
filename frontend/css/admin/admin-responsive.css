@@ -1,47 +1,262 @@
+/* =========================================================
+   ADMIN RESPONSIVE
+   File: css/admin/admin-responsive.css
+
+   Purpose:
+   - Responsive dashboard layout
+   - Desktop Expanded <-> Collapsed sidebar support
+   - Mobile/tablet sidebar drawer support
+   - Table, card, map, and modal width safety
+
+   Important:
+   - Desktop sidebar toggle must stay visible.
+   - Mobile/tablet sidebar should remain drawer style.
+   - This file must not hide the sidebar toggle on desktop.
+========================================================= */
+
 /* =========================
-   RESPONSIVE
+   GLOBAL WIDTH SAFETY
 ========================= */
 
-/* Tablet / smaller desktop */
-@media (max-width: 1200px) {
-  .dashboard-hero-clean,
-  .dashboard-secondary-grid,
-  .dashboard-lower-grid,
-  .dashboard-main-grid,
-  .dashboard-bottom-grid,
+html,
+body {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+.admin-layout,
+.main-content,
+.content-section,
+.page-card,
+.dashboard-card,
+.chart-card,
+.table-shell,
+.complaints-table-shell,
+.recent-records-preview,
+.tracking-layout,
+.tracking-map-wrap,
+.dashboard-main-grid,
+.dashboard-secondary-grid,
+.dashboard-lower-grid,
+.dashboard-bottom-grid,
+.dashboard-side-stack,
+.users-layout,
+.complaints-summary-grid,
+.waste-summary-cards,
+.truck-analytics-grid,
+.invoice-workflow-layout,
+.calendar-main-bottom-grid {
+  min-width: 0;
+}
+
+.main-content {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.table-shell,
+.complaints-table-shell,
+.recent-records-preview,
+.tracking-map-wrap,
+#truckMap {
+  max-width: 100%;
+}
+
+/* =========================
+   DESKTOP BASE
+   Sidebar is fixed, so main-content needs left offset.
+========================= */
+
+@media (min-width: 993px) {
+  .dashboard-sidebar {
+    transform: none !important;
+  }
+
+  .main-content {
+    width: calc(100% - 280px) !important;
+    margin-left: 280px !important;
+  }
+
+  .admin-layout.sidebar-collapsed .main-content {
+    width: calc(100% - 88px) !important;
+    margin-left: 88px !important;
+  }
+
+  .sidebar-toggle-btn {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .sidebar-backdrop {
+    display: none !important;
+  }
+
+  .topbar,
+  .content-section {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .page-card {
+    max-width: 100%;
+  }
+}
+
+/* =========================
+   DESKTOP DASHBOARD GRID
+========================= */
+
+@media (min-width: 993px) {
+  .dashboard-main-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.55fr) minmax(320px, 0.85fr);
+    gap: 22px;
+    align-items: start;
+  }
+
+  .dashboard-side-stack {
+    min-width: 0;
+  }
+
+  .dashboard-bottom-grid {
+    min-width: 0;
+  }
+
   .tracking-layout {
+    min-width: 0;
+  }
+
+  .admin-layout.sidebar-collapsed .dashboard-main-grid {
+    grid-template-columns: minmax(0, 1.65fr) minmax(330px, 0.85fr);
+  }
+
+  .admin-layout.sidebar-collapsed .tracking-layout {
+    grid-template-columns: minmax(0, 2fr) minmax(300px, 0.8fr);
+  }
+
+  .admin-layout.sidebar-collapsed .tracking-map-wrap,
+  .admin-layout.sidebar-collapsed #truckMap {
+    min-height: 560px;
+  }
+}
+
+/* =========================
+   MEDIUM DESKTOP FIX
+   Because viewport width does not account for fixed sidebar space.
+========================= */
+
+@media (min-width: 993px) and (max-width: 1500px) {
+  .admin-layout:not(.sidebar-collapsed) .dashboard-main-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-layout:not(.sidebar-collapsed) .dashboard-side-stack {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 22px;
+  }
+
+  .admin-layout:not(.sidebar-collapsed) .dashboard-bottom-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-layout:not(.sidebar-collapsed) .tracking-layout {
     grid-template-columns: 1fr;
   }
 }
 
-/* Mobile / tablet sidebar drawer */
+@media (min-width: 993px) and (max-width: 1320px) {
+  .admin-layout.sidebar-collapsed .dashboard-main-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-layout.sidebar-collapsed .dashboard-side-stack {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 22px;
+  }
+
+  .admin-layout.sidebar-collapsed .dashboard-bottom-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-layout.sidebar-collapsed .tracking-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* =========================
+   TABLET / SMALLER DESKTOP
+========================= */
+
+@media (max-width: 1200px) {
+  .dashboard-hero-clean,
+  .dashboard-secondary-grid,
+  .dashboard-lower-grid,
+  .dashboard-bottom-grid,
+  .tracking-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-side-stack {
+    min-width: 0;
+  }
+
+  .tracking-map-wrap,
+  #truckMap {
+    min-height: 480px;
+  }
+}
+
+/* =========================
+   MOBILE / TABLET SIDEBAR DRAWER
+========================= */
+
 @media (max-width: 992px) {
   .admin-layout {
     display: block;
   }
 
-  .main-content {
+  .main-content,
+  .admin-layout.sidebar-collapsed .main-content {
     margin-left: 0 !important;
-    width: 100%;
+    width: 100% !important;
     min-width: 0;
     padding: 18px;
   }
 
-  .dashboard-sidebar {
+  .dashboard-sidebar,
+  .admin-layout.sidebar-collapsed .dashboard-sidebar {
     position: fixed;
     top: 0;
     left: 0;
+
     width: 280px;
     max-width: 82vw;
     height: 100vh;
+
     z-index: 10000;
 
     transform: translateX(-100%);
-    transition: transform 0.3s ease;
+    transition:
+      transform 0.3s ease,
+      box-shadow 0.3s ease;
   }
 
-  .dashboard-sidebar.open {
+  .dashboard-sidebar.open,
+  .admin-layout.sidebar-collapsed .dashboard-sidebar.open {
     transform: translateX(0);
+    box-shadow: 24px 0 70px rgba(15, 23, 42, 0.32);
   }
 
   .sidebar-backdrop {
@@ -79,19 +294,48 @@
     flex-wrap: wrap;
   }
 
+  .dashboard-main-grid,
+  .dashboard-side-stack,
+  .dashboard-bottom-grid,
+  .dashboard-secondary-grid,
+  .dashboard-lower-grid {
+    grid-template-columns: 1fr;
+  }
+
   .table-shell,
-  .complaints-table-shell {
+  .complaints-table-shell,
+  .recent-records-preview {
     overflow-x: auto;
   }
 
   table {
     min-width: 800px;
   }
+
+  /* On mobile/tablet, collapsed state should not hide sidebar labels. */
+  .admin-layout.sidebar-collapsed .brand-text,
+  .admin-layout.sidebar-collapsed .nav-btn span,
+  .admin-layout.sidebar-collapsed .sidebar-other-trigger-left span,
+  .admin-layout.sidebar-collapsed .sidebar-other-arrow,
+  .admin-layout.sidebar-collapsed .sidebar-user-card,
+  .admin-layout.sidebar-collapsed .logout-btn {
+    opacity: 1 !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
+  }
+
+  .admin-layout.sidebar-collapsed .nav-btn {
+    justify-content: flex-start !important;
+  }
 }
 
-/* Mobile */
+/* =========================
+   MOBILE
+========================= */
+
 @media (max-width: 768px) {
-  .main-content {
+  .main-content,
+  .admin-layout.sidebar-collapsed .main-content {
     padding: 14px;
   }
 
@@ -137,7 +381,8 @@
 
   .dashboard-header-actions,
   .complaints-header-actions,
-  .appointment-toolbar {
+  .appointment-toolbar,
+  .orientation-header-actions {
     width: 100%;
     flex-wrap: wrap;
   }
@@ -162,7 +407,11 @@
   .complaint-modal-grid,
   .resolution-main-grid,
   .complaint-map-layout,
-  .truck-analytics-grid {
+  .truck-analytics-grid,
+  .invoice-workflow-layout,
+  .calendar-main-bottom-grid,
+  .complaint-details-pro-grid,
+  .resolution-summary-row {
     grid-template-columns: 1fr;
   }
 
@@ -178,9 +427,13 @@
   }
 }
 
-/* Small mobile */
+/* =========================
+   SMALL MOBILE
+========================= */
+
 @media (max-width: 480px) {
-  .main-content {
+  .main-content,
+  .admin-layout.sidebar-collapsed .main-content {
     padding: 12px;
   }
 
@@ -188,8 +441,10 @@
     padding: 14px;
   }
 
-  .dashboard-sidebar {
+  .dashboard-sidebar,
+  .admin-layout.sidebar-collapsed .dashboard-sidebar {
     width: 82vw;
+    max-width: 86vw;
   }
 
   .topbar-left h1 {
@@ -200,6 +455,7 @@
     right: auto;
     left: 0;
     width: 280px;
+    max-width: calc(100vw - 24px);
   }
 
   .custom-modal-content,
@@ -212,13 +468,16 @@
   }
 }
 
-/* Desktop */
-@media (min-width: 993px) {
-  .sidebar-toggle-btn {
-    display: none !important;
-  }
+/* =========================
+   DESKTOP COLLAPSED HELPERS
+========================= */
 
-  .sidebar-backdrop {
-    display: none !important;
+@media (min-width: 993px) {
+  .admin-layout.sidebar-collapsed .topbar,
+  .admin-layout.sidebar-collapsed .page-card,
+  .admin-layout.sidebar-collapsed .tracking-layout,
+  .admin-layout.sidebar-collapsed .table-shell,
+  .admin-layout.sidebar-collapsed .complaints-table-shell {
+    min-width: 0;
   }
 }
