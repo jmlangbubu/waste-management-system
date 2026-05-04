@@ -749,7 +749,7 @@
   .admin-layout.sidebar-collapsed #navUserManagement svg,
   .admin-layout.sidebar-collapsed #navUserManagement i {
     position: relative !important;
-    left: 8px !important;
+    left: 14px !important;
     transform: none !important;
     margin: 0 !important;
   }
