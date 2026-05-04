@@ -20,6 +20,23 @@ const barangayBlueIcon = L.icon({
   shadowSize: [41, 41]
 });
 
+const personnelGreenIcon = L.icon({
+  iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png",
+  shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
+});
+
+const complaintResolutionRouteState = {
+  map: null,
+  issueMarker: null,
+  startMarker: null,
+  routeLine: null,
+  routingControl: null
+};
+
 function formatComplaintStatus(status) {
   if (!status) return "pending";
   return String(status).toLowerCase();
@@ -76,6 +93,18 @@ function calculateDistanceMetersLocal(lat1, lng1, lat2, lng2) {
 
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return Math.round(earthRadius * c);
+}
+
+function formatDistanceText(distanceMeters) {
+  const distance = Number(distanceMeters);
+
+  if (!Number.isFinite(distance) || distance <= 0) return "Distance unavailable";
+
+  if (distance >= 1000) {
+    return `${(distance / 1000).toFixed(2)} km`;
+  }
+
+  return `${Math.round(distance)} meters`;
 }
 
 function renderNearbyBarangayList(candidates) {
@@ -285,7 +314,6 @@ function enableImagePreview(imgElement) {
       return;
     }
 
-    // Fallback for older HTML structure
     const modal = document.createElement("div");
     modal.className = "image-preview-modal";
     modal.innerHTML = `<img src="${imgElement.src}" alt="Evidence Preview">`;
@@ -296,6 +324,463 @@ function enableImagePreview(imgElement) {
 
     document.body.appendChild(modal);
   };
+}
+
+// =========================
+// RESOLVED COMPLAINT ROUTE MAP
+// =========================
+
+function parseCoordinateValue(value) {
+  const num = parseFloat(value);
+
+  if (!Number.isFinite(num) || Number.isNaN(num) || num === 0) {
+    return null;
+  }
+
+  return num;
+}
+
+function getFirstValidCoordinate(record, keys = []) {
+  for (const key of keys) {
+    if (!record || !(key in record)) continue;
+
+    const coordinate = parseCoordinateValue(record[key]);
+
+    if (coordinate !== null) {
+      return coordinate;
+    }
+  }
+
+  return null;
+}
+
+function getResolutionIssuePoint(record) {
+  const lat = getFirstValidCoordinate(record, [
+    "latitude",
+    "complaint_latitude",
+    "issue_latitude",
+    "issue_lat",
+    "complaint_lat"
+  ]);
+
+  const lng = getFirstValidCoordinate(record, [
+    "longitude",
+    "complaint_longitude",
+    "issue_longitude",
+    "issue_lng",
+    "issue_long",
+    "complaint_lng",
+    "complaint_long"
+  ]);
+
+  if (lat === null || lng === null) return null;
+
+  return {
+    lat,
+    lng,
+    label: "Issue Location"
+  };
+}
+
+function getResolutionStartPoint(record) {
+  const actualStartLat = getFirstValidCoordinate(record, [
+    "resolver_latitude",
+    "resolver_lat",
+    "resolved_latitude",
+    "resolved_lat",
+    "resolution_latitude",
+    "resolution_lat",
+    "handled_latitude",
+    "handled_lat",
+    "personnel_latitude",
+    "personnel_lat",
+    "barangay_personnel_latitude",
+    "barangay_personnel_lat",
+    "current_latitude",
+    "current_lat"
+  ]);
+
+  const actualStartLng = getFirstValidCoordinate(record, [
+    "resolver_longitude",
+    "resolver_lng",
+    "resolver_long",
+    "resolved_longitude",
+    "resolved_lng",
+    "resolved_long",
+    "resolution_longitude",
+    "resolution_lng",
+    "resolution_long",
+    "handled_longitude",
+    "handled_lng",
+    "handled_long",
+    "personnel_longitude",
+    "personnel_lng",
+    "personnel_long",
+    "barangay_personnel_longitude",
+    "barangay_personnel_lng",
+    "barangay_personnel_long",
+    "current_longitude",
+    "current_lng",
+    "current_long"
+  ]);
+
+  if (actualStartLat !== null && actualStartLng !== null) {
+    return {
+      lat: actualStartLat,
+      lng: actualStartLng,
+      type: "actual",
+      label: "Barangay Personnel Start"
+    };
+  }
+
+  const referenceLat = getFirstValidCoordinate(record, [
+    "assigned_barangay_lat",
+    "assigned_barangay_latitude",
+    "assigned_latitude",
+    "assigned_lat",
+    "barangay_latitude",
+    "barangay_lat",
+    "reference_latitude",
+    "reference_lat",
+    "assigned_reference_latitude",
+    "assigned_reference_lat"
+  ]);
+
+  const referenceLng = getFirstValidCoordinate(record, [
+    "assigned_barangay_lng",
+    "assigned_barangay_longitude",
+    "assigned_barangay_long",
+    "assigned_lng",
+    "assigned_longitude",
+    "assigned_long",
+    "barangay_lng",
+    "barangay_longitude",
+    "barangay_long",
+    "reference_lng",
+    "reference_longitude",
+    "reference_long",
+    "assigned_reference_lng",
+    "assigned_reference_longitude",
+    "assigned_reference_long"
+  ]);
+
+  if (referenceLat !== null && referenceLng !== null) {
+    return {
+      lat: referenceLat,
+      lng: referenceLng,
+      type: "reference",
+      label: "Barangay Reference Start"
+    };
+  }
+
+  return null;
+}
+
+function clearResolutionRouteMapLayers() {
+  const state = complaintResolutionRouteState;
+
+  if (!state.map) return;
+
+  if (state.issueMarker) {
+    state.map.removeLayer(state.issueMarker);
+    state.issueMarker = null;
+  }
+
+  if (state.startMarker) {
+    state.map.removeLayer(state.startMarker);
+    state.startMarker = null;
+  }
+
+  if (state.routeLine) {
+    state.map.removeLayer(state.routeLine);
+    state.routeLine = null;
+  }
+
+  if (state.routingControl) {
+    try {
+      state.map.removeControl(state.routingControl);
+    } catch (error) {
+      console.warn("Failed removing resolution routing control:", error);
+    }
+
+    state.routingControl = null;
+  }
+}
+
+function ensureResolutionRouteMapContainer() {
+  const modal = document.getElementById("complaintResolutionModal");
+  if (!modal) return null;
+
+  let card = document.getElementById("resolutionRouteMapCard");
+
+  if (!card) {
+    card = document.createElement("div");
+    card.id = "resolutionRouteMapCard";
+    card.className = "resolution-route-map-card";
+
+    card.style.gridColumn = "1 / -1";
+    card.style.width = "100%";
+    card.style.minWidth = "0";
+    card.style.background = "#f8fafc";
+    card.style.border = "1px solid #e5edf5";
+    card.style.borderRadius = "16px";
+    card.style.padding = "16px";
+    card.style.boxSizing = "border-box";
+    card.style.marginTop = "14px";
+
+    card.innerHTML = `
+      <div class="resolution-route-map-header" style="margin-bottom: 10px;">
+        <h3 style="margin: 0 0 4px; color: #111827; font-size: 16px; font-weight: 800;">
+          Route Map
+        </h3>
+        <p id="resolutionRouteMapNote" style="margin: 0; color: #64748b; font-size: 13px; line-height: 1.45;">
+          Loading route preview...
+        </p>
+      </div>
+
+      <div
+        id="resolutionRouteMap"
+        style="
+          width: 100%;
+          height: 320px;
+          min-height: 320px;
+          border-radius: 14px;
+          overflow: hidden;
+          border: 1px solid #dbe7ef;
+          background: #eef3ef;
+        "
+      ></div>
+    `;
+
+    const coordinatesEl = document.getElementById("resolutionModalCoordinates");
+    const anchor =
+      coordinatesEl?.closest(
+        ".resolution-info-card, .resolution-detail-card, .complaint-resolution-info-item, .complaint-resolution-card, .info-card, .metric-card, .field-card"
+      ) ||
+      coordinatesEl?.parentElement;
+
+    const evidenceFrame = document.getElementById("resolutionEvidenceFrame");
+    const evidenceCard =
+      evidenceFrame?.closest(
+        ".resolution-evidence-card, .complaint-resolution-card, .info-card, .field-card"
+      ) ||
+      evidenceFrame?.parentElement;
+
+    if (anchor && anchor.parentNode) {
+      anchor.parentNode.insertBefore(card, anchor.nextSibling);
+    } else if (evidenceCard && evidenceCard.parentNode) {
+      evidenceCard.parentNode.insertBefore(card, evidenceCard);
+    } else {
+      const content =
+        modal.querySelector(".custom-modal-content") ||
+        modal.querySelector(".history-modal-content") ||
+        modal;
+
+      content.appendChild(card);
+    }
+  }
+
+  return {
+    card,
+    mapEl: document.getElementById("resolutionRouteMap"),
+    noteEl: document.getElementById("resolutionRouteMapNote")
+  };
+}
+
+function drawResolutionFallbackLine(startPoint, issuePoint) {
+  const state = complaintResolutionRouteState;
+  if (!state.map) return;
+
+  state.routeLine = L.polyline(
+    [
+      [startPoint.lat, startPoint.lng],
+      [issuePoint.lat, issuePoint.lng]
+    ],
+    {
+      color: "#2563eb",
+      weight: 6,
+      opacity: 0.9,
+      lineCap: "round",
+      lineJoin: "round"
+    }
+  ).addTo(state.map);
+
+  const bounds = L.latLngBounds([
+    [startPoint.lat, startPoint.lng],
+    [issuePoint.lat, issuePoint.lng]
+  ]);
+
+  state.map.fitBounds(bounds, { padding: [45, 45] });
+}
+
+function setResolutionMapNote(message) {
+  const noteEl = document.getElementById("resolutionRouteMapNote");
+  if (noteEl) noteEl.textContent = message;
+}
+
+function renderResolvedComplaintRouteMap(record) {
+  const container = ensureResolutionRouteMapContainer();
+
+  if (!container || !container.mapEl) return;
+
+  if (!window.L) {
+    setResolutionMapNote("Map library is not loaded. Please refresh the page.");
+    return;
+  }
+
+  const issuePoint = getResolutionIssuePoint(record);
+
+  if (!issuePoint) {
+    setResolutionMapNote("Issue coordinates are not available for this resolved complaint.");
+    return;
+  }
+
+  const startPoint = getResolutionStartPoint(record);
+  const state = complaintResolutionRouteState;
+
+  if (!state.map) {
+    state.map = L.map(container.mapEl, {
+      zoomControl: true,
+      attributionControl: true
+    }).setView([issuePoint.lat, issuePoint.lng], 16);
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: "&copy; OpenStreetMap contributors"
+    }).addTo(state.map);
+  } else {
+    state.map.invalidateSize();
+  }
+
+  clearResolutionRouteMapLayers();
+
+  state.issueMarker = L.marker([issuePoint.lat, issuePoint.lng], {
+    icon: issueRedIcon
+  }).addTo(state.map);
+
+  state.issueMarker.bindPopup(`
+    <div>
+      <strong>Issue Location</strong><br>
+      ${escapeHtml(record?.subject || "Resolved complaint")}<br>
+      Coordinates: ${escapeHtml(String(issuePoint.lat))}, ${escapeHtml(String(issuePoint.lng))}
+    </div>
+  `);
+
+  if (!startPoint) {
+    state.map.setView([issuePoint.lat, issuePoint.lng], 17);
+    state.issueMarker.openPopup();
+    setResolutionMapNote(
+      "Only the issue location is available. Starting point is not included in this resolved complaint record yet."
+    );
+    return;
+  }
+
+  const startIcon = startPoint.type === "actual" ? personnelGreenIcon : barangayBlueIcon;
+
+  state.startMarker = L.marker([startPoint.lat, startPoint.lng], {
+    icon: startIcon
+  }).addTo(state.map);
+
+  const startLabel =
+    startPoint.type === "actual"
+      ? "Barangay Personnel Start"
+      : "Assigned Barangay Reference";
+
+  state.startMarker.bindPopup(`
+    <div>
+      <strong>${escapeHtml(startLabel)}</strong><br>
+      ${escapeHtml(record?.handled_by_barangay_name || record?.assigned_barangay || "-")}<br>
+      Coordinates: ${escapeHtml(String(startPoint.lat))}, ${escapeHtml(String(startPoint.lng))}
+    </div>
+  `);
+
+  const straightDistance = calculateDistanceMetersLocal(
+    startPoint.lat,
+    startPoint.lng,
+    issuePoint.lat,
+    issuePoint.lng
+  );
+
+  const notePrefix =
+    startPoint.type === "actual"
+      ? "Route from barangay personnel GPS location to the issue location."
+      : "Route from assigned barangay reference point to the issue location.";
+
+  setResolutionMapNote(`${notePrefix} Straight distance: ${formatDistanceText(straightDistance)}.`);
+
+  if (!window.L.Routing) {
+    drawResolutionFallbackLine(startPoint, issuePoint);
+    return;
+  }
+
+  state.routingControl = L.Routing.control({
+    waypoints: [
+      L.latLng(startPoint.lat, startPoint.lng),
+      L.latLng(issuePoint.lat, issuePoint.lng)
+    ],
+    router: L.Routing.osrmv1({
+      serviceUrl: "https://router.project-osrm.org/route/v1"
+    }),
+    routeWhileDragging: false,
+    addWaypoints: false,
+    draggableWaypoints: false,
+    fitSelectedRoutes: true,
+    showAlternatives: false,
+    show: false,
+    createMarker: function () {
+      return null;
+    },
+    lineOptions: {
+      addWaypoints: false,
+      extendToWaypoints: true,
+      missingRouteTolerance: 0,
+      styles: [
+        {
+          color: "#2563eb",
+          opacity: 0.95,
+          weight: 6
+        }
+      ]
+    }
+  }).addTo(state.map);
+
+  state.routingControl.on("routesfound", function (event) {
+    const route = event.routes && event.routes[0];
+
+    if (!route) return;
+
+    const routeDistance = Math.round(route.summary?.totalDistance || 0);
+    const routeDistanceText = formatDistanceText(routeDistance);
+
+    setResolutionMapNote(`${notePrefix} Route distance: ${routeDistanceText}.`);
+
+    if (route.bounds) {
+      state.map.fitBounds(route.bounds, { padding: [45, 45] });
+    }
+  });
+
+  state.routingControl.on("routingerror", function (error) {
+    console.warn("Resolved complaint route failed, drawing fallback line:", error);
+
+    if (state.routingControl) {
+      try {
+        state.map.removeControl(state.routingControl);
+      } catch (removeError) {
+        console.warn("Failed removing failed routing control:", removeError);
+      }
+
+      state.routingControl = null;
+    }
+
+    drawResolutionFallbackLine(startPoint, issuePoint);
+    setResolutionMapNote(
+      `${notePrefix} Route service failed, so a direct line is shown. Straight distance: ${formatDistanceText(straightDistance)}.`
+    );
+  });
+
+  setTimeout(() => {
+    state.map.invalidateSize();
+  }, 180);
 }
 
 // =========================
@@ -453,7 +938,6 @@ function renderComplaintsTable(complaints) {
     return ["pending", "validated", "forwarded", "in_progress", "rejected"].includes(status);
   });
 
-  // EMPTY STATE
   if (!activeComplaints.length) {
     tableBody.innerHTML = `
       <tr>
@@ -476,37 +960,30 @@ function renderComplaintsTable(complaints) {
     return `
       <tr class="complaint-row complaint-${escapeHtml(status)}">
 
-        <!-- SUBJECT -->
         <td>
           <span class="complaint-subject-main">${subject}</span>
         </td>
 
-        <!-- DESCRIPTION -->
         <td class="complaint-description-cell" title="${escapeHtml(descriptionRaw)}">
           ${description || "-"}
         </td>
 
-        <!-- CITIZEN -->
         <td class="complaint-citizen">
           ${citizen}
         </td>
 
-        <!-- BARANGAY -->
         <td>
           <span class="barangay-badge">${barangay}</span>
         </td>
 
-        <!-- STATUS -->
         <td>
           ${getComplaintStatusBadge(status)}
         </td>
 
-        <!-- DATE -->
         <td class="complaint-date">
           ${formatDate(item.created_at)}
         </td>
 
-        <!-- ACTION -->
         <td>
           <button class="complaint-action-btn" data-id="${escapeHtml(item.id)}">
             View
@@ -550,10 +1027,6 @@ function mountComplaintModalsToBody() {
 
     if (!modal) return;
 
-    /*
-      Moving the same DOM node keeps existing listeners.
-      This only prevents sidebar/main-content stacking issues.
-    */
     if (modal.parentElement !== document.body) {
       document.body.appendChild(modal);
     }
@@ -575,7 +1048,6 @@ function applyComplaintModalPosition(modalId) {
       modal.querySelector(".custom-modal-content") ||
       modal.querySelector(".history-modal-content");
 
-    // Outer modal: center like Incoming Invoice Workflow
     modal.style.setProperty("position", "fixed", "important");
     modal.style.setProperty("inset", "0", "important");
     modal.style.setProperty("top", "0", "important");
@@ -615,7 +1087,7 @@ function applyComplaintModalPosition(modalId) {
       content.style.setProperty("bottom", "auto", "important");
       content.style.setProperty("transform", "none", "important");
       content.style.setProperty("z-index", "2", "important");
-      content.style.setProperty("overflow", "hidden", "important");
+      content.style.setProperty("overflow", "auto", "important");
       content.style.setProperty("margin", "0 auto", "important");
 
       if (isMobile) {
@@ -665,6 +1137,12 @@ window.addEventListener("resize", () => {
     const modal = document.getElementById(modalId);
     if (modal && !modal.classList.contains("hidden")) {
       applyComplaintModalPosition(modalId);
+
+      if (modalId === "complaintResolutionModal" && complaintResolutionRouteState.map) {
+        setTimeout(() => {
+          complaintResolutionRouteState.map.invalidateSize();
+        }, 120);
+      }
     }
   });
 });
@@ -730,7 +1208,6 @@ async function requestComplaintReviewFromDetails() {
     return;
   }
 
-  // In this system, review means checking the map/barangay assignment first.
   await openComplaintMapModal();
 }
 
@@ -1352,12 +1829,17 @@ function openComplaintResolutionModal(complaintId) {
   renderResolutionEvidenceImage(currentComplaintResolution);
 
   openComplaintModalWithPosition("complaintResolutionModal");
+
+  setTimeout(() => {
+    renderResolvedComplaintRouteMap(currentComplaintResolution);
+  }, 250);
 }
 
 function closeComplaintResolutionModal() {
   const modal = document.getElementById("complaintResolutionModal");
   if (!modal) return;
 
+  clearResolutionRouteMapLayers();
   resetComplaintModalDisplay("complaintResolutionModal");
   currentComplaintResolution = null;
 }
@@ -1388,6 +1870,7 @@ function setupComplaintResolutionModal() {
 
 function setupComplaintsModule() {
   mountComplaintModalsToBody();
+  setupComplaintResolutionModal();
 
   document.getElementById("btnRefreshComplaints")
     ?.addEventListener("click", loadComplaints);
@@ -1400,7 +1883,6 @@ function setupComplaintsModule() {
 
   const detailsValidateBtn = document.getElementById("btnValidateComplaintFromDetails");
   if (detailsValidateBtn) {
-    // Remove old inline click from the updated HTML so validation is controlled here.
     detailsValidateBtn.removeAttribute("onclick");
     detailsValidateBtn.addEventListener("click", validateComplaintFromDetails);
   }
