@@ -10967,3 +10967,90 @@ td:last-child {
   }
 }
 
+/* =========================================================
+   DASHBOARD WASTE SUMMARY LABEL FINAL FIT FIX
+   File: css/admin/admin-overrides.css
+
+   Why this is here:
+   - admin-overrides.css loads after admin-dashboard.css.
+   - Previous override rules were still forcing larger / heavier
+     waste-summary labels, so "Biodegradable" was still clipped.
+
+   Fix:
+   - Slightly reduce the waste summary title text.
+   - Give the text column a little more room.
+   - Keep the card layout and dashboard design unchanged.
+========================================================= */
+
+#dashboardSection .waste-summary-card {
+  grid-template-columns: 48px minmax(0, 1fr) !important;
+  gap: 11px !important;
+  padding: 14px 16px !important;
+}
+
+#dashboardSection .waste-summary-icon {
+  width: 48px !important;
+  height: 48px !important;
+  min-width: 48px !important;
+}
+
+#dashboardSection .waste-summary-card > div:last-child,
+#dashboardSection .waste-summary-card .waste-summary-content {
+  min-width: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow: visible !important;
+}
+
+#dashboardSection .waste-summary-card strong {
+  font-size: 30px !important;
+  line-height: 0.95 !important;
+  letter-spacing: -0.055em !important;
+}
+
+#dashboardSection .waste-summary-card span,
+#dashboardSection .waste-summary-card .card-title,
+#dashboardSection .waste-summary-card .metric-title,
+#dashboardSection .waste-summary-card .summary-title {
+  display: block !important;
+
+  width: 100% !important;
+  max-width: 100% !important;
+
+  margin: 0 !important;
+
+  font-size: 11.2px !important;
+  font-weight: 900 !important;
+  line-height: 1.02 !important;
+  letter-spacing: -0.55px !important;
+
+  white-space: nowrap !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  overflow-wrap: normal !important;
+  word-break: keep-all !important;
+}
+
+#dashboardSection .waste-summary-card small {
+  font-size: 11.2px !important;
+  line-height: 1.1 !important;
+  white-space: nowrap !important;
+}
+
+@media (max-width: 700px) {
+  #dashboardSection .waste-summary-card {
+    grid-template-columns: 50px minmax(0, 1fr) !important;
+    gap: 12px !important;
+    padding: 15px 16px !important;
+  }
+
+  #dashboardSection .waste-summary-card span,
+  #dashboardSection .waste-summary-card .card-title,
+  #dashboardSection .waste-summary-card .metric-title,
+  #dashboardSection .waste-summary-card .summary-title {
+    font-size: 13px !important;
+    letter-spacing: -0.2px !important;
+    white-space: normal !important;
+  }
+}
+
