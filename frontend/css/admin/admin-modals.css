@@ -404,6 +404,714 @@
 }
 
 /* =========================
+   VALIDATION REPORT PREMIUM UI REFRESH
+   File: css/admin/admin-modals.css
+
+   Design target:
+   - Closer to the provided reference image
+   - Professional report-card layout
+   - Icon-style information tiles
+   - Cleaner header actions
+   - Better signature/footer area
+========================= */
+
+/* Modal shell */
+#validationDetailsModal {
+  z-index: 130000 !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 22px !important;
+  background: rgba(15, 23, 42, 0.72) !important;
+}
+
+#validationDetailsModal.hidden {
+  display: none !important;
+}
+
+#validationDetailsModal:not(.hidden) {
+  display: flex !important;
+}
+
+#validationDetailsModal .report-modal {
+  width: min(1060px, 94vw) !important;
+  max-height: 92vh !important;
+  max-height: 92dvh !important;
+
+  display: flex !important;
+  flex-direction: column !important;
+
+  padding: 0 !important;
+  overflow: hidden !important;
+
+  border: 1px solid rgba(226, 232, 240, 0.95) !important;
+  border-radius: 24px !important;
+  background: #ffffff !important;
+
+  box-shadow:
+    0 34px 90px rgba(15, 23, 42, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9) !important;
+}
+
+/* Report top header */
+#validationDetailsModal .report-header {
+  min-height: 84px !important;
+
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 18px !important;
+
+  padding: 18px 24px !important;
+
+  border-bottom: 1px solid #e6ebf1 !important;
+  background:
+    radial-gradient(circle at 7% 0%, rgba(34, 197, 94, 0.10), transparent 34%),
+    linear-gradient(180deg, #ffffff 0%, #fbfdff 100%) !important;
+}
+
+#validationDetailsModal .report-header > div:first-child {
+  position: relative !important;
+  min-height: 54px !important;
+  padding-left: 64px !important;
+
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+}
+
+#validationDetailsModal .report-header > div:first-child::before {
+  content: "♻" !important;
+
+  position: absolute !important;
+  left: 0 !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+
+  width: 52px !important;
+  height: 52px !important;
+
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+
+  border: 1px solid #bbf7d0 !important;
+  border-radius: 18px !important;
+
+  background:
+    linear-gradient(180deg, #ecfdf5 0%, #dcfce7 100%) !important;
+  color: #047857 !important;
+
+  font-size: 26px !important;
+  font-weight: 900 !important;
+
+  box-shadow: 0 14px 28px rgba(22, 163, 74, 0.12) !important;
+}
+
+#validationDetailsModal .report-header h2 {
+  margin: 0 !important;
+
+  color: #064e3b !important;
+
+  font-size: 22px !important;
+  font-weight: 950 !important;
+  line-height: 1.05 !important;
+  letter-spacing: -0.45px !important;
+}
+
+#validationDetailsModal .report-header p {
+  margin: 5px 0 0 !important;
+
+  color: #64748b !important;
+
+  font-size: 13px !important;
+  font-weight: 650 !important;
+}
+
+/* Header actions */
+#validationDetailsModal .report-actions {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 10px !important;
+}
+
+#validationDetailsModal .print-btn {
+  min-width: 86px !important;
+  height: 42px !important;
+
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px !important;
+
+  border: 1px solid #047857 !important;
+  border-radius: 12px !important;
+
+  background: linear-gradient(135deg, #047857, #15803d) !important;
+  color: #ffffff !important;
+
+  font-size: 13px !important;
+  font-weight: 900 !important;
+
+  box-shadow: 0 12px 26px rgba(5, 150, 105, 0.20) !important;
+  cursor: pointer !important;
+}
+
+#validationDetailsModal .print-btn::before {
+  content: "▣" !important;
+  font-size: 13px !important;
+  line-height: 1 !important;
+}
+
+#validationDetailsModal .report-actions .modal-close-btn,
+#validationDetailsModal .modal-close-btn {
+  width: 48px !important;
+  height: 48px !important;
+
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+
+  border: none !important;
+  border-radius: 999px !important;
+
+  background: #f1f5f9 !important;
+  color: #475569 !important;
+
+  font-size: 24px !important;
+  font-weight: 900 !important;
+  line-height: 1 !important;
+
+  cursor: pointer !important;
+}
+
+/* Body layout */
+#validationDetailsModal .report-body {
+  flex: 1 !important;
+  overflow-y: auto !important;
+
+  padding: 20px 28px 24px !important;
+
+  background:
+    radial-gradient(circle at 50% 26%, rgba(34, 197, 94, 0.045), transparent 35%),
+    #ffffff !important;
+}
+
+#validationDetailsModal .report-title {
+  position: relative !important;
+
+  display: grid !important;
+  justify-items: center !important;
+  gap: 4px !important;
+
+  padding: 0 0 18px !important;
+  margin: 0 0 18px !important;
+
+  border-bottom: 1px solid #e8eef5 !important;
+}
+
+#validationDetailsModal .report-title h3 {
+  margin: 0 !important;
+
+  color: #111827 !important;
+
+  font-size: 22px !important;
+  font-weight: 950 !important;
+  line-height: 1.1 !important;
+  letter-spacing: -0.45px !important;
+}
+
+#validationDetailsModal .report-title p {
+  margin: 0 !important;
+
+  color: #64748b !important;
+
+  font-size: 12px !important;
+  font-weight: 750 !important;
+}
+
+/* Status pill on title area when a validation status exists */
+#validationDetailsModal .report-title::after {
+  content: "✓ Validated" !important;
+
+  position: absolute !important;
+  right: 0 !important;
+  top: 0 !important;
+
+  min-height: 32px !important;
+
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+
+  padding: 0 14px !important;
+
+  border: 1px solid #bbf7d0 !important;
+  border-radius: 999px !important;
+
+  background: #dcfce7 !important;
+  color: #047857 !important;
+
+  font-size: 12px !important;
+  font-weight: 900 !important;
+}
+
+/* Sections */
+#validationDetailsModal .report-section {
+  margin: 0 0 18px !important;
+}
+
+#validationDetailsModal .report-section h4 {
+  position: relative !important;
+
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+
+  margin: 0 0 10px !important;
+  padding: 0 0 9px !important;
+
+  border-bottom: 1px solid #e8eef5 !important;
+
+  color: #047857 !important;
+
+  font-size: 14px !important;
+  font-weight: 950 !important;
+}
+
+#validationDetailsModal .report-section h4::before {
+  width: 22px !important;
+  height: 22px !important;
+
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+
+  border-radius: 8px !important;
+  background: #ecfdf5 !important;
+  color: #047857 !important;
+
+  font-size: 13px !important;
+  font-weight: 900 !important;
+}
+
+#validationDetailsModal .report-section:nth-of-type(1) h4::before {
+  content: "ⓘ" !important;
+}
+
+#validationDetailsModal .report-section:nth-of-type(2) h4::before {
+  content: "➤" !important;
+}
+
+#validationDetailsModal .report-section:nth-of-type(3) h4::before {
+  content: "✓" !important;
+}
+
+/* Tile grids */
+#validationDetailsModal .report-grid {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+}
+
+#validationDetailsModal .report-section:nth-of-type(3) .report-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+}
+
+#validationDetailsModal .report-grid > div {
+  position: relative !important;
+
+  min-height: 78px !important;
+
+  display: grid !important;
+  align-content: center !important;
+  gap: 4px !important;
+
+  padding: 14px 14px 14px 58px !important;
+
+  border: 1px solid #e3eaf2 !important;
+  border-radius: 14px !important;
+
+  background:
+    linear-gradient(180deg, #ffffff 0%, #f8fafc 100%) !important;
+
+  box-shadow:
+    0 12px 26px rgba(15, 23, 42, 0.045),
+    inset 0 1px 0 rgba(255, 255, 255, 0.86) !important;
+}
+
+#validationDetailsModal .report-grid > div::before {
+  content: "•" !important;
+
+  position: absolute !important;
+  left: 15px !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+
+  width: 32px !important;
+  height: 32px !important;
+
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+
+  border-radius: 12px !important;
+
+  background: #ecfdf5 !important;
+  color: #047857 !important;
+
+  font-size: 17px !important;
+  font-weight: 950 !important;
+}
+
+/* Record information icons */
+#validationDetailsModal .report-section:nth-of-type(1) .report-grid > div:nth-child(1)::before {
+  content: "♙" !important;
+}
+
+#validationDetailsModal .report-section:nth-of-type(1) .report-grid > div:nth-child(2)::before {
+  content: "⌖" !important;
+}
+
+#validationDetailsModal .report-section:nth-of-type(1) .report-grid > div:nth-child(3)::before {
+  content: "▣" !important;
+}
+
+#validationDetailsModal .report-section:nth-of-type(1) .report-grid > div:nth-child(4)::before {
+  content: "♜" !important;
+  background: #dcfce7 !important;
+}
+
+/* Waste summary color accents */
+#validationDetailsModal .report-section:nth-of-type(2) .report-grid > div:nth-child(1) {
+  border-color: #bbf7d0 !important;
+  background: #f0fdf4 !important;
+}
+
+#validationDetailsModal .report-section:nth-of-type(2) .report-grid > div:nth-child(1)::before {
+  content: "♻" !important;
+  background: #dcfce7 !important;
+  color: #15803d !important;
+}
+
+#validationDetailsModal .report-section:nth-of-type(2) .report-grid > div:nth-child(2) {
+  border-color: #bfdbfe !important;
+  background: #eff6ff !important;
+}
+
+#validationDetailsModal .report-section:nth-of-type(2) .report-grid > div:nth-child(2)::before {
+  content: "♲" !important;
+  background: #dbeafe !important;
+  color: #2563eb !important;
+}
+
+#validationDetailsModal .report-section:nth-of-type(2) .report-grid > div:nth-child(3) {
+  border-color: #fed7aa !important;
+  background: #fff7ed !important;
+}
+
+#validationDetailsModal .report-section:nth-of-type(2) .report-grid > div:nth-child(3)::before {
+  content: "▢" !important;
+  background: #ffedd5 !important;
+  color: #ea580c !important;
+}
+
+#validationDetailsModal .report-section:nth-of-type(2) .report-grid > div:nth-child(4) {
+  border-color: #ddd6fe !important;
+  background: #faf5ff !important;
+}
+
+#validationDetailsModal .report-section:nth-of-type(2) .report-grid > div:nth-child(4)::before {
+  content: "✦" !important;
+  background: #f3e8ff !important;
+  color: #7e22ce !important;
+}
+
+/* Validation details icons */
+#validationDetailsModal .report-section:nth-of-type(3) .report-grid > div:nth-child(1)::before {
+  content: "♙" !important;
+}
+
+#validationDetailsModal .report-section:nth-of-type(3) .report-grid > div:nth-child(2)::before {
+  content: "▣" !important;
+}
+
+#validationDetailsModal .report-section:nth-of-type(3) .report-grid > div:nth-child(3)::before {
+  content: "✓" !important;
+}
+
+#validationDetailsModal .report-section:nth-of-type(3) .report-grid > div:nth-child(4)::before {
+  content: "☷" !important;
+}
+
+#validationDetailsModal .report-section:nth-of-type(3) .report-grid > div:nth-child(5)::before {
+  content: "☰" !important;
+}
+
+#validationDetailsModal .report-grid strong,
+#validationDetailsModal .report-grid b {
+  display: block !important;
+
+  margin: 0 !important;
+
+  color: #64748b !important;
+
+  font-size: 11px !important;
+  font-weight: 850 !important;
+  line-height: 1.1 !important;
+}
+
+#validationDetailsModal .report-grid span,
+#validationDetailsModal .report-grid p,
+#validationDetailsModal .report-grid div {
+  color: #0f172a !important;
+
+  font-size: 13px !important;
+  font-weight: 900 !important;
+  line-height: 1.18 !important;
+}
+
+#validationDetailsModal .report-section:nth-of-type(2) .report-grid span,
+#validationDetailsModal .report-section:nth-of-type(2) .report-grid p,
+#validationDetailsModal .report-section:nth-of-type(2) .report-grid div {
+  font-size: 18px !important;
+  font-weight: 950 !important;
+}
+
+#validationDetailsModal .report-section:nth-of-type(2) .report-grid > div:nth-child(1) span,
+#validationDetailsModal .report-section:nth-of-type(2) .report-grid > div:nth-child(1) p,
+#validationDetailsModal .report-section:nth-of-type(2) .report-grid > div:nth-child(1) div {
+  color: #15803d !important;
+}
+
+#validationDetailsModal .report-section:nth-of-type(2) .report-grid > div:nth-child(2) span,
+#validationDetailsModal .report-section:nth-of-type(2) .report-grid > div:nth-child(2) p,
+#validationDetailsModal .report-section:nth-of-type(2) .report-grid > div:nth-child(2) div {
+  color: #2563eb !important;
+}
+
+#validationDetailsModal .report-section:nth-of-type(2) .report-grid > div:nth-child(3) span,
+#validationDetailsModal .report-section:nth-of-type(2) .report-grid > div:nth-child(3) p,
+#validationDetailsModal .report-section:nth-of-type(2) .report-grid > div:nth-child(3) div {
+  color: #ea580c !important;
+}
+
+#validationDetailsModal .report-section:nth-of-type(2) .report-grid > div:nth-child(4) span,
+#validationDetailsModal .report-section:nth-of-type(2) .report-grid > div:nth-child(4) p,
+#validationDetailsModal .report-section:nth-of-type(2) .report-grid > div:nth-child(4) div {
+  color: #7e22ce !important;
+}
+
+/* Footer / signature */
+#validationDetailsModal .report-footer {
+  min-height: 92px !important;
+
+  display: flex !important;
+  align-items: flex-end !important;
+  justify-content: space-between !important;
+  gap: 24px !important;
+
+  margin-top: 20px !important;
+  padding: 16px 0 0 !important;
+
+  border-top: 1px solid #e8eef5 !important;
+
+  color: #64748b !important;
+
+  font-size: 12px !important;
+}
+
+#validationDetailsModal .report-footer::before {
+  content: "✓  System-generated report for administrative use." !important;
+
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+
+  color: #64748b !important;
+
+  font-size: 12px !important;
+  font-weight: 750 !important;
+}
+
+#validationDetailsModal #reportFooterValidator,
+#validationDetailsModal .report-signature-block {
+  width: 260px !important;
+
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+
+  margin-left: auto !important;
+}
+
+#validationDetailsModal .report-signature-caption {
+  width: 260px !important;
+
+  margin: 0 0 4px !important;
+
+  text-align: center !important;
+
+  color: #334155 !important;
+
+  font-size: 11px !important;
+  font-weight: 750 !important;
+}
+
+#validationDetailsModal .report-signature-box {
+  width: 260px !important;
+  height: 50px !important;
+
+  display: flex !important;
+  align-items: flex-end !important;
+  justify-content: center !important;
+
+  overflow: hidden !important;
+}
+
+#validationDetailsModal .report-signature-image {
+  max-width: 150px !important;
+  max-height: 48px !important;
+
+  object-fit: contain !important;
+  display: block !important;
+}
+
+#validationDetailsModal .report-signature-line {
+  width: 260px !important;
+  height: 1px !important;
+
+  margin: 0 !important;
+
+  background: #047857 !important;
+}
+
+#validationDetailsModal .report-signature-name {
+  width: 260px !important;
+
+  margin-top: 6px !important;
+
+  text-align: center !important;
+
+  color: #111827 !important;
+
+  font-size: 13px !important;
+  font-weight: 950 !important;
+}
+
+/* Keep toast above normal modals but below report modal */
+.toast {
+  z-index: 140000 !important;
+}
+
+/* Responsive report */
+@media (max-width: 1000px) {
+  #validationDetailsModal .report-grid,
+  #validationDetailsModal .report-section:nth-of-type(3) .report-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  #validationDetailsModal .report-title::after {
+    position: static !important;
+    margin-top: 8px !important;
+  }
+}
+
+@media (max-width: 700px) {
+  #validationDetailsModal {
+    padding: 12px !important;
+    align-items: flex-start !important;
+  }
+
+  #validationDetailsModal .report-modal {
+    width: 96vw !important;
+    max-height: 94dvh !important;
+    border-radius: 20px !important;
+  }
+
+  #validationDetailsModal .report-header {
+    align-items: flex-start !important;
+    flex-direction: column !important;
+    padding: 16px !important;
+  }
+
+  #validationDetailsModal .report-header > div:first-child {
+    padding-left: 56px !important;
+  }
+
+  #validationDetailsModal .report-header > div:first-child::before {
+    width: 46px !important;
+    height: 46px !important;
+    border-radius: 15px !important;
+  }
+
+  #validationDetailsModal .report-actions {
+    width: 100% !important;
+  }
+
+  #validationDetailsModal .print-btn {
+    flex: 1 !important;
+  }
+
+  #validationDetailsModal .report-body {
+    padding: 16px !important;
+  }
+
+  #validationDetailsModal .report-grid,
+  #validationDetailsModal .report-section:nth-of-type(3) .report-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  #validationDetailsModal .report-grid > div {
+    min-height: 72px !important;
+  }
+
+  #validationDetailsModal .report-footer {
+    align-items: stretch !important;
+    flex-direction: column !important;
+  }
+
+  #validationDetailsModal .report-footer::before {
+    justify-content: center !important;
+    text-align: center !important;
+  }
+
+  #validationDetailsModal #reportFooterValidator,
+  #validationDetailsModal .report-signature-block {
+    width: 100% !important;
+  }
+}
+
+/* Print keeps report clean */
+@media print {
+  #validationDetailsModal {
+    position: static !important;
+    display: block !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+  }
+
+  #validationDetailsModal .report-modal {
+    width: 100% !important;
+    max-height: none !important;
+    overflow: visible !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+
+  #validationDetailsModal .report-body {
+    overflow: visible !important;
+  }
+
+  #validationDetailsModal .report-actions,
+  #validationDetailsModal .modal-close-btn,
+  #validationDetailsModal .print-btn {
+    display: none !important;
+  }
+}
+
+
+/* =========================
    CALENDAR ACTIVITY MODAL LAYER FIX
    File: css/admin/admin-modals.css
 
@@ -445,7 +1153,6 @@
   display: flex !important;
 }
 
-/* Calendar overlay */
 #calendarActivitiesModal .custom-modal-overlay,
 #calendarAddActivityModal .custom-modal-overlay {
   position: absolute !important;
@@ -458,7 +1165,6 @@
   -webkit-backdrop-filter: blur(4px) !important;
 }
 
-/* Calendar main modal box */
 #calendarActivitiesModal .custom-modal-content,
 #calendarActivitiesModal .calendar-pro-content,
 #calendarActivitiesModal .calendar-main-report-content,
@@ -485,7 +1191,6 @@
   border-radius: 24px !important;
 }
 
-/* Calendar scrollable body */
 #calendarActivitiesModal .custom-modal-body,
 #calendarActivitiesModal .calendar-pro-body,
 #calendarActivitiesModal .calendar-main-report-body,
@@ -496,19 +1201,11 @@
   max-height: calc(90dvh - 96px) !important;
 }
 
-/* Keep sidebar below calendar modal while calendar is open */
 body:has(#calendarActivitiesModal:not(.hidden)) .dashboard-sidebar,
 body:has(#calendarAddActivityModal:not(.hidden)) .dashboard-sidebar {
   z-index: 10000 !important;
 }
 
-/* Keep topbar/sidebar buttons below calendar modal */
-body:has(#calendarActivitiesModal:not(.hidden)) .sidebar-backdrop,
-body:has(#calendarAddActivityModal:not(.hidden)) .sidebar-backdrop {
-  z-index: 9999 !important;
-}
-
-/* Tablet / mobile calendar modal */
 @media (max-width: 992px) {
   #calendarActivitiesModal,
   #calendarAddActivityModal {
@@ -528,45 +1225,578 @@ body:has(#calendarAddActivityModal:not(.hidden)) .sidebar-backdrop {
     max-width: 96vw !important;
     max-height: 92dvh !important;
   }
+}
 
-  #calendarActivitiesModal .custom-modal-body,
-  #calendarActivitiesModal .calendar-pro-body,
-  #calendarActivitiesModal .calendar-main-report-body,
-  #calendarAddActivityModal .custom-modal-body,
-  #calendarAddActivityModal .calendar-pro-body,
-  #calendarAddActivityModal .calendar-main-report-body {
-    max-height: calc(92dvh - 92px) !important;
+/* =========================
+   VALIDATION REPORT TILE FONT SIZE REFINEMENT
+   File: css/admin/admin-modals.css
+
+   Purpose:
+   - Slightly reduce the large text inside validation report tiles.
+   - Target especially Record Information tiles:
+     Name, Type, Period, Grand Total.
+========================= */
+
+/* Record Information tile labels */
+#validationDetailsModal .report-section:nth-of-type(1) .report-grid strong,
+#validationDetailsModal .report-section:nth-of-type(1) .report-grid b {
+  font-size: 10.5px !important;
+  line-height: 1.05 !important;
+  letter-spacing: -0.15px !important;
+}
+
+/* Record Information tile values */
+#validationDetailsModal .report-section:nth-of-type(1) .report-grid span,
+#validationDetailsModal .report-section:nth-of-type(1) .report-grid p,
+#validationDetailsModal .report-section:nth-of-type(1) .report-grid div {
+  font-size: 15px !important;
+  line-height: 1.12 !important;
+  letter-spacing: -0.35px !important;
+}
+
+/* Period can be longer, so keep it smaller and readable */
+#validationDetailsModal .report-section:nth-of-type(1) .report-grid > div:nth-child(3) span,
+#validationDetailsModal .report-section:nth-of-type(1) .report-grid > div:nth-child(3) p,
+#validationDetailsModal .report-section:nth-of-type(1) .report-grid > div:nth-child(3) div {
+  font-size: 14px !important;
+  line-height: 1.12 !important;
+  letter-spacing: -0.45px !important;
+}
+
+/* Grand Total should still look emphasized, but not oversized */
+#validationDetailsModal .report-section:nth-of-type(1) .report-grid > div:nth-child(4) span,
+#validationDetailsModal .report-section:nth-of-type(1) .report-grid > div:nth-child(4) p,
+#validationDetailsModal .report-section:nth-of-type(1) .report-grid > div:nth-child(4) div {
+  font-size: 15.5px !important;
+  line-height: 1.08 !important;
+  letter-spacing: -0.35px !important;
+}
+
+/* Slightly reduce card icon size/padding so the tile breathes better */
+#validationDetailsModal .report-section:nth-of-type(1) .report-grid > div {
+  min-height: 72px !important;
+  padding: 13px 13px 13px 54px !important;
+}
+
+#validationDetailsModal .report-section:nth-of-type(1) .report-grid > div::before {
+  left: 14px !important;
+  width: 30px !important;
+  height: 30px !important;
+  border-radius: 11px !important;
+  font-size: 15px !important;
+}
+
+/* Keep Waste Summary numbers balanced too */
+#validationDetailsModal .report-section:nth-of-type(2) .report-grid span,
+#validationDetailsModal .report-section:nth-of-type(2) .report-grid p,
+#validationDetailsModal .report-section:nth-of-type(2) .report-grid div {
+  font-size: 16px !important;
+  line-height: 1.12 !important;
+}
+
+/* Mobile remains readable */
+@media (max-width: 700px) {
+  #validationDetailsModal .report-section:nth-of-type(1) .report-grid span,
+  #validationDetailsModal .report-section:nth-of-type(1) .report-grid p,
+  #validationDetailsModal .report-section:nth-of-type(1) .report-grid div,
+  #validationDetailsModal .report-section:nth-of-type(2) .report-grid span,
+  #validationDetailsModal .report-section:nth-of-type(2) .report-grid p,
+  #validationDetailsModal .report-section:nth-of-type(2) .report-grid div {
+    font-size: 14px !important;
   }
 }
 
-/* Small mobile calendar modal */
-@media (max-width: 480px) {
-  #calendarActivitiesModal,
-  #calendarAddActivityModal {
-    padding: 10px !important;
+/* =========================
+   VALIDATION REPORT PERIOD CLEAN FIT FIX
+   File: css/admin/admin-modals.css
+
+   Problem:
+   - The Period card looked awkward because the date range was forced
+     too small but still wrapped.
+   - The previous nth-of-type selector was not reliable because
+     report-title is also a div.
+
+   Fix:
+   - Target the first report section using .report-title + .report-section.
+   - Make the Period column wider instead of making the text ugly.
+   - Keep the Period value in one clean line.
+========================= */
+
+/* Record Information grid: make Period card wider */
+#validationDetailsModal .report-title + .report-section .report-grid {
+  grid-template-columns:
+    minmax(0, 0.95fr)
+    minmax(0, 0.95fr)
+    minmax(285px, 1.30fr)
+    minmax(0, 0.95fr) !important;
+}
+
+/* Period card only */
+#validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(3) {
+  min-width: 285px !important;
+  min-height: 76px !important;
+
+  padding: 13px 12px 13px 52px !important;
+
+  overflow: visible !important;
+  white-space: nowrap !important;
+}
+
+/* Period icon */
+#validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(3)::before {
+  left: 14px !important;
+  width: 30px !important;
+  height: 30px !important;
+
+  border-radius: 11px !important;
+  font-size: 14px !important;
+}
+
+/* Period label */
+#validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(3) strong,
+#validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(3) b {
+  display: block !important;
+
+  margin: 0 0 4px !important;
+
+  font-size: 11px !important;
+  line-height: 1 !important;
+  letter-spacing: -0.2px !important;
+
+  white-space: nowrap !important;
+}
+
+/* Period value: support span, p, div, or nested text wrapper */
+#validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(3) span,
+#validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(3) p,
+#validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(3) div,
+#validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(3) *:not(strong):not(b) {
+  display: block !important;
+
+  width: 100% !important;
+  max-width: 100% !important;
+
+  margin: 0 !important;
+  padding: 0 !important;
+
+  color: #ea580c !important;
+
+  font-size: 13px !important;
+  font-weight: 950 !important;
+  line-height: 1.05 !important;
+  letter-spacing: -0.45px !important;
+
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+  overflow-wrap: normal !important;
+
+  overflow: visible !important;
+  text-overflow: clip !important;
+}
+
+/* Fallback for direct text nodes inside the Period tile */
+#validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(3) {
+  color: #ea580c !important;
+  font-size: 13px !important;
+  line-height: 1.05 !important;
+  letter-spacing: -0.45px !important;
+}
+
+/*
+  Keep other Record Information values balanced after Period column gets wider.
+*/
+#validationDetailsModal .report-title + .report-section .report-grid > div:not(:nth-child(3)) span,
+#validationDetailsModal .report-title + .report-section .report-grid > div:not(:nth-child(3)) p,
+#validationDetailsModal .report-title + .report-section .report-grid > div:not(:nth-child(3)) div {
+  font-size: 15px !important;
+  line-height: 1.12 !important;
+}
+
+/* Tablet: use two columns so Period has enough room */
+@media (max-width: 1000px) {
+  #validationDetailsModal .report-title + .report-section .report-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 
-  #calendarActivitiesModal .custom-modal-content,
-  #calendarActivitiesModal .calendar-pro-content,
-  #calendarActivitiesModal .calendar-main-report-content,
-  #calendarActivitiesModal .other-modal-content,
-  #calendarAddActivityModal .custom-modal-content,
-  #calendarAddActivityModal .calendar-pro-content,
-  #calendarAddActivityModal .calendar-main-report-content,
-  #calendarAddActivityModal .other-modal-content {
-    width: 98vw !important;
-    max-width: 98vw !important;
-    max-height: 94dvh !important;
-    border-radius: 18px !important;
+  #validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(3) {
+    min-width: 0 !important;
   }
 
-  #calendarActivitiesModal .custom-modal-body,
-  #calendarActivitiesModal .calendar-pro-body,
-  #calendarActivitiesModal .calendar-main-report-body,
-  #calendarAddActivityModal .custom-modal-body,
-  #calendarAddActivityModal .calendar-pro-body,
-  #calendarAddActivityModal .calendar-main-report-body {
-    max-height: calc(94dvh - 86px) !important;
+  #validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(3) span,
+  #validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(3) p,
+  #validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(3) div,
+  #validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(3) *:not(strong):not(b) {
+    font-size: 13px !important;
+    letter-spacing: -0.35px !important;
+  }
+}
+
+/* Mobile: allow safe wrapping if screen is too narrow */
+@media (max-width: 560px) {
+  #validationDetailsModal .report-title + .report-section .report-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  #validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(3) span,
+  #validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(3) p,
+  #validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(3) div,
+  #validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(3) *:not(strong):not(b) {
+    white-space: normal !important;
+    line-height: 1.15 !important;
+  }
+}
+
+/* =========================
+   VALIDATION REPORT FINAL TILE BALANCE FIX
+   File: css/admin/admin-modals.css
+
+   Fixes based on current screenshot:
+   - Grand Total text was too large / clipped.
+   - Validated At date was hidden behind the icon / not fully visible.
+   - Validation Details long values need more readable spacing.
+   - Period stays clean in one line.
+========================= */
+
+/* -------------------------
+   RECORD INFORMATION GRID
+------------------------- */
+
+/* Balance columns: Period gets more space, Grand Total still gets enough room */
+#validationDetailsModal .report-title + .report-section .report-grid {
+  grid-template-columns:
+    minmax(0, 0.95fr)
+    minmax(0, 0.95fr)
+    minmax(270px, 1.22fr)
+    minmax(220px, 1fr) !important;
+}
+
+/* Record Information cards: slightly tighter */
+#validationDetailsModal .report-title + .report-section .report-grid > div {
+  min-width: 0 !important;
+  min-height: 74px !important;
+  padding: 12px 12px 12px 52px !important;
+}
+
+/* Grand Total card: prevent clipping */
+#validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(4) {
+  min-width: 220px !important;
+  padding-right: 12px !important;
+  overflow: visible !important;
+}
+
+/* Grand Total label */
+#validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(4) strong,
+#validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(4) b {
+  font-size: 11px !important;
+  line-height: 1 !important;
+  letter-spacing: -0.2px !important;
+  white-space: nowrap !important;
+}
+
+/* Grand Total value */
+#validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(4) span,
+#validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(4) p,
+#validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(4) div,
+#validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(4) *:not(strong):not(b) {
+  font-size: 15px !important;
+  line-height: 1.08 !important;
+  letter-spacing: -0.25px !important;
+  white-space: nowrap !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+}
+
+/* Period card: clean, not oversized */
+#validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(3) {
+  min-width: 270px !important;
+  padding-left: 50px !important;
+  padding-right: 10px !important;
+}
+
+/* Period value */
+#validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(3) span,
+#validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(3) p,
+#validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(3) div,
+#validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(3) *:not(strong):not(b) {
+  font-size: 12.3px !important;
+  line-height: 1.05 !important;
+  letter-spacing: -0.55px !important;
+  white-space: nowrap !important;
+  overflow: visible !important;
+}
+
+/* -------------------------
+   WASTE SUMMARY GRID
+------------------------- */
+
+#validationDetailsModal .report-section:nth-of-type(2) .report-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+}
+
+#validationDetailsModal .report-section:nth-of-type(2) .report-grid > div {
+  min-height: 72px !important;
+  padding: 12px 14px 12px 54px !important;
+}
+
+#validationDetailsModal .report-section:nth-of-type(2) .report-grid strong,
+#validationDetailsModal .report-section:nth-of-type(2) .report-grid b {
+  font-size: 11px !important;
+  line-height: 1.05 !important;
+}
+
+#validationDetailsModal .report-section:nth-of-type(2) .report-grid span,
+#validationDetailsModal .report-section:nth-of-type(2) .report-grid p,
+#validationDetailsModal .report-section:nth-of-type(2) .report-grid div {
+  font-size: 13px !important;
+  line-height: 1.15 !important;
+  letter-spacing: -0.15px !important;
+}
+
+/* -------------------------
+   VALIDATION DETAILS GRID
+------------------------- */
+
+/*
+  Make Validated At wider because it contains a full date/time.
+  This section is the second .report-section after Waste Summary.
+*/
+#validationDetailsModal .report-title + .report-section + .report-section + .report-section .report-grid {
+  grid-template-columns:
+    minmax(0, 0.9fr)
+    minmax(300px, 1.28fr)
+    minmax(0, 1fr)
+    minmax(0, 1fr) !important;
+}
+
+/* Validation details cards */
+#validationDetailsModal .report-title + .report-section + .report-section + .report-section .report-grid > div {
+  min-width: 0 !important;
+  min-height: 72px !important;
+
+  padding: 12px 12px 12px 50px !important;
+
+  overflow: visible !important;
+}
+
+/* Validation details icons smaller so they do not cover text */
+#validationDetailsModal .report-title + .report-section + .report-section + .report-section .report-grid > div::before {
+  left: 12px !important;
+  width: 28px !important;
+  height: 28px !important;
+  border-radius: 11px !important;
+  font-size: 13px !important;
+}
+
+/* Validation details labels */
+#validationDetailsModal .report-title + .report-section + .report-section + .report-section .report-grid strong,
+#validationDetailsModal .report-title + .report-section + .report-section + .report-section .report-grid b {
+  font-size: 11px !important;
+  line-height: 1.05 !important;
+  letter-spacing: -0.15px !important;
+  white-space: nowrap !important;
+}
+
+/* Validation details values */
+#validationDetailsModal .report-title + .report-section + .report-section + .report-section .report-grid span,
+#validationDetailsModal .report-title + .report-section + .report-section + .report-section .report-grid p,
+#validationDetailsModal .report-title + .report-section + .report-section + .report-section .report-grid div,
+#validationDetailsModal .report-title + .report-section + .report-section + .report-section .report-grid *:not(strong):not(b) {
+  font-size: 13px !important;
+  line-height: 1.15 !important;
+  letter-spacing: -0.2px !important;
+
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+  overflow-wrap: normal !important;
+
+  overflow: visible !important;
+  text-overflow: clip !important;
+}
+
+/* Validated At value: make sure complete date is visible */
+#validationDetailsModal .report-title + .report-section + .report-section + .report-section .report-grid > div:nth-child(2) {
+  min-width: 300px !important;
+  padding-left: 46px !important;
+  padding-right: 8px !important;
+}
+
+#validationDetailsModal .report-title + .report-section + .report-section + .report-section .report-grid > div:nth-child(2) span,
+#validationDetailsModal .report-title + .report-section + .report-section + .report-section .report-grid > div:nth-child(2) p,
+#validationDetailsModal .report-title + .report-section + .report-section + .report-section .report-grid > div:nth-child(2) div,
+#validationDetailsModal .report-title + .report-section + .report-section + .report-section .report-grid > div:nth-child(2) *:not(strong):not(b) {
+  font-size: 11.6px !important;
+  line-height: 1.08 !important;
+  letter-spacing: -0.45px !important;
+  white-space: nowrap !important;
+}
+
+/* Validation Status should look like a small readable value, not oversized */
+#validationDetailsModal .report-title + .report-section + .report-section + .report-section .report-grid > div:nth-child(3) span,
+#validationDetailsModal .report-title + .report-section + .report-section + .report-section .report-grid > div:nth-child(3) p,
+#validationDetailsModal .report-title + .report-section + .report-section + .report-section .report-grid > div:nth-child(3) div,
+#validationDetailsModal .report-title + .report-section + .report-section + .report-section .report-grid > div:nth-child(3) *:not(strong):not(b) {
+  font-size: 12.6px !important;
+  letter-spacing: -0.2px !important;
+}
+
+/* Remarks card should not stretch weirdly */
+#validationDetailsModal .report-title + .report-section + .report-section + .report-section .report-grid > div:nth-child(5) {
+  min-width: 0 !important;
+}
+
+/* -------------------------
+   RESPONSIVE FALLBACKS
+------------------------- */
+
+@media (max-width: 1100px) {
+  #validationDetailsModal .report-title + .report-section .report-grid,
+  #validationDetailsModal .report-title + .report-section + .report-section .report-grid,
+  #validationDetailsModal .report-title + .report-section + .report-section + .report-section .report-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  #validationDetailsModal .report-title + .report-section .report-grid > div,
+  #validationDetailsModal .report-title + .report-section + .report-section + .report-section .report-grid > div,
+  #validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(3),
+  #validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(4),
+  #validationDetailsModal .report-title + .report-section + .report-section + .report-section .report-grid > div:nth-child(2) {
+    min-width: 0 !important;
+  }
+
+  #validationDetailsModal .report-title + .report-section + .report-section + .report-section .report-grid > div:nth-child(2) span,
+  #validationDetailsModal .report-title + .report-section + .report-section + .report-section .report-grid > div:nth-child(2) p,
+  #validationDetailsModal .report-title + .report-section + .report-section + .report-section .report-grid > div:nth-child(2) div,
+  #validationDetailsModal .report-title + .report-section + .report-section + .report-section .report-grid > div:nth-child(2) *:not(strong):not(b) {
+    font-size: 12px !important;
+  }
+}
+
+@media (max-width: 560px) {
+  #validationDetailsModal .report-title + .report-section .report-grid,
+  #validationDetailsModal .report-title + .report-section + .report-section .report-grid,
+  #validationDetailsModal .report-title + .report-section + .report-section + .report-section .report-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  #validationDetailsModal .report-title + .report-section .report-grid > div span,
+  #validationDetailsModal .report-title + .report-section .report-grid > div p,
+  #validationDetailsModal .report-title + .report-section .report-grid > div div,
+  #validationDetailsModal .report-title + .report-section + .report-section + .report-section .report-grid > div span,
+  #validationDetailsModal .report-title + .report-section + .report-section + .report-section .report-grid > div p,
+  #validationDetailsModal .report-title + .report-section + .report-section + .report-section .report-grid > div div {
+    white-space: normal !important;
+  }
+}
+
+/* =========================
+   VALIDATION REPORT GRAND TOTAL SMALLER FONT FIX
+   File: css/admin/admin-modals.css
+
+   Purpose:
+   - Make Grand Total text smaller instead of forcing the card wider.
+   - Prevent overlap with the Period card.
+   - Keep Period readable and one-line.
+========================= */
+
+/* Rebalance Record Information columns without forcing Grand Total too wide */
+#validationDetailsModal .report-title + .report-section .report-grid {
+  grid-template-columns:
+    minmax(0, 1fr)
+    minmax(0, 1fr)
+    minmax(250px, 1.18fr)
+    minmax(0, 0.90fr) !important;
+}
+
+/* Do not force Grand Total card width */
+#validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(4) {
+  min-width: 0 !important;
+  padding: 12px 10px 12px 48px !important;
+  overflow: hidden !important;
+}
+
+/* Slightly smaller Grand Total icon */
+#validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(4)::before {
+  left: 12px !important;
+  width: 28px !important;
+  height: 28px !important;
+  border-radius: 11px !important;
+  font-size: 13px !important;
+}
+
+/* Grand Total label */
+#validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(4) strong,
+#validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(4) b {
+  font-size: 10.5px !important;
+  line-height: 1 !important;
+  letter-spacing: -0.25px !important;
+  white-space: nowrap !important;
+}
+
+/* Grand Total value */
+#validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(4) span,
+#validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(4) p,
+#validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(4) div,
+#validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(4) *:not(strong):not(b) {
+  font-size: 12.6px !important;
+  line-height: 1.05 !important;
+  letter-spacing: -0.35px !important;
+  font-weight: 950 !important;
+
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+  overflow-wrap: normal !important;
+
+  overflow: hidden !important;
+  text-overflow: clip !important;
+}
+
+/* Period card keeps enough room but no overlap with Grand Total */
+#validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(3) {
+  min-width: 250px !important;
+  padding: 12px 9px 12px 48px !important;
+  overflow: hidden !important;
+}
+
+#validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(3)::before {
+  left: 12px !important;
+  width: 28px !important;
+  height: 28px !important;
+  border-radius: 11px !important;
+  font-size: 13px !important;
+}
+
+#validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(3) span,
+#validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(3) p,
+#validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(3) div,
+#validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(3) *:not(strong):not(b) {
+  font-size: 11.2px !important;
+  line-height: 1.05 !important;
+  letter-spacing: -0.65px !important;
+
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+  overflow-wrap: normal !important;
+
+  overflow: hidden !important;
+  text-overflow: clip !important;
+}
+
+/* Responsive safety */
+@media (max-width: 1100px) {
+  #validationDetailsModal .report-title + .report-section .report-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  #validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(3),
+  #validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(4) {
+    min-width: 0 !important;
+  }
+
+  #validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(4) span,
+  #validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(4) p,
+  #validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(4) div,
+  #validationDetailsModal .report-title + .report-section .report-grid > div:nth-child(4) *:not(strong):not(b) {
+    font-size: 13px !important;
   }
 }
 
