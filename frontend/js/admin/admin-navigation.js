@@ -27,6 +27,8 @@ function setPageTitleFromSection(sectionId) {
 }
 
 function showSection(sectionId) {
+  closeSidebarOtherMenu();
+
   document.querySelectorAll(".content-section").forEach((section) => {
     section.classList.toggle("active", section.id === sectionId);
   });
@@ -99,6 +101,8 @@ function closeAllAdminModalsOnNavigation() {
     otherTrigger.setAttribute("aria-expanded", "false");
   }
 
+  closeSidebarOtherMenu();
+
   /*
     Reset complaint/map selected state safely if variables exist.
     Wrapped in try blocks para hindi masira if wala yung module sa page.
@@ -127,6 +131,141 @@ function closeAllAdminModalsOnNavigation() {
     console.warn("currentComplaintResolution cleanup skipped:", error);
   }
 }
+
+
+// =========================
+// SIDEBAR OTHER MENU CLEANUP
+// =========================
+
+let sidebarOtherOriginalParent = null;
+let sidebarOtherPlaceholder = null;
+
+function getSidebarOtherElements() {
+  return {
+    otherGroup: document.getElementById("sidebarOtherGroup"),
+    otherTrigger: document.getElementById("sidebarOtherTrigger"),
+    otherMenu: document.getElementById("sidebarOtherMenu")
+  };
+}
+
+function closeSidebarOtherMenu() {
+  const { otherTrigger, otherMenu } = getSidebarOtherElements();
+
+  if (otherMenu) {
+    otherMenu.classList.add("hidden");
+    otherMenu.classList.remove("open", "show", "active");
+
+    otherMenu.style.removeProperty("--other-menu-left");
+    otherMenu.style.removeProperty("--other-menu-top");
+    otherMenu.style.removeProperty("left");
+    otherMenu.style.removeProperty("top");
+  }
+
+  if (otherTrigger) {
+    otherTrigger.setAttribute("aria-expanded", "false");
+  }
+}
+
+function mountSidebarOtherMenuForMode() {
+  const { otherGroup, otherMenu } = getSidebarOtherElements();
+
+  if (!otherGroup || !otherMenu) return;
+
+  if (!sidebarOtherOriginalParent) {
+    sidebarOtherOriginalParent = otherMenu.parentElement;
+  }
+
+  if (!sidebarOtherPlaceholder) {
+    sidebarOtherPlaceholder = document.createComment("sidebarOtherMenu original position");
+    otherMenu.parentNode.insertBefore(sidebarOtherPlaceholder, otherMenu);
+  }
+
+  /*
+    Desktop:
+    Move the submenu to <body> so it cannot be clipped by sidebar,
+    main-content, overflow, transform, or stacking contexts.
+  */
+  if (!isMobileSidebarMode()) {
+    if (otherMenu.parentElement !== document.body) {
+      document.body.appendChild(otherMenu);
+    }
+
+    otherMenu.classList.add("sidebar-other-menu-portal");
+    return;
+  }
+
+  /*
+    Mobile/tablet:
+    Put it back inside the sidebar so it behaves as a normal dropdown.
+  */
+  if (sidebarOtherPlaceholder && sidebarOtherPlaceholder.parentNode) {
+    sidebarOtherPlaceholder.parentNode.insertBefore(otherMenu, sidebarOtherPlaceholder.nextSibling);
+  } else if (sidebarOtherOriginalParent) {
+    sidebarOtherOriginalParent.appendChild(otherMenu);
+  }
+
+  otherMenu.classList.remove("sidebar-other-menu-portal");
+}
+
+function positionSidebarOtherMenu() {
+  const { otherTrigger, otherMenu } = getSidebarOtherElements();
+
+  if (!otherTrigger || !otherMenu) return;
+
+  mountSidebarOtherMenuForMode();
+
+  if (isMobileSidebarMode()) {
+    otherMenu.style.removeProperty("--other-menu-left");
+    otherMenu.style.removeProperty("--other-menu-top");
+    otherMenu.style.removeProperty("left");
+    otherMenu.style.removeProperty("top");
+    return;
+  }
+
+  const triggerRect = otherTrigger.getBoundingClientRect();
+  const menuWidth = 260;
+  const gap = 14;
+
+  const wasHidden = otherMenu.classList.contains("hidden");
+
+  if (wasHidden) {
+    otherMenu.style.visibility = "hidden";
+    otherMenu.style.display = "grid";
+  }
+
+  const menuHeight = otherMenu.offsetHeight || 116;
+
+  if (wasHidden) {
+    otherMenu.style.removeProperty("display");
+    otherMenu.style.removeProperty("visibility");
+  }
+
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+
+  let left = triggerRect.right + gap;
+  let top = triggerRect.top + (triggerRect.height / 2) - (menuHeight / 2);
+
+  /*
+    If there is not enough room on the right, place it inside the viewport.
+  */
+  if (left + menuWidth > viewportWidth - 12) {
+    left = Math.max(12, viewportWidth - menuWidth - 12);
+  }
+
+  top = Math.max(12, Math.min(top, viewportHeight - menuHeight - 12));
+
+  otherMenu.style.setProperty("--other-menu-left", `${left}px`);
+  otherMenu.style.setProperty("--other-menu-top", `${top}px`);
+}
+
+function isClickInsideSidebarOther(event) {
+  const clickedOtherGroup = event.target.closest("#sidebarOtherGroup");
+  const clickedOtherMenu = event.target.closest("#sidebarOtherMenu");
+
+  return Boolean(clickedOtherGroup || clickedOtherMenu);
+}
+
 
 // =========================
 // SIDEBAR HELPERS
@@ -314,6 +453,8 @@ function closeMobileSidebar() {
 // =========================
 
 function openSection(sectionId) {
+  closeSidebarOtherMenu();
+
   if (!canAccessSection(currentUser, sectionId)) {
     closeAllAdminModalsOnNavigation();
     showSection(SECTION_IDS.dashboard);
@@ -380,7 +521,14 @@ function setupProtectedNavigation() {
     if (btn.dataset.navBound === "true") return;
 
     btn.dataset.navBound = "true";
+
+    btn.addEventListener("pointerdown", () => {
+      closeSidebarOtherMenu();
+    });
+
     btn.addEventListener("click", () => {
+      closeSidebarOtherMenu();
+
       const targetSection = btn.getAttribute("data-section");
       openSection(targetSection);
     });
@@ -410,6 +558,8 @@ function bindSidebarToggle() {
       event.preventDefault();
       event.stopPropagation();
 
+      closeSidebarOtherMenu();
+
       if (isMobileSidebarMode()) {
         if (sidebar.classList.contains("open")) {
           closeMobileSidebar();
@@ -432,6 +582,8 @@ function bindSidebarToggle() {
     mobileToggle.dataset.sidebarToggleBound = "true";
 
     mobileToggle.addEventListener("click", () => {
+      closeSidebarOtherMenu();
+
       if (sidebar.classList.contains("open")) {
         closeMobileSidebar();
       } else {
@@ -470,6 +622,9 @@ function bindSidebarToggle() {
     window.__sidebarResizeBound = true;
 
     window.addEventListener("resize", () => {
+      closeSidebarOtherMenu();
+      mountSidebarOtherMenuForMode();
+
       if (!isMobileSidebarMode()) {
         sidebar.classList.remove("open");
         backdrop.classList.add("hidden");
@@ -497,6 +652,7 @@ function bindSidebarToggle() {
     applySavedSidebarCollapsedState();
   }
 
+  setupSidebarOtherMenu();
   updateSidebarToggleIcon();
 }
 
@@ -507,54 +663,84 @@ function bindSidebarToggle() {
 // =========================
 
 function setupSidebarOtherMenu() {
-  const otherTrigger = document.getElementById("sidebarOtherTrigger");
-  const otherMenu = document.getElementById("sidebarOtherMenu");
+  const { otherGroup, otherTrigger, otherMenu } = getSidebarOtherElements();
 
-  if (!otherTrigger || !otherMenu) return;
+  if (!otherGroup || !otherTrigger || !otherMenu) return;
 
-  if (otherTrigger.dataset.otherMenuBound === "true") return;
-  otherTrigger.dataset.otherMenuBound = "true";
+  mountSidebarOtherMenuForMode();
 
-  otherTrigger.addEventListener("click", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
+  if (otherTrigger.dataset.otherMenuBound !== "true") {
+    otherTrigger.dataset.otherMenuBound = "true";
 
-    const isHidden = otherMenu.classList.contains("hidden");
+    otherTrigger.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
 
-    otherMenu.classList.toggle("hidden", !isHidden);
-    otherMenu.classList.toggle("open", isHidden);
+      const willOpen = otherMenu.classList.contains("hidden");
 
-    otherTrigger.setAttribute("aria-expanded", isHidden ? "true" : "false");
-  });
+      if (willOpen) {
+        positionSidebarOtherMenu();
+      }
 
-  /*
-    Do not close immediately when clicking inside submenu.
-  */
-  otherMenu.addEventListener("click", (event) => {
-    event.stopPropagation();
-  });
+      otherMenu.classList.toggle("hidden", !willOpen);
+      otherMenu.classList.toggle("open", willOpen);
 
-  /*
-    Close when clicking outside.
-  */
-  document.addEventListener("click", (event) => {
-    const clickedInsideOther = event.target.closest("#sidebarOtherGroup");
+      otherTrigger.setAttribute("aria-expanded", willOpen ? "true" : "false");
+    });
+  }
 
-    if (clickedInsideOther) return;
+  if (otherMenu.dataset.otherMenuInsideClickBound !== "true") {
+    otherMenu.dataset.otherMenuInsideClickBound = "true";
 
-    otherMenu.classList.add("hidden");
-    otherMenu.classList.remove("open");
-    otherTrigger.setAttribute("aria-expanded", "false");
-  });
+    otherMenu.addEventListener("click", (event) => {
+      event.stopPropagation();
+    });
+  }
 
-  /*
-    Close after choosing a submenu action.
-  */
+  if (document.body.dataset.sidebarOtherOutsideBound !== "true") {
+    document.body.dataset.sidebarOtherOutsideBound = "true";
+
+    document.addEventListener("pointerdown", (event) => {
+      if (isClickInsideSidebarOther(event)) return;
+      closeSidebarOtherMenu();
+    }, true);
+
+    document.addEventListener("click", (event) => {
+      if (isClickInsideSidebarOther(event)) return;
+      closeSidebarOtherMenu();
+    }, true);
+  }
+
+  if (window.__sidebarOtherPositionBound !== true) {
+    window.__sidebarOtherPositionBound = true;
+
+    window.addEventListener("resize", () => {
+      mountSidebarOtherMenuForMode();
+
+      if (!otherMenu.classList.contains("hidden")) {
+        positionSidebarOtherMenu();
+      }
+    });
+
+    window.addEventListener("scroll", () => {
+      if (!otherMenu.classList.contains("hidden")) {
+        positionSidebarOtherMenu();
+      }
+    }, true);
+  }
+
   otherMenu.querySelectorAll(".sidebar-other-btn").forEach((btn) => {
+    if (btn.dataset.sidebarOtherActionBound === "true") return;
+    btn.dataset.sidebarOtherActionBound = "true";
+
     btn.addEventListener("click", () => {
-      otherMenu.classList.add("hidden");
-      otherMenu.classList.remove("open");
-      otherTrigger.setAttribute("aria-expanded", "false");
+      closeSidebarOtherMenu();
+
+      if (isMobileSidebarMode()) {
+        setTimeout(() => {
+          closeMobileSidebar();
+        }, 80);
+      }
     });
   });
 }
@@ -589,6 +775,7 @@ window.setActiveNavButton = setActiveNavButton;
 window.setPageTitleFromSection = setPageTitleFromSection;
 window.showSection = showSection;
 window.closeAllAdminModalsOnNavigation = closeAllAdminModalsOnNavigation;
+window.closeSidebarOtherMenu = closeSidebarOtherMenu;
 window.isMobileSidebarMode = isMobileSidebarMode;
 window.getAdminLayout = getAdminLayout;
 window.updateSidebarToggleIcon = updateSidebarToggleIcon;
@@ -603,4 +790,6 @@ window.closeMobileSidebar = closeMobileSidebar;
 window.openSection = openSection;
 window.setupProtectedNavigation = setupProtectedNavigation;
 window.setupSidebarOtherMenu = setupSidebarOtherMenu;
+window.positionSidebarOtherMenu = positionSidebarOtherMenu;
+window.mountSidebarOtherMenuForMode = mountSidebarOtherMenuForMode;
 window.bindSidebarToggle = bindSidebarToggle;
