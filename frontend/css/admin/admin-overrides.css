@@ -11054,3 +11054,294 @@ td:last-child {
   }
 }
 
+#sidebarOtherMenu.hidden,
+body #sidebarOtherMenu.hidden,
+body #sidebarOtherMenu.sidebar-other-menu.hidden {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+#sidebarOtherMenu.open:not(.hidden),
+body #sidebarOtherMenu.open:not(.hidden),
+body #sidebarOtherMenu.sidebar-other-menu.open:not(.hidden) {
+  display: grid !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+@media (min-width: 993px) {
+  body .dashboard-sidebar {
+    z-index: 100000 !important;
+    overflow-x: visible !important;
+  }
+
+  body .sidebar-other-group,
+  body .sidebar-other-trigger {
+    position: relative !important;
+    z-index: 100010 !important;
+    overflow: visible !important;
+  }
+
+  body #sidebarOtherMenu.sidebar-other-menu {
+    position: fixed !important;
+
+    left: var(--other-menu-left, 296px) !important;
+    top: var(--other-menu-top, 560px) !important;
+    right: auto !important;
+    bottom: auto !important;
+    transform: none !important;
+
+    width: 250px !important;
+    min-width: 250px !important;
+    max-width: 250px !important;
+
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+
+    padding: 12px !important;
+    margin: 0 !important;
+
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    border-radius: 18px !important;
+
+    background:
+      linear-gradient(180deg, rgba(25, 88, 57, 0.98), rgba(16, 64, 42, 0.98)) !important;
+
+    box-shadow:
+      0 18px 38px rgba(0, 0, 0, 0.30),
+      inset 0 1px 0 rgba(255, 255, 255, 0.07) !important;
+
+    z-index: 100050 !important;
+  }
+
+  body #sidebarOtherMenu.sidebar-other-menu.hidden {
+    display: none !important;
+  }
+
+  body #sidebarOtherMenu.sidebar-other-menu.open:not(.hidden) {
+    display: grid !important;
+  }
+
+  body #sidebarOtherMenu .sidebar-other-btn {
+    width: 100% !important;
+    min-height: 48px !important;
+
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    gap: 11px !important;
+
+    padding: 0 14px !important;
+
+    border: none !important;
+    border-radius: 14px !important;
+
+    background: rgba(255, 255, 255, 0.08) !important;
+    color: rgba(255, 255, 255, 0.94) !important;
+
+    font-size: 14px !important;
+    font-weight: 850 !important;
+    text-align: left !important;
+    white-space: nowrap !important;
+
+    cursor: pointer !important;
+  }
+
+  body #sidebarOtherMenu .sidebar-other-btn:hover {
+    background: rgba(255, 255, 255, 0.14) !important;
+    color: #ffffff !important;
+  }
+
+  body #sidebarOtherMenu .sidebar-other-btn svg,
+  body #sidebarOtherMenu .sidebar-other-btn i {
+    width: 18px !important;
+    height: 18px !important;
+    flex: 0 0 18px !important;
+    display: block !important;
+  }
+
+  body #sidebarOtherMenu .sidebar-other-btn span {
+    display: inline !important;
+    width: auto !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
+  }
+}
+
+@media (max-width: 992px) {
+  body #sidebarOtherMenu.sidebar-other-menu {
+    position: static !important;
+
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+
+    padding: 10px !important;
+    margin-top: 10px !important;
+
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border-radius: 18px !important;
+    background: rgba(255, 255, 255, 0.055) !important;
+    box-shadow: none !important;
+  }
+
+  body #sidebarOtherMenu.sidebar-other-menu.hidden {
+    display: none !important;
+  }
+}
+
+/* =========================================================
+   OTHER MENU BODY PORTAL FINAL FIX
+   File: css/admin/admin-overrides.css
+
+   Final approach:
+   - JS moves #sidebarOtherMenu to <body> on desktop.
+   - This prevents clipping by sidebar/main-content/overflow/transform.
+   - Mobile keeps submenu inside the sidebar drawer.
+========================================================= */
+
+body #sidebarOtherMenu.hidden,
+body #sidebarOtherMenu.sidebar-other-menu.hidden,
+body #sidebarOtherMenu.sidebar-other-menu-portal.hidden {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+body #sidebarOtherMenu.open:not(.hidden),
+body #sidebarOtherMenu.sidebar-other-menu.open:not(.hidden),
+body #sidebarOtherMenu.sidebar-other-menu-portal.open:not(.hidden) {
+  display: grid !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+@media (min-width: 993px) {
+  body #sidebarOtherMenu.sidebar-other-menu,
+  body #sidebarOtherMenu.sidebar-other-menu-portal {
+    position: fixed !important;
+
+    left: var(--other-menu-left, 296px) !important;
+    top: var(--other-menu-top, 560px) !important;
+    right: auto !important;
+    bottom: auto !important;
+    transform: none !important;
+
+    width: 260px !important;
+    min-width: 260px !important;
+    max-width: 260px !important;
+
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+
+    padding: 12px !important;
+    margin: 0 !important;
+
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    border-radius: 18px !important;
+
+    background:
+      linear-gradient(180deg, rgba(25, 88, 57, 0.99), rgba(16, 64, 42, 0.99)) !important;
+
+    box-shadow:
+      0 22px 44px rgba(0, 0, 0, 0.36),
+      inset 0 1px 0 rgba(255, 255, 255, 0.07) !important;
+
+    z-index: 2147483000 !important;
+  }
+
+  body #sidebarOtherMenu.sidebar-other-menu.hidden,
+  body #sidebarOtherMenu.sidebar-other-menu-portal.hidden {
+    display: none !important;
+  }
+
+  body #sidebarOtherMenu.sidebar-other-menu.open:not(.hidden),
+  body #sidebarOtherMenu.sidebar-other-menu-portal.open:not(.hidden) {
+    display: grid !important;
+  }
+
+  body #sidebarOtherMenu .sidebar-other-btn {
+    width: 100% !important;
+    min-height: 48px !important;
+
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    gap: 11px !important;
+
+    padding: 0 14px !important;
+
+    border: none !important;
+    border-radius: 14px !important;
+
+    background: rgba(255, 255, 255, 0.08) !important;
+    color: rgba(255, 255, 255, 0.94) !important;
+
+    font-size: 14px !important;
+    font-weight: 850 !important;
+    text-align: left !important;
+    white-space: nowrap !important;
+
+    cursor: pointer !important;
+  }
+
+  body #sidebarOtherMenu .sidebar-other-btn:hover {
+    background: rgba(255, 255, 255, 0.15) !important;
+    color: #ffffff !important;
+  }
+
+  body #sidebarOtherMenu .sidebar-other-btn svg,
+  body #sidebarOtherMenu .sidebar-other-btn i {
+    width: 18px !important;
+    height: 18px !important;
+    flex: 0 0 18px !important;
+    display: block !important;
+  }
+
+  body #sidebarOtherMenu .sidebar-other-btn span {
+    display: inline !important;
+    width: auto !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
+  }
+}
+
+@media (max-width: 992px) {
+  body #sidebarOtherMenu.sidebar-other-menu,
+  body #sidebarOtherMenu.sidebar-other-menu-portal {
+    position: static !important;
+
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+
+    padding: 10px !important;
+    margin-top: 10px !important;
+
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border-radius: 18px !important;
+    background: rgba(255, 255, 255, 0.055) !important;
+    box-shadow: none !important;
+
+    z-index: auto !important;
+  }
+
+  body #sidebarOtherMenu.sidebar-other-menu.hidden,
+  body #sidebarOtherMenu.sidebar-other-menu-portal.hidden {
+    display: none !important;
+  }
+}
+
