@@ -749,7 +749,7 @@
   .admin-layout.sidebar-collapsed #navUserManagement svg,
   .admin-layout.sidebar-collapsed #navUserManagement i {
     position: relative !important;
-    left: 14px !important;
+    left: 8px !important;
     transform: none !important;
     margin: 0 !important;
   }
@@ -1225,20 +1225,6 @@
   }
 }
 
-/* =========================================================
-   SIDEBAR OTHER MENU Z-INDEX REPAIR
-   File: css/admin/admin-sidebar.css
-
-   Issue:
-   - In expanded sidebar, the Other submenu can appear behind
-     regular nav buttons such as User Management.
-
-   Fix:
-   - Force the Other popover/menu above all sidebar nav items.
-   - Keep collapsed flyout working.
-   - Keep hidden state respected.
-========================================================= */
-
 @media (min-width: 993px) {
   .dashboard-sidebar {
     isolation: isolate !important;
@@ -1317,80 +1303,203 @@
   }
 }
 
-/* =========================================================
-   MOBILE SIDEBAR DRAWER Z-INDEX / BLUR FIX
-   File: css/admin/admin-sidebar.css
+#sidebarOtherMenu.hidden,
+.sidebar-other-menu.hidden,
+.admin-layout.sidebar-collapsed #sidebarOtherMenu.hidden,
+.admin-layout:not(.sidebar-collapsed) #sidebarOtherMenu.hidden,
+body #sidebarOtherMenu.sidebar-other-menu.hidden {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
 
-   Issue:
-   - On mobile, the sidebar looks blurred because the backdrop layer
-     can sit above the sidebar or apply blur over it.
+#sidebarOtherMenu.open:not(.hidden),
+body #sidebarOtherMenu.sidebar-other-menu.open:not(.hidden) {
+  display: grid !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
 
-   Fix:
-   - Sidebar must always be above the backdrop.
-   - Backdrop must darken only the page behind the sidebar.
-   - Disable blur/filter on sidebar itself.
-========================================================= */
+@media (min-width: 993px) {
+  .admin-layout.sidebar-collapsed #sidebarOtherMenu.open:not(.hidden) {
+    position: absolute !important;
+    left: calc(100% + 14px) !important;
+    right: auto !important;
+    bottom: 0 !important;
+    top: auto !important;
 
-@media (max-width: 992px) {
-  body .dashboard-sidebar,
-  body .admin-layout.sidebar-collapsed .dashboard-sidebar {
-    z-index: 10050 !important;
-
-    width: 280px !important;
-    max-width: 84vw !important;
-    height: 100dvh !important;
-
-    filter: none !important;
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-
-    opacity: 1 !important;
-
-    transform: translateX(-100%) !important;
-    will-change: transform !important;
-
-    overflow-y: auto !important;
-    overflow-x: hidden !important;
+    width: 240px !important;
+    min-width: 240px !important;
+    max-width: 240px !important;
   }
 
-  body .dashboard-sidebar.open,
-  body .admin-layout.sidebar-collapsed .dashboard-sidebar.open {
-    transform: translateX(0) !important;
+  .admin-layout:not(.sidebar-collapsed) #sidebarOtherMenu.open:not(.hidden) {
+    position: absolute !important;
+    left: calc(100% + 14px) !important;
+    right: auto !important;
+    top: 50% !important;
+    bottom: auto !important;
+    transform: translateY(-50%) !important;
 
-    filter: none !important;
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-
-    opacity: 1 !important;
-  }
-
-  body .sidebar-backdrop {
-    z-index: 10000 !important;
-
-    background: rgba(15, 23, 42, 0.52) !important;
-
-    filter: none !important;
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-  }
-
-  body .sidebar-backdrop.hidden {
-    display: none !important;
-  }
-
-  body .dashboard-sidebar *,
-  body .admin-layout.sidebar-collapsed .dashboard-sidebar * {
-    filter: none !important;
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
+    width: 250px !important;
+    min-width: 250px !important;
+    max-width: 250px !important;
   }
 }
 
-@media (max-width: 480px) {
-  body .dashboard-sidebar,
-  body .admin-layout.sidebar-collapsed .dashboard-sidebar {
-    width: 82vw !important;
-    max-width: 82vw !important;
+/* =========================================================
+   SIDEBAR OTHER MENU FIXED FLYOUT FINAL FIX
+   File: css/admin/admin-sidebar.css
+
+   Problem:
+   - The Other submenu is clipped/covered because it is positioned
+     inside the sidebar and the main content begins beside the sidebar.
+
+   Fix:
+   - Use a fixed-position flyout so it is never clipped by the sidebar.
+   - JS will set exact top/left based on the Other button position.
+   - Hidden state is respected.
+========================================================= */
+
+#sidebarOtherMenu.hidden,
+.sidebar-other-menu.hidden,
+body #sidebarOtherMenu.sidebar-other-menu.hidden {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+#sidebarOtherMenu.open:not(.hidden),
+body #sidebarOtherMenu.sidebar-other-menu.open:not(.hidden) {
+  display: grid !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+@media (min-width: 993px) {
+  .dashboard-sidebar,
+  .dashboard-sidebar.open,
+  .admin-layout.sidebar-collapsed .dashboard-sidebar {
+    z-index: 100000 !important;
+  }
+
+  .sidebar-other-group,
+  .sidebar-other-trigger {
+    position: relative !important;
+    z-index: 100010 !important;
+  }
+
+  body #sidebarOtherMenu.sidebar-other-menu {
+    position: fixed !important;
+    left: var(--other-menu-left, calc(var(--sidebar-expanded-width, 280px) + 14px)) !important;
+    top: var(--other-menu-top, 520px) !important;
+    right: auto !important;
+    bottom: auto !important;
+    transform: none !important;
+
+    width: 250px !important;
+    min-width: 250px !important;
+    max-width: 250px !important;
+
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+
+    padding: 12px !important;
+    margin: 0 !important;
+
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    border-radius: 18px !important;
+    background:
+      linear-gradient(180deg, rgba(25, 88, 57, 0.98), rgba(16, 64, 42, 0.98)) !important;
+
+    box-shadow:
+      0 18px 38px rgba(0, 0, 0, 0.30),
+      inset 0 1px 0 rgba(255, 255, 255, 0.07) !important;
+
+    z-index: 100050 !important;
+  }
+
+  body #sidebarOtherMenu.sidebar-other-menu.hidden {
+    display: none !important;
+  }
+
+  body #sidebarOtherMenu.sidebar-other-menu.open:not(.hidden) {
+    display: grid !important;
+  }
+
+  body #sidebarOtherMenu .sidebar-other-btn {
+    width: 100% !important;
+    min-height: 48px !important;
+
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    gap: 11px !important;
+
+    padding: 0 14px !important;
+
+    border: none !important;
+    border-radius: 14px !important;
+
+    background: rgba(255, 255, 255, 0.08) !important;
+    color: rgba(255, 255, 255, 0.94) !important;
+
+    font-size: 14px !important;
+    font-weight: 850 !important;
+    text-align: left !important;
+    white-space: nowrap !important;
+
+    cursor: pointer !important;
+  }
+
+  body #sidebarOtherMenu .sidebar-other-btn:hover {
+    background: rgba(255, 255, 255, 0.14) !important;
+    color: #ffffff !important;
+  }
+
+  body #sidebarOtherMenu .sidebar-other-btn svg,
+  body #sidebarOtherMenu .sidebar-other-btn i {
+    width: 18px !important;
+    height: 18px !important;
+    flex: 0 0 18px !important;
+    display: block !important;
+  }
+
+  body #sidebarOtherMenu .sidebar-other-btn span {
+    display: inline !important;
+    width: auto !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
+  }
+}
+
+@media (max-width: 992px) {
+  body #sidebarOtherMenu.sidebar-other-menu {
+    position: static !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+
+    padding: 10px !important;
+    margin-top: 10px !important;
+
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border-radius: 18px !important;
+    background: rgba(255, 255, 255, 0.055) !important;
+    box-shadow: none !important;
+  }
+
+  body #sidebarOtherMenu.sidebar-other-menu.hidden {
+    display: none !important;
   }
 }
 
