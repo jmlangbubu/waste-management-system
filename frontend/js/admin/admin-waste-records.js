@@ -1,992 +1,851 @@
-/* =========================================================
-   ADMIN WASTE RECORDS
-   File: css/admin/admin-waste-records.css
-
-   Scope:
-   - Waste Records table
-   - Waste Records filter styling
-   - Waste Breakdown modal design
-
-   Important:
-   CSS-only update. Do not change JS.
-   Critical fix:
-   - DO NOT set td.waste-cell-trigger to display:flex/inline-flex.
-     That breaks the table columns.
-========================================================= */
-
-/* =========================
-   WASTE RECORDS BASE
-========================= */
-
-#recordsSection {
-  min-width: 0;
-}
-
-#recordsSection .page-card {
-  padding: 24px;
-  border: 1px solid #e5eaf1;
-  border-radius: 24px;
-  background: #ffffff;
-  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.06);
-}
-
-#recordsSection .page-card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 18px;
-  margin-bottom: 18px;
-}
-
-#recordsSection .page-card-header h2 {
-  margin: 0;
-  color: #071733;
-  font-size: 24px;
-  font-weight: 950;
-  line-height: 1.15;
-  letter-spacing: -0.035em;
-}
-
-#recordsSection .page-card-header p {
-  margin: 6px 0 0;
-  color: #52657f;
-  font-size: 14px;
-  line-height: 1.45;
-}
-
-/* =========================
-   FILTER WASTE RECORDS
-========================= */
-
-#recordsSection .filter-bar {
-  position: relative;
-
-  display: grid;
-  grid-template-columns: minmax(260px, 1.4fr) repeat(3, minmax(180px, 1fr));
-  gap: 14px 16px;
-  align-items: end;
-
-  margin: 0 0 18px;
-  padding: 54px 18px 18px;
-
-  border: 1px solid #e1e8f0;
-  border-radius: 20px;
-  background: linear-gradient(180deg, #ffffff 0%, #fbfcfe 100%);
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.035);
-}
-
-#recordsSection .filter-bar::before {
-  content: "Filter Waste Records";
-
-  position: absolute;
-  top: 18px;
-  left: 44px;
-
-  color: #0f172a;
-  font-size: 18px;
-  font-weight: 950;
-  line-height: 1.2;
-  letter-spacing: -0.02em;
-}
-
-#recordsSection .filter-bar::after {
-  content: "";
-
-  position: absolute;
-  top: 18px;
-  left: 20px;
-
-  width: 5px;
-  height: 24px;
-
-  border-radius: 999px;
-  background: linear-gradient(180deg, #15803d, #22c55e);
-}
-
-#recordsSection .filter-group {
-  min-width: 0;
-  display: grid;
-  gap: 7px;
-}
-
-#recordsSection .filter-group label {
-  margin: 0;
-  color: #334155;
-  font-size: 12px;
-  font-weight: 850;
-  line-height: 1.2;
-}
-
-#recordsSection .filter-group input,
-#recordsSection .filter-group select {
-  width: 100%;
-  height: 46px;
-
-  border: 1px solid #d8e2ee;
-  border-radius: 13px;
-  background: #ffffff;
-
-  padding: 0 13px;
-
-  color: #0f172a;
-  font-size: 14px;
-  font-weight: 650;
-
-  outline: none;
-
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.025);
-
-  transition:
-    border-color 0.16s ease,
-    box-shadow 0.16s ease,
-    transform 0.16s ease;
-}
-
-#recordsSection .filter-group input:focus,
-#recordsSection .filter-group select:focus {
-  border-color: #22c55e;
-  box-shadow:
-    0 0 0 4px rgba(34, 197, 94, 0.12),
-    0 8px 22px rgba(15, 23, 42, 0.04);
-}
-
-#recordsSection .filter-group input::placeholder {
-  color: #8da0b8;
-  font-weight: 650;
-}
-
-#recordsSection #generateWasteReportBtn {
-  width: 100%;
-  height: 46px;
-  min-height: 46px;
-
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-
-  border: 1px solid #15803d;
-  border-radius: 13px;
-  background: linear-gradient(135deg, #15803d, #16a34a);
-  color: #ffffff;
-
-  font-size: 13px;
-  font-weight: 950;
-  line-height: 1;
-  white-space: nowrap;
-
-  cursor: pointer;
-
-  box-shadow: 0 12px 24px rgba(22, 163, 74, 0.18);
-
-  transition:
-    transform 0.16s ease,
-    box-shadow 0.16s ease,
-    filter 0.16s ease;
-}
-
-#recordsSection #generateWasteReportBtn:hover {
-  transform: translateY(-1px);
-  filter: brightness(1.03);
-  box-shadow: 0 16px 30px rgba(22, 163, 74, 0.22);
-}
-
-/* =========================
-   TABLE SHELL
-========================= */
-
-#recordsSection .table-shell,
-#recordsSection .waste-records-table-wrapper {
-  width: 100%;
-  max-width: 100%;
-
-  overflow-x: auto;
-  overflow-y: hidden;
-
-  border: 1px solid #e1e8f0;
-  border-radius: 18px;
-  background: #ffffff;
-
-  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.04);
-
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: thin;
-}
-
-#recordsSection .table-shell::-webkit-scrollbar,
-#recordsSection .waste-records-table-wrapper::-webkit-scrollbar {
-  height: 9px;
-}
-
-#recordsSection .table-shell::-webkit-scrollbar-track,
-#recordsSection .waste-records-table-wrapper::-webkit-scrollbar-track {
-  background: #f1f5f9;
-  border-radius: 999px;
-}
-
-#recordsSection .table-shell::-webkit-scrollbar-thumb,
-#recordsSection .waste-records-table-wrapper::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 999px;
-}
-
-#recordsSection .table-shell::-webkit-scrollbar-thumb:hover,
-#recordsSection .waste-records-table-wrapper::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
-}
-
-/* =========================
-   WASTE RECORDS TABLE
-   Safe table layout: do not force fixed layout.
-========================= */
-
-#recordsSection table,
-#recordsSection .waste-records-table {
-  width: 100%;
-  min-width: 1180px;
-  border-collapse: collapse;
-  table-layout: auto;
-}
-
-#recordsSection thead th,
-#recordsSection .waste-records-table thead th {
-  padding: 14px 13px;
-
-  background: #f8fafc;
-  color: #0f172a;
-
-  border-bottom: 1px solid #e1e8f0;
-
-  font-size: 12.5px;
-  font-weight: 950;
-  line-height: 1.2;
-  text-align: center;
-  white-space: nowrap;
-}
-
-#recordsSection tbody td,
-#recordsSection .waste-records-table tbody td {
-  padding: 13px 13px;
-
-  border-bottom: 1px solid #edf2f7;
-  background: #ffffff;
-  color: #102033;
-
-  font-size: 12.5px;
-  font-weight: 650;
-  line-height: 1.35;
-  text-align: center;
-  vertical-align: middle;
-
-  white-space: nowrap;
-}
-
-#recordsSection tbody tr:hover td {
-  background: #f8fafc;
-}
-
-#recordsSection tbody td:nth-child(2) {
-  text-align: left;
-  font-weight: 900;
-  color: #173126;
-}
-
-#recordsSection thead th:nth-child(1),
-#recordsSection tbody td:nth-child(1) {
-  min-width: 92px;
-}
-
-#recordsSection thead th:nth-child(2),
-#recordsSection tbody td:nth-child(2) {
-  min-width: 120px;
-}
-
-#recordsSection thead th:nth-child(4),
-#recordsSection tbody td:nth-child(4) {
-  min-width: 155px;
-}
-
-#recordsSection thead th:nth-child(10),
-#recordsSection tbody td:nth-child(10) {
-  min-width: 120px;
-}
-
-#recordsSection thead th:nth-child(11),
-#recordsSection tbody td:nth-child(11) {
-  min-width: 90px;
-}
-
-/* =========================
-   TABLE CELLS / BUTTONS
-========================= */
-
-.control-number-cell {
-  color: #0f2f57;
-  font-weight: 900;
-  letter-spacing: 0.01em;
-}
-
-/*
-  IMPORTANT FIX:
-  These classes are applied directly to <td>.
-  Do not use display:flex or display:inline-flex here.
-  Otherwise the table cells leave the table layout and columns break.
-*/
-#recordsSection td.waste-cell-trigger,
-#recordsSection td.clickable-cell {
-  display: table-cell !important;
-  text-align: center !important;
-  vertical-align: middle !important;
-
-  padding: 13px 13px !important;
-
-  color: #064e3b !important;
-  font-weight: 850 !important;
-  cursor: pointer !important;
-
-  border-radius: 0 !important;
-  box-shadow: none !important;
-
-  transition:
-    background 0.16s ease,
-    color 0.16s ease;
-}
-
-#recordsSection td.waste-cell-trigger:hover,
-#recordsSection td.clickable-cell:hover {
-  background: #ecfdf5 !important;
-  color: #047857 !important;
-  text-decoration: underline;
-  transform: none !important;
-  box-shadow: none !important;
-}
-
-/* Grand total emphasis */
-#recordsSection tbody td:nth-child(9) {
-  color: #047857;
-  font-weight: 950;
-}
-
-/* Status badge */
-#recordsSection .badge,
-#recordsSection .badge-approved,
-#recordsSection .status-badge,
-#recordsSection .validation-status,
-#recordsSection .validated-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-
-  min-width: 96px;
-  min-height: 30px;
-  padding: 0 12px;
-
-  border-radius: 999px;
-  background: #dcfce7;
-  color: #047857;
-  border: 1px solid #bbf7d0;
-
-  font-size: 11.5px;
-  font-weight: 900;
-  white-space: nowrap;
-}
-
-#recordsSection .badge-pending {
-  background: #fef3c7;
-  color: #a16207;
-  border-color: #fde68a;
-}
-
-#recordsSection .badge-rejected {
-  background: #fee2e2;
-  color: #b91c1c;
-  border-color: #fecaca;
-}
-
-.details-arrow-btn,
-#recordsSection .view-record-btn,
-#recordsSection .waste-action-btn,
-#recordsSection tbody td:last-child button {
-  width: 34px;
-  height: 34px;
-  min-width: 34px;
-
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-
-  border: 1px solid #dbe7f0;
-  border-radius: 10px;
-  background: #ffffff;
-  color: #0f172a;
-
-  font-size: 13px;
-  font-weight: 900;
-
-  cursor: pointer;
-
-  transition:
-    transform 0.16s ease,
-    box-shadow 0.16s ease,
-    background 0.16s ease,
-    border-color 0.16s ease,
-    color 0.16s ease;
-}
-
-.details-arrow-btn:hover,
-#recordsSection .view-record-btn:hover,
-#recordsSection .waste-action-btn:hover,
-#recordsSection tbody td:last-child button:hover {
-  transform: translateY(-1px);
-  background: #ecfdf5;
-  border-color: #bbf7d0;
-  color: #047857;
-  box-shadow: 0 10px 20px rgba(22, 163, 74, 0.12);
-}
-
-#recordsSection .loading-state,
-#recordsSection .empty-state,
-#recordsSection .empty-state-cell {
-  padding: 24px;
-  color: #64748b;
-  font-weight: 800;
-  text-align: center;
-}
-
-/* =========================================================
-   WASTE BREAKDOWN MODAL
-   Reference-style modal design
-========================================================= */
-
-#wasteBreakdownModal.custom-modal {
-  position: fixed !important;
-  inset: 0 !important;
-  z-index: 99990 !important;
-}
-
-#wasteBreakdownModal .custom-modal-overlay {
-  position: fixed !important;
-  inset: 0 !important;
-  background: rgba(15, 23, 42, 0.66) !important;
-  backdrop-filter: blur(8px) !important;
-}
-
-#wasteBreakdownModal .waste-breakdown-modal,
-#wasteBreakdownModal .custom-modal-content {
-  position: fixed !important;
-  top: 50% !important;
-  left: calc(260px + ((100vw - 260px) / 2)) !important;
-  transform: translate(-50%, -50%) !important;
-
-  width: min(1120px, calc(100vw - 320px)) !important;
-  max-width: none !important;
-  max-height: 88vh !important;
-
-  display: flex !important;
-  flex-direction: column !important;
-  overflow: hidden !important;
-
-  border: 1px solid #e5e7eb !important;
-  border-radius: 26px !important;
-  background: #ffffff !important;
-  box-shadow: 0 32px 90px rgba(15, 23, 42, 0.34) !important;
-}
-
-/* =========================
-   MODAL HEADER
-========================= */
-
-#wasteBreakdownModal .custom-modal-header {
-  display: grid !important;
-  grid-template-columns: minmax(0, 1fr) 58px !important;
-  align-items: start !important;
-  gap: 16px !important;
-
-  padding: 26px 30px 22px !important;
-  border-bottom: 1px solid #e5e7eb !important;
-  background: #ffffff !important;
-}
-
-#wasteBreakdownModal .custom-modal-header > div {
-  position: relative !important;
-  min-width: 0 !important;
-  padding-left: 68px !important;
-}
-
-#wasteBreakdownModal .custom-modal-header > div::before {
-  content: "🍃" !important;
-
-  position: absolute !important;
-  top: 0 !important;
-  left: 0 !important;
-
-  width: 50px !important;
-  height: 50px !important;
-
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-
-  border-radius: 999px !important;
-  background: #edf7f0 !important;
-  color: #14532d !important;
-  font-size: 22px !important;
-  border: 1px solid #dcfce7 !important;
-}
-
-#wasteBreakdownModal #wasteBreakdownTitle,
-#wasteBreakdownModal .custom-modal-header h3 {
-  margin: 0 !important;
-  color: #173c2a !important;
-  font-size: 24px !important;
-  font-weight: 950 !important;
-  line-height: 1.1 !important;
-  letter-spacing: -0.03em !important;
-}
-
-#wasteBreakdownModal #wasteBreakdownSubtitle,
-#wasteBreakdownModal .custom-modal-header p {
-  margin: 5px 0 0 !important;
-  color: #64748b !important;
-  font-size: 13px !important;
-  font-weight: 500 !important;
-  line-height: 1.35 !important;
-}
-
-#wasteBreakdownModal .modal-close-btn,
-#wasteBreakdownModal #closeWasteBreakdownModal {
-  width: 46px !important;
-  height: 46px !important;
-  min-width: 46px !important;
-  min-height: 46px !important;
-
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-
-  border: none !important;
-  border-radius: 999px !important;
-  background: #f1f5f9 !important;
-  color: #475569 !important;
-
-  font-size: 28px !important;
-  font-weight: 900 !important;
-  line-height: 1 !important;
-  cursor: pointer !important;
-
-  transition: all 0.16s ease !important;
-}
-
-#wasteBreakdownModal .modal-close-btn:hover,
-#wasteBreakdownModal #closeWasteBreakdownModal:hover {
-  background: #e2e8f0 !important;
-  color: #0f172a !important;
-  transform: translateY(-1px) !important;
-}
-
-/* =========================
-   MODAL BODY
-========================= */
-
-#wasteBreakdownModal .custom-modal-body {
-  flex: 1 1 auto !important;
-  min-height: 0 !important;
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
-  padding: 22px 30px 28px !important;
-}
-
-/* =========================
-   SUMMARY STRIP
-========================= */
-
-.breakdown-summary-strip,
-#wasteBreakdownModal .breakdown-summary-strip {
-  display: grid !important;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-  gap: 14px !important;
-  margin: 0 0 18px !important;
-}
-
-.breakdown-summary-item,
-#wasteBreakdownModal .breakdown-summary-item {
-  position: relative !important;
-  min-height: 72px !important;
-
-  display: grid !important;
-  grid-template-columns: 46px minmax(0, 1fr) !important;
-  align-items: center !important;
-  gap: 12px !important;
-
-  padding: 14px 16px !important;
-  border: 1px solid #e5e7eb !important;
-  border-radius: 14px !important;
-  background: #fbfcfd !important;
-}
-
-#wasteBreakdownModal .breakdown-summary-item::before {
-  width: 42px !important;
-  height: 42px !important;
-
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-
-  border-radius: 999px !important;
-  background: #edf7f0 !important;
-  color: #14532d !important;
-  border: 1px solid #dcfce7 !important;
-  font-size: 18px !important;
-}
-
-#wasteBreakdownModal .breakdown-summary-item:nth-child(1)::before {
-  content: "🌿" !important;
-}
-
-#wasteBreakdownModal .breakdown-summary-item:nth-child(2)::before {
-  content: "♻️" !important;
-}
-
-#wasteBreakdownModal .breakdown-summary-item:nth-child(3)::before {
-  content: "⚖️" !important;
-}
-
-#wasteBreakdownModal .breakdown-summary-item span {
-  display: block !important;
-  margin: 0 0 3px !important;
-  color: #64748b !important;
-  font-size: 12px !important;
-  font-weight: 600 !important;
-  line-height: 1.2 !important;
-}
-
-#wasteBreakdownModal .breakdown-summary-item strong {
-  display: block !important;
-  color: #173c2a !important;
-  font-size: 15px !important;
-  font-weight: 900 !important;
-  line-height: 1.2 !important;
-}
-
-/* =========================
-   BREAKDOWN LIST
-========================= */
-
-.breakdown-list,
-#wasteBreakdownModal .breakdown-list {
-  display: grid !important;
-  gap: 10px !important;
-}
-
-.breakdown-row,
-#wasteBreakdownModal .breakdown-row {
-  min-height: 66px !important;
-
-  display: grid !important;
-  grid-template-columns: 44px minmax(0, 1fr) 74px 42px !important;
-  align-items: center !important;
-  gap: 12px !important;
-
-  padding: 12px 16px !important;
-  border: 1px solid #e5e7eb !important;
-  border-radius: 14px !important;
-  background: #ffffff !important;
-  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.03) !important;
-
-  transition: all 0.16s ease !important;
-}
-
-.breakdown-row:hover,
-#wasteBreakdownModal .breakdown-row:hover {
-  border-color: #86efac !important;
-  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.07) !important;
-  transform: translateY(-1px) !important;
-}
-
-/* Left icon */
-#wasteBreakdownModal .breakdown-row::before {
-  content: "🍃" !important;
-
-  width: 40px !important;
-  height: 40px !important;
-  min-width: 40px !important;
-
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-
-  border-radius: 999px !important;
-  background: #f1f8f3 !important;
-  color: #14532d !important;
-  border: 1px solid #e1f3e6 !important;
-  font-size: 16px !important;
-}
-
-#wasteBreakdownModal .breakdown-row:nth-child(1)::before {
-  content: "🌿" !important;
-}
-
-#wasteBreakdownModal .breakdown-row:nth-child(2)::before {
-  content: "🍽️" !important;
-}
-
-#wasteBreakdownModal .breakdown-row:nth-child(3)::before {
-  content: "🪵" !important;
-}
-
-#wasteBreakdownModal .breakdown-row:nth-child(4)::before {
-  content: "•••" !important;
-  font-size: 14px !important;
-  font-weight: 900 !important;
-}
-
-/* Left text */
-#wasteBreakdownModal .breakdown-row span:first-child {
-  min-width: 0 !important;
-
-  display: flex !important;
-  align-items: center !important;
-  gap: 12px !important;
-
-  color: #1f2937 !important;
-  font-size: 15px !important;
-  font-weight: 850 !important;
-  line-height: 1.35 !important;
-}
-
-#wasteBreakdownModal .breakdown-row span:first-child::after {
-  content: "Tap to view details" !important;
-
-  margin-left: 2px !important;
-  padding-left: 12px !important;
-  border-left: 1px solid #d7dee8 !important;
-
-  color: #7b8798 !important;
-  font-size: 13px !important;
-  font-weight: 500 !important;
-  white-space: nowrap !important;
-}
-
-/* KG pill */
-#wasteBreakdownModal .breakdown-row span:last-child,
-#wasteBreakdownModal .breakdown-row strong:last-child {
-  width: 70px !important;
-  min-height: 34px !important;
-
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-
-  border-radius: 10px !important;
-  background: #eef7f0 !important;
-  color: #14532d !important;
-  font-size: 14px !important;
-  font-weight: 900 !important;
-}
-
-/* Arrow */
-#wasteBreakdownModal .breakdown-row::after {
-  content: "›" !important;
-
-  width: 38px !important;
-  height: 38px !important;
-  min-width: 38px !important;
-
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-
-  border-radius: 999px !important;
-  border: 1px solid #e5e7eb !important;
-  background: #ffffff !important;
-  color: #173c2a !important;
-  font-size: 26px !important;
-  font-weight: 600 !important;
-  line-height: 1 !important;
-}
-
-#wasteBreakdownModal .breakdown-row:hover::after {
-  background: #14532d !important;
-  color: #ffffff !important;
-  border-color: #14532d !important;
-}
-
-/* Highlight active row like reference */
-#wasteBreakdownModal .breakdown-row:nth-child(2) {
-  border-color: #8fd3a8 !important;
-  box-shadow:
-    0 0 0 1px rgba(20, 83, 45, 0.06),
-    0 10px 22px rgba(15, 23, 42, 0.05) !important;
-}
-
-#wasteBreakdownModal .breakdown-row:nth-child(2)::after {
-  background: #14532d !important;
-  color: #ffffff !important;
-  border-color: #14532d !important;
-}
-
-/* Empty state */
-.breakdown-empty,
-#wasteBreakdownModal .breakdown-empty {
-  padding: 24px !important;
-  border: 1px dashed #cbd5e1 !important;
-  border-radius: 14px !important;
-  background: #f8fafc !important;
-  color: #64748b !important;
-  text-align: center !important;
-  font-weight: 700 !important;
-}
-
-/* =========================
-   RESPONSIVE
-========================= */
-
-@media (max-width: 1180px) {
-  #recordsSection .filter-bar {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+// =========================
+// WASTE RECORD HELPERS (SAFE LAYER)
+// =========================
+
+function getWasteApiBase() {
+  if (window.APP_CONFIG && window.APP_CONFIG.API_BASE_URL) {
+    return window.APP_CONFIG.API_BASE_URL;
   }
 
-  #wasteBreakdownModal .waste-breakdown-modal,
-  #wasteBreakdownModal .custom-modal-content {
-    left: 50% !important;
-    width: calc(100vw - 30px) !important;
-    max-width: calc(100vw - 30px) !important;
+  if (window.API_BASE) {
+    return window.API_BASE;
+  }
+
+  console.error("API BASE URL is not defined. Check APP_CONFIG or API_BASE.");
+  return "";
+}
+
+function getCategoryPayload(record, categoryKey) {
+  const rawPayload = safeParseRawPayload(record.raw_payload);
+  if (!rawPayload) return null;
+
+  return rawPayload[categoryKey] || null;
+}
+
+function getRecordDisplayName(record) {
+  if (!record) return "—";
+  return record.barangay_name || record.establishment_name || record.name || "—";
+}
+
+function getRecordType(record) {
+  if (!record) return "—";
+
+  const entryType = (record.entry_type || "").toString().trim().toLowerCase();
+
+  if (entryType === "barangay") return "Barangay";
+  if (entryType === "establishment") return "Establishment";
+
+  return record.establishment_name ? "Establishment" : "Barangay";
+}
+
+function getValidationStatus(record) {
+  return (record.validation_status || "Pending").toString().trim();
+}
+
+function getRecordCreatedAt(record) {
+  return (
+    record.validated_at ||
+    record.created_at ||
+    record.createdAt ||
+    record.date_submitted ||
+    record.dateSubmitted ||
+    null
+  );
+}
+
+function getStatusBadgeClass(status) {
+  const normalized = String(status || "").toLowerCase();
+
+  if (normalized === "validated") return "badge badge-approved";
+  if (normalized === "pending") return "badge badge-pending";
+  if (normalized === "rejected") return "badge badge-rejected";
+
+  return "badge";
+}
+
+async function loadRecords() {
+  try {
+    const apiBase = getWasteApiBase();
+    const response = await fetch(`${apiBase}/waste/validated-records`);
+    const rawText = await response.text();
+        let result = {};
+
+        try {
+  result = rawText ? JSON.parse(rawText) : {};
+    } catch {
+  console.error("Invalid JSON:", rawText);
+  throw new Error("Invalid response format");
+    }
+
+    if (!response.ok) {
+      throw new Error(result.message || "Failed to load validated records.");
+    }
+
+    validatedWasteRecords = Array.isArray(result)
+      ? result
+      : Array.isArray(result.data)
+      ? result.data
+      : [];
+
+    populateWasteRecordFilters();
+    renderWasteRecordsTable(validatedWasteRecords);
+    updateWasteRecordsAnalyticsSafe(validatedWasteRecords);
+  } catch (error) {
+    console.error("Error loading validated waste records:", error);
+
+    validatedWasteRecords = [];
+    populateWasteRecordFilters();
+    renderWasteRecordsTable([]);
+    updateWasteRecordsAnalyticsSafe([]);
+
+    const tbody = document.getElementById("wasteRecordsTableBody");
+    if (tbody) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="10" class="empty-state">Failed to load waste records.</td>
+        </tr>
+      `;
+    }
   }
 }
 
-@media (max-width: 900px) {
-  #recordsSection .page-card {
-    padding: 18px;
+function populateWasteRecordFilters() {
+  const barangayFilter = document.getElementById("wasteBarangayFilter");
+  const typeFilter = document.getElementById("wasteTypeFilter");
+  const validationFilter = document.getElementById("wasteValidationFilter");
+  const monthFilter = document.getElementById("wasteMonthFilter");
+  const yearFilter = document.getElementById("wasteYearFilter");
+
+  if (!barangayFilter || !typeFilter || !validationFilter) return;
+
+  // =========================
+  // UNIQUE VALUES
+  // =========================
+
+  const uniqueNames = [...new Set(
+    validatedWasteRecords
+      .map(record => getRecordDisplayName(record))
+      .filter(v => v && v !== "—")
+  )].sort((a, b) => a.localeCompare(b));
+
+  const uniqueTypes = [...new Set(
+    validatedWasteRecords
+      .map(record => getRecordType(record))
+      .filter(Boolean)
+  )].sort((a, b) => a.localeCompare(b));
+
+  const uniqueStatuses = [...new Set(
+    validatedWasteRecords
+      .map(record => getValidationStatus(record))
+      .filter(Boolean)
+  )].sort((a, b) => a.localeCompare(b));
+
+  // =========================
+  // EXTRACT MONTH + YEAR
+  // =========================
+
+  const months = new Set();
+  const years = new Set();
+
+  validatedWasteRecords.forEach(record => {
+    if (!record.period_start) return;
+
+    const date = new Date(record.period_start);
+
+    if (!isNaN(date)) {
+      months.add(date.getMonth() + 1); // 1-12
+      years.add(date.getFullYear());
+    }
+  });
+
+  // =========================
+  // POPULATE DROPDOWNS
+  // =========================
+
+  // Barangay
+  barangayFilter.innerHTML = `<option value="">All Barangays</option>`;
+  uniqueNames.forEach(name => {
+    barangayFilter.innerHTML += `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`;
+  });
+
+  // Type
+  typeFilter.innerHTML = `<option value="">All Types</option>`;
+  uniqueTypes.forEach(type => {
+    typeFilter.innerHTML += `<option value="${escapeHtml(type)}">${escapeHtml(type)}</option>`;
+  });
+
+  // Status
+  validationFilter.innerHTML = `<option value="">All Validation</option>`;
+  uniqueStatuses.forEach(status => {
+    validationFilter.innerHTML += `<option value="${escapeHtml(status)}">${escapeHtml(status)}</option>`;
+  });
+
+  // =========================
+  // MONTH FILTER
+  // =========================
+
+  if (monthFilter) {
+    monthFilter.innerHTML = `<option value="">All Months</option>`;
+
+    const monthNames = [
+      "January","February","March","April","May","June",
+      "July","August","September","October","November","December"
+    ];
+
+    [...months].sort((a, b) => a - b).forEach(m => {
+      monthFilter.innerHTML += `<option value="${m}">${monthNames[m - 1]}</option>`;
+    });
   }
 
-  #recordsSection .page-card-header {
-    display: grid;
-    grid-template-columns: 1fr;
-  }
 
-  #recordsSection .filter-bar {
-    grid-template-columns: 1fr;
-    padding: 52px 15px 15px;
-  }
+  if (yearFilter) {
+    yearFilter.innerHTML = `<option value="">All Years</option>`;
 
-  #recordsSection table,
-  #recordsSection .waste-records-table {
-    min-width: 1050px;
-  }
-
-  #wasteBreakdownModal .custom-modal-header {
-    padding: 20px !important;
-    grid-template-columns: minmax(0, 1fr) 48px !important;
-  }
-
-  #wasteBreakdownModal .custom-modal-header > div {
-    padding-left: 58px !important;
-  }
-
-  #wasteBreakdownModal .custom-modal-header > div::before {
-    width: 44px !important;
-    height: 44px !important;
-    font-size: 20px !important;
-  }
-
-  #wasteBreakdownModal .custom-modal-body {
-    padding: 18px 20px 22px !important;
-  }
-
-  #wasteBreakdownModal .breakdown-summary-strip {
-    grid-template-columns: 1fr !important;
+    [...years].sort((a, b) => b - a).forEach(y => {
+      yearFilter.innerHTML += `<option value="${y}">${y}</option>`;
+    });
   }
 }
 
-@media (max-width: 640px) {
-  #recordsSection .page-card {
-    padding: 15px;
-    border-radius: 20px;
+function getFilteredWasteRecords() {
+  const searchValue = (document.getElementById("wasteSearchInput")?.value || "").trim().toLowerCase();
+  const barangayValue = (document.getElementById("wasteBarangayFilter")?.value || "").trim().toLowerCase();
+  const typeValue = (document.getElementById("wasteTypeFilter")?.value || "").trim().toLowerCase();
+  const validationValue = (document.getElementById("wasteValidationFilter")?.value || "").trim().toLowerCase();
+  const monthValue = (document.getElementById("wasteMonthFilter")?.value || "").trim();
+  const yearValue = (document.getElementById("wasteYearFilter")?.value || "").trim();
+
+  return validatedWasteRecords.filter(record => {
+    const displayName = getRecordDisplayName(record).toLowerCase();
+    const type = getRecordType(record).toLowerCase();
+    const status = getValidationStatus(record).toLowerCase();
+    const validatedBy = (record.validated_by || "").toString().toLowerCase();
+    const remarks = (record.remarks || "").toString().toLowerCase();
+    const period = formatPeriod(record.period_from, record.period_to).toLowerCase();
+
+    const dateValue =
+      record.period_from ||
+      record.validated_at ||
+      record.created_at ||
+      record.createdAt ||
+      record.date_submitted ||
+      record.dateSubmitted ||
+      null;
+
+    const recordDate = dateValue ? new Date(dateValue) : null;
+    const hasValidDate = recordDate && !Number.isNaN(recordDate.getTime());
+
+    const recordMonth = hasValidDate ? String(recordDate.getMonth() + 1) : "";
+    const recordYear = hasValidDate ? String(recordDate.getFullYear()) : "";
+
+    const matchesSearch =
+      !searchValue ||
+      displayName.includes(searchValue) ||
+      type.includes(searchValue) ||
+      status.includes(searchValue) ||
+      validatedBy.includes(searchValue) ||
+      remarks.includes(searchValue) ||
+      period.includes(searchValue);
+
+    const matchesBarangay = !barangayValue || displayName === barangayValue;
+    const matchesType = !typeValue || type === typeValue;
+    const matchesValidation = !validationValue || status === validationValue;
+    const matchesMonth = !monthValue || recordMonth === monthValue;
+    const matchesYear = !yearValue || recordYear === yearValue;
+
+    return (
+      matchesSearch &&
+      matchesBarangay &&
+      matchesType &&
+      matchesValidation &&
+      matchesMonth &&
+      matchesYear
+    );
+  });
+}
+
+function renderWasteRecordsTable(records) {
+  const tbody = document.getElementById("wasteRecordsTableBody");
+  if (!tbody) return;
+
+  if (!Array.isArray(records) || !records.length) {
+    window.__renderedWasteRecords = [];
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="11" class="empty-state">No waste records found.</td>
+      </tr>
+    `;
+    return;
   }
 
-  #recordsSection .page-card-header h2 {
-    font-size: 21px;
+  const getComparableDate = (record) => {
+    if (record.period_from) {
+      const d = new Date(record.period_from);
+      if (!Number.isNaN(d.getTime())) return d.getTime();
+    }
+
+    const fallback = new Date(record.validated_at || record.created_at || 0);
+    if (!Number.isNaN(fallback.getTime())) return fallback.getTime();
+
+    return 0;
+  };
+
+  const getStableName = (record) => {
+    return (
+      record.barangay_name ||
+      record.establishment_name ||
+      record.name ||
+      ""
+    ).toString().trim().toLowerCase();
+  };
+
+  const getStableId = (record) => {
+    return Number(record.id || 0);
+  };
+
+  const chronologicalRecords = [...records].sort((a, b) => {
+    return (
+      getComparableDate(a) - getComparableDate(b) ||
+      getStableName(a).localeCompare(getStableName(b)) ||
+      getStableId(a) - getStableId(b)
+    );
+  });
+
+  const recordsWithControlNo = chronologicalRecords.map((record, index) => ({
+    ...record,
+    __controlNo: String(index + 1).padStart(2, "0")
+  }));
+
+  const displayRecords = [...recordsWithControlNo].reverse();
+
+  window.__renderedWasteRecords = displayRecords;
+
+  tbody.innerHTML = displayRecords.map((record, index) => {
+    const name = getRecordDisplayName(record);
+    const type = getRecordType(record);
+    const period = formatPeriod(record.period_from, record.period_to);
+
+    const biodegradable = formatKg(record.biodegradable_subtotal);
+    const recyclable = formatKg(record.recyclable_subtotal);
+    const residual = formatKg(record.residual_subtotal);
+    const special = formatKg(record.special_subtotal);
+    const grandTotal = formatKg(record.grand_total);
+
+    const status = getValidationStatus(record);
+    const badgeClass = getStatusBadgeClass(status);
+
+    return `
+      <tr>
+        <td class="control-number-cell">${record.__controlNo}</td>
+        <td>${escapeHtml(name)}</td>
+        <td>${escapeHtml(type)}</td>
+        <td>${escapeHtml(period)}</td>
+
+        <td class="clickable-cell waste-cell-trigger"
+            data-record-index="${index}"
+            data-category-key="biodegradable"
+            data-category-label="Biodegradable">
+          ${escapeHtml(biodegradable)}
+        </td>
+
+        <td class="clickable-cell waste-cell-trigger"
+            data-record-index="${index}"
+            data-category-key="recyclable"
+            data-category-label="Recyclable">
+          ${escapeHtml(recyclable)}
+        </td>
+
+        <td class="clickable-cell waste-cell-trigger"
+            data-record-index="${index}"
+            data-category-key="residual"
+            data-category-label="Residual">
+          ${escapeHtml(residual)}
+        </td>
+
+        <td class="clickable-cell waste-cell-trigger"
+            data-record-index="${index}"
+            data-category-key="special"
+            data-category-label="Special Waste">
+          ${escapeHtml(special)}
+        </td>
+
+        <td>${escapeHtml(grandTotal)}</td>
+        <td><span class="${badgeClass}">${escapeHtml(status)}</span></td>
+        <td>
+          <button
+            type="button"
+            class="details-arrow-btn validation-report-btn"
+            data-record-index="${index}"
+            aria-label="Open validation report"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <path d="M1 12C3 7 7 4 12 4C17 4 21 7 23 12C21 17 17 20 12 20C7 20 3 17 1 12Z" stroke="currentColor" stroke-width="2"/>
+              <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/>
+            </svg>
+          </button>
+        </td>
+      </tr>
+    `;
+  }).join("");
+}
+
+function openWasteBreakdownModal(record, categoryKey, categoryLabel) {
+  const modal = document.getElementById("wasteBreakdownModal");
+  const title = document.getElementById("wasteBreakdownTitle");
+  const subtitle = document.getElementById("wasteBreakdownSubtitle");
+  const sourceName = document.getElementById("breakdownSourceName");
+  const categoryName = document.getElementById("breakdownCategoryName");
+  const subtotalValue = document.getElementById("breakdownSubtotalValue");
+  const list = document.getElementById("wasteBreakdownList");
+
+  if (!modal || !title || !subtitle || !sourceName || !categoryName || !subtotalValue || !list) {
+    return;
   }
 
-  #recordsSection .page-card-header p {
-    font-size: 13px;
+  const payload = getCategoryPayload(record, categoryKey);
+  const source = getRecordDisplayName(record);
+
+  title.textContent = `${categoryLabel} Breakdown`;
+  subtitle.textContent = "Detailed waste inputs from raw payload";
+  sourceName.textContent = source;
+  categoryName.textContent = categoryLabel;
+
+  if (!payload || typeof payload !== "object") {
+    subtotalValue.textContent = "0 kg";
+    list.innerHTML = `<div class="breakdown-empty">No detailed data available for this category.</div>`;
+    modal.classList.remove("hidden");
+    return;
   }
 
-  #recordsSection .filter-bar::before {
-    font-size: 16px;
+  const subtotal = toNumber(payload.subtotal);
+  subtotalValue.textContent = formatKg(subtotal);
+
+  const detailEntries = Object.entries(payload).filter(([key]) => key !== "subtotal");
+
+  if (!detailEntries.length) {
+    list.innerHTML = `<div class="breakdown-empty">No detailed data available for this category.</div>`;
+    modal.classList.remove("hidden");
+    return;
   }
 
-  #recordsSection .filter-group input,
-  #recordsSection .filter-group select,
-  #recordsSection #generateWasteReportBtn {
-    height: 44px;
+  list.innerHTML = detailEntries.map(([key, value]) => `
+    <div class="breakdown-row">
+      <span class="breakdown-row-label">${escapeHtml(formatBreakdownLabel(key))}</span>
+      <span class="breakdown-row-value">${escapeHtml(formatKg(value))}</span>
+    </div>
+  `).join("");
+
+  modal.classList.remove("hidden");
+}
+
+function closeWasteBreakdownModal() {
+  const modal = document.getElementById("wasteBreakdownModal");
+  if (modal) {
+    modal.classList.add("hidden");
+  }
+}
+
+function setupWasteRecordTableClicks() {
+  const tbody = document.getElementById("wasteRecordsTableBody");
+  if (!tbody) return;
+
+  tbody.addEventListener("click", (event) => {
+    const cell = event.target.closest(".waste-cell-trigger");
+    if (!cell) return;
+
+    const index = Number(cell.dataset.recordIndex);
+    const categoryKey = cell.dataset.categoryKey;
+    const categoryLabel = cell.dataset.categoryLabel;
+
+    const records = window.__renderedWasteRecords || [];
+    const record = records[index];
+
+    if (!record) {
+      console.warn("No record found for clicked waste cell:", index);
+      return;
+    }
+
+    openWasteBreakdownModal(record, categoryKey, categoryLabel);
+  });
+}
+
+function setupWasteBreakdownModal() {
+  const closeBtn = document.getElementById("closeWasteBreakdownModal");
+  const overlay = document.getElementById("wasteBreakdownOverlay");
+
+  closeBtn?.addEventListener("click", closeWasteBreakdownModal);
+  overlay?.addEventListener("click", closeWasteBreakdownModal);
+}
+
+function setupWasteRecordFilters() {
+  const searchInput = document.getElementById("wasteSearchInput");
+  const barangayFilter = document.getElementById("wasteBarangayFilter");
+  const typeFilter = document.getElementById("wasteTypeFilter");
+  const validationFilter = document.getElementById("wasteValidationFilter");
+  const monthFilter = document.getElementById("wasteMonthFilter");
+  const yearFilter = document.getElementById("wasteYearFilter");
+  const reportBtn = document.getElementById("generateWasteReportBtn");
+
+  function applyWasteFilters() {
+    const filtered = getFilteredWasteRecords();
+    renderWasteRecordsTable(filtered);
+    updateWasteRecordsAnalyticsSafe(filtered);
   }
 
-  #wasteBreakdownModal .waste-breakdown-modal,
-  #wasteBreakdownModal .custom-modal-content {
-    width: calc(100vw - 16px) !important;
-    max-width: calc(100vw - 16px) !important;
-    max-height: calc(100dvh - 16px) !important;
-    border-radius: 20px !important;
+  // =========================
+  // FILTER EVENTS
+  // =========================
+  [
+    searchInput,
+    barangayFilter,
+    typeFilter,
+    validationFilter,
+    monthFilter,
+    yearFilter
+  ].forEach(element => {
+    if (!element) return;
+
+    element.addEventListener("input", applyWasteFilters);
+    element.addEventListener("change", applyWasteFilters);
+  });
+
+  // =========================
+  // GENERATE REPORT BUTTON
+  // =========================
+  if (reportBtn) {
+    reportBtn.addEventListener("click", () => {
+      const filtered = getFilteredWasteRecords();
+      generateWasteSummaryReport(filtered);
+    });
+  }
+}
+
+function buildReportGridItem(label, value) {
+  return `
+    <div class="report-grid-item">
+      <div class="report-grid-label">${escapeHtml(label)}</div>
+      <div class="report-grid-value">${escapeHtml(value)}</div>
+    </div>
+  `;
+}
+
+function openValidationDetailsModal(record) {
+  const modal = document.getElementById("validationDetailsModal");
+  const basicInfo = document.getElementById("reportBasicInfo");
+  const wasteSummary = document.getElementById("reportWasteSummary");
+  const validationInfo = document.getElementById("reportValidationInfo");
+  const reportDate = document.getElementById("reportDate");
+  const reportFooterValidator = document.getElementById("reportFooterValidator");
+
+  if (!modal || !basicInfo || !wasteSummary || !validationInfo || !reportDate || !record) {
+    return;
   }
 
-  #wasteBreakdownModal .custom-modal-header {
-    padding: 16px !important;
-    grid-template-columns: minmax(0, 1fr) 42px !important;
+  const name = getRecordDisplayName(record);
+  const type = getRecordType(record);
+  const period = formatPeriod(record.period_from, record.period_to);
+  const grandTotal = `${formatNumber(record.grand_total)} kg`;
+
+  const validatedBy = record.validated_by || "—";
+  const validatedAt = formatDate(record.validated_at || record.created_at || record.createdAt);
+  const status = getValidationStatus(record);
+  const notes = record.validation_notes || "—";
+  const remarks = record.remarks || "—";
+
+  reportDate.textContent = new Date().toLocaleDateString("en-PH", {
+    year: "numeric",
+    month: "long",
+    day: "numeric"
+  });
+
+  if (reportFooterValidator) {
+    const signatureBase64 = record.enforcer_signature || "";
+    const signatureHtml = signatureBase64
+      ? `<img src="data:image/png;base64,${signatureBase64}" alt="Enforcer Signature" class="report-signature-image">`
+      : `<div class="report-signature-placeholder"></div>`;
+
+    reportFooterValidator.innerHTML = `
+  <div class="report-signature-block">
+    <div class="report-signature-caption">
+      Validated and reviewed by:
+    </div>
+
+    <div class="report-signature-box">
+      ${signatureHtml}
+    </div>
+
+    <div class="report-signature-line"></div>
+
+    <div class="report-signature-name">
+      ${escapeHtml(validatedBy)}
+    </div>
+  </div>
+`;
   }
 
-  #wasteBreakdownModal .custom-modal-header > div {
-    padding-left: 0 !important;
+  basicInfo.innerHTML = [
+    buildReportGridItem("Name", name),
+    buildReportGridItem("Type", type),
+    buildReportGridItem("Period", period),
+    buildReportGridItem("Grand Total", grandTotal)
+  ].join("");
+
+  wasteSummary.innerHTML = [
+    buildReportGridItem("Biodegradable", formatKg(record.biodegradable_subtotal)),
+    buildReportGridItem("Recyclable", formatKg(record.recyclable_subtotal)),
+    buildReportGridItem("Residual", formatKg(record.residual_subtotal)),
+    buildReportGridItem("Special", formatKg(record.special_subtotal))
+  ].join("");
+
+  validationInfo.innerHTML = [
+    buildReportGridItem("Validated By", validatedBy),
+    buildReportGridItem("Validated At", validatedAt),
+    buildReportGridItem("Validation Status", status),
+    buildReportGridItem("Validation Notes", notes),
+    buildReportGridItem("Remarks", remarks)
+  ].join("");
+
+  modal.classList.remove("hidden");
+}
+
+function closeValidationDetailsModal() {
+  const modal = document.getElementById("validationDetailsModal");
+  if (modal) {
+    modal.classList.add("hidden");
+  }
+}
+
+function setupValidationDetailsModal() {
+  const closeBtn = document.getElementById("closeValidationDetailsModal");
+  const overlay = document.getElementById("validationDetailsOverlay");
+  const printBtn = document.getElementById("printReportBtn");
+
+  closeBtn?.addEventListener("click", closeValidationDetailsModal);
+  overlay?.addEventListener("click", closeValidationDetailsModal);
+  printBtn?.addEventListener("click", () => window.print());
+}
+
+function setupWasteRecordValidationButtons() {
+  const tbody = document.getElementById("wasteRecordsTableBody");
+  if (!tbody) return;
+
+  tbody.addEventListener("click", (event) => {
+    const btn = event.target.closest(".validation-report-btn");
+    if (!btn) return;
+
+    const index = Number(btn.dataset.recordIndex);
+    const records = window.__renderedWasteRecords || [];
+    const record = records[index];
+
+    if (!record) return;
+
+    openValidationDetailsModal(record);
+  });
+}
+
+function openWasteBreakdownFromTable(index, categoryKey, categoryLabel) {
+  const renderedRecords = window.__renderedWasteRecords || [];
+  const record = renderedRecords[index];
+
+  if (!record) return;
+  openWasteBreakdownModal(record, categoryKey, categoryLabel);
+}
+
+window.openWasteBreakdownFromTable = openWasteBreakdownFromTable;
+
+function updateWasteRecordsAnalyticsSafe(records) {
+  try {
+    if (typeof updateDashboardAnalytics === "function") {
+      updateDashboardAnalytics(records);
+    }
+  } catch (error) {
+    console.warn("updateDashboardAnalytics skipped:", error);
   }
 
-  #wasteBreakdownModal .custom-modal-header > div::before {
-    position: static !important;
-    margin-bottom: 10px !important;
+  try {
+    if (typeof renderLatestSubmission === "function") {
+      renderLatestSubmission(records);
+    }
+  } catch (error) {
+    console.warn("renderLatestSubmission skipped:", error);
   }
 
-  #wasteBreakdownModal #wasteBreakdownTitle,
-  #wasteBreakdownModal .custom-modal-header h3 {
-    font-size: 20px !important;
+  try {
+    if (typeof renderSubmissionSources === "function") {
+      renderSubmissionSources(records);
+    }
+  } catch (error) {
+    console.warn("renderSubmissionSources skipped:", error);
   }
 
-  #wasteBreakdownModal #wasteBreakdownSubtitle,
-  #wasteBreakdownModal .custom-modal-header p {
-    font-size: 12px !important;
+  try {
+    if (typeof renderCategoryAnalytics === "function") {
+      renderCategoryAnalytics(records);
+    }
+  } catch (error) {
+    console.warn("renderCategoryAnalytics skipped:", error);
   }
 
-  #wasteBreakdownModal .modal-close-btn,
-  #wasteBreakdownModal #closeWasteBreakdownModal {
-    width: 42px !important;
-    height: 42px !important;
-    min-width: 42px !important;
-    min-height: 42px !important;
-    font-size: 23px !important;
+  try {
+    if (typeof renderSystemRecommendations === "function") {
+      renderSystemRecommendations(records);
+    }
+  } catch (error) {
+    console.warn("renderSystemRecommendations skipped:", error);
   }
 
-  #wasteBreakdownModal .custom-modal-body {
-    padding: 14px 16px 18px !important;
+  try {
+    if (typeof renderWasteTrendOverview === "function") {
+      renderWasteTrendOverview(records);
+    }
+  } catch (error) {
+    console.warn("renderWasteTrendOverview skipped:", error);
   }
+}   
 
-  #wasteBreakdownModal .breakdown-row {
-    grid-template-columns: 38px minmax(0, 1fr) 64px !important;
-    padding: 11px 12px !important;
-  }
+function generateWasteSummaryReport(records) {
+  const barangay = document.getElementById("wasteBarangayFilter")?.value || "All Barangays";
+  const month = document.getElementById("wasteMonthFilter")?.selectedOptions?.[0]?.textContent || "All Months";
+  const year = document.getElementById("wasteYearFilter")?.value || "All Years";
 
-  #wasteBreakdownModal .breakdown-row::after {
-    display: none !important;
-  }
+  const totalBio = records.reduce((sum, r) => sum + toNumber(r.biodegradable_subtotal), 0);
+  const totalRec = records.reduce((sum, r) => sum + toNumber(r.recyclable_subtotal), 0);
+  const totalRes = records.reduce((sum, r) => sum + toNumber(r.residual_subtotal), 0);
+  const totalSpecial = records.reduce((sum, r) => sum + toNumber(r.special_subtotal), 0);
+  const grandTotal = records.reduce((sum, r) => sum + toNumber(r.grand_total), 0);
 
-  #wasteBreakdownModal .breakdown-row span:first-child {
-    font-size: 14px !important;
-  }
+  const reportWindow = window.open("", "_blank");
 
-  #wasteBreakdownModal .breakdown-row span:first-child::after {
-    display: none !important;
-  }
+  reportWindow.document.write(`
+    <html>
+      <head>
+        <title>Waste Summary Report</title>
+        <style>
+          body {
+            font-family: Arial, sans-serif;
+            padding: 32px;
+            color: #111827;
+          }
 
-  #wasteBreakdownModal .breakdown-row span:last-child,
-  #wasteBreakdownModal .breakdown-row strong:last-child {
-    width: 62px !important;
-    min-height: 32px !important;
-    font-size: 13px !important;
-  }
+          h1 {
+            margin-bottom: 4px;
+          }
+
+          .muted {
+            color: #64748b;
+            margin-bottom: 24px;
+          }
+
+          .summary {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin: 24px 0;
+          }
+
+          .card {
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 16px;
+          }
+
+          .card span {
+            display: block;
+            color: #64748b;
+            font-size: 13px;
+          }
+
+          .card strong {
+            font-size: 22px;
+          }
+
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+          }
+
+          th, td {
+            border: 1px solid #e5e7eb;
+            padding: 10px;
+            font-size: 13px;
+            text-align: left;
+          }
+
+          th {
+            background: #f8fafc;
+          }
+
+          .print-btn {
+            margin-bottom: 20px;
+            padding: 10px 16px;
+            border: 0;
+            border-radius: 8px;
+            background: #15803d;
+            color: white;
+            font-weight: 700;
+            cursor: pointer;
+          }
+
+          @media print {
+            .print-btn {
+              display: none;
+            }
+          }
+        </style>
+      </head>
+
+      <body>
+        <button class="print-btn" onclick="window.print()">Print Report</button>
+
+        <h1>Waste Summary Report</h1>
+        <div class="muted">
+          Barangay: <strong>${escapeHtml(barangay)}</strong><br>
+          Period: <strong>${escapeHtml(month)} ${escapeHtml(year)}</strong><br>
+          Records Found: <strong>${records.length}</strong>
+        </div>
+
+        <div class="summary">
+          <div class="card"><span>Biodegradable</span><strong>${formatNumber(totalBio)} kg</strong></div>
+          <div class="card"><span>Recyclable</span><strong>${formatNumber(totalRec)} kg</strong></div>
+          <div class="card"><span>Residual</span><strong>${formatNumber(totalRes)} kg</strong></div>
+          <div class="card"><span>Special Waste</span><strong>${formatNumber(totalSpecial)} kg</strong></div>
+          <div class="card"><span>Grand Total</span><strong>${formatNumber(grandTotal)} kg</strong></div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Control No.</th>
+              <th>Name</th>
+              <th>Type</th>
+              <th>Period</th>
+              <th>Biodegradable</th>
+              <th>Recyclable</th>
+              <th>Residual</th>
+              <th>Special</th>
+              <th>Grand Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${records.map((record, index) => `
+              <tr>
+                <td>${String(index + 1).padStart(2, "0")}</td>
+                <td>${escapeHtml(getRecordDisplayName(record))}</td>
+                <td>${escapeHtml(getRecordType(record))}</td>
+                <td>${escapeHtml(formatPeriod(record.period_from, record.period_to))}</td>
+                <td>${escapeHtml(formatKg(record.biodegradable_subtotal))}</td>
+                <td>${escapeHtml(formatKg(record.recyclable_subtotal))}</td>
+                <td>${escapeHtml(formatKg(record.residual_subtotal))}</td>
+                <td>${escapeHtml(formatKg(record.special_subtotal))}</td>
+                <td>${escapeHtml(formatKg(record.grand_total))}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </body>
+    </html>
+  `);
+
+  reportWindow.document.close();
 }
