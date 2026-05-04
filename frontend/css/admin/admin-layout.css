@@ -1,25 +1,192 @@
+/* =========================================================
+   ADMIN LAYOUT
+   File: css/admin/admin-layout.css
+
+   Purpose:
+   - Main admin layout
+   - Fixed sidebar spacing
+   - Expanded <-> Collapsed sidebar content resize
+   - Section visibility
+   - Width safety for cards, grids, tables, and maps
+
+   Important:
+   - Sidebar design/width is handled in css/admin/admin-sidebar.css
+   - Breakpoints/mobile drawer behavior is handled in css/admin/admin-responsive.css
+   - This file controls only the content layout beside the fixed sidebar
+
+   Required HTML:
+   <div class="admin-layout" id="adminLayout">
+========================================================= */
+
+/* =========================
+   ROOT VARIABLES
+========================= */
+
+:root {
+  --sidebar-expanded-width: 280px;
+  --sidebar-collapsed-width: 88px;
+  --admin-bg: #f4f7fb;
+  --layout-transition: 0.28s ease;
+}
 
 /* =========================
    MAIN LAYOUT
 ========================= */
+
 .admin-layout {
-  display: flex;
   min-height: 100vh;
+  width: 100%;
+  display: block;
+  background: var(--admin-bg);
+  overflow-x: hidden;
 }
 
+/* =========================
+   MAIN CONTENT
+   Sidebar is fixed, so content must reserve space manually.
+========================= */
+
 .main-content {
-  margin-left: 280px;
-  width: calc(100% - 280px);
-  padding: 18px 22px 28px;
+  min-width: 0;
+  max-width: none;
+
+  width: calc(100% - var(--sidebar-expanded-width));
+  margin-left: var(--sidebar-expanded-width);
+
+  padding: 24px;
+
+  transition:
+    width var(--layout-transition),
+    margin-left var(--layout-transition),
+    padding var(--layout-transition);
+}
+
+/* =========================
+   COLLAPSED SIDEBAR CONTENT STATE
+   JS toggles:
+   .admin-layout.sidebar-collapsed
+========================= */
+
+.admin-layout.sidebar-collapsed .main-content {
+  width: calc(100% - var(--sidebar-collapsed-width));
+  margin-left: var(--sidebar-collapsed-width);
 }
 
 /* =========================
    SECTION VISIBILITY
 ========================= */
+
 .content-section {
   display: none;
 }
 
 .content-section.active {
   display: block;
+}
+
+/* =========================
+   WIDTH SAFETY
+========================= */
+
+.content-section,
+.topbar,
+.page-card,
+.dashboard-card,
+.chart-card,
+.table-shell,
+.complaints-table-shell,
+.recent-records-preview,
+.tracking-layout,
+.tracking-map-wrap,
+.dashboard-main-grid,
+.dashboard-secondary-grid,
+.dashboard-lower-grid,
+.dashboard-bottom-grid,
+.dashboard-side-stack,
+.users-layout,
+.complaints-summary-grid,
+.waste-summary-cards,
+.truck-analytics-grid,
+.invoice-workflow-layout,
+.calendar-main-bottom-grid {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.table-shell,
+.complaints-table-shell,
+.recent-records-preview,
+.tracking-map-wrap,
+#truckMap {
+  max-width: 100%;
+}
+
+/* =========================
+   DASHBOARD GRID SAFETY
+   Keeps cards from overflowing when sidebar changes width.
+========================= */
+
+.dashboard-main-grid,
+.dashboard-secondary-grid,
+.dashboard-lower-grid,
+.dashboard-bottom-grid,
+.tracking-layout {
+  width: 100%;
+}
+
+.admin-layout.sidebar-collapsed .dashboard-main-grid,
+.admin-layout.sidebar-collapsed .dashboard-secondary-grid,
+.admin-layout.sidebar-collapsed .dashboard-lower-grid,
+.admin-layout.sidebar-collapsed .dashboard-bottom-grid,
+.admin-layout.sidebar-collapsed .tracking-layout {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* =========================
+   TABLE / MAP SPACE IMPROVEMENT WHEN COLLAPSED
+========================= */
+
+@media (min-width: 993px) {
+  .admin-layout.sidebar-collapsed .tracking-layout {
+    grid-template-columns: minmax(0, 2fr) minmax(300px, 0.8fr);
+  }
+
+  .admin-layout.sidebar-collapsed .tracking-map-wrap,
+  .admin-layout.sidebar-collapsed #truckMap {
+    min-height: 560px;
+  }
+}
+
+/* =========================
+   RESPONSIVE
+   Tablet/mobile keeps drawer behavior.
+========================= */
+
+@media (max-width: 992px) {
+  .admin-layout {
+    display: block;
+    width: 100%;
+  }
+
+  .main-content,
+  .admin-layout.sidebar-collapsed .main-content {
+    width: 100%;
+    margin-left: 0;
+    padding: 18px;
+  }
+}
+
+@media (max-width: 768px) {
+  .main-content,
+  .admin-layout.sidebar-collapsed .main-content {
+    padding: 14px;
+  }
+}
+
+@media (max-width: 480px) {
+  .main-content,
+  .admin-layout.sidebar-collapsed .main-content {
+    padding: 12px;
+  }
 }
