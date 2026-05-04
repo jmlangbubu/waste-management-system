@@ -61,7 +61,6 @@ function cleanText(value) {
 
 function parseOptionalCoordinate(value) {
   const cleaned = cleanText(value);
-
   if (!cleaned) return null;
 
   const num = parseFloat(cleaned);
@@ -69,6 +68,22 @@ function parseOptionalCoordinate(value) {
   if (!Number.isFinite(num) || Number.isNaN(num) || num === 0) {
     return null;
   }
+
+  return num;
+}
+
+function parseOptionalInt(value) {
+  const cleaned = cleanText(value);
+
+  if (!cleaned) return null;
+
+  if (!/^\d+$/.test(cleaned)) {
+    return null;
+  }
+
+  const num = Number(cleaned);
+
+  if (!Number.isInteger(num)) return null;
 
   return num;
 }
@@ -545,6 +560,8 @@ router.put("/:id/accept", (req, res) => {
   const complaintId = req.params.id;
   const { accepted_by } = req.body;
 
+  const acceptedBy = parseOptionalInt(accepted_by);
+
   const sql = `
     UPDATE complaints
     SET status = 'accepted_by_barangay',
@@ -553,12 +570,14 @@ router.put("/:id/accept", (req, res) => {
     WHERE id = ?
   `;
 
-  db.query(sql, [accepted_by || null, complaintId], (err) => {
+  db.query(sql, [acceptedBy, complaintId], (err) => {
     if (err) {
       console.error("Accept complaint error:", err);
       return res.status(500).json({
         success: false,
-        message: "Failed to accept complaint."
+        message: "Failed to accept complaint.",
+        error: err.message,
+        code: err.code
       });
     }
 
@@ -586,7 +605,14 @@ router.put("/:id/resolve", upload.single("evidence"), (req, res) => {
 
   const handledBy = cleanText(handled_by_barangay_name);
   const report = cleanText(resolution_report);
-  const resolvedBy = cleanText(resolved_by) || null;
+
+  /*
+    IMPORTANT:
+    complaints.resolved_by is INT in your DB.
+    Mobile may send username/barangay text.
+    If it is not numeric, save NULL to prevent SQL type errors.
+  */
+  const resolvedBy = parseOptionalInt(resolved_by);
 
   if (!handledBy || !report) {
     return res.status(400).json({
@@ -670,6 +696,8 @@ router.put("/:id/resolve", upload.single("evidence"), (req, res) => {
       logUploadedFile("=== RESOLUTION UPLOAD DEBUG ===", req.file);
 
       console.log("=== RESOLUTION GPS DEBUG ===");
+      console.log("raw resolved_by from mobile:", resolved_by);
+      console.log("saved resolvedBy:", resolvedBy);
       console.log("resolver_latitude from mobile:", resolver_latitude);
       console.log("resolver_longitude from mobile:", resolver_longitude);
       console.log("parsed resolverLat:", resolverLat);
@@ -682,6 +710,7 @@ router.put("/:id/resolve", upload.single("evidence"), (req, res) => {
         message: "Complaint resolved successfully.",
         complaint_id: complaintId,
         resolution_evidence_url: evidenceUrl,
+        resolved_by_saved: resolvedBy,
         resolver_location_received: resolverLat !== null && resolverLng !== null,
         resolver_location_saved:
           resolverLat !== null &&
