@@ -10781,4 +10781,189 @@ td:last-child {
 }
 
 
+/* =========================================================
+   OVERRIDES CLEANUP NOTE
+
+   Layout ownership:
+   - admin-layout.css      => .main-content width / margin-left
+   - admin-sidebar.css     => .dashboard-sidebar width / collapsed UI
+   - admin-dashboard.css   => dashboard cards/grid width
+   - admin-responsive.css  => breakpoints/mobile drawer
+
+   Do not add global .main-content or .dashboard-sidebar width/margin
+   rules in this file.
+========================================================= */
+
+/* =========================================================
+   MOBILE SIDEBAR DRAWER LAYER FIX
+   File: css/admin/admin-overrides.css
+
+   Issue:
+   - On mobile/tablet, admin-overrides had sidebar-backdrop with
+     very high z-index and backdrop blur.
+   - That placed the backdrop above the sidebar, making the sidebar
+     look blurred when opened.
+
+   Fix:
+   - Sidebar must be above the backdrop.
+   - Backdrop should dim the page only, not blur the sidebar.
+========================================================= */
+
+@media (max-width: 1180px) {
+  body .sidebar-backdrop {
+    position: fixed !important;
+    inset: 0 !important;
+
+    z-index: 99980 !important;
+
+    background: rgba(15, 23, 42, 0.52) !important;
+
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    filter: none !important;
+  }
+
+  body .sidebar-backdrop.hidden {
+    display: none !important;
+  }
+
+  body .dashboard-sidebar,
+  body .dashboard-sidebar.open,
+  body .admin-layout.sidebar-collapsed .dashboard-sidebar,
+  body .admin-layout.sidebar-collapsed .dashboard-sidebar.open {
+    z-index: 100000 !important;
+
+    filter: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+
+    opacity: 1 !important;
+  }
+
+  body .dashboard-sidebar *,
+  body .dashboard-sidebar.open *,
+  body .admin-layout.sidebar-collapsed .dashboard-sidebar *,
+  body .admin-layout.sidebar-collapsed .dashboard-sidebar.open * {
+    filter: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+}
+
+@media (max-width: 992px) {
+  body .dashboard-sidebar,
+  body .admin-layout.sidebar-collapsed .dashboard-sidebar {
+    width: 280px !important;
+    max-width: 84vw !important;
+    height: 100dvh !important;
+
+    transform: translateX(-100%) !important;
+
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+  }
+
+  body .dashboard-sidebar.open,
+  body .admin-layout.sidebar-collapsed .dashboard-sidebar.open {
+    transform: translateX(0) !important;
+  }
+}
+
+@media (max-width: 480px) {
+  body .dashboard-sidebar,
+  body .admin-layout.sidebar-collapsed .dashboard-sidebar {
+    width: 82vw !important;
+    max-width: 82vw !important;
+  }
+}
+
+/* =========================================================
+   MOBILE SIDEBAR NO-BLUR HARD FIX
+   File: css/admin/admin-overrides.css
+
+   Problem:
+   - The sidebar drawer becomes blurred on mobile because the
+     sidebar-backdrop layer is still applying blur / covering the drawer.
+
+   Final fix:
+   - Disable the sidebar backdrop completely on mobile/tablet.
+   - Keep the sidebar drawer above the page and sharp.
+   - Close sidebar using logo toggle or nav click instead of backdrop.
+========================================================= */
+
+@media (max-width: 1180px) {
+  body #sidebarBackdrop.sidebar-backdrop,
+  body .sidebar-backdrop,
+  body .sidebar-backdrop:not(.hidden) {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+
+    background: transparent !important;
+
+    filter: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+
+    z-index: -1 !important;
+  }
+
+  body .dashboard-sidebar,
+  body .dashboard-sidebar.open,
+  body .dashboard-sidebar.active,
+  body .dashboard-sidebar.show,
+  body .dashboard-sidebar.is-open,
+  body .admin-layout.sidebar-collapsed .dashboard-sidebar,
+  body .admin-layout.sidebar-collapsed .dashboard-sidebar.open {
+    z-index: 999999 !important;
+
+    filter: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+
+    opacity: 1 !important;
+    mix-blend-mode: normal !important;
+
+    transform: translateX(-100%) !important;
+  }
+
+  body .dashboard-sidebar.open,
+  body .dashboard-sidebar.active,
+  body .dashboard-sidebar.show,
+  body .dashboard-sidebar.is-open,
+  body .admin-layout.sidebar-collapsed .dashboard-sidebar.open {
+    transform: translateX(0) !important;
+  }
+
+  body .dashboard-sidebar *,
+  body .dashboard-sidebar.open *,
+  body .admin-layout.sidebar-collapsed .dashboard-sidebar *,
+  body .admin-layout.sidebar-collapsed .dashboard-sidebar.open * {
+    filter: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    opacity: 1;
+    mix-blend-mode: normal !important;
+  }
+}
+
+@media (max-width: 992px) {
+  body .dashboard-sidebar,
+  body .admin-layout.sidebar-collapsed .dashboard-sidebar {
+    width: 280px !important;
+    max-width: 84vw !important;
+    height: 100dvh !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+  }
+}
+
+@media (max-width: 480px) {
+  body .dashboard-sidebar,
+  body .admin-layout.sidebar-collapsed .dashboard-sidebar {
+    width: 82vw !important;
+    max-width: 82vw !important;
+  }
+}
 
