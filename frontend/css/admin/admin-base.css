@@ -1,25 +1,77 @@
+/* =========================================================
+   ADMIN BASE
+   File: css/admin/admin-base.css
+
+   Purpose:
+   - Global reset
+   - Base typography
+   - Page width safety
+   - Global utilities
+   - Scrollbar styling
+========================================================= */
+
 /* =========================
    RESET + GLOBAL BASE
 ========================= */
-* {
+
+*,
+*::before,
+*::after {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
 }
 
+html {
+  width: 100%;
+  max-width: 100%;
+  min-height: 100%;
+  overflow-x: hidden;
+  scroll-behavior: smooth;
+}
+
 body {
+  width: 100%;
+  max-width: 100%;
+  min-height: 100vh;
+
+  overflow-x: hidden;
+
   font-family: "Inter", Arial, sans-serif;
   background: #f4f6f3;
   color: #1f3a2e;
+
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-.hidden {
-  display: none !important;
+/* Prevent media/content from forcing layout overflow */
+img,
+svg,
+canvas,
+video {
+  max-width: 100%;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
 }
 
 /* =========================
    GLOBAL UTILITIES
 ========================= */
+
+.hidden {
+  display: none !important;
+}
+
 .loading-state,
 .empty-state,
 .error-state {
@@ -28,10 +80,7 @@ body {
   font-size: 13px;
 }
 
-.loading-state {
-  color: #667085;
-}
-
+.loading-state,
 .empty-state {
   color: #667085;
 }
@@ -41,10 +90,29 @@ body {
 }
 
 /* =========================
+   GLOBAL WIDTH SAFETY
+========================= */
+
+.admin-layout,
+.main-content,
+.content-section,
+.topbar,
+.page-card,
+.panel-card,
+.stat-card,
+.dashboard-card,
+.table-shell,
+.complaints-table-shell {
+  min-width: 0;
+}
+
+/* =========================
    SCROLLBAR GLOBAL
 ========================= */
+
 ::-webkit-scrollbar {
   width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-thumb {
@@ -54,4 +122,8 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
 }
