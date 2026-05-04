@@ -10,7 +10,6 @@
 <link rel="stylesheet" href="css/admin/admin-topbar.css">
 <link rel="stylesheet" href="css/admin/admin-dashboard.css">
 <link rel="stylesheet" href="css/admin/admin-tables.css">
-<link rel="stylesheet" href="css/admin/admin-waste-records.css">
 <link rel="stylesheet" href="css/admin/admin-appointments.css">
 <link rel="stylesheet" href="css/admin/admin-tracking.css">
 <link rel="stylesheet" href="css/admin/admin-users.css">
@@ -18,20 +17,30 @@
 <link rel="stylesheet" href="css/admin/admin-responsive.css">
 <link rel="stylesheet" href="css/admin/admin-orientation.css">
 <link rel="stylesheet" href="css/admin/admin-overrides.css">
+<link rel="stylesheet" href="css/admin/admin-waste-records.css">
 <link rel="stylesheet" href="css/admin/admin-complaints.css">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
 
 </head>
 <body>
-  <div class="admin-layout">
+  <div class="admin-layout" id="adminLayout">
     <aside class="dashboard-sidebar" id="dashboardSidebar">
       <div class="sidebar-top">
         <div class="sidebar-brand">
-          <div class="brand-mark brand-logo">
-            <img src="images/logo.jpg" alt="WMO Logo" class="sidebar-logo-img" />
-            <span class="sidebar-logo-fallback">W</span>
-          </div>
+          <button
+            id="sidebarLogoToggleBtn"
+            class="sidebar-logo-toggle"
+            type="button"
+            aria-label="Toggle sidebar"
+            title="Toggle sidebar"
+          >
+            <span class="brand-mark brand-logo">
+              <img src="images/logo.jpg" alt="WMO Logo" class="sidebar-logo-img" />
+              <span class="sidebar-logo-fallback">W</span>
+            </span>
+          </button>
+
           <div class="brand-text">
             <h2 id="sidebarBrandTitle">WMO Admin</h2>
             <p id="sidebarBrandSubtitle">Management Panel</p>
@@ -115,7 +124,7 @@
     <main class="main-content">
       <div class="topbar">
         <div class="topbar-left">
-          <button id="sidebarToggleBtn" class="sidebar-toggle-btn" type="button">☰</button>
+          <button id="mobileSidebarToggleBtn" class="sidebar-toggle-btn mobile-sidebar-toggle" type="button" aria-label="Open sidebar" title="Open sidebar">☰</button>
           <div>
             <h1 id="pageTitle">Dashboard Overview</h1>
             <p class="topbar-subtitle">Centralized monitoring and administration panel.</p>
@@ -475,7 +484,7 @@
                   <th>Special</th>
                   <th>Grand Total</th>
                   <th>Status</th>
-                  <th>Validated By</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody id="wasteRecordsTableBody">
