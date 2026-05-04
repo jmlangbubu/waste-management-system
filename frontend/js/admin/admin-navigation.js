@@ -94,6 +94,11 @@ function closeAllAdminModalsOnNavigation() {
     menu.classList.remove("open", "show", "active");
   });
 
+  const otherTrigger = document.getElementById("sidebarOtherTrigger");
+  if (otherTrigger) {
+    otherTrigger.setAttribute("aria-expanded", "false");
+  }
+
   /*
     Reset complaint/map selected state safely if variables exist.
     Wrapped in try blocks para hindi masira if wala yung module sa page.
@@ -127,22 +132,153 @@ function closeAllAdminModalsOnNavigation() {
 // SIDEBAR HELPERS
 // =========================
 
-function showSidebarToggleButton() {
-  const toggleBtn = document.getElementById("sidebarToggleBtn");
-  if (!toggleBtn) return;
+function isMobileSidebarMode() {
+  return window.innerWidth <= 992;
+}
 
-  if (window.innerWidth <= 992) {
-    toggleBtn.classList.remove("hidden-sidebar-toggle");
-    toggleBtn.style.setProperty("display", "inline-flex", "important");
+function getAdminLayout() {
+  return document.getElementById("adminLayout") || document.querySelector(".admin-layout");
+}
+
+function getSidebarToggleButtons() {
+  return {
+    logoToggle: document.getElementById("sidebarLogoToggleBtn"),
+    mobileToggle: document.getElementById("mobileSidebarToggleBtn")
+      || document.getElementById("sidebarToggleBtn")
+  };
+}
+
+function updateSidebarToggleIcon() {
+  const layout = getAdminLayout();
+  const sidebar = document.getElementById("dashboardSidebar");
+  const { logoToggle, mobileToggle } = getSidebarToggleButtons();
+
+  const isMobile = isMobileSidebarMode();
+  const isCollapsed = layout?.classList.contains("sidebar-collapsed");
+  const isOpen = sidebar?.classList.contains("open");
+
+  if (logoToggle) {
+    logoToggle.setAttribute(
+      "aria-label",
+      isCollapsed ? "Expand sidebar" : "Collapse sidebar"
+    );
+
+    logoToggle.setAttribute(
+      "title",
+      isCollapsed ? "Expand sidebar" : "Collapse sidebar"
+    );
+  }
+
+  if (mobileToggle) {
+    mobileToggle.textContent = isOpen ? "×" : "☰";
+    mobileToggle.setAttribute("aria-label", isOpen ? "Close sidebar" : "Open sidebar");
+    mobileToggle.setAttribute("title", isOpen ? "Close sidebar" : "Open sidebar");
+
+    /*
+      Desktop topbar hamburger must stay hidden.
+      Mobile/tablet only uses the topbar button.
+    */
+    if (isMobile) {
+      mobileToggle.classList.remove("hidden-sidebar-toggle");
+      mobileToggle.style.setProperty("display", "inline-flex", "important");
+    } else {
+      mobileToggle.classList.add("hidden-sidebar-toggle");
+      mobileToggle.style.setProperty("display", "none", "important");
+    }
   }
 }
 
-function hideSidebarToggleButton() {
-  const toggleBtn = document.getElementById("sidebarToggleBtn");
-  if (!toggleBtn) return;
+function showSidebarToggleButton() {
+  setupSidebarOtherMenu();
+  updateSidebarToggleIcon();
+}
 
-  toggleBtn.classList.add("hidden-sidebar-toggle");
-  toggleBtn.style.setProperty("display", "none", "important");
+function hideSidebarToggleButton() {
+  const { mobileToggle } = getSidebarToggleButtons();
+
+  if (!mobileToggle) return;
+
+  /*
+    Hide only the mobile/topbar toggle when the mobile drawer is open.
+    The sidebar logo toggle remains available inside the drawer.
+  */
+  if (isMobileSidebarMode()) {
+    mobileToggle.classList.add("hidden-sidebar-toggle");
+    mobileToggle.style.setProperty("display", "none", "important");
+  }
+
+  updateSidebarToggleIcon();
+}
+
+function saveSidebarCollapsedState(isCollapsed) {
+  try {
+    localStorage.setItem("adminSidebarCollapsed", isCollapsed ? "true" : "false");
+  } catch (error) {
+    console.warn("Sidebar state save skipped:", error);
+  }
+}
+
+function applySavedSidebarCollapsedState() {
+  const layout = getAdminLayout();
+  if (!layout || isMobileSidebarMode()) return;
+
+  try {
+    const savedState = localStorage.getItem("adminSidebarCollapsed");
+
+    if (savedState === "true") {
+      layout.classList.add("sidebar-collapsed");
+    } else {
+      layout.classList.remove("sidebar-collapsed");
+    }
+  } catch (error) {
+    console.warn("Sidebar state restore skipped:", error);
+  }
+
+  updateSidebarToggleIcon();
+}
+
+function resizeAdminMapsAfterSidebarChange() {
+  setTimeout(() => {
+    try {
+      if (typeof truckMap !== "undefined" && truckMap) {
+        truckMap.invalidateSize();
+      }
+    } catch (error) {
+      console.warn("Truck map resize after sidebar collapse skipped:", error);
+    }
+
+    try {
+      if (typeof complaintLeafletMap !== "undefined" && complaintLeafletMap) {
+        complaintLeafletMap.invalidateSize();
+      }
+    } catch (error) {
+      console.warn("Complaint map resize after sidebar collapse skipped:", error);
+    }
+  }, 320);
+}
+
+function toggleDesktopSidebarCollapse() {
+  const layout = getAdminLayout();
+  if (!layout) return;
+
+  layout.classList.toggle("sidebar-collapsed");
+
+  const isCollapsed = layout.classList.contains("sidebar-collapsed");
+  saveSidebarCollapsedState(isCollapsed);
+  updateSidebarToggleIcon();
+  resizeAdminMapsAfterSidebarChange();
+}
+
+function expandDesktopSidebar() {
+  const layout = getAdminLayout();
+  if (!layout || isMobileSidebarMode()) return;
+
+  if (layout.classList.contains("sidebar-collapsed")) {
+    layout.classList.remove("sidebar-collapsed");
+    saveSidebarCollapsedState(false);
+    updateSidebarToggleIcon();
+    resizeAdminMapsAfterSidebarChange();
+  }
 }
 
 function openMobileSidebar() {
@@ -154,6 +290,7 @@ function openMobileSidebar() {
   sidebar.classList.add("open");
   backdrop.classList.remove("hidden");
   hideSidebarToggleButton();
+  updateSidebarToggleIcon();
 }
 
 function closeMobileSidebar() {
@@ -165,9 +302,11 @@ function closeMobileSidebar() {
   sidebar.classList.remove("open");
   backdrop.classList.add("hidden");
 
-  if (window.innerWidth <= 992) {
+  if (isMobileSidebarMode()) {
     showSidebarToggleButton();
   }
+
+  updateSidebarToggleIcon();
 }
 
 // =========================
@@ -203,6 +342,14 @@ function openSection(sectionId) {
     }
   }
 
+  if (sectionId === SECTION_IDS.records) {
+    if (typeof loadRecords === "function") {
+      loadRecords();
+    } else if (typeof loadWasteRecords === "function") {
+      loadWasteRecords();
+    }
+  }
+
   if (sectionId === SECTION_IDS.tracking) {
     if (typeof initializeTruckMap === "function") {
       initializeTruckMap();
@@ -218,7 +365,7 @@ function openSection(sectionId) {
       if (typeof truckMap !== "undefined" && truckMap) {
         truckMap.invalidateSize();
       }
-    }, 200);
+    }, 220);
   } else {
     if (typeof stopTrackingAutoRefresh === "function") {
       stopTrackingAutoRefresh();
@@ -230,6 +377,9 @@ function openSection(sectionId) {
 
 function setupProtectedNavigation() {
   document.querySelectorAll(".nav-btn").forEach((btn) => {
+    if (btn.dataset.navBound === "true") return;
+
+    btn.dataset.navBound = "true";
     btn.addEventListener("click", () => {
       const targetSection = btn.getAttribute("data-section");
       openSection(targetSection);
@@ -243,42 +393,193 @@ function setupProtectedNavigation() {
 
 function bindSidebarToggle() {
   const sidebar = document.getElementById("dashboardSidebar");
-  const toggleBtn = document.getElementById("sidebarToggleBtn");
   const backdrop = document.getElementById("sidebarBackdrop");
+  const layout = getAdminLayout();
+  const { logoToggle, mobileToggle } = getSidebarToggleButtons();
 
-  if (!sidebar || !toggleBtn || !backdrop) return;
+  if (!sidebar || !backdrop || !layout) return;
 
-  toggleBtn.addEventListener("click", () => {
-    if (sidebar.classList.contains("open")) {
-      closeMobileSidebar();
-    } else {
-      openMobileSidebar();
-    }
-  });
+  /*
+    Sidebar logo controls desktop collapse/expand.
+    On mobile, logo closes/opens the drawer only if drawer is already reachable.
+  */
+  if (logoToggle && logoToggle.dataset.sidebarLogoToggleBound !== "true") {
+    logoToggle.dataset.sidebarLogoToggleBound = "true";
 
-  backdrop.addEventListener("click", closeMobileSidebar);
+    logoToggle.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
 
-  window.addEventListener("resize", () => {
-    if (window.innerWidth > 992) {
+      if (isMobileSidebarMode()) {
+        if (sidebar.classList.contains("open")) {
+          closeMobileSidebar();
+        } else {
+          openMobileSidebar();
+        }
+
+        return;
+      }
+
+      toggleDesktopSidebarCollapse();
+    });
+  }
+
+  /*
+    Topbar hamburger is mobile/tablet only.
+    It is hidden on desktop by CSS and JS.
+  */
+  if (mobileToggle && mobileToggle.dataset.sidebarToggleBound !== "true") {
+    mobileToggle.dataset.sidebarToggleBound = "true";
+
+    mobileToggle.addEventListener("click", () => {
+      if (sidebar.classList.contains("open")) {
+        closeMobileSidebar();
+      } else {
+        openMobileSidebar();
+      }
+    });
+  }
+
+  /*
+    Clicking empty sidebar space while collapsed expands it.
+    Nav icons still navigate normally, so we do not hijack nav button clicks.
+  */
+  if (sidebar.dataset.sidebarExpandClickBound !== "true") {
+    sidebar.dataset.sidebarExpandClickBound = "true";
+
+    sidebar.addEventListener("click", (event) => {
+      if (isMobileSidebarMode()) return;
+      if (!layout.classList.contains("sidebar-collapsed")) return;
+
+      const ignoredClick = event.target.closest(
+        ".nav-btn, .sidebar-logo-toggle, .sidebar-other-trigger, .sidebar-other-btn, .logout-btn, button, a"
+      );
+
+      if (ignoredClick) return;
+
+      expandDesktopSidebar();
+    });
+  }
+
+  if (backdrop.dataset.sidebarBackdropBound !== "true") {
+    backdrop.dataset.sidebarBackdropBound = "true";
+    backdrop.addEventListener("click", closeMobileSidebar);
+  }
+
+  if (window.__sidebarResizeBound !== true) {
+    window.__sidebarResizeBound = true;
+
+    window.addEventListener("resize", () => {
+      if (!isMobileSidebarMode()) {
+        sidebar.classList.remove("open");
+        backdrop.classList.add("hidden");
+        applySavedSidebarCollapsedState();
+        updateSidebarToggleIcon();
+        return;
+      }
+
+      /*
+        Mobile/tablet keeps drawer behavior.
+        Do not visually collapse labels on mobile.
+      */
       sidebar.classList.remove("open");
       backdrop.classList.add("hidden");
-      hideSidebarToggleButton();
-      return;
-    }
+      updateSidebarToggleIcon();
+    });
+  }
 
-    if (sidebar.classList.contains("open")) {
-      hideSidebarToggleButton();
-    } else {
-      showSidebarToggleButton();
-    }
+  if (isMobileSidebarMode()) {
+    sidebar.classList.remove("open");
+    backdrop.classList.add("hidden");
+  } else {
+    sidebar.classList.remove("open");
+    backdrop.classList.add("hidden");
+    applySavedSidebarCollapsedState();
+  }
+
+  updateSidebarToggleIcon();
+}
+
+
+
+// =========================
+// SIDEBAR OTHER MENU
+// =========================
+
+function setupSidebarOtherMenu() {
+  const otherTrigger = document.getElementById("sidebarOtherTrigger");
+  const otherMenu = document.getElementById("sidebarOtherMenu");
+
+  if (!otherTrigger || !otherMenu) return;
+
+  if (otherTrigger.dataset.otherMenuBound === "true") return;
+  otherTrigger.dataset.otherMenuBound = "true";
+
+  otherTrigger.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const isHidden = otherMenu.classList.contains("hidden");
+
+    otherMenu.classList.toggle("hidden", !isHidden);
+    otherMenu.classList.toggle("open", isHidden);
+
+    otherTrigger.setAttribute("aria-expanded", isHidden ? "true" : "false");
   });
 
-  if (window.innerWidth <= 992) {
-    showSidebarToggleButton();
-  } else {
-    hideSidebarToggleButton();
-  }
+  /*
+    Do not close immediately when clicking inside submenu.
+  */
+  otherMenu.addEventListener("click", (event) => {
+    event.stopPropagation();
+  });
+
+  /*
+    Close when clicking outside.
+  */
+  document.addEventListener("click", (event) => {
+    const clickedInsideOther = event.target.closest("#sidebarOtherGroup");
+
+    if (clickedInsideOther) return;
+
+    otherMenu.classList.add("hidden");
+    otherMenu.classList.remove("open");
+    otherTrigger.setAttribute("aria-expanded", "false");
+  });
+
+  /*
+    Close after choosing a submenu action.
+  */
+  otherMenu.querySelectorAll(".sidebar-other-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      otherMenu.classList.add("hidden");
+      otherMenu.classList.remove("open");
+      otherTrigger.setAttribute("aria-expanded", "false");
+    });
+  });
 }
+
+
+
+/* =========================
+   AUTO INIT SIDEBAR OTHER MENU
+   Fallback so Other submenu still works even if bindSidebarToggle()
+   is not called by admin-init.js for any reason.
+========================= */
+(function initSidebarOtherMenuWhenReady() {
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", () => {
+      if (typeof setupSidebarOtherMenu === "function") {
+        setupSidebarOtherMenu();
+      }
+    });
+    return;
+  }
+
+  if (typeof setupSidebarOtherMenu === "function") {
+    setupSidebarOtherMenu();
+  }
+})();
 
 // =========================
 // GLOBAL EXPORTS
@@ -288,10 +589,18 @@ window.setActiveNavButton = setActiveNavButton;
 window.setPageTitleFromSection = setPageTitleFromSection;
 window.showSection = showSection;
 window.closeAllAdminModalsOnNavigation = closeAllAdminModalsOnNavigation;
+window.isMobileSidebarMode = isMobileSidebarMode;
+window.getAdminLayout = getAdminLayout;
+window.updateSidebarToggleIcon = updateSidebarToggleIcon;
 window.showSidebarToggleButton = showSidebarToggleButton;
 window.hideSidebarToggleButton = hideSidebarToggleButton;
+window.saveSidebarCollapsedState = saveSidebarCollapsedState;
+window.applySavedSidebarCollapsedState = applySavedSidebarCollapsedState;
+window.toggleDesktopSidebarCollapse = toggleDesktopSidebarCollapse;
+window.expandDesktopSidebar = expandDesktopSidebar;
 window.openMobileSidebar = openMobileSidebar;
 window.closeMobileSidebar = closeMobileSidebar;
 window.openSection = openSection;
 window.setupProtectedNavigation = setupProtectedNavigation;
+window.setupSidebarOtherMenu = setupSidebarOtherMenu;
 window.bindSidebarToggle = bindSidebarToggle;
