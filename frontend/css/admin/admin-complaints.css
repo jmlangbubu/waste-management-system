@@ -11,9 +11,8 @@
    - Complaint History modal support
 
    Note:
-   This file is intentionally specific because admin-overrides.css
-   is loaded last in the current project. Strong scoped selectors are
-   used so the new Complaint Details modal UI remains stable.
+   This file is scoped to complaint-related UI only.
+   Do not place this in admin-overrides.css.
 ========================================================= */
 
 /* =========================
@@ -323,7 +322,6 @@
 
 /* =========================================================
    COMPLAINT DETAILS MODAL - PROFESSIONAL UI/UX
-   Use this with the updated HTML block provided earlier.
 ========================================================= */
 
 body #complaintDetailsModal.custom-modal {
@@ -893,7 +891,6 @@ body #complaintDetailsModal .complaint-primary-btn:hover {
   box-shadow: 0 14px 26px rgba(15, 23, 42, 0.12) !important;
 }
 
-/* legacy support if old action wrapper remains */
 body #complaintDetailsModal .complaint-modal-actions {
   display: flex;
   justify-content: flex-end;
@@ -951,7 +948,7 @@ body #complaintDetailsModal .complaint-modal-actions {
 
 #complaintLeafletMap {
   width: 100%;
-  height: 420px;
+  height: 480px;
   border-radius: 12px;
 }
 
@@ -1056,11 +1053,6 @@ body #complaintDetailsModal .complaint-modal-actions {
   background: #f8fafc;
 }
 
-#complaintLeafletMap {
-  width: 100%;
-  height: 480px;
-}
-
 .complaint-side-panel {
   display: flex;
   flex-direction: column;
@@ -1112,223 +1104,461 @@ body #complaintDetailsModal .complaint-modal-actions {
   width: 100%;
 }
 
-/* =========================
-   COMPLAINT RESOLUTION MODAL
-========================= */
+/* =========================================================
+   COMPLAINT RESOLUTION MODAL - FINAL CLEAN UI
+========================================================= */
 
-.resolved-history-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
-  margin-bottom: 16px;
+#complaintResolutionModal.custom-modal {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 2147483600 !important;
 }
 
-.resolved-info-card {
-  background: #f9fafb;
-  padding: 12px 14px;
-  border-radius: 10px;
-  display: flex;
-  flex-direction: column;
+#complaintResolutionModal .custom-modal-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  background: rgba(15, 23, 42, 0.78) !important;
+  backdrop-filter: blur(8px) !important;
 }
 
-.resolved-label {
-  font-size: 12px;
-  color: #666;
-  margin-bottom: 4px;
+#complaintResolutionModal .resolution-pro-modal,
+#complaintResolutionModal .complaint-resolution-modal-content {
+  width: min(1180px, calc(100vw - 48px)) !important;
+  max-width: 1180px !important;
+  max-height: calc(100dvh - 48px) !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  border-radius: 24px !important;
+  background: #ffffff !important;
+  border: 1px solid #e5edf5 !important;
+  box-shadow: 0 34px 110px rgba(15, 23, 42, 0.38) !important;
 }
 
-.resolved-info-card strong {
-  font-size: 14px;
-  color: #222;
+/* RESOLUTION HEADER */
+
+#complaintResolutionModal .resolution-pro-header {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  align-items: start !important;
+  gap: 18px !important;
+  padding: 24px 30px 22px !important;
+  border-bottom: 1px solid #e5edf5 !important;
+  background: #ffffff !important;
 }
 
-#resolutionModalStatus {
-  background: #e6f7ec;
-  color: #16a34a;
-  padding: 4px 10px;
-  border-radius: 12px;
-  width: fit-content;
+#complaintResolutionModal .resolution-pro-header > div {
+  position: relative !important;
+  min-width: 0 !important;
+  padding-left: 48px !important;
 }
 
-.resolved-detail-block {
-  margin-top: 10px;
+#complaintResolutionModal .resolution-pro-header > div::before {
+  content: "✓" !important;
+  position: absolute !important;
+  left: 0 !important;
+  top: 2px !important;
+  width: 34px !important;
+  height: 34px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 999px !important;
+  background: #16a34a !important;
+  color: #ffffff !important;
+  font-size: 18px !important;
+  font-weight: 900 !important;
 }
 
-.resolved-detail-block h4 {
-  font-size: 14px;
-  margin-bottom: 4px;
-  color: #333;
+#complaintResolutionModal .resolution-kicker {
+  display: inline-block !important;
+  margin: 0 0 6px !important;
+  color: #16a34a !important;
+  font-size: 12px !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
 }
 
-.resolved-detail-block p {
-  font-size: 13px;
-  color: #555;
+#complaintResolutionModal .resolution-pro-header h3 {
+  margin: 0 !important;
+  color: #10261b !important;
+  font-size: 28px !important;
+  font-weight: 950 !important;
+  line-height: 1.08 !important;
+  letter-spacing: -0.04em !important;
 }
 
-.resolved-evidence-frame {
-  width: 100%;
-  height: 220px;
-  background: #f3f4f6;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
+#complaintResolutionModal .resolution-pro-header p {
+  margin: 8px 0 0 !important;
+  color: #64748b !important;
+  font-size: 13px !important;
+  line-height: 1.5 !important;
 }
 
-.resolved-evidence-image {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+#complaintResolutionModal .modal-close-btn {
+  width: 48px !important;
+  height: 48px !important;
+  min-width: 48px !important;
+  min-height: 48px !important;
+  padding: 0 !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 999px !important;
+  background: #f1f5f9 !important;
+  color: #475569 !important;
+  font-size: 26px !important;
+  font-weight: 900 !important;
+  line-height: 1 !important;
+  cursor: pointer !important;
 }
 
-.resolution-pro-modal {
-  max-width: 980px;
-  width: 92%;
-  border-radius: 22px;
-  overflow: hidden;
+#complaintResolutionModal .modal-close-btn:hover {
+  background: #e2e8f0 !important;
+  color: #0f172a !important;
 }
 
-.resolution-pro-header {
-  padding: 22px 24px;
-  border-bottom: 1px solid #eef2f7;
+/* RESOLUTION BODY */
+
+#complaintResolutionModal .resolution-pro-body,
+#complaintResolutionModal .complaint-resolution-modal-body {
+  max-height: calc(100dvh - 155px) !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  padding: 24px 30px 28px !important;
+  background: #ffffff !important;
 }
 
-.resolution-kicker {
-  display: inline-block;
-  margin-bottom: 4px;
-  font-size: 12px;
-  font-weight: 700;
-  color: #16a34a;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+/* SUMMARY CARDS */
+
+#complaintResolutionModal .resolution-summary-row {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 14px !important;
+  margin: 0 0 16px !important;
 }
 
-.resolution-pro-body {
-  padding: 22px 24px 26px;
+#complaintResolutionModal .resolution-summary-card {
+  position: relative !important;
+  min-width: 0 !important;
+  min-height: 74px !important;
+  padding: 16px 16px 15px 58px !important;
+  border: 1px solid #e5edf5 !important;
+  border-radius: 15px !important;
+  background: #f8fafc !important;
+  box-shadow: none !important;
 }
 
-.resolution-summary-row {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 14px;
-  margin-bottom: 18px;
+#complaintResolutionModal .resolution-summary-card::before {
+  position: absolute !important;
+  left: 16px !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  width: 34px !important;
+  height: 34px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 999px !important;
+  background: #dcfce7 !important;
+  color: #16a34a !important;
+  font-size: 16px !important;
 }
 
-.resolution-summary-card,
-.resolution-detail-card,
-.resolution-evidence-panel,
-.resolution-status-line {
-  background: #f8fafc;
-  border: 1px solid #eef2f7;
-  border-radius: 16px;
+#complaintResolutionModal .resolution-summary-card:nth-child(1)::before {
+  content: "🏢" !important;
 }
 
-.resolution-summary-card {
-  padding: 14px;
+#complaintResolutionModal .resolution-summary-card:nth-child(2)::before {
+  content: "👤" !important;
 }
 
-.resolution-summary-card span,
-.resolution-status-line span {
-  display: block;
-  font-size: 12px;
-  color: #64748b;
-  margin-bottom: 6px;
+#complaintResolutionModal .resolution-summary-card:nth-child(3)::before {
+  content: "👥" !important;
 }
 
-.resolution-summary-card strong {
-  font-size: 14px;
-  color: #111827;
+#complaintResolutionModal .resolution-summary-card:nth-child(4)::before {
+  content: "📅" !important;
 }
 
-.resolution-main-grid {
-  display: grid;
-  grid-template-columns: 0.9fr 1.25fr;
-  gap: 18px;
-  align-items: start;
+#complaintResolutionModal .resolution-summary-card span {
+  display: block !important;
+  margin: 0 0 6px !important;
+  color: #64748b !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
 }
 
-.resolution-left-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+#complaintResolutionModal .resolution-summary-card strong {
+  display: block !important;
+  color: #111827 !important;
+  font-size: 14px !important;
+  font-weight: 900 !important;
+  line-height: 1.3 !important;
+  word-break: break-word !important;
 }
 
-.resolution-status-line {
-  padding: 14px;
+/* MAIN RESOLUTION LAYOUT */
+
+#complaintResolutionModal .resolution-main-grid {
+  display: grid !important;
+  grid-template-columns: minmax(280px, 0.82fr) minmax(430px, 1.18fr) !important;
+  grid-template-areas:
+    "left evidence"
+    "left route" !important;
+  gap: 16px !important;
+  align-items: start !important;
 }
 
-.resolution-status-pill {
-  display: inline-flex;
-  width: fit-content;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: #dcfce7;
-  color: #15803d;
-  font-size: 13px;
+#complaintResolutionModal .resolution-left-panel {
+  grid-area: left !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 12px !important;
+  min-width: 0 !important;
 }
 
-.resolution-detail-card {
-  padding: 14px;
+#complaintResolutionModal .resolution-evidence-panel {
+  grid-area: evidence !important;
+  min-width: 0 !important;
 }
 
-.resolution-detail-card h4,
-.resolution-evidence-heading h4 {
-  margin: 0 0 6px;
-  font-size: 14px;
-  color: #111827;
+#complaintResolutionModal #resolutionRouteMapCard {
+  grid-area: route !important;
+  grid-column: auto !important;
+  width: 100% !important;
+  margin: 0 !important;
 }
 
-.resolution-detail-card p,
-.resolution-evidence-heading p {
-  margin: 0;
-  font-size: 14px;
-  color: #475569;
-  line-height: 1.5;
+/* LEFT DETAIL CARDS */
+
+#complaintResolutionModal .resolution-status-line,
+#complaintResolutionModal .resolution-detail-card,
+#complaintResolutionModal .resolution-evidence-panel,
+#complaintResolutionModal #resolutionRouteMapCard {
+  border: 1px solid #e5edf5 !important;
+  border-radius: 15px !important;
+  background: #f8fafc !important;
+  box-shadow: none !important;
 }
 
-.resolution-evidence-panel {
-  padding: 14px;
+#complaintResolutionModal .resolution-status-line {
+  position: relative !important;
+  min-height: 72px !important;
+  padding: 17px 17px 17px 58px !important;
 }
 
-.resolution-evidence-heading {
-  margin-bottom: 12px;
+#complaintResolutionModal .resolution-status-line::before {
+  content: "✓" !important;
+  position: absolute !important;
+  left: 17px !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  width: 34px !important;
+  height: 34px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 999px !important;
+  background: #dcfce7 !important;
+  color: #16a34a !important;
+  font-size: 16px !important;
+  font-weight: 900 !important;
 }
 
-.resolved-evidence-wrap {
-  width: 100%;
+#complaintResolutionModal .resolution-status-line span,
+#complaintResolutionModal .resolution-detail-card h4 {
+  display: block !important;
+  margin: 0 0 8px !important;
+  color: #475569 !important;
+  font-size: 12px !important;
+  font-weight: 800 !important;
 }
 
-.resolved-evidence-frame {
+#complaintResolutionModal .resolution-status-pill {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: fit-content !important;
+  min-height: 28px !important;
+  padding: 0 12px !important;
+  border-radius: 999px !important;
+  background: #dcfce7 !important;
+  color: #16a34a !important;
+  border: 1px solid #bbf7d0 !important;
+  font-size: 13px !important;
+  font-weight: 900 !important;
+}
+
+#complaintResolutionModal .resolution-detail-card {
+  position: relative !important;
+  min-height: 72px !important;
+  padding: 17px 17px 17px 58px !important;
+}
+
+#complaintResolutionModal .resolution-detail-card::before {
+  position: absolute !important;
+  left: 17px !important;
+  top: 17px !important;
+  width: 34px !important;
+  height: 34px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 999px !important;
+  background: #eef2f7 !important;
+  color: #64748b !important;
+  font-size: 15px !important;
+}
+
+#complaintResolutionModal .resolution-left-panel .resolution-detail-card:nth-of-type(1)::before {
+  content: "☰" !important;
+}
+
+#complaintResolutionModal .resolution-left-panel .resolution-detail-card:nth-of-type(2)::before {
+  content: "▣" !important;
+}
+
+#complaintResolutionModal .resolution-left-panel .resolution-detail-card:nth-of-type(3)::before {
+  content: "◎" !important;
+}
+
+#complaintResolutionModal .resolution-detail-card p {
+  margin: 0 !important;
+  color: #334155 !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  line-height: 1.5 !important;
+  word-break: break-word !important;
+}
+
+/* EVIDENCE */
+
+#complaintResolutionModal .resolution-evidence-panel {
+  padding: 17px !important;
+}
+
+#complaintResolutionModal .resolution-evidence-heading {
+  display: flex !important;
+  align-items: flex-start !important;
+  gap: 10px !important;
+  margin: 0 0 12px !important;
+}
+
+#complaintResolutionModal .resolution-evidence-heading::before {
+  content: "▣" !important;
+  width: 28px !important;
+  height: 28px !important;
+  min-width: 28px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 9px !important;
+  background: #e0f2fe !important;
+  color: #0369a1 !important;
+  font-size: 13px !important;
+  font-weight: 900 !important;
+}
+
+#complaintResolutionModal .resolution-evidence-heading h4 {
+  margin: 0 0 4px !important;
+  color: #111827 !important;
+  font-size: 15px !important;
+  font-weight: 900 !important;
+}
+
+#complaintResolutionModal .resolution-evidence-heading p {
+  margin: 0 !important;
+  color: #64748b !important;
+  font-size: 13px !important;
+  line-height: 1.4 !important;
+}
+
+#complaintResolutionModal .resolved-evidence-wrap {
+  width: 100% !important;
+}
+
+#complaintResolutionModal .resolved-evidence-frame {
   display: none;
-  width: 100%;
-  min-height: 280px;
-  max-height: 380px;
-  border-radius: 18px;
-  overflow: hidden;
-  background: #e5e7eb;
-  align-items: center;
-  justify-content: center;
+  width: 100% !important;
+  height: 245px !important;
+  min-height: 245px !important;
+  max-height: 245px !important;
+  overflow: hidden !important;
+  border-radius: 15px !important;
+  background: #020617 !important;
+  align-items: center !important;
+  justify-content: center !important;
 }
 
-.resolved-evidence-image {
-  width: 100%;
-  height: 100%;
-  max-height: 380px;
-  object-fit: cover;
-  display: block;
-  cursor: pointer;
+#complaintResolutionModal .resolved-evidence-image {
+  width: 100% !important;
+  height: 100% !important;
+  max-height: 245px !important;
+  object-fit: cover !important;
+  display: block !important;
+  cursor: zoom-in !important;
 }
 
-.resolved-evidence-image:hover {
-  transform: scale(1.015);
-  transition: 0.2s ease;
+#complaintResolutionModal .muted-text {
+  margin: 10px 0 0 !important;
+  color: #64748b !important;
+  font-size: 13px !important;
 }
 
-.muted-text {
-  margin: 10px 0 0;
-  color: #64748b;
-  font-size: 13px;
+/* ROUTE MAP */
+
+#complaintResolutionModal #resolutionRouteMapCard {
+  padding: 17px !important;
+  box-sizing: border-box !important;
+}
+
+#complaintResolutionModal .resolution-route-map-header {
+  position: relative !important;
+  padding-left: 38px !important;
+  margin: 0 0 12px !important;
+}
+
+#complaintResolutionModal .resolution-route-map-header::before {
+  content: "📍" !important;
+  position: absolute !important;
+  left: 0 !important;
+  top: 0 !important;
+  width: 28px !important;
+  height: 28px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 9px !important;
+  background: #dbeafe !important;
+  color: #2563eb !important;
+  font-size: 14px !important;
+}
+
+#complaintResolutionModal .resolution-route-map-header h3 {
+  margin: 0 0 4px !important;
+  color: #111827 !important;
+  font-size: 15px !important;
+  font-weight: 900 !important;
+}
+
+#complaintResolutionModal #resolutionRouteMapNote {
+  margin: 0 !important;
+  color: #64748b !important;
+  font-size: 12.5px !important;
+  line-height: 1.4 !important;
+}
+
+#complaintResolutionModal #resolutionRouteMap {
+  width: 100% !important;
+  height: 245px !important;
+  min-height: 245px !important;
+  border-radius: 15px !important;
+  overflow: hidden !important;
+  border: 1px solid #dbe7ef !important;
+  background: #eef3ef !important;
+}
+
+#complaintResolutionModal .leaflet-routing-container {
+  display: none !important;
 }
 
 /* =========================
@@ -1357,6 +1587,14 @@ body #complaintDetailsModal .complaint-modal-actions {
   body #complaintDetailsModal .complaint-evidence-wrapper {
     height: 280px !important;
     min-height: 280px !important;
+  }
+
+  #complaintResolutionModal .resolution-summary-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  #complaintResolutionModal .resolution-main-grid {
+    grid-template-columns: minmax(260px, 0.9fr) minmax(360px, 1.1fr) !important;
   }
 }
 
@@ -1390,12 +1628,37 @@ body #complaintDetailsModal .complaint-modal-actions {
     height: 340px;
   }
 
-  .resolution-summary-row {
-    grid-template-columns: repeat(2, 1fr);
+  #complaintResolutionModal .resolution-pro-modal,
+  #complaintResolutionModal .complaint-resolution-modal-content {
+    width: calc(100vw - 28px) !important;
+    max-width: calc(100vw - 28px) !important;
+    max-height: calc(100dvh - 28px) !important;
   }
 
-  .resolution-main-grid {
-    grid-template-columns: 1fr;
+  #complaintResolutionModal .resolution-pro-header {
+    padding: 20px !important;
+  }
+
+  #complaintResolutionModal .resolution-pro-body,
+  #complaintResolutionModal .complaint-resolution-modal-body {
+    max-height: calc(100dvh - 138px) !important;
+    padding: 18px 20px 22px !important;
+  }
+
+  #complaintResolutionModal .resolution-main-grid {
+    grid-template-columns: 1fr !important;
+    grid-template-areas:
+      "left"
+      "evidence"
+      "route" !important;
+  }
+
+  #complaintResolutionModal .resolved-evidence-frame,
+  #complaintResolutionModal .resolved-evidence-image,
+  #complaintResolutionModal #resolutionRouteMap {
+    height: 250px !important;
+    min-height: 250px !important;
+    max-height: 250px !important;
   }
 }
 
@@ -1444,6 +1707,14 @@ body #complaintDetailsModal .complaint-modal-actions {
   body #complaintDetailsModal .complaint-primary-btn {
     width: 100% !important;
   }
+
+  #complaintResolutionModal .resolution-summary-row {
+    grid-template-columns: 1fr !important;
+  }
+
+  #complaintResolutionModal .resolution-pro-header h3 {
+    font-size: 22px !important;
+  }
 }
 
 @media (max-width: 560px) {
@@ -1472,7 +1743,11 @@ body #complaintDetailsModal .complaint-modal-actions {
     height: 115px !important;
   }
 
-  .resolution-summary-row {
-    grid-template-columns: 1fr;
+  #complaintResolutionModal .resolved-evidence-frame,
+  #complaintResolutionModal .resolved-evidence-image,
+  #complaintResolutionModal #resolutionRouteMap {
+    height: 220px !important;
+    min-height: 220px !important;
+    max-height: 220px !important;
   }
 }
