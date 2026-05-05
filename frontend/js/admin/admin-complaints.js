@@ -33,8 +33,18 @@ const complaintResolutionRouteState = {
   map: null,
   issueMarker: null,
   startMarker: null,
+  barangayMarker: null,
   routeLine: null,
-  routingControl: null
+  routingControl: null,
+
+  fullMap: null,
+  fullIssueMarker: null,
+  fullStartMarker: null,
+  fullBarangayMarker: null,
+  fullRouteLine: null,
+  fullRoutingControl: null,
+
+  lastRecord: null
 };
 
 function formatComplaintStatus(status) {
@@ -378,12 +388,33 @@ function getResolutionIssuePoint(record) {
   return {
     lat,
     lng,
-    label: "Issue Location"
+    type: "issue",
+    label: "End: Issue Location"
   };
 }
 
-function getResolutionStartPoint(record) {
-  const actualStartLat = getFirstValidCoordinate(record, [
+function getResolutionActualStartPoint(record) {
+  /*
+    IMPORTANT:
+    This must use the barangay personnel GPS/start coordinate only.
+    Do NOT use assigned_barangay_lat/lng here because that is usually the barangay/reference location,
+    not the actual start location of the personnel route.
+  */
+  const lat = getFirstValidCoordinate(record, [
+    "start_latitude",
+    "start_lat",
+    "route_start_latitude",
+    "route_start_lat",
+    "personnel_start_latitude",
+    "personnel_start_lat",
+    "barangay_personnel_start_latitude",
+    "barangay_personnel_start_lat",
+    "gps_start_latitude",
+    "gps_start_lat",
+    "origin_latitude",
+    "origin_lat",
+    "from_latitude",
+    "from_lat",
     "resolver_latitude",
     "resolver_lat",
     "resolved_latitude",
@@ -397,10 +428,33 @@ function getResolutionStartPoint(record) {
     "barangay_personnel_latitude",
     "barangay_personnel_lat",
     "current_latitude",
-    "current_lat"
+    "current_lat",
+    "gps_latitude",
+    "gps_lat"
   ]);
 
-  const actualStartLng = getFirstValidCoordinate(record, [
+  const lng = getFirstValidCoordinate(record, [
+    "start_longitude",
+    "start_lng",
+    "start_long",
+    "route_start_longitude",
+    "route_start_lng",
+    "route_start_long",
+    "personnel_start_longitude",
+    "personnel_start_lng",
+    "personnel_start_long",
+    "barangay_personnel_start_longitude",
+    "barangay_personnel_start_lng",
+    "barangay_personnel_start_long",
+    "gps_start_longitude",
+    "gps_start_lng",
+    "gps_start_long",
+    "origin_longitude",
+    "origin_lng",
+    "origin_long",
+    "from_longitude",
+    "from_lng",
+    "from_long",
     "resolver_longitude",
     "resolver_lng",
     "resolver_long",
@@ -421,59 +475,226 @@ function getResolutionStartPoint(record) {
     "barangay_personnel_long",
     "current_longitude",
     "current_lng",
-    "current_long"
+    "current_long",
+    "gps_longitude",
+    "gps_lng",
+    "gps_long"
   ]);
 
-  if (actualStartLat !== null && actualStartLng !== null) {
-    return {
-      lat: actualStartLat,
-      lng: actualStartLng,
-      type: "actual",
-      label: "Barangay Personnel Start"
-    };
-  }
+  if (lat === null || lng === null) return null;
 
-  const referenceLat = getFirstValidCoordinate(record, [
-    "assigned_barangay_lat",
-    "assigned_barangay_latitude",
-    "assigned_latitude",
-    "assigned_lat",
-    "barangay_latitude",
-    "barangay_lat",
-    "reference_latitude",
-    "reference_lat",
-    "assigned_reference_latitude",
-    "assigned_reference_lat"
-  ]);
+  return {
+    lat,
+    lng,
+    type: "actual",
+    label: "Barangay Personnel Start"
+  };
+}
 
-  const referenceLng = getFirstValidCoordinate(record, [
-    "assigned_barangay_lng",
-    "assigned_barangay_longitude",
-    "assigned_barangay_long",
-    "assigned_lng",
-    "assigned_longitude",
-    "assigned_long",
-    "barangay_lng",
-    "barangay_longitude",
-    "barangay_long",
-    "reference_lng",
-    "reference_longitude",
-    "reference_long",
-    "assigned_reference_lng",
-    "assigned_reference_longitude",
-    "assigned_reference_long"
-  ]);
+function getResolutionBarangayPoint(record) {
+  /*
+    Blue pin meaning:
+    Barangay personnel marker.
 
-  if (referenceLat !== null && referenceLng !== null) {
-    return {
-      lat: referenceLat,
-      lng: referenceLng,
-      type: "reference",
-      label: "Barangay Reference Start"
-    };
-  }
+    This intentionally uses the same ACTUAL GPS/start point as the route start.
+    We are NOT using assigned_barangay_lat/lng anymore because that puts the pin
+    on the barangay/reference coordinate instead of the personnel's actual GPS location.
+  */
+  const personnelPoint = getResolutionActualStartPoint(record);
 
-  return null;
+  if (!personnelPoint) return null;
+
+  return {
+    ...personnelPoint,
+    type: "personnel",
+    label: "Barangay Personnel"
+  };
+}
+
+function getResolutionStartPoint(record) {
+  return getResolutionActualStartPoint(record);
+}
+
+function areResolutionPointsSame(pointA, pointB) {
+  if (!pointA || !pointB) return false;
+
+  const latDiff = Math.abs(Number(pointA.lat) - Number(pointB.lat));
+  const lngDiff = Math.abs(Number(pointA.lng) - Number(pointB.lng));
+
+  return latDiff < 0.00001 && lngDiff < 0.00001;
+}
+
+function getResolutionStartLabel(startPoint) {
+  if (!startPoint) return "Start Point";
+
+  if (startPoint.type === "actual") return "Start Point";
+  if (startPoint.type === "personnel") return "Start Point";
+
+  return "Start Point";
+}
+
+function getResolutionBarangayLabel(record) {
+  return (
+    record?.handled_by_barangay_name ||
+    record?.barangay_personnel_name ||
+    record?.personnel_name ||
+    record?.assigned_barangay ||
+    "Barangay Personnel"
+  );
+}
+
+function getResolutionRouteNotePrefix(startPoint, barangayPoint) {
+  if (!startPoint) return "Route preview.";
+
+  return "Route from the barangay personnel GPS start point to the issue location.";
+}
+
+
+function ensureResolutionVisibleMarkerStyles() {
+  if (document.getElementById("resolutionVisibleMarkerStyles")) return;
+
+  const style = document.createElement("style");
+  style.id = "resolutionVisibleMarkerStyles";
+  style.textContent = `
+    .resolution-start-icon-wrap,
+    .resolution-end-icon-wrap {
+      background: transparent !important;
+      border: 0 !important;
+      overflow: visible !important;
+    }
+
+    .resolution-start-icon-wrap .resolution-start-icon,
+    .resolution-end-icon-wrap .resolution-end-icon {
+      width: 24px;
+      height: 24px;
+      display: block;
+      position: relative;
+      border-radius: 999px;
+      box-sizing: border-box;
+      border: 3px solid #ffffff;
+      box-shadow: 0 6px 16px rgba(15, 23, 42, 0.20);
+    }
+
+    /*
+      Map-style target marker for START.
+      Green bullseye so it reads like an origin point.
+    */
+    .resolution-start-icon-wrap .resolution-start-icon {
+      background: radial-gradient(circle at center, #ffffff 0 4px, #22c55e 4px 8px, #ffffff 8px 11px, #16a34a 11px 100%);
+    }
+
+    /*
+      Map-style target marker for END / ISSUE.
+      Red bullseye so it reads like a destination point.
+    */
+    .resolution-end-icon-wrap .resolution-end-icon {
+      background: radial-gradient(circle at center, #ffffff 0 4px, #ef4444 4px 8px, #ffffff 8px 11px, #dc2626 11px 100%);
+    }
+
+    .resolution-route-map-card .leaflet-marker-icon,
+    .resolution-full-map-stage .leaflet-marker-icon {
+      overflow: visible !important;
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+function addResolutionStartCircle(map, startPoint, record, markerKey = "startMarker") {
+  const state = complaintResolutionRouteState;
+  if (!map || !startPoint) return null;
+
+  ensureResolutionVisibleMarkerStyles();
+
+  /*
+    Start marker:
+    Map-style green target marker centered exactly on the start GPS coordinate.
+  */
+  const marker = L.marker([startPoint.lat, startPoint.lng], {
+    icon: L.divIcon({
+      className: "resolution-start-icon-wrap",
+      html: `<span class="resolution-start-icon" aria-hidden="true"></span>`,
+      iconSize: [24, 24],
+      iconAnchor: [12, 12],
+      popupAnchor: [0, -12]
+    }),
+    interactive: true,
+    keyboard: false,
+    zIndexOffset: 1100
+  }).addTo(map);
+
+  marker.bindPopup(`
+    <div>
+      <strong>Start Point</strong><br>
+      ${escapeHtml(record?.handled_by_barangay_name || record?.assigned_barangay || "-")}<br>
+      Coordinates: ${escapeHtml(String(startPoint.lat))}, ${escapeHtml(String(startPoint.lng))}
+    </div>
+  `);
+
+  state[markerKey] = marker;
+  return marker;
+}
+
+function addResolutionEndDot(map, issuePoint, record, markerKey = "issueMarker") {
+  const state = complaintResolutionRouteState;
+  if (!map || !issuePoint) return null;
+
+  ensureResolutionVisibleMarkerStyles();
+
+  /*
+    End marker:
+    Map-style red target marker centered exactly on the issue GPS coordinate.
+  */
+  const marker = L.marker([issuePoint.lat, issuePoint.lng], {
+    icon: L.divIcon({
+      className: "resolution-end-icon-wrap",
+      html: `<span class="resolution-end-icon" aria-hidden="true"></span>`,
+      iconSize: [24, 24],
+      iconAnchor: [12, 12],
+      popupAnchor: [0, -12]
+    }),
+    interactive: true,
+    keyboard: false,
+    zIndexOffset: 1200
+  }).addTo(map);
+
+  marker.bindPopup(`
+    <div>
+      <strong>Issue Location</strong><br>
+      ${escapeHtml(record?.subject || "Resolved complaint")}<br>
+      Coordinates: ${escapeHtml(String(issuePoint.lat))}, ${escapeHtml(String(issuePoint.lng))}
+    </div>
+  `);
+
+  state[markerKey] = marker;
+  return marker;
+}
+
+function addResolutionBarangayPin(map, barangayPoint, record, markerKey = "barangayMarker") {
+  const state = complaintResolutionRouteState;
+  if (!map || !barangayPoint) return null;
+
+  /*
+    Blue pin:
+    This remains the barangay personnel GPS marker.
+    No floating label; popup only when clicked.
+  */
+  const marker = L.marker([barangayPoint.lat, barangayPoint.lng], {
+    icon: barangayBlueIcon,
+    keyboard: false,
+    zIndexOffset: 1150
+  }).addTo(map);
+
+  marker.bindPopup(`
+    <div>
+      <strong>Barangay Personnel</strong><br>
+      ${escapeHtml(getResolutionBarangayLabel(record))}<br>
+      Coordinates: ${escapeHtml(String(barangayPoint.lat))}, ${escapeHtml(String(barangayPoint.lng))}
+    </div>
+  `);
+
+  state[markerKey] = marker;
+  return marker;
 }
 
 function clearResolutionRouteMapLayers() {
@@ -491,6 +712,11 @@ function clearResolutionRouteMapLayers() {
     state.startMarker = null;
   }
 
+  if (state.barangayMarker) {
+    state.map.removeLayer(state.barangayMarker);
+    state.barangayMarker = null;
+  }
+
   if (state.routeLine) {
     state.map.removeLayer(state.routeLine);
     state.routeLine = null;
@@ -506,7 +732,6 @@ function clearResolutionRouteMapLayers() {
     state.routingControl = null;
   }
 }
-
 
 function destroyResolutionRouteMap(removeCard = false) {
   const state = complaintResolutionRouteState;
@@ -531,6 +756,7 @@ function destroyResolutionRouteMap(removeCard = false) {
   state.map = null;
   state.issueMarker = null;
   state.startMarker = null;
+  state.barangayMarker = null;
   state.routeLine = null;
   state.routingControl = null;
 
@@ -555,6 +781,8 @@ function destroyResolutionRouteMap(removeCard = false) {
 }
 
 function ensureResolutionRouteMapContainer() {
+  ensureResolutionRouteMapRuntimeStyles();
+
   const modal = document.getElementById("complaintResolutionModal");
   if (!modal) return null;
 
@@ -567,22 +795,38 @@ function ensureResolutionRouteMapContainer() {
     card = document.createElement("div");
     card.id = "resolutionRouteMapCard";
     card.className = "resolution-route-map-card";
+  }
 
+  const needsFreshTemplate =
+    !card.querySelector("#resolutionRouteMap") ||
+    !card.querySelector("#btnOpenResolutionFullRouteMap") ||
+    !card.querySelector("#resolutionRouteMapNote");
+
+  if (needsFreshTemplate) {
     card.innerHTML = `
       <div class="resolution-route-map-header">
-        <h3>Route Map</h3>
-        <p id="resolutionRouteMapNote">
-          Loading route preview...
-        </p>
+        <div class="resolution-route-map-title-block">
+          <h3>Route Map</h3>
+          <p id="resolutionRouteMapNote">Loading route preview...</p>
+        </div>
+
+        <button
+          type="button"
+          id="btnOpenResolutionFullRouteMap"
+          class="view-all-btn small resolution-route-map-full-btn">
+          Full Map
+        </button>
+      </div>
+
+      <div class="resolution-route-map-legend" aria-label="Route map legend">
+        <span><i class="route-legend-circle start"></i> Start target</span>
+        <span><i class="route-legend-circle end"></i> Issue target</span>
+        <span><i class="route-legend-pin barangay"></i> Personnel pin</span>
       </div>
 
       <div id="resolutionRouteMap"></div>
     `;
   } else {
-    /*
-      Keep the existing card/map if already created,
-      but remove old inline styles that forced it to behave incorrectly.
-    */
     card.removeAttribute("style");
 
     const header = card.querySelector(".resolution-route-map-header");
@@ -594,19 +838,12 @@ function ensureResolutionRouteMapContainer() {
     if (title) title.removeAttribute("style");
     if (note) note.removeAttribute("style");
     if (map) map.removeAttribute("style");
+  }
 
-    if (!card.querySelector("#resolutionRouteMap")) {
-      card.innerHTML = `
-        <div class="resolution-route-map-header">
-          <h3>Route Map</h3>
-          <p id="resolutionRouteMapNote">
-            Loading route preview...
-          </p>
-        </div>
-
-        <div id="resolutionRouteMap"></div>
-      `;
-    }
+  const fullMapBtn = card.querySelector("#btnOpenResolutionFullRouteMap");
+  if (fullMapBtn && fullMapBtn.dataset.bound !== "true") {
+    fullMapBtn.dataset.bound = "true";
+    fullMapBtn.addEventListener("click", openResolutionFullRouteMap);
   }
 
   /*
@@ -637,11 +874,179 @@ function ensureResolutionRouteMapContainer() {
   };
 }
 
-function drawResolutionFallbackLine(startPoint, issuePoint) {
-  const state = complaintResolutionRouteState;
-  if (!state.map) return;
+function ensureResolutionFullRouteMapModal() {
+  let modal = document.getElementById("resolutionFullRouteMapModal");
 
-  state.routeLine = L.polyline(
+  if (!modal) {
+    modal = document.createElement("div");
+    modal.id = "resolutionFullRouteMapModal";
+    modal.className = "custom-modal hidden resolution-full-route-map-modal";
+
+    modal.innerHTML = `
+      <div class="custom-modal-overlay" id="resolutionFullRouteMapOverlay"></div>
+
+      <div class="custom-modal-content resolution-full-route-map-content" style="width:min(1180px, calc(100vw - 48px)); max-width:1180px;">
+        <div class="custom-modal-header">
+          <div>
+            <h3>Full Route Map</h3>
+            <p id="resolutionFullRouteMapSubtitle">Start target, barangay personnel pin, and end issue location.</p>
+          </div>
+          <button type="button" id="closeResolutionFullRouteMapModal" class="modal-close-btn">&times;</button>
+        </div>
+
+        <div class="custom-modal-body resolution-full-route-map-body">
+          <div class="complaint-map-summary">
+            <div class="complaint-map-summary-item">
+              <span>Start Point</span>
+              <strong id="resolutionFullMapStartLabel">-</strong>
+            </div>
+
+            <div class="complaint-map-summary-item">
+              <span>Barangay Personnel</span>
+              <strong id="resolutionFullMapBarangayLabel">-</strong>
+            </div>
+
+            <div class="complaint-map-summary-item">
+              <span>End Point</span>
+              <strong id="resolutionFullMapEndLabel">-</strong>
+            </div>
+
+            <div class="complaint-map-summary-item">
+              <span>Distance</span>
+              <strong id="resolutionFullMapDistance">-</strong>
+            </div>
+          </div>
+
+          <div class="resolution-route-map-legend" aria-label="Full route map legend" style="margin:12px 0; display:flex; gap:14px; flex-wrap:wrap;">
+            <span><i class="route-legend-circle start"></i> Start target</span>
+            <span><i class="route-legend-circle end"></i> Issue target</span>
+            <span><i class="route-legend-pin barangay"></i> Personnel pin</span>
+          </div>
+
+          <div
+            id="resolutionFullRouteMap"
+            class="complaint-leaflet-map resolution-full-route-map"
+            style="height:min(68vh, 620px); min-height:460px; border-radius:18px; overflow:hidden;">
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+  }
+
+  if (modal.dataset.bound !== "true") {
+    modal.dataset.bound = "true";
+
+    document
+      .getElementById("closeResolutionFullRouteMapModal")
+      ?.addEventListener("click", closeResolutionFullRouteMapModal);
+
+    document
+      .getElementById("resolutionFullRouteMapOverlay")
+      ?.addEventListener("click", closeResolutionFullRouteMapModal);
+  }
+
+  return modal;
+}
+
+function clearResolutionFullRouteMapLayers() {
+  const state = complaintResolutionRouteState;
+
+  if (!state.fullMap) return;
+
+  if (state.fullIssueMarker) {
+    state.fullMap.removeLayer(state.fullIssueMarker);
+    state.fullIssueMarker = null;
+  }
+
+  if (state.fullStartMarker) {
+    state.fullMap.removeLayer(state.fullStartMarker);
+    state.fullStartMarker = null;
+  }
+
+  if (state.fullBarangayMarker) {
+    state.fullMap.removeLayer(state.fullBarangayMarker);
+    state.fullBarangayMarker = null;
+  }
+
+  if (state.fullRouteLine) {
+    state.fullMap.removeLayer(state.fullRouteLine);
+    state.fullRouteLine = null;
+  }
+
+  if (state.fullRoutingControl) {
+    try {
+      state.fullMap.removeControl(state.fullRoutingControl);
+    } catch (error) {
+      console.warn("Failed removing full route routing control:", error);
+    }
+
+    state.fullRoutingControl = null;
+  }
+}
+
+function destroyResolutionFullRouteMap(removeModal = false) {
+  const state = complaintResolutionRouteState;
+
+  try {
+    if (state.fullRoutingControl && state.fullMap) {
+      state.fullMap.removeControl(state.fullRoutingControl);
+    }
+  } catch (error) {
+    console.warn("Failed removing full route routing control:", error);
+  }
+
+  try {
+    if (state.fullMap) {
+      state.fullMap.off();
+      state.fullMap.remove();
+    }
+  } catch (error) {
+    console.warn("Failed destroying full route map:", error);
+  }
+
+  state.fullMap = null;
+  state.fullIssueMarker = null;
+  state.fullStartMarker = null;
+  state.fullBarangayMarker = null;
+  state.fullRouteLine = null;
+  state.fullRoutingControl = null;
+
+  const mapEl = document.getElementById("resolutionFullRouteMap");
+  if (mapEl) {
+    mapEl.innerHTML = "";
+
+    try {
+      delete mapEl._leaflet_id;
+    } catch (error) {
+      console.warn("Failed clearing full route Leaflet container id:", error);
+    }
+  }
+
+  if (removeModal) {
+    const modal = document.getElementById("resolutionFullRouteMapModal");
+    if (modal) modal.remove();
+  }
+}
+
+function closeResolutionFullRouteMapModal() {
+  destroyResolutionFullRouteMap(false);
+  resetComplaintModalDisplay("resolutionFullRouteMapModal");
+}
+
+function extendResolutionBounds(boundsPoints, point) {
+  if (!point) return;
+  boundsPoints.push([point.lat, point.lng]);
+}
+
+function drawResolutionFallbackLine(startPoint, issuePoint, mapInstance = null, routeKey = "routeLine") {
+  const state = complaintResolutionRouteState;
+  const map = mapInstance || state.map;
+
+  if (!map) return;
+
+  state[routeKey] = L.polyline(
     [
       [startPoint.lat, startPoint.lng],
       [issuePoint.lat, issuePoint.lng]
@@ -653,19 +1058,279 @@ function drawResolutionFallbackLine(startPoint, issuePoint) {
       lineCap: "round",
       lineJoin: "round"
     }
-  ).addTo(state.map);
+  ).addTo(map);
 
   const bounds = L.latLngBounds([
     [startPoint.lat, startPoint.lng],
     [issuePoint.lat, issuePoint.lng]
   ]);
 
-  state.map.fitBounds(bounds, { padding: [45, 45] });
+  map.fitBounds(bounds, { padding: [45, 45] });
 }
 
 function setResolutionMapNote(message) {
   const noteEl = document.getElementById("resolutionRouteMapNote");
   if (noteEl) noteEl.textContent = message;
+}
+
+function ensureResolutionRouteMapRuntimeStyles() {
+  if (document.getElementById("resolutionRouteMapRuntimeStyles")) return;
+
+  const style = document.createElement("style");
+  style.id = "resolutionRouteMapRuntimeStyles";
+  style.textContent = `
+    #resolutionRouteMapCard .resolution-route-map-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+    }
+
+    #resolutionRouteMapCard .resolution-route-map-title-block {
+      min-width: 0;
+    }
+
+    .resolution-route-map-legend {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin: 10px 0 12px;
+      color: #475569;
+      font-size: 13px;
+    }
+
+    .route-legend-circle {
+      display: inline-block;
+      width: 11px;
+      height: 11px;
+      border-radius: 999px;
+      margin-right: 6px;
+      vertical-align: middle;
+      box-sizing: border-box;
+    }
+
+    .route-legend-circle.start {
+      background: #16a34a;
+      border: 3px solid #ffffff;
+      box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.30);
+    }
+
+    .route-legend-circle.end {
+      background: #dc2626;
+      border: 3px solid #ffffff;
+      box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.32);
+    }
+
+    .route-legend-pin {
+      display: inline-block;
+      width: 10px;
+      height: 14px;
+      border-radius: 10px 10px 10px 0;
+      transform: rotate(-45deg);
+      margin-right: 8px;
+      vertical-align: -2px;
+      box-sizing: border-box;
+    }
+
+    .route-legend-pin.barangay {
+      background: #2563eb;
+      border: 2px solid #1d4ed8;
+    }
+
+    .resolution-route-tooltip {
+      border: 0 !important;
+      border-radius: 999px !important;
+      box-shadow: 0 8px 18px rgba(15, 23, 42, 0.18) !important;
+      color: #0f172a !important;
+      font-weight: 800 !important;
+      padding: 4px 8px !important;
+    }
+
+    .resolution-route-tooltip.start {
+      background: #ccfbf1 !important;
+    }
+
+    .resolution-route-tooltip.end {
+      background: #fee2e2 !important;
+    }
+
+    .resolution-route-tooltip.barangay {
+      background: #dbeafe !important;
+    }
+
+    .resolution-route-map-full-btn {
+      white-space: nowrap;
+    }
+
+    @media (max-width: 768px) {
+      #resolutionRouteMapCard .resolution-route-map-header {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .resolution-route-map-full-btn {
+        width: 100%;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+function renderResolutionFullRouteMap(record) {
+  ensureResolutionFullRouteMapModal();
+  destroyResolutionFullRouteMap(false);
+
+  if (!window.L) {
+    alert("Map library is not loaded. Please refresh the page.");
+    return;
+  }
+
+  const issuePoint = getResolutionIssuePoint(record);
+  const startPoint = getResolutionStartPoint(record);
+  const barangayPoint = getResolutionBarangayPoint(record);
+
+  if (!issuePoint) {
+    alert("Issue coordinates are not available for this resolved complaint.");
+    return;
+  }
+
+  if (!startPoint) {
+    alert("Barangay personnel GPS/start point is not available for this resolved complaint record yet.");
+    return;
+  }
+
+  const state = complaintResolutionRouteState;
+  const mapEl = document.getElementById("resolutionFullRouteMap");
+
+  if (!mapEl) return;
+
+  document.getElementById("resolutionFullMapStartLabel").textContent = getResolutionStartLabel(startPoint);
+  document.getElementById("resolutionFullMapBarangayLabel").textContent = barangayPoint
+    ? getResolutionBarangayLabel(record)
+    : "Not available";
+  document.getElementById("resolutionFullMapEndLabel").textContent =
+    record?.subject || "Issue Location";
+
+  const straightDistance = calculateDistanceMetersLocal(
+    startPoint.lat,
+    startPoint.lng,
+    issuePoint.lat,
+    issuePoint.lng
+  );
+
+  document.getElementById("resolutionFullMapDistance").textContent = formatDistanceText(straightDistance);
+
+  state.fullMap = L.map(mapEl, {
+    zoomControl: true,
+    attributionControl: true
+  }).setView([issuePoint.lat, issuePoint.lng], 16);
+
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: "&copy; OpenStreetMap contributors"
+  }).addTo(state.fullMap);
+
+  addResolutionStartCircle(state.fullMap, startPoint, record, "fullStartMarker");
+  addResolutionEndDot(state.fullMap, issuePoint, record, "fullIssueMarker");
+
+  if (barangayPoint) {
+    addResolutionBarangayPin(state.fullMap, barangayPoint, record, "fullBarangayMarker");
+  }
+
+  const boundsPoints = [];
+  extendResolutionBounds(boundsPoints, startPoint);
+  extendResolutionBounds(boundsPoints, issuePoint);
+  extendResolutionBounds(boundsPoints, barangayPoint);
+
+  if (boundsPoints.length > 1) {
+    state.fullMap.fitBounds(L.latLngBounds(boundsPoints), { padding: [80, 80] });
+  }
+
+  if (!window.L.Routing) {
+    drawResolutionFallbackLine(startPoint, issuePoint, state.fullMap, "fullRouteLine");
+    return;
+  }
+
+  state.fullRoutingControl = L.Routing.control({
+    waypoints: [
+      L.latLng(startPoint.lat, startPoint.lng),
+      L.latLng(issuePoint.lat, issuePoint.lng)
+    ],
+    router: L.Routing.osrmv1({
+      serviceUrl: "https://router.project-osrm.org/route/v1"
+    }),
+    routeWhileDragging: false,
+    addWaypoints: false,
+    draggableWaypoints: false,
+    fitSelectedRoutes: true,
+    showAlternatives: false,
+    show: false,
+    createMarker: function () {
+      return null;
+    },
+    lineOptions: {
+      addWaypoints: false,
+      extendToWaypoints: true,
+      missingRouteTolerance: 0,
+      styles: [
+        {
+          color: "#2563eb",
+          opacity: 0.95,
+          weight: 7
+        }
+      ]
+    }
+  }).addTo(state.fullMap);
+
+  state.fullRoutingControl.on("routesfound", function (event) {
+    const route = event.routes && event.routes[0];
+    if (!route) return;
+
+    const routeDistance = Math.round(route.summary?.totalDistance || 0);
+    document.getElementById("resolutionFullMapDistance").textContent = formatDistanceText(routeDistance);
+
+    if (route.bounds) {
+      state.fullMap.fitBounds(route.bounds, { padding: [80, 80] });
+    }
+  });
+
+  state.fullRoutingControl.on("routingerror", function (error) {
+    console.warn("Full route failed, drawing fallback line:", error);
+
+    if (state.fullRoutingControl) {
+      try {
+        state.fullMap.removeControl(state.fullRoutingControl);
+      } catch (removeError) {
+        console.warn("Failed removing failed full routing control:", removeError);
+      }
+
+      state.fullRoutingControl = null;
+    }
+
+    drawResolutionFallbackLine(startPoint, issuePoint, state.fullMap, "fullRouteLine");
+  });
+
+  setTimeout(() => {
+    state.fullMap.invalidateSize();
+  }, 180);
+}
+
+function openResolutionFullRouteMap() {
+  const record = complaintResolutionRouteState.lastRecord || currentComplaintResolution;
+
+  if (!record) {
+    alert("No resolved complaint selected.");
+    return;
+  }
+
+  ensureResolutionFullRouteMapModal();
+  openComplaintModalWithPosition("resolutionFullRouteMapModal");
+
+  setTimeout(() => {
+    renderResolutionFullRouteMap(record);
+  }, 220);
 }
 
 function renderResolvedComplaintRouteMap(record) {
@@ -692,7 +1357,9 @@ function renderResolvedComplaintRouteMap(record) {
   }
 
   const startPoint = getResolutionStartPoint(record);
+  const barangayPoint = getResolutionBarangayPoint(record);
   const state = complaintResolutionRouteState;
+  state.lastRecord = record;
 
   if (!state.map) {
     state.map = L.map(container.mapEl, {
@@ -710,45 +1377,22 @@ function renderResolvedComplaintRouteMap(record) {
 
   clearResolutionRouteMapLayers();
 
-  state.issueMarker = L.marker([issuePoint.lat, issuePoint.lng], {
-    icon: issueRedIcon
-  }).addTo(state.map);
-
-  state.issueMarker.bindPopup(`
-    <div>
-      <strong>Issue Location</strong><br>
-      ${escapeHtml(record?.subject || "Resolved complaint")}<br>
-      Coordinates: ${escapeHtml(String(issuePoint.lat))}, ${escapeHtml(String(issuePoint.lng))}
-    </div>
-  `);
+  addResolutionEndDot(state.map, issuePoint, record, "issueMarker");
 
   if (!startPoint) {
     state.map.setView([issuePoint.lat, issuePoint.lng], 17);
     state.issueMarker.openPopup();
     setResolutionMapNote(
-      "Only the issue location is available. Starting point is not included in this resolved complaint record yet."
+      "Only the issue location is available. Barangay personnel GPS/start point is not included in this resolved complaint record yet."
     );
     return;
   }
 
-  const startIcon = startPoint.type === "actual" ? personnelGreenIcon : barangayBlueIcon;
+  addResolutionStartCircle(state.map, startPoint, record, "startMarker");
 
-  state.startMarker = L.marker([startPoint.lat, startPoint.lng], {
-    icon: startIcon
-  }).addTo(state.map);
-
-  const startLabel =
-    startPoint.type === "actual"
-      ? "Barangay Personnel Start"
-      : "Assigned Barangay Reference";
-
-  state.startMarker.bindPopup(`
-    <div>
-      <strong>${escapeHtml(startLabel)}</strong><br>
-      ${escapeHtml(record?.handled_by_barangay_name || record?.assigned_barangay || "-")}<br>
-      Coordinates: ${escapeHtml(String(startPoint.lat))}, ${escapeHtml(String(startPoint.lng))}
-    </div>
-  `);
+  if (barangayPoint) {
+    addResolutionBarangayPin(state.map, barangayPoint, record, "barangayMarker");
+  }
 
   const straightDistance = calculateDistanceMetersLocal(
     startPoint.lat,
@@ -757,12 +1401,25 @@ function renderResolvedComplaintRouteMap(record) {
     issuePoint.lng
   );
 
-  const notePrefix =
-    startPoint.type === "actual"
-      ? "Route from barangay personnel GPS location to the issue location."
-      : "Route from assigned barangay reference point to the issue location.";
+  const notePrefix = getResolutionRouteNotePrefix(startPoint, barangayPoint);
 
-  setResolutionMapNote(`${notePrefix} Straight distance: ${formatDistanceText(straightDistance)}.`);
+  const sameStartAndBarangay = areResolutionPointsSame(startPoint, barangayPoint);
+  const barangayNote = barangayPoint
+    ? " Blue pin is the barangay personnel GPS marker at the start point."
+    : " Barangay personnel GPS pin is not available.";
+
+  setResolutionMapNote(
+    `${notePrefix} Straight distance: ${formatDistanceText(straightDistance)}.${barangayNote}`
+  );
+
+  const boundsPoints = [];
+  extendResolutionBounds(boundsPoints, startPoint);
+  extendResolutionBounds(boundsPoints, issuePoint);
+  extendResolutionBounds(boundsPoints, barangayPoint);
+
+  if (boundsPoints.length > 1) {
+    state.map.fitBounds(L.latLngBounds(boundsPoints), { padding: [45, 45] });
+  }
 
   if (!window.L.Routing) {
     drawResolutionFallbackLine(startPoint, issuePoint);
@@ -808,7 +1465,7 @@ function renderResolvedComplaintRouteMap(record) {
     const routeDistance = Math.round(route.summary?.totalDistance || 0);
     const routeDistanceText = formatDistanceText(routeDistance);
 
-    setResolutionMapNote(`${notePrefix} Route distance: ${routeDistanceText}.`);
+    setResolutionMapNote(`${notePrefix} Route distance: ${routeDistanceText}.${barangayNote}`);
 
     if (route.bounds) {
       state.map.fitBounds(route.bounds, { padding: [45, 45] });
@@ -830,7 +1487,7 @@ function renderResolvedComplaintRouteMap(record) {
 
     drawResolutionFallbackLine(startPoint, issuePoint);
     setResolutionMapNote(
-      `${notePrefix} Route service failed, so a direct line is shown. Straight distance: ${formatDistanceText(straightDistance)}.`
+      `${notePrefix} Route service failed, so a direct line is shown. Straight distance: ${formatDistanceText(straightDistance)}.${barangayNote}`
     );
   });
 
@@ -1073,6 +1730,7 @@ function bindComplaintButtons() {
 const COMPLAINT_PORTAL_MODAL_IDS = [
   "complaintDetailsModal",
   "complaintResolutionModal",
+  "resolutionFullRouteMapModal",
   "complaintMapModal",
   "complaintHistoryModal"
 ];
@@ -1197,6 +1855,12 @@ window.addEventListener("resize", () => {
       if (modalId === "complaintResolutionModal" && complaintResolutionRouteState.map) {
         setTimeout(() => {
           complaintResolutionRouteState.map.invalidateSize();
+        }, 120);
+      }
+
+      if (modalId === "resolutionFullRouteMapModal" && complaintResolutionRouteState.fullMap) {
+        setTimeout(() => {
+          complaintResolutionRouteState.fullMap.invalidateSize();
         }, 120);
       }
     }
@@ -1903,6 +2567,7 @@ function closeComplaintResolutionModal() {
   if (!modal) return;
 
   destroyResolutionRouteMap(true);
+  destroyResolutionFullRouteMap(true);
   resetComplaintModalDisplay("complaintResolutionModal");
   currentComplaintResolution = null;
 }
