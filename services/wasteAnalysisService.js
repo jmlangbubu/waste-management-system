@@ -4,7 +4,9 @@ const {
   mapWasteCategory,
   normalizeText
 } = require("../utils/wasteMapper");
+
 const { detectLabelsFromBase64 } = require("./googleVisionService");
+const { classifyWasteWithRoboflow } = require("./roboflowWasteClassifierService");
 
 const GENERIC_LABELS = new Set([
   "material",
@@ -30,7 +32,17 @@ const GENERIC_LABELS = new Set([
   "finger",
   "person",
   "human",
-  "skin"
+  "skin",
+  "fashion good",
+  "fashion goods",
+  "goods",
+  "consumer goods",
+  "packaged goods",
+  "packaging and labeling",
+  "labeling",
+  "advertising",
+  "poster",
+  "display device"
 ]);
 
 function isGenericLabel(label) {
@@ -38,10 +50,6 @@ function isGenericLabel(label) {
 
   if (!normalized) return true;
 
-  /*
-    These words are allowed even if they are broad because they are useful
-    for waste classification.
-  */
   if (
     normalized.includes("food") ||
     normalized.includes("fruit") ||
@@ -315,14 +323,6 @@ function buildConflictOverride(combinedText = "") {
     "laminated packaging"
   ]);
 
-  /*
-    Priority:
-    1. Special waste always wins for safety.
-    2. Dirty/contaminated recyclable-looking items become residual.
-    3. Organic food/plant waste becomes biodegradable.
-    4. Clean recyclable materials become recyclable.
-    5. Known residual materials become residual.
-  */
   if (hasSpecialWaste) {
     return "Special Waste";
   }
@@ -354,6 +354,7 @@ function createSafeResult({
   analysisSource = "fallback",
   visionLabels = [],
   mlKitLabels = [],
+  roboflowPredictions = [],
   explanation = null,
   action = null,
   warning = null
@@ -369,12 +370,19 @@ function createSafeResult({
     aiConfidence,
     analysisSource,
     visionLabels,
-    mlKitLabels
+    mlKitLabels,
+    roboflowPredictions
   };
 }
 
-function getBestLabel({ visionLabels = [], safeMlKitLabels = [], detectedObject = "" }) {
+function getBestLabel({
+  roboflowPrediction = null,
+  visionLabels = [],
+  safeMlKitLabels = [],
+  detectedObject = ""
+}) {
   return (
+    roboflowPrediction?.className ||
     visionLabels[0]?.description ||
     safeMlKitLabels[0]?.description ||
     normalizeText(detectedObject) ||
@@ -382,13 +390,109 @@ function getBestLabel({ visionLabels = [], safeMlKitLabels = [], detectedObject 
   );
 }
 
-function getBestConfidence({ visionLabels = [], safeMlKitLabels = [] }) {
+function getBestConfidence({
+  roboflowPrediction = null,
+  visionLabels = [],
+  safeMlKitLabels = []
+}) {
+  if (roboflowPrediction?.confidence != null) {
+    return Number(roboflowPrediction.confidence).toFixed(2);
+  }
+
   if (visionLabels[0]?.score != null) {
     return Number(visionLabels[0].score).toFixed(2);
   }
 
   if (safeMlKitLabels[0]?.score != null) {
     return Number(safeMlKitLabels[0].score).toFixed(2);
+  }
+
+  return null;
+}
+
+function mapRoboflowPredictionToWasteResult(roboflowPrediction) {
+  if (!roboflowPrediction || !roboflowPrediction.className) {
+    return null;
+  }
+
+  const className = normalizeText(roboflowPrediction.className);
+
+  let mapped = null;
+
+  try {
+    mapped = mapWasteCategory({
+      analysisText: className,
+      labels: [
+        {
+          description: className,
+          score: roboflowPrediction.confidence || 0
+        }
+      ],
+      objectName: className
+    });
+  } catch (error) {
+    console.error("[WasteAnalysis] Roboflow mapWasteCategory error:", error);
+    mapped = null;
+  }
+
+  if (mapped && mapped.category) {
+    return mapped;
+  }
+
+  /*
+    Extra hard mapping so your first custom class works even with a small dataset.
+  */
+  if (className.includes("plastic bottle") || className.includes("bottle")) {
+    return {
+      itemName: "Recyclable",
+      category: "Recyclable",
+      explanation: buildCategoryExplanation("Recyclable"),
+      action: buildCategoryAction("Recyclable"),
+      warning: buildCategoryWarning("Recyclable")
+    };
+  }
+
+  if (
+    className.includes("banana") ||
+    className.includes("food") ||
+    className.includes("leaf") ||
+    className.includes("leaves")
+  ) {
+    return {
+      itemName: "Biodegradable",
+      category: "Biodegradable",
+      explanation: buildCategoryExplanation("Biodegradable"),
+      action: buildCategoryAction("Biodegradable"),
+      warning: buildCategoryWarning("Biodegradable")
+    };
+  }
+
+  if (
+    className.includes("wrapper") ||
+    className.includes("sachet") ||
+    className.includes("styrofoam")
+  ) {
+    return {
+      itemName: "Residual",
+      category: "Residual",
+      explanation: buildCategoryExplanation("Residual"),
+      action: buildCategoryAction("Residual"),
+      warning: buildCategoryWarning("Residual")
+    };
+  }
+
+  if (
+    className.includes("battery") ||
+    className.includes("charger") ||
+    className.includes("bulb")
+  ) {
+    return {
+      itemName: "Special Waste",
+      category: "Special Waste",
+      explanation: buildCategoryExplanation("Special Waste"),
+      action: buildCategoryAction("Special Waste"),
+      warning: buildCategoryWarning("Special Waste")
+    };
   }
 
   return null;
@@ -402,6 +506,51 @@ async function analyzeWaste({ image, detectedObject, mlKitLabels = [] }) {
   console.log("image length:", image ? image.length : 0);
 
   try {
+    /*
+      FIRST PRIORITY:
+      Roboflow custom model.
+      This should detect your custom class like plastic_bottle / plastic bottle.
+    */
+    let roboflowResult = null;
+
+    try {
+      roboflowResult = await classifyWasteWithRoboflow(image);
+
+      console.log("[WasteAnalysis] Roboflow success:", roboflowResult?.success);
+      console.log("[WasteAnalysis] Roboflow bestPrediction:", roboflowResult?.bestPrediction);
+    } catch (roboflowError) {
+      console.error("[WasteAnalysis] Roboflow classifier failed:", roboflowError);
+      roboflowResult = null;
+    }
+
+    if (roboflowResult?.success && roboflowResult?.bestPrediction) {
+      const roboflowPrediction = roboflowResult.bestPrediction;
+      const mappedFromRoboflow = mapRoboflowPredictionToWasteResult(roboflowPrediction);
+
+      if (mappedFromRoboflow && mappedFromRoboflow.category) {
+        console.log(
+          "[WasteAnalysis] RETURNING Roboflow category:",
+          mappedFromRoboflow.category
+        );
+
+        return createSafeResult({
+          category: mappedFromRoboflow.category,
+          detectedObject: roboflowPrediction.className,
+          aiLabel: roboflowPrediction.className,
+          aiConfidence: getBestConfidence({ roboflowPrediction }),
+          analysisSource: roboflowResult.source || "roboflow_custom_model",
+          roboflowPredictions: roboflowResult.predictions || [],
+          explanation: mappedFromRoboflow.explanation || null,
+          action: mappedFromRoboflow.action || null,
+          warning: mappedFromRoboflow.warning || null
+        });
+      }
+    }
+
+    /*
+      SECOND PRIORITY:
+      Google Vision + ML Kit fusion.
+    */
     let rawVisionLabels = [];
 
     try {
@@ -428,10 +577,6 @@ async function analyzeWaste({ image, detectedObject, mlKitLabels = [] }) {
     console.log("combinedLabels:", combinedLabels);
     console.log("combinedText:", combinedText);
 
-    /*
-      First pass: direct safety/category override from all available text.
-      This helps when Google Vision fails but detectedObject still has useful text.
-    */
     const forcedCategory = buildConflictOverride(combinedText);
 
     if (forcedCategory) {
@@ -440,8 +585,15 @@ async function analyzeWaste({ image, detectedObject, mlKitLabels = [] }) {
       return createSafeResult({
         category: forcedCategory,
         detectedObject: forcedCategory,
-        aiLabel: getBestLabel({ visionLabels, safeMlKitLabels, detectedObject }),
-        aiConfidence: getBestConfidence({ visionLabels, safeMlKitLabels }),
+        aiLabel: getBestLabel({
+          visionLabels,
+          safeMlKitLabels,
+          detectedObject
+        }),
+        aiConfidence: getBestConfidence({
+          visionLabels,
+          safeMlKitLabels
+        }),
         analysisSource:
           visionLabels.length > 0
             ? "vision_text_override"
@@ -453,10 +605,6 @@ async function analyzeWaste({ image, detectedObject, mlKitLabels = [] }) {
       });
     }
 
-    /*
-      Second pass: wasteMapper category rules.
-      This requires the updated utils/wasteMapper.js with function exports.
-    */
     let mapped = null;
 
     try {
@@ -477,8 +625,15 @@ async function analyzeWaste({ image, detectedObject, mlKitLabels = [] }) {
       return createSafeResult({
         category: mapped.category,
         detectedObject: mapped.detectedObject || mapped.itemName || mapped.category,
-        aiLabel: getBestLabel({ visionLabels, safeMlKitLabels, detectedObject }),
-        aiConfidence: getBestConfidence({ visionLabels, safeMlKitLabels }),
+        aiLabel: getBestLabel({
+          visionLabels,
+          safeMlKitLabels,
+          detectedObject
+        }),
+        aiConfidence: getBestConfidence({
+          visionLabels,
+          safeMlKitLabels
+        }),
         analysisSource:
           visionLabels.length > 0
             ? "google_vision_mapper"
@@ -493,9 +648,6 @@ async function analyzeWaste({ image, detectedObject, mlKitLabels = [] }) {
       });
     }
 
-    /*
-      Third pass: direct object rules.
-    */
     let ruleBased = null;
 
     try {
@@ -512,8 +664,15 @@ async function analyzeWaste({ image, detectedObject, mlKitLabels = [] }) {
       return createSafeResult({
         category: ruleBased.category,
         detectedObject: ruleBased.detectedObject || ruleBased.itemName || ruleBased.category,
-        aiLabel: getBestLabel({ visionLabels, safeMlKitLabels, detectedObject }),
-        aiConfidence: getBestConfidence({ visionLabels, safeMlKitLabels }),
+        aiLabel: getBestLabel({
+          visionLabels,
+          safeMlKitLabels,
+          detectedObject
+        }),
+        aiConfidence: getBestConfidence({
+          visionLabels,
+          safeMlKitLabels
+        }),
         analysisSource: "rule_based_fallback",
         visionLabels,
         mlKitLabels: safeMlKitLabels,
@@ -523,9 +682,6 @@ async function analyzeWaste({ image, detectedObject, mlKitLabels = [] }) {
       });
     }
 
-    /*
-      Final fallback: still return stable result, but include best label hint.
-    */
     let fallback = null;
 
     try {
@@ -539,15 +695,23 @@ async function analyzeWaste({ image, detectedObject, mlKitLabels = [] }) {
       };
     }
 
-    const bestHint = getBestLabel({ visionLabels, safeMlKitLabels, detectedObject });
+    const bestHint = getBestLabel({
+      visionLabels,
+      safeMlKitLabels,
+      detectedObject
+    });
 
     console.log("RETURNING final fallback:", fallback);
 
     return createSafeResult({
       category: fallback.category || "Residual",
-      detectedObject: fallback.detectedObject || fallback.itemName || fallback.category || "Residual",
+      detectedObject:
+        fallback.detectedObject || fallback.itemName || fallback.category || "Residual",
       aiLabel: bestHint,
-      aiConfidence: getBestConfidence({ visionLabels, safeMlKitLabels }),
+      aiConfidence: getBestConfidence({
+        visionLabels,
+        safeMlKitLabels
+      }),
       analysisSource: "fallback",
       visionLabels,
       mlKitLabels: safeMlKitLabels,
@@ -570,6 +734,7 @@ async function analyzeWaste({ image, detectedObject, mlKitLabels = [] }) {
       analysisSource: "fatal_service_fallback",
       visionLabels: [],
       mlKitLabels: [],
+      roboflowPredictions: [],
       explanation:
         "The system encountered a fatal analysis error and returned a safe fallback result.",
       action:
