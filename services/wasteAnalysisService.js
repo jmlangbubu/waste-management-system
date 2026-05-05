@@ -5,162 +5,7 @@ const {
   normalizeText
 } = require("../utils/wasteMapper");
 
-const { detectLabelsFromBase64 } = require("./googleVisionService");
-const { classifyWasteWithRoboflow } = require("./roboflowWasteClassifierService"); 
-
-const GENERIC_LABELS = new Set([
-  "material",
-  "font",
-  "product",
-  "brand",
-  "photography",
-  "image",
-  "design",
-  "pattern",
-  "object",
-  "indoor",
-  "technology",
-  "gadget",
-  "graphics",
-  "logo",
-  "label",
-  "text",
-  "room",
-  "table",
-  "floor",
-  "hand",
-  "finger",
-  "person",
-  "human",
-  "skin",
-  "fashion good",
-  "fashion goods",
-  "goods",
-  "consumer goods",
-  "packaged goods",
-  "packaging and labeling",
-  "labeling",
-  "advertising",
-  "poster",
-  "display device"
-]);
-
-function isGenericLabel(label) {
-  const normalized = normalizeText(label);
-
-  if (!normalized) return true;
-
-  if (
-    normalized.includes("food") ||
-    normalized.includes("fruit") ||
-    normalized.includes("vegetable") ||
-    normalized.includes("banana") ||
-    normalized.includes("apple") ||
-    normalized.includes("orange") ||
-    normalized.includes("mango") ||
-    normalized.includes("leaf") ||
-    normalized.includes("leaves") ||
-    normalized.includes("plant") ||
-    normalized.includes("organic") ||
-    normalized.includes("compost") ||
-    normalized.includes("can") ||
-    normalized.includes("bottle") ||
-    normalized.includes("plastic") ||
-    normalized.includes("glass") ||
-    normalized.includes("metal") ||
-    normalized.includes("container") ||
-    normalized.includes("wrapper") ||
-    normalized.includes("sachet") ||
-    normalized.includes("battery") ||
-    normalized.includes("bulb") ||
-    normalized.includes("paper") ||
-    normalized.includes("carton") ||
-    normalized.includes("cardboard") ||
-    normalized.includes("charger") ||
-    normalized.includes("adapter") ||
-    normalized.includes("electronic") ||
-    normalized.includes("cable") ||
-    normalized.includes("wire") ||
-    normalized.includes("styrofoam") ||
-    normalized.includes("foam") ||
-    normalized.includes("diaper") ||
-    normalized.includes("tissue")
-  ) {
-    return false;
-  }
-
-  return GENERIC_LABELS.has(normalized);
-}
-
-function toSafeVisionLabels(labels = []) {
-  if (!Array.isArray(labels)) return [];
-
-  return labels
-    .map((item) => ({
-      description: normalizeText(item?.description || item?.name || ""),
-      score: typeof item?.score === "number" ? item.score : 0
-    }))
-    .filter((item) => item.description)
-    .filter((item) => !isGenericLabel(item.description));
-}
-
-function toSafeMlKitLabels(labels = []) {
-  if (!Array.isArray(labels)) return [];
-
-  return labels
-    .map((item) => {
-      if (typeof item === "string") {
-        return { description: normalizeText(item), score: 0.5 };
-      }
-
-      return {
-        description: normalizeText(item?.description || item?.name || ""),
-        score: typeof item?.score === "number" ? item.score : 0.5
-      };
-    })
-    .filter((item) => item.description)
-    .filter((item) => !isGenericLabel(item.description));
-}
-
-function dedupeLabels(labels = []) {
-  const seen = new Set();
-  const result = [];
-
-  for (const label of labels) {
-    if (!label || !label.description) continue;
-
-    const description = normalizeText(label.description);
-    if (!description) continue;
-
-    if (!seen.has(description)) {
-      seen.add(description);
-      result.push({
-        ...label,
-        description
-      });
-    }
-  }
-
-  return result;
-}
-
-function buildCombinedAnalysisText(detectedObject = "", visionLabels = [], mlKitLabels = []) {
-  const pieces = [];
-
-  if (detectedObject) {
-    pieces.push(normalizeText(detectedObject));
-  }
-
-  for (const item of visionLabels) {
-    if (item?.description) pieces.push(normalizeText(item.description));
-  }
-
-  for (const item of mlKitLabels) {
-    if (item?.description) pieces.push(normalizeText(item.description));
-  }
-
-  return normalizeText(pieces.join(" "));
-}
+const { classifyWasteWithGemini } = require("./geminiWasteClassifierService");
 
 function buildCategoryExplanation(category) {
   switch (category) {
@@ -204,146 +49,27 @@ function buildCategoryWarning(category) {
   }
 }
 
-function hasAny(text, keywords = []) {
-  const normalized = normalizeText(text);
-  return keywords.some((keyword) => normalized.includes(normalizeText(keyword)));
+function isValidCategory(category) {
+  return ["Biodegradable", "Recyclable", "Residual", "Special Waste"].includes(category);
 }
 
-function buildConflictOverride(combinedText = "") {
-  const text = normalizeText(combinedText);
+function normalizeCategory(category) {
+  const clean = normalizeText(category);
 
-  if (!text) return null;
+  if (clean.includes("recyclable")) return "Recyclable";
+  if (clean.includes("biodegradable")) return "Biodegradable";
+  if (clean.includes("special")) return "Special Waste";
+  if (clean.includes("hazardous")) return "Special Waste";
+  if (clean.includes("residual")) return "Residual";
 
-  const hasSpecialWaste = hasAny(text, [
-    "battery",
-    "lithium battery",
-    "phone battery",
-    "car battery",
-    "charger",
-    "adapter",
-    "power bank",
-    "electronic",
-    "electronics",
-    "electrical",
-    "e waste",
-    "ewaste",
-    "bulb",
-    "lamp",
-    "fluorescent",
-    "chemical",
-    "bleach",
-    "paint",
-    "medicine",
-    "expired medicine",
-    "aerosol",
-    "spray can",
-    "cable",
-    "wire",
-    "plug",
-    "syringe",
-    "needle",
-    "medical waste"
-  ]);
+  return "";
+}
 
-  const hasDirtyOrContaminated = hasAny(text, [
-    "dirty",
-    "contaminated",
-    "greasy",
-    "oily",
-    "food in plastic",
-    "plastic with food",
-    "dirty food container",
-    "used food container",
-    "mixed waste"
-  ]);
+function toSafeString(value, fallback = "") {
+  if (value === null || value === undefined) return fallback;
 
-  const hasBiodegradable = hasAny(text, [
-    "food waste",
-    "food scraps",
-    "leftover food",
-    "spoiled food",
-    "fruit",
-    "vegetable",
-    "banana",
-    "banana peel",
-    "apple",
-    "apple core",
-    "orange peel",
-    "mango peel",
-    "peel",
-    "leaf",
-    "leaves",
-    "dry leaves",
-    "grass",
-    "plant",
-    "organic",
-    "compost",
-    "compostable",
-    "egg shell",
-    "eggshell",
-    "fish bone",
-    "chicken bone",
-    "rice",
-    "bread"
-  ]);
-
-  const hasRecyclable = hasAny(text, [
-    "bottle",
-    "plastic bottle",
-    "water bottle",
-    "pet bottle",
-    "container",
-    "jar",
-    "glass",
-    "can",
-    "metal",
-    "aluminum",
-    "tin",
-    "paper",
-    "carton",
-    "cardboard",
-    "plastic cup",
-    "plastic container",
-    "newspaper",
-    "magazine"
-  ]);
-
-  const hasResidual = hasAny(text, [
-    "wrapper",
-    "sachet",
-    "pouch",
-    "packet",
-    "styrofoam",
-    "foam",
-    "diaper",
-    "used tissue",
-    "tissue",
-    "sanitary pad",
-    "cigarette butt",
-    "laminated packaging"
-  ]);
-
-  if (hasSpecialWaste) {
-    return "Special Waste";
-  }
-
-  if (hasDirtyOrContaminated) {
-    return "Residual";
-  }
-
-  if (hasBiodegradable && !hasRecyclable) {
-    return "Biodegradable";
-  }
-
-  if (hasRecyclable) {
-    return "Recyclable";
-  }
-
-  if (hasResidual) {
-    return "Residual";
-  }
-
-  return null;
+  const text = String(value).trim();
+  return text || fallback;
 }
 
 function createSafeResult({
@@ -359,13 +85,15 @@ function createSafeResult({
   action = null,
   warning = null
 }) {
+  const normalizedCategory = normalizeCategory(category) || "Residual";
+
   return {
-    itemName: category,
-    category,
-    explanation: explanation || buildCategoryExplanation(category),
-    action: action || buildCategoryAction(category),
-    warning: warning || buildCategoryWarning(category),
-    detectedObject: detectedObject || category,
+    itemName: normalizedCategory,
+    category: normalizedCategory,
+    explanation: explanation || buildCategoryExplanation(normalizedCategory),
+    action: action || buildCategoryAction(normalizedCategory),
+    warning: warning || buildCategoryWarning(normalizedCategory),
+    detectedObject: detectedObject || normalizedCategory,
     aiLabel,
     aiConfidence,
     analysisSource,
@@ -375,63 +103,33 @@ function createSafeResult({
   };
 }
 
-function getBestLabel({
-  roboflowPrediction = null,
-  visionLabels = [],
-  safeMlKitLabels = [],
-  detectedObject = ""
-}) {
-  return (
-    roboflowPrediction?.className ||
-    visionLabels[0]?.description ||
-    safeMlKitLabels[0]?.description ||
-    normalizeText(detectedObject) ||
-    "unknown item"
-  );
-}
+function buildFallbackFromMapper({ detectedObject = "", mlKitLabels = [] } = {}) {
+  const labelText = Array.isArray(mlKitLabels)
+    ? mlKitLabels
+        .map((item) => {
+          if (typeof item === "string") return item;
+          return item?.description || item?.name || item?.label || "";
+        })
+        .filter(Boolean)
+        .join(" ")
+    : "";
 
-function getBestConfidence({
-  roboflowPrediction = null,
-  visionLabels = [],
-  safeMlKitLabels = []
-}) {
-  if (roboflowPrediction?.confidence != null) {
-    return Number(roboflowPrediction.confidence).toFixed(2);
-  }
+  const combinedText = normalizeText(`${detectedObject} ${labelText}`);
 
-  if (visionLabels[0]?.score != null) {
-    return Number(visionLabels[0].score).toFixed(2);
-  }
-
-  if (safeMlKitLabels[0]?.score != null) {
-    return Number(safeMlKitLabels[0].score).toFixed(2);
-  }
-
-  return null;
-}
-
-function mapRoboflowPredictionToWasteResult(roboflowPrediction) {
-  if (!roboflowPrediction || !roboflowPrediction.className) {
+  if (!combinedText || combinedText === "captured waste item") {
     return null;
   }
-
-  const className = normalizeText(roboflowPrediction.className);
 
   let mapped = null;
 
   try {
     mapped = mapWasteCategory({
-      analysisText: className,
-      labels: [
-        {
-          description: className,
-          score: roboflowPrediction.confidence || 0
-        }
-      ],
-      objectName: className
+      analysisText: combinedText,
+      labels: mlKitLabels,
+      objectName: detectedObject
     });
   } catch (error) {
-    console.error("[WasteAnalysis] Roboflow mapWasteCategory error:", error);
+    console.error("[WasteAnalysis] mapWasteCategory error:", error.message);
     mapped = null;
   }
 
@@ -439,60 +137,14 @@ function mapRoboflowPredictionToWasteResult(roboflowPrediction) {
     return mapped;
   }
 
-  /*
-    Extra hard mapping so your first custom class works even with a small dataset.
-  */
-  if (className.includes("plastic bottle") || className.includes("bottle")) {
-    return {
-      itemName: "Recyclable",
-      category: "Recyclable",
-      explanation: buildCategoryExplanation("Recyclable"),
-      action: buildCategoryAction("Recyclable"),
-      warning: buildCategoryWarning("Recyclable")
-    };
-  }
+  try {
+    const ruleBased = analyzeWasteByObject(combinedText);
 
-  if (
-    className.includes("banana") ||
-    className.includes("food") ||
-    className.includes("leaf") ||
-    className.includes("leaves")
-  ) {
-    return {
-      itemName: "Biodegradable",
-      category: "Biodegradable",
-      explanation: buildCategoryExplanation("Biodegradable"),
-      action: buildCategoryAction("Biodegradable"),
-      warning: buildCategoryWarning("Biodegradable")
-    };
-  }
-
-  if (
-    className.includes("wrapper") ||
-    className.includes("sachet") ||
-    className.includes("styrofoam")
-  ) {
-    return {
-      itemName: "Residual",
-      category: "Residual",
-      explanation: buildCategoryExplanation("Residual"),
-      action: buildCategoryAction("Residual"),
-      warning: buildCategoryWarning("Residual")
-    };
-  }
-
-  if (
-    className.includes("battery") ||
-    className.includes("charger") ||
-    className.includes("bulb")
-  ) {
-    return {
-      itemName: "Special Waste",
-      category: "Special Waste",
-      explanation: buildCategoryExplanation("Special Waste"),
-      action: buildCategoryAction("Special Waste"),
-      warning: buildCategoryWarning("Special Waste")
-    };
+    if (ruleBased && ruleBased.category) {
+      return ruleBased;
+    }
+  } catch (error) {
+    console.error("[WasteAnalysis] analyzeWasteByObject error:", error.message);
   }
 
   return null;
@@ -505,244 +157,107 @@ async function analyzeWaste({ image, detectedObject, mlKitLabels = [] }) {
   console.log("image exists:", !!image);
   console.log("image length:", image ? image.length : 0);
 
+  /*
+    FIRST PRIORITY:
+    Gemini Vision.
+    This replaces the failed Roboflow path and avoids ML Kit false labels like "food".
+  */
   try {
-    /*
-      FIRST PRIORITY:
-      Roboflow custom model.
-      This should detect your custom class like plastic_bottle / plastic bottle.
-    */
-    let roboflowResult = null;
+    const geminiResult = await classifyWasteWithGemini(image);
 
-    try {
-      roboflowResult = await classifyWasteWithRoboflow(image);
+    console.log("[WasteAnalysis] Gemini success:", geminiResult?.success);
+    console.log("[WasteAnalysis] Gemini result:", geminiResult?.result);
 
-      console.log("[WasteAnalysis] Roboflow success:", roboflowResult?.success);
-      console.log("[WasteAnalysis] Roboflow bestPrediction:", roboflowResult?.bestPrediction);
-    } catch (roboflowError) {
-      console.error("[WasteAnalysis] Roboflow classifier failed:", roboflowError);
-      roboflowResult = null;
-    }
+    if (geminiResult?.success && geminiResult?.result) {
+      const result = geminiResult.result;
+      const category = normalizeCategory(result.category);
 
-    if (roboflowResult?.success && roboflowResult?.bestPrediction) {
-      const roboflowPrediction = roboflowResult.bestPrediction;
-      const mappedFromRoboflow = mapRoboflowPredictionToWasteResult(roboflowPrediction);
-
-      if (mappedFromRoboflow && mappedFromRoboflow.category) {
-        console.log(
-          "[WasteAnalysis] RETURNING Roboflow category:",
-          mappedFromRoboflow.category
-        );
+      if (isValidCategory(category)) {
+        console.log("[WasteAnalysis] RETURNING Gemini category:", category);
 
         return createSafeResult({
-          category: mappedFromRoboflow.category,
-          detectedObject: roboflowPrediction.className,
-          aiLabel: roboflowPrediction.className,
-          aiConfidence: getBestConfidence({ roboflowPrediction }),
-          analysisSource: roboflowResult.source || "roboflow_custom_model",
-          roboflowPredictions: roboflowResult.predictions || [],
-          explanation: mappedFromRoboflow.explanation || null,
-          action: mappedFromRoboflow.action || null,
-          warning: mappedFromRoboflow.warning || null
+          category,
+          detectedObject: result.itemName || category,
+          aiLabel: result.itemName || category,
+          aiConfidence:
+            result.confidence !== null && result.confidence !== undefined
+              ? Number(result.confidence).toFixed(2)
+              : null,
+          analysisSource: geminiResult.source || "gemini_vision",
+          explanation: result.explanation || null,
+          action: result.action || null,
+          warning: result.warning || null,
+          visionLabels: [],
+          mlKitLabels: []
         });
       }
     }
+  } catch (error) {
+    console.error("[WasteAnalysis] Gemini classifier fatal error:", error.message);
+  }
 
-    /*
-      SECOND PRIORITY:
-      Google Vision + ML Kit fusion.
-    */
-    let rawVisionLabels = [];
+  /*
+    SECOND PRIORITY:
+    Optional local fallback.
+    Since the Android capture-first flow sends detectedObject = captured_waste_item
+    and empty ML Kit labels, this will usually not falsely classify bottles as food.
+  */
+  const mappedFallback = buildFallbackFromMapper({
+    detectedObject,
+    mlKitLabels
+  });
 
-    try {
-      const visionResult = await detectLabelsFromBase64(image);
-      rawVisionLabels = Array.isArray(visionResult) ? visionResult : [];
-      console.log("rawVisionLabels:", rawVisionLabels);
-    } catch (error) {
-      console.error("Google Vision error:", error);
-      rawVisionLabels = [];
-    }
+  if (mappedFallback && mappedFallback.category) {
+    const category = normalizeCategory(mappedFallback.category) || "Residual";
 
-    const visionLabels = dedupeLabels(toSafeVisionLabels(rawVisionLabels));
-    const safeMlKitLabels = dedupeLabels(toSafeMlKitLabels(mlKitLabels));
-    const combinedLabels = dedupeLabels([...visionLabels, ...safeMlKitLabels]);
-
-    const combinedText = buildCombinedAnalysisText(
-      detectedObject,
-      visionLabels,
-      safeMlKitLabels
-    );
-
-    console.log("visionLabels:", visionLabels);
-    console.log("safeMlKitLabels:", safeMlKitLabels);
-    console.log("combinedLabels:", combinedLabels);
-    console.log("combinedText:", combinedText);
-
-    const forcedCategory = buildConflictOverride(combinedText);
-
-    if (forcedCategory) {
-      console.log("RETURNING forcedCategory:", forcedCategory);
-
-      return createSafeResult({
-        category: forcedCategory,
-        detectedObject: forcedCategory,
-        aiLabel: getBestLabel({
-          visionLabels,
-          safeMlKitLabels,
-          detectedObject
-        }),
-        aiConfidence: getBestConfidence({
-          visionLabels,
-          safeMlKitLabels
-        }),
-        analysisSource:
-          visionLabels.length > 0
-            ? "vision_text_override"
-            : safeMlKitLabels.length > 0
-            ? "mlkit_text_override"
-            : "detected_object_override",
-        visionLabels,
-        mlKitLabels: safeMlKitLabels
-      });
-    }
-
-    let mapped = null;
-
-    try {
-      mapped = mapWasteCategory({
-        analysisText: combinedText,
-        labels: combinedLabels,
-        objectName: detectedObject
-      });
-      console.log("mapped:", mapped);
-    } catch (mapError) {
-      console.error("mapWasteCategory error:", mapError);
-      mapped = null;
-    }
-
-    if (mapped && mapped.category) {
-      console.log("RETURNING mapped.category:", mapped.category);
-
-      return createSafeResult({
-        category: mapped.category,
-        detectedObject: mapped.detectedObject || mapped.itemName || mapped.category,
-        aiLabel: getBestLabel({
-          visionLabels,
-          safeMlKitLabels,
-          detectedObject
-        }),
-        aiConfidence: getBestConfidence({
-          visionLabels,
-          safeMlKitLabels
-        }),
-        analysisSource:
-          visionLabels.length > 0
-            ? "google_vision_mapper"
-            : safeMlKitLabels.length > 0
-            ? "mlkit_mapper"
-            : "detected_object_mapper",
-        visionLabels,
-        mlKitLabels: safeMlKitLabels,
-        explanation: mapped.explanation || null,
-        action: mapped.action || null,
-        warning: mapped.warning || null
-      });
-    }
-
-    let ruleBased = null;
-
-    try {
-      ruleBased = analyzeWasteByObject(detectedObject || combinedText);
-      console.log("ruleBased:", ruleBased);
-    } catch (ruleError) {
-      console.error("analyzeWasteByObject error:", ruleError);
-      ruleBased = null;
-    }
-
-    if (ruleBased && ruleBased.category) {
-      console.log("RETURNING ruleBased.category:", ruleBased.category);
-
-      return createSafeResult({
-        category: ruleBased.category,
-        detectedObject: ruleBased.detectedObject || ruleBased.itemName || ruleBased.category,
-        aiLabel: getBestLabel({
-          visionLabels,
-          safeMlKitLabels,
-          detectedObject
-        }),
-        aiConfidence: getBestConfidence({
-          visionLabels,
-          safeMlKitLabels
-        }),
-        analysisSource: "rule_based_fallback",
-        visionLabels,
-        mlKitLabels: safeMlKitLabels,
-        explanation: ruleBased.explanation || null,
-        action: ruleBased.action || null,
-        warning: ruleBased.warning || null
-      });
-    }
-
-    let fallback = null;
-
-    try {
-      fallback = getFallbackResult();
-    } catch (fallbackError) {
-      console.error("getFallbackResult error:", fallbackError);
-      fallback = {
-        category: "Residual",
-        action: "Place the item in the residual waste bin.",
-        warning: "This is a fallback result."
-      };
-    }
-
-    const bestHint = getBestLabel({
-      visionLabels,
-      safeMlKitLabels,
-      detectedObject
-    });
-
-    console.log("RETURNING final fallback:", fallback);
+    console.log("[WasteAnalysis] RETURNING local mapper category:", category);
 
     return createSafeResult({
-      category: fallback.category || "Residual",
-      detectedObject:
-        fallback.detectedObject || fallback.itemName || fallback.category || "Residual",
-      aiLabel: bestHint,
-      aiConfidence: getBestConfidence({
-        visionLabels,
-        safeMlKitLabels
-      }),
-      analysisSource: "fallback",
-      visionLabels,
-      mlKitLabels: safeMlKitLabels,
-      explanation:
-        fallback.explanation ||
-        `The system could not confidently identify the waste item. Best detected hint: "${bestHint}". It was placed under residual as the safest fallback type.`,
-      action: fallback.action || "Place the item in the residual waste bin.",
-      warning: fallback.warning || "This is a fallback result."
-    });
-  } catch (fatalError) {
-    console.error("=== analyzeWaste FATAL ERROR ===");
-    console.error(fatalError);
-    console.error(fatalError.stack);
-
-    return createSafeResult({
-      category: "Residual",
-      detectedObject: detectedObject || "Residual",
-      aiLabel: null,
+      category,
+      detectedObject: mappedFallback.itemName || category,
+      aiLabel: mappedFallback.itemName || category,
       aiConfidence: null,
-      analysisSource: "fatal_service_fallback",
+      analysisSource: "local_mapper_fallback",
+      explanation: mappedFallback.explanation || null,
+      action: mappedFallback.action || null,
+      warning: mappedFallback.warning || null,
       visionLabels: [],
-      mlKitLabels: [],
-      roboflowPredictions: [],
-      explanation:
-        "The system encountered a fatal analysis error and returned a safe fallback result.",
-      action:
-        "Place the item in the residual waste bin and avoid mixing it with biodegradable, recyclable, or special waste items.",
-      warning:
-        "This is a fallback result because the analysis service encountered a fatal error."
+      mlKitLabels: Array.isArray(mlKitLabels) ? mlKitLabels : []
     });
   }
+
+  /*
+    FINAL FALLBACK:
+    Do not pretend this is accurate.
+    But keep Residual because your existing frontend/history expects a valid category.
+  */
+  let fallback = null;
+
+  try {
+    fallback = getFallbackResult();
+  } catch (error) {
+    console.error("[WasteAnalysis] getFallbackResult error:", error.message);
+  }
+
+  const fallbackCategory = normalizeCategory(fallback?.category) || "Residual";
+
+  console.log("[WasteAnalysis] RETURNING final fallback:", fallbackCategory);
+
+  return createSafeResult({
+    category: fallbackCategory,
+    detectedObject: toSafeString(detectedObject, fallbackCategory),
+    aiLabel: "unable to confidently identify item",
+    aiConfidence: null,
+    analysisSource: "fallback_no_ai_result",
+    visionLabels: [],
+    mlKitLabels: [],
+    explanation:
+      "The system could not confidently identify the waste item using the image classifier.",
+    action:
+      "Please retake the photo with one clear waste item centered in the frame, then analyze again.",
+    warning:
+      "This is a fallback result and may not be accurate. Do not rely on it if the item is clearly recyclable, biodegradable, or special waste."
+  });
 }
 
 module.exports = {
