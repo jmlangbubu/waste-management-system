@@ -1,6 +1,7 @@
 const https = require("https");
 
-const ROBOFLOW_API_HOST = "serverless.roboflow.com";
+const SERVERLESS_HOST = "serverless.roboflow.com";
+const DETECT_HOST = "detect.roboflow.com";
 
 function safeEnv(value) {
   return value === undefined || value === null ? "" : String(value).trim();
@@ -28,45 +29,128 @@ function normalizeClassName(value) {
     .trim();
 }
 
-function buildRoboflowPath() {
+function parseModelConfig() {
   const apiKey = safeEnv(process.env.ROBOFLOW_API_KEY);
-  const modelId = safeEnv(process.env.ROBOFLOW_MODEL_ID || "ai-waste-classifier");
-  const version = safeEnv(process.env.ROBOFLOW_VERSION || "1");
-  const confidence = safeEnv(process.env.ROBOFLOW_CONFIDENCE || "0.25");
+  const workspaceId = safeEnv(process.env.ROBOFLOW_WORKSPACE_ID);
+
+  let modelId = safeEnv(process.env.ROBOFLOW_MODEL_ID || "ai-waste-classifier");
+  let version = safeEnv(process.env.ROBOFLOW_VERSION || "1");
+
+  /*
+    Supports either:
+    ROBOFLOW_MODEL_ID=ai-waste-classifier
+    ROBOFLOW_VERSION=1
+
+    or:
+    ROBOFLOW_MODEL_ID=ai-waste-classifier/1
+  */
+  if (modelId.includes("/")) {
+    const parts = modelId.split("/").map((part) => part.trim()).filter(Boolean);
+
+    if (parts.length >= 2) {
+      modelId = parts[0];
+      version = parts[1];
+    }
+  }
+
+  const confidence = safeEnv(process.env.ROBOFLOW_CONFIDENCE || "0.20");
   const overlap = safeEnv(process.env.ROBOFLOW_OVERLAP || "0.30");
 
   if (!apiKey) {
-    throw new Error("ROBOFLOW_API_KEY is missing in environment variables.");
+    throw new Error("ROBOFLOW_API_KEY is missing in Render environment variables.");
   }
 
   if (!modelId) {
-    throw new Error("ROBOFLOW_MODEL_ID is missing in environment variables.");
+    throw new Error("ROBOFLOW_MODEL_ID is missing in Render environment variables.");
   }
 
   if (!version) {
-    throw new Error("ROBOFLOW_VERSION is missing in environment variables.");
+    throw new Error("ROBOFLOW_VERSION is missing in Render environment variables.");
   }
 
-  const query = new URLSearchParams({
-    api_key: apiKey,
+  return {
+    apiKey,
+    workspaceId,
+    modelId,
+    version,
     confidence,
-    overlap,
+    overlap
+  };
+}
+
+function buildQuery(config) {
+  return new URLSearchParams({
+    api_key: config.apiKey,
+    confidence: config.confidence,
+    overlap: config.overlap,
     format: "json",
     image_type: "base64",
     max_detections: "10",
     disable_active_learning: "true",
     source: "ai-waste-management-system"
-  });
-
-  return `/${encodeURIComponent(modelId)}/${encodeURIComponent(version)}?${query.toString()}`;
+  }).toString();
 }
 
-function requestJson({ path, body, contentType = "application/json" }) {
+function encodeSegment(value) {
+  return encodeURIComponent(String(value || "").trim());
+}
+
+function buildCandidateEndpoints(config) {
+  const query = buildQuery(config);
+
+  const model = encodeSegment(config.modelId);
+  const version = encodeSegment(config.version);
+  const workspace = encodeSegment(config.workspaceId);
+
+  const endpoints = [];
+
+  /*
+    1. Workspace + model + version.
+    This fixes accounts where the private model needs workspace slug.
+  */
+  if (workspace) {
+    endpoints.push({
+      name: "serverless_workspace_model_version",
+      host: SERVERLESS_HOST,
+      path: `/${workspace}/${model}/${version}?${query}`
+    });
+
+    endpoints.push({
+      name: "detect_workspace_model_version",
+      host: DETECT_HOST,
+      path: `/${workspace}/${model}/${version}?${query}`
+    });
+  }
+
+  /*
+    2. Direct model + version.
+    This is the common project/version style.
+  */
+  endpoints.push({
+    name: "serverless_model_version",
+    host: SERVERLESS_HOST,
+    path: `/${model}/${version}?${query}`
+  });
+
+  endpoints.push({
+    name: "detect_model_version",
+    host: DETECT_HOST,
+    path: `/${model}/${version}?${query}`
+  });
+
+  return endpoints;
+}
+
+function redactPath(path) {
+  return String(path || "").replace(/api_key=[^&]+/i, "api_key=***");
+}
+
+function requestJson({ host, path, body, contentType }) {
   return new Promise((resolve, reject) => {
     const bodyString = typeof body === "string" ? body : JSON.stringify(body);
 
     const options = {
-      hostname: ROBOFLOW_API_HOST,
+      hostname: host,
       path,
       method: "POST",
       headers: {
@@ -88,7 +172,7 @@ function requestJson({ path, body, contentType = "application/json" }) {
 
         try {
           parsed = rawData ? JSON.parse(rawData) : {};
-        } catch (parseError) {
+        } catch (_) {
           parsed = {
             raw: rawData
           };
@@ -100,6 +184,8 @@ function requestJson({ path, body, contentType = "application/json" }) {
           );
           error.statusCode = res.statusCode;
           error.response = parsed;
+          error.host = host;
+          error.path = path;
           return reject(error);
         }
 
@@ -129,6 +215,10 @@ function flattenPredictions(response) {
     return response.predictions;
   }
 
+  if (Array.isArray(response.model_predictions)) {
+    return response.model_predictions;
+  }
+
   if (Array.isArray(response.outputs)) {
     const predictions = [];
 
@@ -140,13 +230,17 @@ function flattenPredictions(response) {
       if (Array.isArray(output?.model_predictions)) {
         predictions.push(...output.model_predictions);
       }
+
+      if (Array.isArray(output?.model?.predictions)) {
+        predictions.push(...output.model.predictions);
+      }
     }
 
     return predictions;
   }
 
-  if (Array.isArray(response.model_predictions)) {
-    return response.model_predictions;
+  if (response.output && Array.isArray(response.output.predictions)) {
+    return response.output.predictions;
   }
 
   return [];
@@ -162,6 +256,7 @@ function normalizePrediction(prediction) {
     prediction.class_name ||
     prediction.label ||
     prediction.name ||
+    prediction.className ||
     "";
 
   const confidence =
@@ -169,6 +264,8 @@ function normalizePrediction(prediction) {
       ? prediction.confidence
       : typeof prediction.class_confidence === "number"
       ? prediction.class_confidence
+      : typeof prediction.score === "number"
+      ? prediction.score
       : 0;
 
   const normalizedClass = normalizeClassName(className);
@@ -199,6 +296,72 @@ function getBestPrediction(predictions = []) {
   return normalized.length > 0 ? normalized[0] : null;
 }
 
+async function tryEndpointWithBodies(endpoint, cleanedBase64) {
+  /*
+    Try JSON first for serverless style.
+  */
+  try {
+    const response = await requestJson({
+      host: endpoint.host,
+      path: endpoint.path,
+      body: {
+        image: cleanedBase64
+      },
+      contentType: "application/json"
+    });
+
+    return {
+      success: true,
+      requestType: "json_image",
+      response
+    };
+  } catch (error) {
+    console.error(
+      `[Roboflow] ${endpoint.name} JSON failed:`,
+      error.statusCode || "",
+      error.message
+    );
+
+    if (error.response) {
+      console.error("[Roboflow] JSON error response:", error.response);
+    }
+  }
+
+  /*
+    Try legacy raw base64 body.
+    Common for detect.roboflow.com examples.
+  */
+  try {
+    const response = await requestJson({
+      host: endpoint.host,
+      path: endpoint.path,
+      body: cleanedBase64,
+      contentType: "application/x-www-form-urlencoded"
+    });
+
+    return {
+      success: true,
+      requestType: "raw_base64",
+      response
+    };
+  } catch (error) {
+    console.error(
+      `[Roboflow] ${endpoint.name} raw failed:`,
+      error.statusCode || "",
+      error.message
+    );
+
+    if (error.response) {
+      console.error("[Roboflow] Raw error response:", error.response);
+    }
+  }
+
+  return {
+    success: false,
+    response: null
+  };
+}
+
 async function classifyWasteWithRoboflow(base64Image) {
   const cleanedBase64 = cleanBase64Image(base64Image);
 
@@ -211,82 +374,63 @@ async function classifyWasteWithRoboflow(base64Image) {
     };
   }
 
-  const path = buildRoboflowPath();
+  let config;
 
-  console.log("[Roboflow] Starting inference.");
-  console.log("[Roboflow] Model path:", path.replace(/api_key=[^&]+/i, "api_key=***"));
-  console.log("[Roboflow] Image length:", cleanedBase64.length);
-
-  /*
-    Primary request format for Serverless Hosted API:
-    JSON body with base64 image.
-  */
   try {
-    const response = await requestJson({
-      path,
-      body: {
-        image: cleanedBase64
-      },
-      contentType: "application/json"
-    });
-
-    const predictions = flattenPredictions(response);
-    const bestPrediction = getBestPrediction(predictions);
-
-    console.log("[Roboflow] JSON response predictions:", predictions.length);
-    console.log("[Roboflow] Best prediction:", bestPrediction);
-
-    return {
-      success: true,
-      source: "roboflow_json",
-      response,
-      predictions,
-      bestPrediction
-    };
-  } catch (jsonError) {
-    console.error("[Roboflow] JSON request failed:", jsonError.message);
-    if (jsonError.response) {
-      console.error("[Roboflow] JSON error response:", jsonError.response);
-    }
-  }
-
-  /*
-    Fallback request format:
-    Some Roboflow legacy endpoints accept raw base64 body.
-  */
-  try {
-    const response = await requestJson({
-      path,
-      body: cleanedBase64,
-      contentType: "application/x-www-form-urlencoded"
-    });
-
-    const predictions = flattenPredictions(response);
-    const bestPrediction = getBestPrediction(predictions);
-
-    console.log("[Roboflow] Raw base64 response predictions:", predictions.length);
-    console.log("[Roboflow] Best prediction:", bestPrediction);
-
-    return {
-      success: true,
-      source: "roboflow_raw_base64",
-      response,
-      predictions,
-      bestPrediction
-    };
-  } catch (rawError) {
-    console.error("[Roboflow] Raw base64 request failed:", rawError.message);
-    if (rawError.response) {
-      console.error("[Roboflow] Raw error response:", rawError.response);
-    }
+    config = parseModelConfig();
+  } catch (error) {
+    console.error("[Roboflow] Config error:", error.message);
 
     return {
       success: false,
-      message: rawError.message,
+      message: error.message,
       predictions: [],
       bestPrediction: null
     };
   }
+
+  const endpoints = buildCandidateEndpoints(config);
+
+  console.log("[Roboflow] Starting inference.");
+  console.log("[Roboflow] Workspace ID:", config.workspaceId || "(not set)");
+  console.log("[Roboflow] Model ID:", config.modelId);
+  console.log("[Roboflow] Version:", config.version);
+  console.log("[Roboflow] Image length:", cleanedBase64.length);
+
+  for (const endpoint of endpoints) {
+    console.log(
+      `[Roboflow] Trying ${endpoint.name}: https://${endpoint.host}${redactPath(endpoint.path)}`
+    );
+
+    const attempt = await tryEndpointWithBodies(endpoint, cleanedBase64);
+
+    if (!attempt.success || !attempt.response) {
+      continue;
+    }
+
+    const predictions = flattenPredictions(attempt.response);
+    const bestPrediction = getBestPrediction(predictions);
+
+    console.log("[Roboflow] Successful endpoint:", endpoint.name);
+    console.log("[Roboflow] Request type:", attempt.requestType);
+    console.log("[Roboflow] Predictions count:", predictions.length);
+    console.log("[Roboflow] Best prediction:", bestPrediction);
+
+    return {
+      success: true,
+      source: `roboflow_${endpoint.name}_${attempt.requestType}`,
+      response: attempt.response,
+      predictions,
+      bestPrediction
+    };
+  }
+
+  return {
+    success: false,
+    message: "All Roboflow endpoints failed or returned no usable response.",
+    predictions: [],
+    bestPrediction: null
+  };
 }
 
 module.exports = {
