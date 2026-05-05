@@ -19,6 +19,7 @@
 <link rel="stylesheet" href="css/admin/admin-overrides.css">
 <link rel="stylesheet" href="css/admin/admin-waste-records.css">
 <link rel="stylesheet" href="css/admin/admin-complaints.css">
+<link rel="stylesheet" href="css/admin/admin-profile.css">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
 
@@ -146,7 +147,43 @@
             </div>
           </div>
 
-          <button class="refresh-btn" id="refreshBtn" type="button">Refresh Data</button>
+          <div class="topbar-profile-wrapper">
+            <button
+              id="topbarProfileBtn"
+              class="topbar-profile-btn"
+              type="button"
+              aria-label="Change admin profile picture"
+              title="Change profile picture"
+            >
+              <img
+                id="topbarProfileImage"
+                class="topbar-profile-image hidden"
+                src=""
+                alt="Admin profile picture"
+              />
+
+              <span id="topbarProfileFallback" class="topbar-profile-fallback">
+                <i data-lucide="user"></i>
+              </span>
+
+              <span class="topbar-profile-camera" aria-hidden="true">
+                <i data-lucide="camera"></i>
+              </span>
+            </button>
+
+            <input
+              id="topbarProfileInput"
+              class="topbar-profile-input"
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              hidden
+            />
+          </div>
+
+          <!-- Kept hidden so existing refresh JS does not break if it looks for #refreshBtn. -->
+          <button class="refresh-btn refresh-btn-hidden" id="refreshBtn" type="button" hidden aria-hidden="true" tabindex="-1">
+            Refresh Data
+          </button>
         </div>
       </div>
 
@@ -1408,7 +1445,7 @@
     <button type="button" id="closeImagePreviewBtn" class="image-preview-close">&times;</button>
     <img id="imagePreviewFull" class="imagePreviewFull image-preview-full" src="" alt="Preview image">
   </div>
-</div>
+</div> 
 
 
 <div id="complaintMapModal" class="custom-modal hidden">
@@ -2209,6 +2246,7 @@
 <script src="js/admin/admin-role-fix.js"></script>
 <script src="js/admin/admin-invoices.js"></script>
 <script src="js/admin/admin-other.js"></script>
+<script src="js/admin/admin-profile.js"></script>
 <script src="js/admin/admin-init.js"></script>
 
 <script>
