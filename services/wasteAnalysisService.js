@@ -6,7 +6,7 @@ const {
 } = require("../utils/wasteMapper");
 
 const { detectLabelsFromBase64 } = require("./googleVisionService");
-const { classifyWasteWithRoboflow } = require("./roboflowWasteClassifierService");
+const { classifyWasteWithRoboflow } = require("./roboflowWasteClassifierService"); 
 
 const GENERIC_LABELS = new Set([
   "material",
