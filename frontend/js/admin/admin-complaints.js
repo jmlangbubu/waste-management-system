@@ -507,6 +507,53 @@ function clearResolutionRouteMapLayers() {
   }
 }
 
+
+function destroyResolutionRouteMap(removeCard = false) {
+  const state = complaintResolutionRouteState;
+
+  try {
+    if (state.routingControl && state.map) {
+      state.map.removeControl(state.routingControl);
+    }
+  } catch (error) {
+    console.warn("Failed removing resolution routing control:", error);
+  }
+
+  try {
+    if (state.map) {
+      state.map.off();
+      state.map.remove();
+    }
+  } catch (error) {
+    console.warn("Failed destroying resolution route map:", error);
+  }
+
+  state.map = null;
+  state.issueMarker = null;
+  state.startMarker = null;
+  state.routeLine = null;
+  state.routingControl = null;
+
+  const mapEl = document.getElementById("resolutionRouteMap");
+  if (mapEl) {
+    mapEl.innerHTML = "";
+    mapEl.className = "";
+    mapEl.removeAttribute("tabindex");
+    mapEl.removeAttribute("aria-label");
+
+    try {
+      delete mapEl._leaflet_id;
+    } catch (error) {
+      console.warn("Failed clearing Leaflet container id:", error);
+    }
+  }
+
+  if (removeCard) {
+    const card = document.getElementById("resolutionRouteMapCard");
+    if (card) card.remove();
+  }
+}
+
 function ensureResolutionRouteMapContainer() {
   const modal = document.getElementById("complaintResolutionModal");
   if (!modal) return null;
@@ -625,6 +672,12 @@ function renderResolvedComplaintRouteMap(record) {
   const container = ensureResolutionRouteMapContainer();
 
   if (!container || !container.mapEl) return;
+
+  /*
+    Leaflet can break when a modal is closed and opened again using the same map container.
+    Recreate only this small resolved-route map each time to prevent oversized tiles/overflow.
+  */
+  destroyResolutionRouteMap(false);
 
   if (!window.L) {
     setResolutionMapNote("Map library is not loaded. Please refresh the page.");
@@ -1833,6 +1886,13 @@ function openComplaintResolutionModal(complaintId) {
 
   openComplaintModalWithPosition("complaintResolutionModal");
 
+  const body =
+    modal.querySelector(".resolution-pro-body") ||
+    modal.querySelector(".complaint-resolution-modal-body") ||
+    modal.querySelector(".custom-modal-content");
+
+  if (body) body.scrollTop = 0;
+
   setTimeout(() => {
     renderResolvedComplaintRouteMap(currentComplaintResolution);
   }, 250);
@@ -1842,7 +1902,7 @@ function closeComplaintResolutionModal() {
   const modal = document.getElementById("complaintResolutionModal");
   if (!modal) return;
 
-  clearResolutionRouteMapLayers();
+  destroyResolutionRouteMap(true);
   resetComplaintModalDisplay("complaintResolutionModal");
   currentComplaintResolution = null;
 }
