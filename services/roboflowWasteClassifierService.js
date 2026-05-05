@@ -35,16 +35,27 @@ function parseModelConfig() {
 
   let modelId = safeEnv(process.env.ROBOFLOW_MODEL_ID || "ai-waste-classifier");
   let version = safeEnv(process.env.ROBOFLOW_VERSION || "1");
+  let modelUrl = safeEnv(process.env.ROBOFLOW_MODEL_URL || "");
 
   /*
-    Supports either:
+    Supports:
     ROBOFLOW_MODEL_ID=ai-waste-classifier
     ROBOFLOW_VERSION=1
 
     or:
     ROBOFLOW_MODEL_ID=ai-waste-classifier/1
+
+    or optional:
+    ROBOFLOW_MODEL_URL=ai-waste-classifier/1
   */
-  if (modelId.includes("/")) {
+  if (modelUrl) {
+    const parts = modelUrl.split("/").map((part) => part.trim()).filter(Boolean);
+
+    if (parts.length >= 2) {
+      modelId = parts[0];
+      version = parts[1];
+    }
+  } else if (modelId.includes("/")) {
     const parts = modelId.split("/").map((part) => part.trim()).filter(Boolean);
 
     if (parts.length >= 2) {
@@ -52,6 +63,8 @@ function parseModelConfig() {
       version = parts[1];
     }
   }
+
+  modelUrl = `${modelId}/${version}`;
 
   const confidence = safeEnv(process.env.ROBOFLOW_CONFIDENCE || "0.20");
   const overlap = safeEnv(process.env.ROBOFLOW_OVERLAP || "0.30");
@@ -73,6 +86,7 @@ function parseModelConfig() {
     workspaceId,
     modelId,
     version,
+    modelUrl,
     confidence,
     overlap
   };
@@ -98,33 +112,42 @@ function encodeSegment(value) {
 function buildCandidateEndpoints(config) {
   const query = buildQuery(config);
 
+  const workspace = encodeSegment(config.workspaceId);
   const model = encodeSegment(config.modelId);
   const version = encodeSegment(config.version);
-  const workspace = encodeSegment(config.workspaceId);
+
+  /*
+    Critical fix:
+    For Roboflow Serverless v2, workspace mode should be:
+    /{workspace_id}/{model_id%2Fversion}
+
+    NOT:
+    /{workspace_id}/{model_id}/{version}
+
+    Because the documented endpoint accepts only two path params:
+    /{dataset_id}/{version_id}
+  */
+  const encodedModelUrl = encodeSegment(config.modelUrl);
 
   const endpoints = [];
 
-  /*
-    1. Workspace + model + version.
-    This fixes accounts where the private model needs workspace slug.
-  */
   if (workspace) {
     endpoints.push({
-      name: "serverless_workspace_model_version",
+      name: "serverless_workspace_encoded_model_url",
       host: SERVERLESS_HOST,
-      path: `/${workspace}/${model}/${version}?${query}`
+      path: `/${workspace}/${encodedModelUrl}?${query}`
     });
 
     endpoints.push({
-      name: "detect_workspace_model_version",
+      name: "detect_workspace_encoded_model_url",
       host: DETECT_HOST,
-      path: `/${workspace}/${model}/${version}?${query}`
+      path: `/${workspace}/${encodedModelUrl}?${query}`
     });
   }
 
   /*
-    2. Direct model + version.
-    This is the common project/version style.
+    Legacy/direct model endpoint.
+    Keep this as fallback because some public/legacy projects still use it.
   */
   endpoints.push({
     name: "serverless_model_version",
@@ -145,7 +168,7 @@ function redactPath(path) {
   return String(path || "").replace(/api_key=[^&]+/i, "api_key=***");
 }
 
-function requestJson({ host, path, body, contentType }) {
+function requestRoboflow({ host, path, body, contentType }) {
   return new Promise((resolve, reject) => {
     const bodyString = typeof body === "string" ? body : JSON.stringify(body);
 
@@ -182,10 +205,12 @@ function requestJson({ host, path, body, contentType }) {
           const error = new Error(
             `Roboflow request failed with status ${res.statusCode}`
           );
+
           error.statusCode = res.statusCode;
           error.response = parsed;
           error.host = host;
           error.path = path;
+
           return reject(error);
         }
 
@@ -234,6 +259,10 @@ function flattenPredictions(response) {
       if (Array.isArray(output?.model?.predictions)) {
         predictions.push(...output.model.predictions);
       }
+
+      if (Array.isArray(output?.output?.predictions)) {
+        predictions.push(...output.output.predictions);
+      }
     }
 
     return predictions;
@@ -254,9 +283,9 @@ function normalizePrediction(prediction) {
   const className =
     prediction.class ||
     prediction.class_name ||
+    prediction.className ||
     prediction.label ||
     prediction.name ||
-    prediction.className ||
     "";
 
   const confidence =
@@ -298,10 +327,11 @@ function getBestPrediction(predictions = []) {
 
 async function tryEndpointWithBodies(endpoint, cleanedBase64) {
   /*
-    Try JSON first for serverless style.
+    Attempt 1:
+    Serverless JSON request body.
   */
   try {
-    const response = await requestJson({
+    const response = await requestRoboflow({
       host: endpoint.host,
       path: endpoint.path,
       body: {
@@ -328,11 +358,11 @@ async function tryEndpointWithBodies(endpoint, cleanedBase64) {
   }
 
   /*
-    Try legacy raw base64 body.
-    Common for detect.roboflow.com examples.
+    Attempt 2:
+    Legacy raw base64 body.
   */
   try {
-    const response = await requestJson({
+    const response = await requestRoboflow({
       host: endpoint.host,
       path: endpoint.path,
       body: cleanedBase64,
@@ -353,6 +383,35 @@ async function tryEndpointWithBodies(endpoint, cleanedBase64) {
 
     if (error.response) {
       console.error("[Roboflow] Raw error response:", error.response);
+    }
+  }
+
+  /*
+    Attempt 3:
+    Plain text base64 body.
+  */
+  try {
+    const response = await requestRoboflow({
+      host: endpoint.host,
+      path: endpoint.path,
+      body: cleanedBase64,
+      contentType: "text/plain"
+    });
+
+    return {
+      success: true,
+      requestType: "text_plain_base64",
+      response
+    };
+  } catch (error) {
+    console.error(
+      `[Roboflow] ${endpoint.name} text failed:`,
+      error.statusCode || "",
+      error.message
+    );
+
+    if (error.response) {
+      console.error("[Roboflow] Text error response:", error.response);
     }
   }
 
@@ -395,6 +454,8 @@ async function classifyWasteWithRoboflow(base64Image) {
   console.log("[Roboflow] Workspace ID:", config.workspaceId || "(not set)");
   console.log("[Roboflow] Model ID:", config.modelId);
   console.log("[Roboflow] Version:", config.version);
+  console.log("[Roboflow] Model URL:", config.modelUrl);
+  console.log("[Roboflow] Encoded Model URL:", encodeSegment(config.modelUrl));
   console.log("[Roboflow] Image length:", cleanedBase64.length);
 
   for (const endpoint of endpoints) {
