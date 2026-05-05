@@ -11699,3 +11699,189 @@ body #sidebarOtherMenu.sidebar-other-menu-portal.open:not(.hidden) {
   }
 }
 
+
+/* =========================================================
+   FINAL FIX: CALENDAR ADD ACTIVITY MODAL STACKING
+   File: css/admin/admin-overrides.css
+   Paste/keep this at the VERY BOTTOM.
+
+   Fix:
+   - Add Activity form appears clear and clickable.
+   - Background Calendar modal is blurred/dimmed behind it.
+   - Avoids huge 2147483xxx z-index values that can cause browser stacking bugs.
+   - Only affects Calendar of Activities and Add Activity modal.
+========================================================= */
+
+/* Main calendar modal stays behind Add Activity */
+#calendarActivitiesModal.custom-modal:not(.hidden),
+#calendarActivitiesModal.calendar-pro-modal:not(.hidden),
+#calendarActivitiesModal.other-modal:not(.hidden) {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 900000 !important;
+}
+
+/* Add Activity modal layer */
+#calendarAddActivityModal.custom-modal:not(.hidden),
+#calendarAddActivityModal.calendar-add-activity-modal:not(.hidden),
+#calendarAddActivityModal:not(.hidden) {
+  position: fixed !important;
+  inset: 0 !important;
+
+  width: 100vw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+
+  padding: 18px !important;
+  margin: 0 !important;
+
+  z-index: 910000 !important;
+
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+  isolation: isolate !important;
+}
+
+/* Add Activity overlay: behind the Add Activity card only */
+#calendarAddActivityModal > #calendarAddActivityOverlay,
+#calendarAddActivityModal > .custom-modal-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+
+  width: 100vw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+
+  z-index: 0 !important;
+
+  background: rgba(15, 23, 42, 0.62) !important;
+  backdrop-filter: blur(4px) !important;
+  -webkit-backdrop-filter: blur(4px) !important;
+
+  pointer-events: auto !important;
+}
+
+/* Add Activity card: above its overlay, not blurred */
+#calendarAddActivityModal > .calendar-add-activity-content,
+#calendarAddActivityModal > .custom-modal-content,
+#calendarAddActivityModal .calendar-add-activity-content,
+#calendarAddActivityModal .custom-modal-content {
+  position: relative !important;
+
+  top: auto !important;
+  left: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  transform: none !important;
+
+  z-index: 5 !important;
+
+  width: min(640px, calc(100vw - 40px)) !important;
+  max-width: calc(100vw - 40px) !important;
+
+  max-height: calc(100vh - 40px) !important;
+  max-height: calc(100dvh - 40px) !important;
+
+  margin: 0 auto !important;
+
+  display: flex !important;
+  flex-direction: column !important;
+
+  overflow: hidden !important;
+  border-radius: 24px !important;
+  background: #ffffff !important;
+  box-shadow: 0 34px 90px rgba(15, 23, 42, 0.38) !important;
+
+  filter: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Header should stay clear */
+#calendarAddActivityModal .custom-modal-header {
+  position: relative !important;
+  z-index: 6 !important;
+  flex-shrink: 0 !important;
+
+  padding: 22px 24px !important;
+  border-bottom: 1px solid #e5e7eb !important;
+  background: #ffffff !important;
+
+  filter: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Scroll only inside the form body */
+#calendarAddActivityModal .calendar-add-activity-body,
+#calendarAddActivityModal .custom-modal-body {
+  flex: 1 1 auto !important;
+
+  max-height: calc(100vh - 148px) !important;
+  max-height: calc(100dvh - 148px) !important;
+
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+
+  padding: 22px 24px 24px !important;
+
+  background: #ffffff !important;
+  filter: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Close button always clickable */
+#calendarAddActivityModal #calendarCloseAddFormBtn {
+  position: relative !important;
+  z-index: 10 !important;
+  pointer-events: auto !important;
+  cursor: pointer !important;
+}
+
+/* Save button should remain visible at bottom */
+#calendarAddActivityModal .calendar-save-activity-btn {
+  position: sticky !important;
+  bottom: 0 !important;
+  z-index: 7 !important;
+}
+
+/* Hidden state must still win */
+#calendarAddActivityModal.hidden {
+  display: none !important;
+}
+
+/* Mobile */
+@media (max-width: 768px) {
+  #calendarAddActivityModal.custom-modal:not(.hidden),
+  #calendarAddActivityModal.calendar-add-activity-modal:not(.hidden),
+  #calendarAddActivityModal:not(.hidden) {
+    align-items: flex-start !important;
+    padding: 12px !important;
+  }
+
+  #calendarAddActivityModal > .calendar-add-activity-content,
+  #calendarAddActivityModal > .custom-modal-content,
+  #calendarAddActivityModal .calendar-add-activity-content,
+  #calendarAddActivityModal .custom-modal-content {
+    width: calc(100vw - 24px) !important;
+    max-width: calc(100vw - 24px) !important;
+    max-height: calc(100dvh - 24px) !important;
+    border-radius: 20px !important;
+  }
+
+  #calendarAddActivityModal .custom-modal-header {
+    padding: 18px !important;
+  }
+
+  #calendarAddActivityModal .calendar-add-activity-body,
+  #calendarAddActivityModal .custom-modal-body {
+    max-height: calc(100dvh - 128px) !important;
+    padding: 18px !important;
+  }
+}
+
