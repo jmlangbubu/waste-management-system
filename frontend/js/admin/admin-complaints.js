@@ -511,6 +511,9 @@ function ensureResolutionRouteMapContainer() {
   const modal = document.getElementById("complaintResolutionModal");
   if (!modal) return null;
 
+  const mainGrid = modal.querySelector(".resolution-main-grid");
+  const evidencePanel = modal.querySelector(".resolution-evidence-panel");
+
   let card = document.getElementById("resolutionRouteMapCard");
 
   if (!card) {
@@ -518,66 +521,66 @@ function ensureResolutionRouteMapContainer() {
     card.id = "resolutionRouteMapCard";
     card.className = "resolution-route-map-card";
 
-    card.style.gridColumn = "1 / -1";
-    card.style.width = "100%";
-    card.style.minWidth = "0";
-    card.style.background = "#f8fafc";
-    card.style.border = "1px solid #e5edf5";
-    card.style.borderRadius = "16px";
-    card.style.padding = "16px";
-    card.style.boxSizing = "border-box";
-    card.style.marginTop = "14px";
-
     card.innerHTML = `
-      <div class="resolution-route-map-header" style="margin-bottom: 10px;">
-        <h3 style="margin: 0 0 4px; color: #111827; font-size: 16px; font-weight: 800;">
-          Route Map
-        </h3>
-        <p id="resolutionRouteMapNote" style="margin: 0; color: #64748b; font-size: 13px; line-height: 1.45;">
+      <div class="resolution-route-map-header">
+        <h3>Route Map</h3>
+        <p id="resolutionRouteMapNote">
           Loading route preview...
         </p>
       </div>
 
-      <div
-        id="resolutionRouteMap"
-        style="
-          width: 100%;
-          height: 320px;
-          min-height: 320px;
-          border-radius: 14px;
-          overflow: hidden;
-          border: 1px solid #dbe7ef;
-          background: #eef3ef;
-        "
-      ></div>
+      <div id="resolutionRouteMap"></div>
     `;
+  } else {
+    /*
+      Keep the existing card/map if already created,
+      but remove old inline styles that forced it to behave incorrectly.
+    */
+    card.removeAttribute("style");
 
-    const coordinatesEl = document.getElementById("resolutionModalCoordinates");
-    const anchor =
-      coordinatesEl?.closest(
-        ".resolution-info-card, .resolution-detail-card, .complaint-resolution-info-item, .complaint-resolution-card, .info-card, .metric-card, .field-card"
-      ) ||
-      coordinatesEl?.parentElement;
+    const header = card.querySelector(".resolution-route-map-header");
+    const title = card.querySelector(".resolution-route-map-header h3");
+    const note = card.querySelector("#resolutionRouteMapNote");
+    const map = card.querySelector("#resolutionRouteMap");
 
-    const evidenceFrame = document.getElementById("resolutionEvidenceFrame");
-    const evidenceCard =
-      evidenceFrame?.closest(
-        ".resolution-evidence-card, .complaint-resolution-card, .info-card, .field-card"
-      ) ||
-      evidenceFrame?.parentElement;
+    if (header) header.removeAttribute("style");
+    if (title) title.removeAttribute("style");
+    if (note) note.removeAttribute("style");
+    if (map) map.removeAttribute("style");
 
-    if (anchor && anchor.parentNode) {
-      anchor.parentNode.insertBefore(card, anchor.nextSibling);
-    } else if (evidenceCard && evidenceCard.parentNode) {
-      evidenceCard.parentNode.insertBefore(card, evidenceCard);
-    } else {
-      const content =
-        modal.querySelector(".custom-modal-content") ||
-        modal.querySelector(".history-modal-content") ||
-        modal;
+    if (!card.querySelector("#resolutionRouteMap")) {
+      card.innerHTML = `
+        <div class="resolution-route-map-header">
+          <h3>Route Map</h3>
+          <p id="resolutionRouteMapNote">
+            Loading route preview...
+          </p>
+        </div>
 
-      content.appendChild(card);
+        <div id="resolutionRouteMap"></div>
+      `;
     }
+  }
+
+  /*
+    Correct placement:
+    Route Map must be a sibling of .resolution-left-panel and .resolution-evidence-panel,
+    not inside the left panel after Coordinates.
+  */
+  if (mainGrid) {
+    if (evidencePanel && evidencePanel.parentElement === mainGrid) {
+      mainGrid.insertBefore(card, evidencePanel.nextSibling);
+    } else {
+      mainGrid.appendChild(card);
+    }
+  } else {
+    const content =
+      modal.querySelector(".resolution-pro-body") ||
+      modal.querySelector(".complaint-resolution-modal-body") ||
+      modal.querySelector(".custom-modal-content") ||
+      modal;
+
+    content.appendChild(card);
   }
 
   return {
@@ -1929,4 +1932,4 @@ function setupComplaintsModule() {
         closeImagePreviewOverlay();
       }
     });
-}
+} 
