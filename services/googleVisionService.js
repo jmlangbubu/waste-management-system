@@ -1,4 +1,15 @@
-const vision = require("@google-cloud/vision");
+let vision = null;
+let cachedClient = null;
+let cachedClientChecked = false;
+
+function hasGoogleVisionCredentials() {
+  return Boolean(
+    process.env.GOOGLE_APPLICATION_CREDENTIALS ||
+      process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON ||
+      process.env.GOOGLE_CLOUD_VISION_CREDENTIALS ||
+      process.env.GOOGLE_SERVICE_ACCOUNT_JSON
+  );
+}
 
 function parseServiceAccountJson(rawValue) {
   if (!rawValue || typeof rawValue !== "string") {
@@ -8,12 +19,11 @@ function parseServiceAccountJson(rawValue) {
   try {
     let cleaned = rawValue.trim();
 
-    // Supports base64-encoded JSON env value
     if (!cleaned.startsWith("{")) {
       try {
         cleaned = Buffer.from(cleaned, "base64").toString("utf8");
       } catch (_) {
-        // keep original cleaned value
+        // Keep original value.
       }
     }
 
@@ -25,49 +35,56 @@ function parseServiceAccountJson(rawValue) {
 
     return parsed;
   } catch (error) {
-    console.error("[GoogleVision] Failed to parse service account JSON env:", error.message);
+    console.error("[GoogleVision] Failed to parse credentials JSON:", error.message);
     return null;
   }
 }
 
 function createVisionClient() {
-  /*
-    Render-friendly credential options.
-
-    Recommended env variable:
-    GOOGLE_APPLICATION_CREDENTIALS_JSON
-
-    Value should be the full service account JSON content,
-    or base64 version of that JSON.
-  */
-  const rawCredentials =
-    process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON ||
-    process.env.GOOGLE_CLOUD_VISION_CREDENTIALS ||
-    process.env.GOOGLE_SERVICE_ACCOUNT_JSON ||
-    "";
-
-  const credentials = parseServiceAccountJson(rawCredentials);
-
-  if (credentials && credentials.client_email && credentials.private_key) {
-    console.log("[GoogleVision] Using service account JSON from environment variable.");
-
-    return new vision.ImageAnnotatorClient({
-      credentials,
-      projectId: credentials.project_id
-    });
+  if (cachedClientChecked) {
+    return cachedClient;
   }
 
-  /*
-    Fallback:
-    This works only if GOOGLE_APPLICATION_CREDENTIALS points to a real file path
-    or if the hosting environment already has Google credentials configured.
-  */
-  console.log("[GoogleVision] Using default Google credentials.");
+  cachedClientChecked = true;
 
-  return new vision.ImageAnnotatorClient();
+  if (!hasGoogleVisionCredentials()) {
+    console.warn("[GoogleVision] No Google credentials found. Skipping Google Vision.");
+    cachedClient = null;
+    return null;
+  }
+
+  try {
+    vision = require("@google-cloud/vision");
+
+    const rawCredentials =
+      process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON ||
+      process.env.GOOGLE_CLOUD_VISION_CREDENTIALS ||
+      process.env.GOOGLE_SERVICE_ACCOUNT_JSON ||
+      "";
+
+    const credentials = parseServiceAccountJson(rawCredentials);
+
+    if (credentials && credentials.client_email && credentials.private_key) {
+      console.log("[GoogleVision] Using service account JSON from environment variable.");
+
+      cachedClient = new vision.ImageAnnotatorClient({
+        credentials,
+        projectId: credentials.project_id
+      });
+
+      return cachedClient;
+    }
+
+    console.log("[GoogleVision] Using default Google credentials path.");
+
+    cachedClient = new vision.ImageAnnotatorClient();
+    return cachedClient;
+  } catch (error) {
+    console.error("[GoogleVision] Failed to create client:", error.message);
+    cachedClient = null;
+    return null;
+  }
 }
-
-const client = createVisionClient();
 
 function cleanBase64Image(base64Image) {
   if (!base64Image || typeof base64Image !== "string") {
@@ -80,121 +97,91 @@ function cleanBase64Image(base64Image) {
     .trim();
 }
 
-function normalizeLabel(value) {
-  if (!value) return "";
-
-  return String(value)
-    .toLowerCase()
-    .replace(/[_-]+/g, " ")
-    .replace(/[^\w\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function addLabel(resultMap, description, score = 0, source = "vision") {
-  const normalized = normalizeLabel(description);
-
-  if (!normalized) return;
-
-  const existing = resultMap.get(normalized);
-
-  if (!existing || Number(score || 0) > Number(existing.score || 0)) {
-    resultMap.set(normalized, {
-      description: normalized,
-      score: typeof score === "number" ? score : 0,
-      source
-    });
-  }
-}
-
 async function detectLabelsFromBase64(base64Image) {
   const cleanedBase64 = cleanBase64Image(base64Image);
 
   if (!cleanedBase64) {
-    console.warn("[GoogleVision] Empty base64 image received.");
     return [];
   }
 
-  const imageBuffer = Buffer.from(cleanedBase64, "base64");
+  const client = createVisionClient();
 
-  if (!imageBuffer || imageBuffer.length === 0) {
-    console.warn("[GoogleVision] Invalid image buffer.");
+  if (!client) {
     return [];
   }
 
-  console.log("[GoogleVision] Image buffer size:", imageBuffer.length);
+  try {
+    const imageBuffer = Buffer.from(cleanedBase64, "base64");
 
-  const [result] = await client.annotateImage({
-    image: {
-      content: imageBuffer
-    },
-    features: [
-      {
-        type: "LABEL_DETECTION",
-        maxResults: 20
+    if (!imageBuffer || imageBuffer.length === 0) {
+      return [];
+    }
+
+    console.log("[GoogleVision] Image buffer size:", imageBuffer.length);
+
+    const [result] = await client.annotateImage({
+      image: {
+        content: imageBuffer
       },
-      {
-        type: "OBJECT_LOCALIZATION",
-        maxResults: 20
-      },
-      {
-        type: "WEB_DETECTION",
-        maxResults: 10
-      }
-    ]
-  });
+      features: [
+        {
+          type: "LABEL_DETECTION",
+          maxResults: 20
+        },
+        {
+          type: "OBJECT_LOCALIZATION",
+          maxResults: 20
+        },
+        {
+          type: "WEB_DETECTION",
+          maxResults: 10
+        }
+      ]
+    });
 
-  const resultMap = new Map();
+    const labels = [];
+    const seen = new Set();
 
-  const labelAnnotations = result.labelAnnotations || [];
-  const localizedObjectAnnotations = result.localizedObjectAnnotations || [];
-  const webDetection = result.webDetection || {};
-  const bestGuessLabels = webDetection.bestGuessLabels || [];
-  const webEntities = webDetection.webEntities || [];
+    function addLabel(description, score = 0, source = "vision") {
+      const clean = String(description || "").trim();
 
-  for (const label of labelAnnotations) {
-    addLabel(
-      resultMap,
-      label.description || "",
-      typeof label.score === "number" ? label.score : 0,
-      "label_detection"
-    );
+      if (!clean) return;
+
+      const key = clean.toLowerCase();
+
+      if (seen.has(key)) return;
+      seen.add(key);
+
+      labels.push({
+        description: clean,
+        score: typeof score === "number" ? score : 0,
+        source
+      });
+    }
+
+    for (const label of result.labelAnnotations || []) {
+      addLabel(label.description, label.score, "label_detection");
+    }
+
+    for (const object of result.localizedObjectAnnotations || []) {
+      addLabel(object.name, object.score, "object_localization");
+    }
+
+    for (const guess of result.webDetection?.bestGuessLabels || []) {
+      addLabel(guess.label, 0.85, "web_best_guess");
+    }
+
+    for (const entity of result.webDetection?.webEntities || []) {
+      addLabel(entity.description, entity.score, "web_entity");
+    }
+
+    console.log("[GoogleVision] Final labels:", labels);
+
+    return labels;
+  } catch (error) {
+    console.error("[GoogleVision] Detection failed:", error.message);
+    return [];
   }
-
-  for (const object of localizedObjectAnnotations) {
-    addLabel(
-      resultMap,
-      object.name || "",
-      typeof object.score === "number" ? object.score : 0,
-      "object_localization"
-    );
-  }
-
-  for (const guess of bestGuessLabels) {
-    addLabel(
-      resultMap,
-      guess.label || "",
-      0.85,
-      "web_best_guess"
-    );
-  }
-
-  for (const entity of webEntities) {
-    addLabel(
-      resultMap,
-      entity.description || "",
-      typeof entity.score === "number" ? entity.score : 0,
-      "web_entity"
-    );
-  }
-
-  const labels = Array.from(resultMap.values())
-    .filter((item) => item.description)
-    .sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
-
-  console.log("[GoogleVision] Final labels:", labels);
-
-  return labels;
 }
 
 module.exports = {
