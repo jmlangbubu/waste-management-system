@@ -31,25 +31,32 @@ function normalizeClassName(value) {
 
 function parseModelConfig() {
   const apiKey = safeEnv(process.env.ROBOFLOW_API_KEY);
+
   const workspaceId = safeEnv(process.env.ROBOFLOW_WORKSPACE_ID);
+
+  let modelEndpoint =
+    safeEnv(process.env.ROBOFLOW_MODEL_ENDPOINT) ||
+    safeEnv(process.env.ROBOFLOW_MODEL_URL) ||
+    "";
 
   let modelId = safeEnv(process.env.ROBOFLOW_MODEL_ID || "ai-waste-classifier");
   let version = safeEnv(process.env.ROBOFLOW_VERSION || "1");
-  let modelUrl = safeEnv(process.env.ROBOFLOW_MODEL_URL || "");
 
   /*
-    Supports:
+    Preferred:
+    ROBOFLOW_MODEL_ENDPOINT=ai-waste-classifier/1
+
+    Also supports:
+    ROBOFLOW_MODEL_URL=ai-waste-classifier/1
+
+    Or:
     ROBOFLOW_MODEL_ID=ai-waste-classifier
     ROBOFLOW_VERSION=1
-
-    or:
-    ROBOFLOW_MODEL_ID=ai-waste-classifier/1
-
-    or optional:
-    ROBOFLOW_MODEL_URL=ai-waste-classifier/1
   */
-  if (modelUrl) {
-    const parts = modelUrl.split("/").map((part) => part.trim()).filter(Boolean);
+  if (modelEndpoint) {
+    modelEndpoint = modelEndpoint.replace(/^\/+|\/+$/g, "");
+
+    const parts = modelEndpoint.split("/").map((part) => part.trim()).filter(Boolean);
 
     if (parts.length >= 2) {
       modelId = parts[0];
@@ -62,9 +69,11 @@ function parseModelConfig() {
       modelId = parts[0];
       version = parts[1];
     }
-  }
 
-  modelUrl = `${modelId}/${version}`;
+    modelEndpoint = `${modelId}/${version}`;
+  } else {
+    modelEndpoint = `${modelId}/${version}`;
+  }
 
   const confidence = safeEnv(process.env.ROBOFLOW_CONFIDENCE || "0.20");
   const overlap = safeEnv(process.env.ROBOFLOW_OVERLAP || "0.30");
@@ -73,12 +82,10 @@ function parseModelConfig() {
     throw new Error("ROBOFLOW_API_KEY is missing in Render environment variables.");
   }
 
-  if (!modelId) {
-    throw new Error("ROBOFLOW_MODEL_ID is missing in Render environment variables.");
-  }
-
-  if (!version) {
-    throw new Error("ROBOFLOW_VERSION is missing in Render environment variables.");
+  if (!modelEndpoint || !modelEndpoint.includes("/")) {
+    throw new Error(
+      "ROBOFLOW_MODEL_ENDPOINT must look like ai-waste-classifier/1."
+    );
   }
 
   return {
@@ -86,86 +93,136 @@ function parseModelConfig() {
     workspaceId,
     modelId,
     version,
-    modelUrl,
+    modelEndpoint,
     confidence,
     overlap
   };
-}
-
-function buildQuery(config) {
-  return new URLSearchParams({
-    api_key: config.apiKey,
-    confidence: config.confidence,
-    overlap: config.overlap,
-    format: "json",
-    image_type: "base64",
-    max_detections: "10",
-    disable_active_learning: "true",
-    source: "ai-waste-management-system"
-  }).toString();
 }
 
 function encodeSegment(value) {
   return encodeURIComponent(String(value || "").trim());
 }
 
+function redactPath(path) {
+  return String(path || "").replace(/api_key=[^&]+/i, "api_key=***");
+}
+
+function buildQuery(params) {
+  const query = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && String(value).trim() !== "") {
+      query.set(key, String(value).trim());
+    }
+  }
+
+  return query.toString();
+}
+
 function buildCandidateEndpoints(config) {
-  const query = buildQuery(config);
-
-  const workspace = encodeSegment(config.workspaceId);
-  const model = encodeSegment(config.modelId);
-  const version = encodeSegment(config.version);
-
-  /*
-    Critical fix:
-    For Roboflow Serverless v2, workspace mode should be:
-    /{workspace_id}/{model_id%2Fversion}
-
-    NOT:
-    /{workspace_id}/{model_id}/{version}
-
-    Because the documented endpoint accepts only two path params:
-    /{dataset_id}/{version_id}
-  */
-  const encodedModelUrl = encodeSegment(config.modelUrl);
-
   const endpoints = [];
 
-  if (workspace) {
+  const modelEndpoint = config.modelEndpoint.replace(/^\/+|\/+$/g, "");
+  const modelId = config.modelId;
+  const version = config.version;
+  const workspaceId = config.workspaceId;
+
+  /*
+    Official Roboflow hosted API style:
+    POST https://serverless.roboflow.com/MODEL_ENDPOINT/VERSION?api_key=API_KEY
+    Body: raw base64
+    Content-Type: application/x-www-form-urlencoded
+  */
+  const minimalQuery = buildQuery({
+    api_key: config.apiKey
+  });
+
+  const tunedQuery = buildQuery({
+    api_key: config.apiKey,
+    confidence: config.confidence,
+    overlap: config.overlap
+  });
+
+  const tunedNamedQuery = buildQuery({
+    api_key: config.apiKey,
+    confidence: config.confidence,
+    overlap: config.overlap,
+    name: "scan.jpg"
+  });
+
+  /*
+    1. Direct serverless official endpoint with minimal params.
+    This should be the main working endpoint if model endpoint and key are correct.
+  */
+  endpoints.push({
+    name: "serverless_direct_minimal",
+    host: SERVERLESS_HOST,
+    path: `/${modelEndpoint}?${minimalQuery}`
+  });
+
+  endpoints.push({
+    name: "serverless_direct_tuned",
+    host: SERVERLESS_HOST,
+    path: `/${modelEndpoint}?${tunedQuery}`
+  });
+
+  endpoints.push({
+    name: "serverless_direct_named",
+    host: SERVERLESS_HOST,
+    path: `/${modelEndpoint}?${tunedNamedQuery}`
+  });
+
+  /*
+    2. Legacy detect endpoint.
+    Some older examples use detect.roboflow.com.
+  */
+  endpoints.push({
+    name: "detect_direct_minimal",
+    host: DETECT_HOST,
+    path: `/${modelEndpoint}?${minimalQuery}`
+  });
+
+  endpoints.push({
+    name: "detect_direct_tuned",
+    host: DETECT_HOST,
+    path: `/${modelEndpoint}?${tunedQuery}`
+  });
+
+  /*
+    3. Workspace endpoint based on current serverless docs.
+    The docs say dataset_id can be workspace ID and version_id can be model ID.
+    So this uses:
+    /{workspace}/{modelEndpointEncoded}
+  */
+  if (workspaceId) {
+    const encodedModelEndpoint = encodeSegment(modelEndpoint);
+
     endpoints.push({
-      name: "serverless_workspace_encoded_model_url",
+      name: "serverless_workspace_encoded_minimal",
       host: SERVERLESS_HOST,
-      path: `/${workspace}/${encodedModelUrl}?${query}`
+      path: `/${encodeSegment(workspaceId)}/${encodedModelEndpoint}?${minimalQuery}`
     });
 
     endpoints.push({
-      name: "detect_workspace_encoded_model_url",
-      host: DETECT_HOST,
-      path: `/${workspace}/${encodedModelUrl}?${query}`
+      name: "serverless_workspace_encoded_tuned",
+      host: SERVERLESS_HOST,
+      path: `/${encodeSegment(workspaceId)}/${encodedModelEndpoint}?${tunedQuery}`
     });
   }
 
   /*
-    Legacy/direct model endpoint.
-    Keep this as fallback because some public/legacy projects still use it.
+    4. Workspace split endpoint as last fallback.
+    We already saw 405 before, but keep it last for diagnostics.
   */
-  endpoints.push({
-    name: "serverless_model_version",
-    host: SERVERLESS_HOST,
-    path: `/${model}/${version}?${query}`
-  });
-
-  endpoints.push({
-    name: "detect_model_version",
-    host: DETECT_HOST,
-    path: `/${model}/${version}?${query}`
-  });
+  if (workspaceId) {
+    endpoints.push({
+      name: "serverless_workspace_split_minimal",
+      host: SERVERLESS_HOST,
+      path: `/${encodeSegment(workspaceId)}/${encodeSegment(modelId)}/${encodeSegment(version)}?${minimalQuery}`
+    });
+  }
 
   return endpoints;
-}
-
-function redactPath(path) {
-  return String(path || "").replace(/api_key=[^&]+/i, "api_key=***");
 }
 
 function requestRoboflow({ host, path, body, contentType }) {
@@ -325,10 +382,69 @@ function getBestPrediction(predictions = []) {
   return normalized.length > 0 ? normalized[0] : null;
 }
 
-async function tryEndpointWithBodies(endpoint, cleanedBase64) {
+async function tryEndpoint(endpoint, cleanedBase64) {
   /*
     Attempt 1:
-    Serverless JSON request body.
+    Official Roboflow Node/cURL style:
+    raw base64 body + application/x-www-form-urlencoded.
+  */
+  try {
+    const response = await requestRoboflow({
+      host: endpoint.host,
+      path: endpoint.path,
+      body: cleanedBase64,
+      contentType: "application/x-www-form-urlencoded"
+    });
+
+    return {
+      success: true,
+      requestType: "official_raw_base64",
+      response
+    };
+  } catch (error) {
+    console.error(
+      `[Roboflow] ${endpoint.name} raw failed:`,
+      error.statusCode || "",
+      error.message
+    );
+
+    if (error.response) {
+      console.error("[Roboflow] Raw error response:", error.response);
+    }
+  }
+
+  /*
+    Attempt 2:
+    Same body, text/plain.
+  */
+  try {
+    const response = await requestRoboflow({
+      host: endpoint.host,
+      path: endpoint.path,
+      body: cleanedBase64,
+      contentType: "text/plain"
+    });
+
+    return {
+      success: true,
+      requestType: "text_plain_base64",
+      response
+    };
+  } catch (error) {
+    console.error(
+      `[Roboflow] ${endpoint.name} text failed:`,
+      error.statusCode || "",
+      error.message
+    );
+
+    if (error.response) {
+      console.error("[Roboflow] Text error response:", error.response);
+    }
+  }
+
+  /*
+    Attempt 3:
+    JSON fallback.
   */
   try {
     const response = await requestRoboflow({
@@ -354,64 +470,6 @@ async function tryEndpointWithBodies(endpoint, cleanedBase64) {
 
     if (error.response) {
       console.error("[Roboflow] JSON error response:", error.response);
-    }
-  }
-
-  /*
-    Attempt 2:
-    Legacy raw base64 body.
-  */
-  try {
-    const response = await requestRoboflow({
-      host: endpoint.host,
-      path: endpoint.path,
-      body: cleanedBase64,
-      contentType: "application/x-www-form-urlencoded"
-    });
-
-    return {
-      success: true,
-      requestType: "raw_base64",
-      response
-    };
-  } catch (error) {
-    console.error(
-      `[Roboflow] ${endpoint.name} raw failed:`,
-      error.statusCode || "",
-      error.message
-    );
-
-    if (error.response) {
-      console.error("[Roboflow] Raw error response:", error.response);
-    }
-  }
-
-  /*
-    Attempt 3:
-    Plain text base64 body.
-  */
-  try {
-    const response = await requestRoboflow({
-      host: endpoint.host,
-      path: endpoint.path,
-      body: cleanedBase64,
-      contentType: "text/plain"
-    });
-
-    return {
-      success: true,
-      requestType: "text_plain_base64",
-      response
-    };
-  } catch (error) {
-    console.error(
-      `[Roboflow] ${endpoint.name} text failed:`,
-      error.statusCode || "",
-      error.message
-    );
-
-    if (error.response) {
-      console.error("[Roboflow] Text error response:", error.response);
     }
   }
 
@@ -454,8 +512,7 @@ async function classifyWasteWithRoboflow(base64Image) {
   console.log("[Roboflow] Workspace ID:", config.workspaceId || "(not set)");
   console.log("[Roboflow] Model ID:", config.modelId);
   console.log("[Roboflow] Version:", config.version);
-  console.log("[Roboflow] Model URL:", config.modelUrl);
-  console.log("[Roboflow] Encoded Model URL:", encodeSegment(config.modelUrl));
+  console.log("[Roboflow] Model Endpoint:", config.modelEndpoint);
   console.log("[Roboflow] Image length:", cleanedBase64.length);
 
   for (const endpoint of endpoints) {
@@ -463,7 +520,7 @@ async function classifyWasteWithRoboflow(base64Image) {
       `[Roboflow] Trying ${endpoint.name}: https://${endpoint.host}${redactPath(endpoint.path)}`
     );
 
-    const attempt = await tryEndpointWithBodies(endpoint, cleanedBase64);
+    const attempt = await tryEndpoint(endpoint, cleanedBase64);
 
     if (!attempt.success || !attempt.response) {
       continue;
@@ -474,6 +531,7 @@ async function classifyWasteWithRoboflow(base64Image) {
 
     console.log("[Roboflow] Successful endpoint:", endpoint.name);
     console.log("[Roboflow] Request type:", attempt.requestType);
+    console.log("[Roboflow] Response keys:", Object.keys(attempt.response || {}));
     console.log("[Roboflow] Predictions count:", predictions.length);
     console.log("[Roboflow] Best prediction:", bestPrediction);
 
