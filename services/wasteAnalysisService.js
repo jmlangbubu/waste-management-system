@@ -25,7 +25,12 @@ const GENERIC_LABELS = new Set([
   "text",
   "room",
   "table",
-  "floor"
+  "floor",
+  "hand",
+  "finger",
+  "person",
+  "human",
+  "skin"
 ]);
 
 function isGenericLabel(label) {
@@ -33,10 +38,23 @@ function isGenericLabel(label) {
 
   if (!normalized) return true;
 
+  /*
+    These words are allowed even if they are broad because they are useful
+    for waste classification.
+  */
   if (
     normalized.includes("food") ||
     normalized.includes("fruit") ||
     normalized.includes("vegetable") ||
+    normalized.includes("banana") ||
+    normalized.includes("apple") ||
+    normalized.includes("orange") ||
+    normalized.includes("mango") ||
+    normalized.includes("leaf") ||
+    normalized.includes("leaves") ||
+    normalized.includes("plant") ||
+    normalized.includes("organic") ||
+    normalized.includes("compost") ||
     normalized.includes("can") ||
     normalized.includes("bottle") ||
     normalized.includes("plastic") ||
@@ -49,11 +67,16 @@ function isGenericLabel(label) {
     normalized.includes("bulb") ||
     normalized.includes("paper") ||
     normalized.includes("carton") ||
+    normalized.includes("cardboard") ||
     normalized.includes("charger") ||
     normalized.includes("adapter") ||
     normalized.includes("electronic") ||
     normalized.includes("cable") ||
-    normalized.includes("wire")
+    normalized.includes("wire") ||
+    normalized.includes("styrofoam") ||
+    normalized.includes("foam") ||
+    normalized.includes("diaper") ||
+    normalized.includes("tissue")
   ) {
     return false;
   }
@@ -65,19 +88,19 @@ function toSafeVisionLabels(labels = []) {
   if (!Array.isArray(labels)) return [];
 
   return labels
-    .map(item => ({
+    .map((item) => ({
       description: normalizeText(item?.description || item?.name || ""),
       score: typeof item?.score === "number" ? item.score : 0
     }))
-    .filter(item => item.description)
-    .filter(item => !isGenericLabel(item.description));
+    .filter((item) => item.description)
+    .filter((item) => !isGenericLabel(item.description));
 }
 
 function toSafeMlKitLabels(labels = []) {
   if (!Array.isArray(labels)) return [];
 
   return labels
-    .map(item => {
+    .map((item) => {
       if (typeof item === "string") {
         return { description: normalizeText(item), score: 0.5 };
       }
@@ -87,8 +110,8 @@ function toSafeMlKitLabels(labels = []) {
         score: typeof item?.score === "number" ? item.score : 0.5
       };
     })
-    .filter(item => item.description)
-    .filter(item => !isGenericLabel(item.description));
+    .filter((item) => item.description)
+    .filter((item) => !isGenericLabel(item.description));
 }
 
 function dedupeLabels(labels = []) {
@@ -98,9 +121,15 @@ function dedupeLabels(labels = []) {
   for (const label of labels) {
     if (!label || !label.description) continue;
 
-    if (!seen.has(label.description)) {
-      seen.add(label.description);
-      result.push(label);
+    const description = normalizeText(label.description);
+    if (!description) continue;
+
+    if (!seen.has(description)) {
+      seen.add(description);
+      result.push({
+        ...label,
+        description
+      });
     }
   }
 
@@ -115,11 +144,11 @@ function buildCombinedAnalysisText(detectedObject = "", visionLabels = [], mlKit
   }
 
   for (const item of visionLabels) {
-    if (item?.description) pieces.push(item.description);
+    if (item?.description) pieces.push(normalizeText(item.description));
   }
 
   for (const item of mlKitLabels) {
-    if (item?.description) pieces.push(item.description);
+    if (item?.description) pieces.push(normalizeText(item.description));
   }
 
   return normalizeText(pieces.join(" "));
@@ -127,32 +156,38 @@ function buildCombinedAnalysisText(detectedObject = "", visionLabels = [], mlKit
 
 function buildCategoryExplanation(category) {
   switch (category) {
+    case "Biodegradable":
+      return "This waste type is biodegradable because the detected item appears to be food waste, fruit or vegetable waste, leaves, plant-based waste, or other organic compostable material.";
     case "Recyclable":
-      return "This waste type is recyclable because the detected item appears to be a bottle, can, paper-based material, carton, glass, or reusable container material.";
+      return "This waste type is recyclable because the detected item appears to be a bottle, can, paper-based material, carton, glass, metal, plastic container, or reusable container material.";
     case "Special Waste":
-      return "This waste type is classified as special waste because it may contain electrical, electronic, chemical, hazardous, or regulated components that need special handling.";
+      return "This waste type is classified as special waste because it may contain electrical, electronic, chemical, hazardous, medical, or regulated components that need special handling.";
     case "Residual":
     default:
-      return "This waste type is residual because it is not confidently identified as recyclable or special waste and should be disposed of carefully as residual waste.";
+      return "This waste type is residual because it is not confidently identified as biodegradable, recyclable, or special waste and should be disposed of carefully as residual waste.";
   }
 }
 
 function buildCategoryAction(category) {
   switch (category) {
+    case "Biodegradable":
+      return "Place the item in the biodegradable waste bin or composting area. Keep it separate from plastic, metal, glass, and hazardous waste.";
     case "Recyclable":
-      return "Place the item in the recyclable waste bin. If possible, clean the item first before disposal.";
+      return "Place the item in the recyclable waste bin. If possible, empty and clean the item first before disposal.";
     case "Special Waste":
-      return "Do not mix this item with ordinary household waste. Bring it to the proper special waste, hazardous waste, or e-waste collection point.";
+      return "Do not mix this item with ordinary household waste. Bring it to the proper special waste, hazardous waste, e-waste, or regulated collection point.";
     case "Residual":
     default:
-      return "Place the item in the residual waste bin. Avoid mixing it with recyclable or special waste items.";
+      return "Place the item in the residual waste bin. Avoid mixing it with biodegradable, recyclable, or special waste items.";
   }
 }
 
 function buildCategoryWarning(category) {
   switch (category) {
+    case "Biodegradable":
+      return "Do not mix biodegradable waste with plastic wrappers, sachets, cans, bottles, batteries, chemicals, or other non-biodegradable materials.";
     case "Recyclable":
-      return "Items that are heavily contaminated with food or chemicals may no longer be suitable for recycling.";
+      return "Items that are heavily contaminated with food, grease, oil, or chemicals may no longer be suitable for recycling.";
     case "Special Waste":
       return "Improper disposal of special waste may harm people, equipment, and the environment.";
     case "Residual":
@@ -161,76 +196,146 @@ function buildCategoryWarning(category) {
   }
 }
 
-function buildConflictOverride(combinedLabels = []) {
-  const descriptions = combinedLabels
-    .map(l => l?.description)
-    .filter(Boolean);
+function hasAny(text, keywords = []) {
+  const normalized = normalizeText(text);
+  return keywords.some((keyword) => normalized.includes(normalizeText(keyword)));
+}
 
-  const hasSpecialWaste = descriptions.some(d =>
-    d.includes("battery") ||
-    d.includes("charger") ||
-    d.includes("adapter") ||
-    d.includes("power bank") ||
-    d.includes("electronic") ||
-    d.includes("electronics") ||
-    d.includes("electrical") ||
-    d.includes("bulb") ||
-    d.includes("lamp") ||
-    d.includes("chemical") ||
-    d.includes("bleach") ||
-    d.includes("paint") ||
-    d.includes("medicine") ||
-    d.includes("expired medicine") ||
-    d.includes("aerosol") ||
-    d.includes("spray can") ||
-    d.includes("cable") ||
-    d.includes("wire") ||
-    d.includes("plug")
-  );
+function buildConflictOverride(combinedText = "") {
+  const text = normalizeText(combinedText);
 
-  const hasRecyclable = descriptions.some(d =>
-    d.includes("bottle") ||
-    d.includes("container") ||
-    d.includes("jar") ||
-    d.includes("glass") ||
-    d.includes("can") ||
-    d.includes("metal") ||
-    d.includes("aluminum") ||
-    d.includes("tin") ||
-    d.includes("paper") ||
-    d.includes("carton") ||
-    d.includes("cardboard")
-  );
+  if (!text) return null;
 
-  const hasResidual = descriptions.some(d =>
-    d.includes("wrapper") ||
-    d.includes("sachet") ||
-    d.includes("pouch") ||
-    d.includes("styrofoam") ||
-    d.includes("foam") ||
-    d.includes("dirty") ||
-    d.includes("greasy") ||
-    d.includes("oily") ||
-    d.includes("contaminated") ||
-    d.includes("mixed waste")
-  );
+  const hasSpecialWaste = hasAny(text, [
+    "battery",
+    "lithium battery",
+    "phone battery",
+    "car battery",
+    "charger",
+    "adapter",
+    "power bank",
+    "electronic",
+    "electronics",
+    "electrical",
+    "e waste",
+    "ewaste",
+    "bulb",
+    "lamp",
+    "fluorescent",
+    "chemical",
+    "bleach",
+    "paint",
+    "medicine",
+    "expired medicine",
+    "aerosol",
+    "spray can",
+    "cable",
+    "wire",
+    "plug",
+    "syringe",
+    "needle",
+    "medical waste"
+  ]);
 
-  const hasFoodAndPlasticMix = descriptions.some(d =>
-    d.includes("food in plastic") ||
-    d.includes("plastic with food") ||
-    d.includes("dirty food container") ||
-    d.includes("used food container")
-  );
+  const hasDirtyOrContaminated = hasAny(text, [
+    "dirty",
+    "contaminated",
+    "greasy",
+    "oily",
+    "food in plastic",
+    "plastic with food",
+    "dirty food container",
+    "used food container",
+    "mixed waste"
+  ]);
 
+  const hasBiodegradable = hasAny(text, [
+    "food waste",
+    "food scraps",
+    "leftover food",
+    "spoiled food",
+    "fruit",
+    "vegetable",
+    "banana",
+    "banana peel",
+    "apple",
+    "apple core",
+    "orange peel",
+    "mango peel",
+    "peel",
+    "leaf",
+    "leaves",
+    "dry leaves",
+    "grass",
+    "plant",
+    "organic",
+    "compost",
+    "compostable",
+    "egg shell",
+    "eggshell",
+    "fish bone",
+    "chicken bone",
+    "rice",
+    "bread"
+  ]);
+
+  const hasRecyclable = hasAny(text, [
+    "bottle",
+    "plastic bottle",
+    "water bottle",
+    "pet bottle",
+    "container",
+    "jar",
+    "glass",
+    "can",
+    "metal",
+    "aluminum",
+    "tin",
+    "paper",
+    "carton",
+    "cardboard",
+    "plastic cup",
+    "plastic container",
+    "newspaper",
+    "magazine"
+  ]);
+
+  const hasResidual = hasAny(text, [
+    "wrapper",
+    "sachet",
+    "pouch",
+    "packet",
+    "styrofoam",
+    "foam",
+    "diaper",
+    "used tissue",
+    "tissue",
+    "sanitary pad",
+    "cigarette butt",
+    "laminated packaging"
+  ]);
+
+  /*
+    Priority:
+    1. Special waste always wins for safety.
+    2. Dirty/contaminated recyclable-looking items become residual.
+    3. Organic food/plant waste becomes biodegradable.
+    4. Clean recyclable materials become recyclable.
+    5. Known residual materials become residual.
+  */
   if (hasSpecialWaste) {
     return "Special Waste";
   }
 
-  if (hasFoodAndPlasticMix) {
+  if (hasDirtyOrContaminated) {
     return "Residual";
   }
 
-  if (hasRecyclable && !hasResidual) {
+  if (hasBiodegradable && !hasRecyclable) {
+    return "Biodegradable";
+  }
+
+  if (hasRecyclable) {
     return "Recyclable";
   }
 
@@ -268,6 +373,27 @@ function createSafeResult({
   };
 }
 
+function getBestLabel({ visionLabels = [], safeMlKitLabels = [], detectedObject = "" }) {
+  return (
+    visionLabels[0]?.description ||
+    safeMlKitLabels[0]?.description ||
+    normalizeText(detectedObject) ||
+    "unknown item"
+  );
+}
+
+function getBestConfidence({ visionLabels = [], safeMlKitLabels = [] }) {
+  if (visionLabels[0]?.score != null) {
+    return Number(visionLabels[0].score).toFixed(2);
+  }
+
+  if (safeMlKitLabels[0]?.score != null) {
+    return Number(safeMlKitLabels[0].score).toFixed(2);
+  }
+
+  return null;
+}
+
 async function analyzeWaste({ image, detectedObject, mlKitLabels = [] }) {
   console.log("=== analyzeWaste START ===");
   console.log("detectedObject:", detectedObject);
@@ -291,11 +417,22 @@ async function analyzeWaste({ image, detectedObject, mlKitLabels = [] }) {
     const safeMlKitLabels = dedupeLabels(toSafeMlKitLabels(mlKitLabels));
     const combinedLabels = dedupeLabels([...visionLabels, ...safeMlKitLabels]);
 
+    const combinedText = buildCombinedAnalysisText(
+      detectedObject,
+      visionLabels,
+      safeMlKitLabels
+    );
+
     console.log("visionLabels:", visionLabels);
     console.log("safeMlKitLabels:", safeMlKitLabels);
     console.log("combinedLabels:", combinedLabels);
+    console.log("combinedText:", combinedText);
 
-    const forcedCategory = buildConflictOverride(combinedLabels);
+    /*
+      First pass: direct safety/category override from all available text.
+      This helps when Google Vision fails but detectedObject still has useful text.
+    */
+    const forcedCategory = buildConflictOverride(combinedText);
 
     if (forcedCategory) {
       console.log("RETURNING forcedCategory:", forcedCategory);
@@ -303,25 +440,23 @@ async function analyzeWaste({ image, detectedObject, mlKitLabels = [] }) {
       return createSafeResult({
         category: forcedCategory,
         detectedObject: forcedCategory,
-        aiLabel: combinedLabels[0]?.description || null,
-        aiConfidence:
-          visionLabels[0]?.score != null
-            ? Number(visionLabels[0].score).toFixed(2)
-            : null,
-        analysisSource: "conflict_override",
+        aiLabel: getBestLabel({ visionLabels, safeMlKitLabels, detectedObject }),
+        aiConfidence: getBestConfidence({ visionLabels, safeMlKitLabels }),
+        analysisSource:
+          visionLabels.length > 0
+            ? "vision_text_override"
+            : safeMlKitLabels.length > 0
+            ? "mlkit_text_override"
+            : "detected_object_override",
         visionLabels,
         mlKitLabels: safeMlKitLabels
       });
     }
 
-    const combinedText = buildCombinedAnalysisText(
-      detectedObject,
-      visionLabels,
-      safeMlKitLabels
-    );
-
-    console.log("combinedText:", combinedText);
-
+    /*
+      Second pass: wasteMapper category rules.
+      This requires the updated utils/wasteMapper.js with function exports.
+    */
     let mapped = null;
 
     try {
@@ -341,20 +476,26 @@ async function analyzeWaste({ image, detectedObject, mlKitLabels = [] }) {
 
       return createSafeResult({
         category: mapped.category,
-        detectedObject: mapped.category,
-        aiLabel: visionLabels[0]?.description || safeMlKitLabels[0]?.description || null,
-        aiConfidence:
-          visionLabels[0]?.score != null
-            ? Number(visionLabels[0].score).toFixed(2)
-            : safeMlKitLabels[0]?.score != null
-            ? Number(safeMlKitLabels[0].score).toFixed(2)
-            : null,
-        analysisSource: visionLabels.length > 0 ? "google_vision_multi_label" : "mlkit_fusion",
+        detectedObject: mapped.detectedObject || mapped.itemName || mapped.category,
+        aiLabel: getBestLabel({ visionLabels, safeMlKitLabels, detectedObject }),
+        aiConfidence: getBestConfidence({ visionLabels, safeMlKitLabels }),
+        analysisSource:
+          visionLabels.length > 0
+            ? "google_vision_mapper"
+            : safeMlKitLabels.length > 0
+            ? "mlkit_mapper"
+            : "detected_object_mapper",
         visionLabels,
-        mlKitLabels: safeMlKitLabels
+        mlKitLabels: safeMlKitLabels,
+        explanation: mapped.explanation || null,
+        action: mapped.action || null,
+        warning: mapped.warning || null
       });
     }
 
+    /*
+      Third pass: direct object rules.
+    */
     let ruleBased = null;
 
     try {
@@ -370,20 +511,21 @@ async function analyzeWaste({ image, detectedObject, mlKitLabels = [] }) {
 
       return createSafeResult({
         category: ruleBased.category,
-        detectedObject: ruleBased.category,
-        aiLabel: visionLabels[0]?.description || safeMlKitLabels[0]?.description || null,
-        aiConfidence:
-          visionLabels[0]?.score != null
-            ? Number(visionLabels[0].score).toFixed(2)
-            : safeMlKitLabels[0]?.score != null
-            ? Number(safeMlKitLabels[0].score).toFixed(2)
-            : null,
+        detectedObject: ruleBased.detectedObject || ruleBased.itemName || ruleBased.category,
+        aiLabel: getBestLabel({ visionLabels, safeMlKitLabels, detectedObject }),
+        aiConfidence: getBestConfidence({ visionLabels, safeMlKitLabels }),
         analysisSource: "rule_based_fallback",
         visionLabels,
-        mlKitLabels: safeMlKitLabels
+        mlKitLabels: safeMlKitLabels,
+        explanation: ruleBased.explanation || null,
+        action: ruleBased.action || null,
+        warning: ruleBased.warning || null
       });
     }
 
+    /*
+      Final fallback: still return stable result, but include best label hint.
+    */
     let fallback = null;
 
     try {
@@ -397,28 +539,21 @@ async function analyzeWaste({ image, detectedObject, mlKitLabels = [] }) {
       };
     }
 
-    const bestHint =
-      visionLabels[0]?.description ||
-      safeMlKitLabels[0]?.description ||
-      detectedObject ||
-      "unknown item";
+    const bestHint = getBestLabel({ visionLabels, safeMlKitLabels, detectedObject });
 
     console.log("RETURNING final fallback:", fallback);
 
     return createSafeResult({
       category: fallback.category || "Residual",
-      detectedObject: fallback.category || "Residual",
+      detectedObject: fallback.detectedObject || fallback.itemName || fallback.category || "Residual",
       aiLabel: bestHint,
-      aiConfidence:
-        visionLabels[0]?.score != null
-          ? Number(visionLabels[0].score).toFixed(2)
-          : safeMlKitLabels[0]?.score != null
-          ? Number(safeMlKitLabels[0].score).toFixed(2)
-          : null,
+      aiConfidence: getBestConfidence({ visionLabels, safeMlKitLabels }),
       analysisSource: "fallback",
       visionLabels,
       mlKitLabels: safeMlKitLabels,
-      explanation: `The system could not confidently identify the waste item. Best detected hint: "${bestHint}". It was placed under residual as the safest fallback type.`,
+      explanation:
+        fallback.explanation ||
+        `The system could not confidently identify the waste item. Best detected hint: "${bestHint}". It was placed under residual as the safest fallback type.`,
       action: fallback.action || "Place the item in the residual waste bin.",
       warning: fallback.warning || "This is a fallback result."
     });
@@ -438,7 +573,7 @@ async function analyzeWaste({ image, detectedObject, mlKitLabels = [] }) {
       explanation:
         "The system encountered a fatal analysis error and returned a safe fallback result.",
       action:
-        "Place the item in the residual waste bin and avoid mixing it with recyclable or special waste items.",
+        "Place the item in the residual waste bin and avoid mixing it with biodegradable, recyclable, or special waste items.",
       warning:
         "This is a fallback result because the analysis service encountered a fatal error."
     });
