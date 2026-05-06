@@ -6,27 +6,6 @@ function safeEnv(value) {
   return value === undefined || value === null ? "" : String(value).trim();
 }
 
-function getGeminiApiKey() {
-  return (
-    safeEnv(process.env.GEMINI_API_KEY) ||
-    safeEnv(process.env.GOOGLE_GEMINI_API_KEY) ||
-    safeEnv(process.env.GOOGLE_API_KEY)
-  );
-}
-
-function getModelCandidates() {
-  const preferredModel = safeEnv(process.env.GEMINI_MODEL || "gemini-2.5-flash");
-
-  const fallbackModels = [
-    preferredModel,
-    "gemini-2.5-flash",
-    "gemini-2.0-flash",
-    "gemini-1.5-flash"
-  ];
-
-  return [...new Set(fallbackModels.filter(Boolean))];
-}
-
 function cleanBase64Image(base64Image) {
   if (!base64Image || typeof base64Image !== "string") {
     return "";
@@ -52,146 +31,11 @@ function normalizeText(value) {
 function normalizeCategory(category) {
   const clean = normalizeText(category);
 
-  if (!clean) return "";
-
-  if (
-    clean.includes("recyclable") ||
-    clean.includes("recycle") ||
-    clean.includes("recycling")
-  ) {
-    return "Recyclable";
-  }
-
-  if (
-    clean.includes("biodegradable") ||
-    clean.includes("organic") ||
-    clean.includes("compost") ||
-    clean.includes("compostable")
-  ) {
-    return "Biodegradable";
-  }
-
-  if (
-    clean.includes("special") ||
-    clean.includes("hazardous") ||
-    clean.includes("e waste") ||
-    clean.includes("ewaste") ||
-    clean.includes("electronic") ||
-    clean.includes("battery") ||
-    clean.includes("chemical") ||
-    clean.includes("medical")
-  ) {
-    return "Special Waste";
-  }
-
-  if (
-    clean.includes("residual") ||
-    clean.includes("general waste") ||
-    clean.includes("trash") ||
-    clean.includes("garbage") ||
-    clean.includes("landfill") ||
-    clean.includes("non recyclable") ||
-    clean.includes("nonrecyclable")
-  ) {
-    return "Residual";
-  }
-
-  return "";
-}
-
-function inferCategoryFromText(text) {
-  const clean = normalizeText(text);
-
-  if (!clean) return "";
-
-  const specialKeywords = [
-    "battery",
-    "batteries",
-    "charger",
-    "wire",
-    "wires",
-    "bulb",
-    "lamp",
-    "electronic",
-    "electronics",
-    "phone",
-    "medicine",
-    "chemical",
-    "paint",
-    "syringe",
-    "needle",
-    "medical",
-    "hazardous",
-    "e waste",
-    "ewaste"
-  ];
-
-  const biodegradableKeywords = [
-    "banana peel",
-    "fruit peel",
-    "vegetable",
-    "food scrap",
-    "food scraps",
-    "leftover food",
-    "leaves",
-    "leaf",
-    "grass",
-    "plant",
-    "organic",
-    "compost",
-    "biodegradable"
-  ];
-
-  const recyclableKeywords = [
-    "plastic bottle",
-    "pet bottle",
-    "water bottle",
-    "beverage bottle",
-    "drink bottle",
-    "coke bottle",
-    "sprite bottle",
-    "c2 bottle",
-    "plastic container",
-    "glass bottle",
-    "can",
-    "tin can",
-    "aluminum can",
-    "paper",
-    "cardboard",
-    "carton",
-    "metal",
-    "recyclable"
-  ];
-
-  const residualKeywords = [
-    "sachet",
-    "wrapper",
-    "candy wrapper",
-    "chips wrapper",
-    "dirty plastic",
-    "styrofoam",
-    "diaper",
-    "used tissue",
-    "tissue",
-    "contaminated",
-    "residual"
-  ];
-
-  if (specialKeywords.some((keyword) => clean.includes(keyword))) {
-    return "Special Waste";
-  }
-
-  if (recyclableKeywords.some((keyword) => clean.includes(keyword))) {
-    return "Recyclable";
-  }
-
-  if (biodegradableKeywords.some((keyword) => clean.includes(keyword))) {
-    return "Biodegradable";
-  }
-
-  if (residualKeywords.some((keyword) => clean.includes(keyword))) {
-    return "Residual";
-  }
+  if (clean.includes("recyclable")) return "Recyclable";
+  if (clean.includes("biodegradable")) return "Biodegradable";
+  if (clean.includes("special")) return "Special Waste";
+  if (clean.includes("hazardous")) return "Special Waste";
+  if (clean.includes("residual")) return "Residual";
 
   return "";
 }
@@ -270,7 +114,7 @@ Return JSON only with this exact shape:
 {
   "itemName": "short name of detected item",
   "category": "Biodegradable | Recyclable | Residual | Special Waste",
-  "confidence": 0.75,
+  "confidence": 0.0,
   "explanation": "simple explanation",
   "action": "recommended disposal action",
   "warning": "important warning"
@@ -281,6 +125,7 @@ Return JSON only with this exact shape:
 function requestGeminiJson({ apiKey, model, body }) {
   return new Promise((resolve, reject) => {
     const bodyString = JSON.stringify(body);
+
     const path = `/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
     const options = {
@@ -341,21 +186,17 @@ function extractGeminiText(response) {
     return "";
   }
 
-  const allText = [];
+  const parts = candidates[0]?.content?.parts;
 
-  candidates.forEach((candidate) => {
-    const parts = candidate?.content?.parts;
+  if (!Array.isArray(parts)) {
+    return "";
+  }
 
-    if (Array.isArray(parts)) {
-      parts.forEach((part) => {
-        if (part?.text) {
-          allText.push(part.text);
-        }
-      });
-    }
-  });
-
-  return allText.join("\n").trim();
+  return parts
+    .map((part) => part?.text || "")
+    .filter(Boolean)
+    .join("\n")
+    .trim();
 }
 
 function parseJsonFromGeminiText(text) {
@@ -385,43 +226,12 @@ function parseJsonFromGeminiText(text) {
   }
 }
 
-function sanitizeGeminiResult(parsed, rawText = "") {
+function sanitizeGeminiResult(parsed) {
   if (!parsed || typeof parsed !== "object") {
-    const inferredFromRaw = inferCategoryFromText(rawText);
-
-    if (!inferredFromRaw) {
-      return null;
-    }
-
-    const defaults = buildDefaultDetails(inferredFromRaw);
-
-    return {
-      itemName: inferredFromRaw,
-      category: inferredFromRaw,
-      confidence: 0.65,
-      explanation: defaults.explanation,
-      action: defaults.action,
-      warning: defaults.warning
-    };
+    return null;
   }
 
-  const combinedText = [
-    parsed.category,
-    parsed.itemName,
-    parsed.item,
-    parsed.detectedObject,
-    parsed.explanation,
-    parsed.action,
-    rawText
-  ]
-    .filter(Boolean)
-    .join(" ");
-
-  let category = normalizeCategory(parsed.category);
-
-  if (!category) {
-    category = inferCategoryFromText(combinedText);
-  }
+  const category = normalizeCategory(parsed.category);
 
   if (!isValidCategory(category)) {
     return null;
@@ -429,14 +239,7 @@ function sanitizeGeminiResult(parsed, rawText = "") {
 
   const defaults = buildDefaultDetails(category);
 
-  const itemName =
-    String(
-      parsed.itemName ||
-        parsed.item ||
-        parsed.detectedObject ||
-        parsed.object ||
-        category
-    ).trim() || category;
+  const itemName = String(parsed.itemName || parsed.item || category).trim() || category;
 
   let confidence = Number(parsed.confidence);
 
@@ -460,8 +263,28 @@ function sanitizeGeminiResult(parsed, rawText = "") {
   };
 }
 
-function buildGeminiRequestBody(cleanedBase64) {
-  return {
+async function classifyWasteWithGemini(base64Image) {
+  const apiKey = safeEnv(process.env.GEMINI_API_KEY);
+  const model = safeEnv(process.env.GEMINI_MODEL || "gemini-2.5-flash");
+  const cleanedBase64 = cleanBase64Image(base64Image);
+
+  if (!apiKey) {
+    return {
+      success: false,
+      message: "GEMINI_API_KEY is missing in environment variables.",
+      result: null
+    };
+  }
+
+  if (!cleanedBase64) {
+    return {
+      success: false,
+      message: "No image provided to Gemini classifier.",
+      result: null
+    };
+  }
+
+  const body = {
     contents: [
       {
         role: "user",
@@ -482,118 +305,58 @@ function buildGeminiRequestBody(cleanedBase64) {
       temperature: 0.1,
       topP: 0.8,
       topK: 40,
-      maxOutputTokens: 700,
       responseMimeType: "application/json"
     }
   };
-}
 
-async function tryClassifyWithModel({ apiKey, model, cleanedBase64 }) {
-  const body = buildGeminiRequestBody(cleanedBase64);
+  console.log("[Gemini] Starting image classification.");
+  console.log("[Gemini] Model:", model);
+  console.log("[Gemini] Image length:", cleanedBase64.length);
 
-  console.log("[Gemini] Trying model:", model);
+  try {
+    const response = await requestGeminiJson({
+      apiKey,
+      model,
+      body
+    });
 
-  const response = await requestGeminiJson({
-    apiKey,
-    model,
-    body
-  });
+    const text = extractGeminiText(response);
+    const parsed = parseJsonFromGeminiText(text);
+    const result = sanitizeGeminiResult(parsed);
 
-  const text = extractGeminiText(response);
-  const parsed = parseJsonFromGeminiText(text);
-  const result = sanitizeGeminiResult(parsed, text);
+    console.log("[Gemini] Raw text:", text);
+    console.log("[Gemini] Parsed result:", result);
 
-  console.log("[Gemini] Raw text:", text || "[empty]");
-  console.log("[Gemini] Parsed JSON:", parsed);
-  console.log("[Gemini] Sanitized result:", result);
+    if (!result) {
+      return {
+        success: false,
+        message: "Gemini returned an invalid waste classification result.",
+        result: null,
+        rawResponse: response,
+        rawText: text
+      };
+    }
 
-  if (!result) {
     return {
-      success: false,
-      message: "Gemini returned an invalid waste classification result.",
-      result: null,
+      success: true,
+      source: "gemini_vision",
+      result,
       rawResponse: response,
       rawText: text
     };
-  }
+  } catch (error) {
+    console.error("[Gemini] Classification failed:", error.message);
 
-  return {
-    success: true,
-    source: "gemini_vision",
-    model,
-    result,
-    rawResponse: response,
-    rawText: text
-  };
-}
-
-async function classifyWasteWithGemini(base64Image) {
-  const apiKey = getGeminiApiKey();
-  const cleanedBase64 = cleanBase64Image(base64Image);
-  const modelCandidates = getModelCandidates();
-
-  if (!apiKey) {
-    console.error("[Gemini] Missing API key. Add GEMINI_API_KEY in Render Environment.");
-    return {
-      success: false,
-      message: "GEMINI_API_KEY is missing in environment variables.",
-      result: null
-    };
-  }
-
-  if (!cleanedBase64) {
-    console.error("[Gemini] No image provided.");
-    return {
-      success: false,
-      message: "No image provided to Gemini classifier.",
-      result: null
-    };
-  }
-
-  console.log("[Gemini] Starting image classification.");
-  console.log("[Gemini] Image length:", cleanedBase64.length);
-  console.log("[Gemini] Model candidates:", modelCandidates.join(", "));
-
-  let lastErrorMessage = "";
-
-  for (const model of modelCandidates) {
-    try {
-      const classification = await tryClassifyWithModel({
-        apiKey,
-        model,
-        cleanedBase64
-      });
-
-      if (classification.success) {
-        console.log("[Gemini] Classification success with model:", model);
-        return classification;
-      }
-
-      lastErrorMessage = classification.message || "Invalid Gemini result.";
-      console.warn("[Gemini] Model returned invalid result:", model, lastErrorMessage);
-    } catch (error) {
-      lastErrorMessage = error.message || "Gemini request failed.";
-
-      console.error("[Gemini] Classification failed for model:", model);
-      console.error("[Gemini] Error:", lastErrorMessage);
-
-      if (error.response) {
-        console.error("[Gemini] Error response:", JSON.stringify(error.response, null, 2));
-      }
-
-      /*
-        Continue to next model for model/version errors.
-        For quota/auth errors, retrying another model usually won't help,
-        but continuing is harmless and gives clearer logs.
-      */
+    if (error.response) {
+      console.error("[Gemini] Error response:", error.response);
     }
-  }
 
-  return {
-    success: false,
-    message: lastErrorMessage || "All Gemini model attempts failed.",
-    result: null
-  };
+    return {
+      success: false,
+      message: error.message,
+      result: null
+    };
+  }
 }
 
 module.exports = {
