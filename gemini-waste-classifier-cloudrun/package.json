@@ -1,0 +1,23 @@
+{
+  "name": "gemini-waste-classifier-cloudrun",
+  "version": "1.0.0",
+  "description": "Google Cloud Run Gemini waste classifier service for AI Waste Management System",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "keywords": [
+    "gemini",
+    "waste-classifier",
+    "cloud-run",
+    "ai-waste-management"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.21.0"
+  }
+}
