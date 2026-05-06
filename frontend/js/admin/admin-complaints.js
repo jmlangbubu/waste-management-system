@@ -1729,6 +1729,7 @@ function bindComplaintButtons() {
 
 const COMPLAINT_PORTAL_MODAL_IDS = [
   "complaintDetailsModal",
+  "complaintRejectModal",
   "complaintResolutionModal",
   "resolutionFullRouteMapModal",
   "complaintMapModal",
@@ -1775,7 +1776,7 @@ function applyComplaintModalPosition(modalId) {
     modal.style.setProperty("display", "flex", "important");
     modal.style.setProperty("align-items", isMobile ? "flex-start" : "center", "important");
     modal.style.setProperty("justify-content", "center", "important");
-    modal.style.setProperty("z-index", "2147483600", "important");
+    modal.style.setProperty("z-index", modalId === "complaintRejectModal" ? "2147483640" : "2147483600", "important");
     modal.style.setProperty("overflow", "hidden", "important");
     modal.style.setProperty("padding", isMobile ? "12px" : "24px", "important");
     modal.style.setProperty("box-sizing", "border-box", "important");
@@ -1809,7 +1810,10 @@ function applyComplaintModalPosition(modalId) {
         content.style.setProperty("max-width", "calc(100vw - 24px)", "important");
         content.style.setProperty("max-height", "calc(100dvh - 24px)", "important");
       } else {
-        if (modalId === "complaintHistoryModal") {
+        if (modalId === "complaintRejectModal") {
+          content.style.setProperty("width", "min(560px, calc(100vw - 48px))", "important");
+          content.style.setProperty("max-width", "560px", "important");
+        } else if (modalId === "complaintHistoryModal") {
           content.style.setProperty("width", "min(1180px, calc(100vw - 48px))", "important");
           content.style.setProperty("max-width", "1180px", "important");
         } else {
@@ -1922,6 +1926,294 @@ function closeImagePreviewOverlay() {
   overlay?.classList.add("hidden");
 }
 
+
+function ensureComplaintRejectRuntimeStyles() {
+  if (document.getElementById("complaintRejectRuntimeStyles")) return;
+
+  const style = document.createElement("style");
+  style.id = "complaintRejectRuntimeStyles";
+  style.textContent = `
+    #complaintDetailsModal .complaint-danger-btn,
+    #complaintRejectModal .complaint-danger-btn {
+      min-height: 48px;
+      border: 0;
+      border-radius: 14px;
+      padding: 12px 20px;
+      background: #dc2626;
+      color: #ffffff;
+      font-weight: 800;
+      cursor: pointer;
+      box-shadow: 0 16px 34px rgba(220, 38, 38, 0.22);
+      transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #complaintDetailsModal .complaint-danger-btn:hover,
+    #complaintRejectModal .complaint-danger-btn:hover {
+      background: #b91c1c;
+      transform: translateY(-1px);
+      box-shadow: 0 20px 42px rgba(220, 38, 38, 0.28);
+    }
+
+    #complaintDetailsModal .complaint-danger-btn:disabled,
+    #complaintRejectModal .complaint-danger-btn:disabled {
+      opacity: 0.65;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+
+    #complaintRejectModal .complaint-reject-modal-content {
+      border-radius: 24px;
+      overflow: hidden;
+      background: #ffffff;
+    }
+
+    #complaintRejectModal .complaint-reject-body {
+      padding: 22px 24px 24px;
+      display: grid;
+      gap: 16px;
+    }
+
+    #complaintRejectModal .complaint-reject-warning {
+      display: grid;
+      gap: 5px;
+      padding: 14px 16px;
+      border: 1px solid #fecaca;
+      border-radius: 16px;
+      background: #fef2f2;
+      color: #7f1d1d;
+    }
+
+    #complaintRejectModal .complaint-reject-warning strong {
+      font-size: 14px;
+      font-weight: 900;
+    }
+
+    #complaintRejectModal .complaint-reject-warning span {
+      font-size: 13px;
+      line-height: 1.45;
+      color: #991b1b;
+    }
+
+    #complaintRejectModal .complaint-reject-summary {
+      display: grid;
+      gap: 6px;
+      padding: 14px 16px;
+      border: 1px solid #e5e7eb;
+      border-radius: 16px;
+      background: #f8fafc;
+    }
+
+    #complaintRejectModal .complaint-reject-summary span,
+    #complaintRejectModal .complaint-reject-field label {
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #64748b;
+    }
+
+    #complaintRejectModal .complaint-reject-summary strong {
+      font-size: 16px;
+      color: #0f172a;
+    }
+
+    #complaintRejectModal .complaint-reject-field {
+      display: grid;
+      gap: 8px;
+    }
+
+    #complaintRejectModal #complaintRejectReason {
+      width: 100%;
+      min-height: 130px;
+      resize: vertical;
+      border: 1px solid #cbd5e1;
+      border-radius: 16px;
+      padding: 14px 15px;
+      font: inherit;
+      color: #0f172a;
+      background: #ffffff;
+      outline: none;
+      box-sizing: border-box;
+    }
+
+    #complaintRejectModal #complaintRejectReason:focus {
+      border-color: #dc2626;
+      box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.12);
+    }
+
+    #complaintRejectModal #complaintRejectReasonHint {
+      font-size: 12px;
+      color: #64748b;
+    }
+
+    #complaintRejectModal .complaint-reject-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      padding-top: 4px;
+    }
+
+    @media (max-width: 640px) {
+      #complaintDetailsModal .complaint-details-footer {
+        flex-direction: column;
+      }
+
+      #complaintDetailsModal .complaint-details-footer button,
+      #complaintRejectModal .complaint-reject-actions button {
+        width: 100%;
+      }
+
+      #complaintRejectModal .complaint-reject-actions {
+        flex-direction: column-reverse;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+function syncComplaintDetailsActionButtons(status) {
+  const normalized = String(status || "pending").trim().toLowerCase();
+
+  const rejectBtn = document.getElementById("btnRejectComplaintFromDetails");
+  const validateBtn = document.getElementById("btnValidateComplaintFromDetails");
+
+  const canReview = normalized === "pending";
+
+  if (rejectBtn) {
+    rejectBtn.style.display = canReview ? "inline-flex" : "none";
+    rejectBtn.disabled = !canReview;
+  }
+
+  if (validateBtn) {
+    validateBtn.style.display = canReview ? "inline-flex" : "none";
+    validateBtn.disabled = !canReview;
+  }
+}
+
+function openComplaintRejectModal() {
+  if (!currentComplaint || !currentComplaint.id) {
+    alert("No complaint selected.");
+    return;
+  }
+
+  ensureComplaintRejectRuntimeStyles();
+
+  const subjectEl = document.getElementById("complaintRejectSubject");
+  const reasonEl = document.getElementById("complaintRejectReason");
+  const hintEl = document.getElementById("complaintRejectReasonHint");
+  const confirmBtn = document.getElementById("confirmComplaintRejectBtn");
+
+  if (subjectEl) {
+    subjectEl.textContent = currentComplaint.subject || "Selected complaint";
+  }
+
+  if (reasonEl) {
+    reasonEl.value = "";
+  }
+
+  if (hintEl) {
+    hintEl.textContent = "Minimum 10 characters. Be specific so the record is clear.";
+    hintEl.style.color = "#64748b";
+  }
+
+  if (confirmBtn) {
+    confirmBtn.disabled = false;
+    confirmBtn.textContent = "Confirm Reject";
+  }
+
+  openComplaintModalWithPosition("complaintRejectModal");
+
+  setTimeout(() => {
+    reasonEl?.focus();
+  }, 180);
+}
+
+function closeComplaintRejectModal() {
+  resetComplaintModalDisplay("complaintRejectModal");
+
+  const reasonEl = document.getElementById("complaintRejectReason");
+  if (reasonEl) reasonEl.value = "";
+}
+
+async function submitComplaintRejection() {
+  if (!currentComplaint || !currentComplaint.id) {
+    alert("No complaint selected.");
+    return;
+  }
+
+  const reasonEl = document.getElementById("complaintRejectReason");
+  const hintEl = document.getElementById("complaintRejectReasonHint");
+  const confirmBtn = document.getElementById("confirmComplaintRejectBtn");
+
+  const reason = String(reasonEl?.value || "").trim();
+
+  if (reason.length < 10) {
+    if (hintEl) {
+      hintEl.textContent = "Please enter a clear rejection reason with at least 10 characters.";
+      hintEl.style.color = "#dc2626";
+    }
+
+    reasonEl?.focus();
+    return;
+  }
+
+  const confirmed = confirm("Reject this complaint? This action will mark the complaint as rejected.");
+  if (!confirmed) return;
+
+  try {
+    if (confirmBtn) {
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = "Rejecting...";
+    }
+
+    const response = await fetch(
+      `${getComplaintsApiUrl()}/${currentComplaint.id}/reject`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
+        body: JSON.stringify({
+          rejection_reason: reason,
+          rejected_by: currentUser?.id || null
+        })
+      }
+    );
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok || data.success === false) {
+      throw new Error(data.message || "Failed to reject complaint.");
+    }
+
+    alert(data.message || "Complaint rejected successfully.");
+
+    resetComplaintModalDisplay("complaintRejectModal");
+    resetComplaintModalDisplay("complaintMapModal");
+    resetComplaintModalDisplay("complaintDetailsModal");
+
+    selectedBarangayCandidate = null;
+    currentComplaint = null;
+
+    await loadComplaints();
+  } catch (error) {
+    console.error("submitComplaintRejection error:", error);
+    alert(error.message || "Failed to reject complaint.");
+  } finally {
+    if (confirmBtn) {
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = "Confirm Reject";
+    }
+  }
+}
+
+
 async function requestComplaintReviewFromDetails() {
   if (!currentComplaint) {
     alert("No complaint selected.");
@@ -1958,6 +2250,7 @@ async function validateComplaintFromDetails() {
 
 function openComplaintModal(data) {
   mountComplaintModalsToBody();
+  ensureComplaintRejectRuntimeStyles();
 
   currentComplaint = data;
   selectedBarangayCandidate = null;
@@ -1973,6 +2266,7 @@ function openComplaintModal(data) {
   setText("complaintModalUsername", data.username || "-");
   setText("complaintModalBarangay", data.assigned_barangay || "-");
   setComplaintDetailsStatusUI(data.status || "pending");
+  syncComplaintDetailsActionButtons(data.status || "pending");
   setText("complaintModalCreatedAt", formatModalDateTime(data.created_at));
 
   const lat = data.latitude ?? "-";
@@ -2614,6 +2908,21 @@ function setupComplaintsModule() {
     detailsValidateBtn.removeAttribute("onclick");
     detailsValidateBtn.addEventListener("click", validateComplaintFromDetails);
   }
+
+  document.getElementById("btnRejectComplaintFromDetails")
+    ?.addEventListener("click", openComplaintRejectModal);
+
+  document.getElementById("closeComplaintRejectModal")
+    ?.addEventListener("click", closeComplaintRejectModal);
+
+  document.getElementById("cancelComplaintRejectBtn")
+    ?.addEventListener("click", closeComplaintRejectModal);
+
+  document.getElementById("complaintRejectOverlay")
+    ?.addEventListener("click", closeComplaintRejectModal);
+
+  document.getElementById("confirmComplaintRejectBtn")
+    ?.addEventListener("click", submitComplaintRejection);
 
   document.getElementById("btnRequestComplaintReview")
     ?.addEventListener("click", requestComplaintReviewFromDetails);
