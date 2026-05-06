@@ -1432,6 +1432,13 @@
 
         <button
           type="button"
+          id="btnRejectComplaintFromDetails"
+          class="complaint-danger-btn">
+          Reject Complaint
+        </button>
+
+        <button
+          type="button"
           id="btnValidateComplaintFromDetails"
           class="complaint-primary-btn"
           onclick="document.getElementById('btnValidateForwardComplaint')?.click();">
@@ -1447,6 +1454,51 @@
   </div>
 </div> 
 
+
+<!-- REJECT COMPLAINT MODAL -->
+<div id="complaintRejectModal" class="custom-modal hidden complaint-reject-modal">
+  <div class="custom-modal-overlay" id="complaintRejectOverlay"></div>
+
+  <div class="custom-modal-content complaint-reject-modal-content">
+    <div class="custom-modal-header complaint-reject-header">
+      <div>
+        <h3>Reject Complaint</h3>
+        <p>Provide a clear reason why this citizen complaint is not valid.</p>
+      </div>
+
+      <button type="button" id="closeComplaintRejectModal" class="modal-close-btn">&times;</button>
+    </div>
+
+    <div class="custom-modal-body complaint-reject-body">
+      <div class="complaint-reject-warning">
+        <strong>Review carefully before rejecting.</strong>
+        <span>The complaint will be marked as rejected and will no longer be forwarded to the barangay.</span>
+      </div>
+
+      <div class="complaint-reject-summary">
+        <span>Complaint</span>
+        <strong id="complaintRejectSubject">-</strong>
+      </div>
+
+      <div class="complaint-reject-field">
+        <label for="complaintRejectReason">Reason for rejection</label>
+        <textarea
+          id="complaintRejectReason"
+          rows="5"
+          maxlength="500"
+          placeholder="Example: The complaint evidence is unclear, duplicate, wrong location, or not waste-related."
+        ></textarea>
+        <small id="complaintRejectReasonHint">Minimum 10 characters. Be specific so the record is clear.</small>
+      </div>
+
+      <div class="complaint-reject-actions">
+        <button type="button" id="confirmComplaintRejectBtn" class="complaint-danger-btn">
+          Confirm Reject
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <div id="complaintMapModal" class="custom-modal hidden">
   <div class="custom-modal-overlay" id="complaintMapOverlay"></div>
