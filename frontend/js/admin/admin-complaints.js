@@ -1578,7 +1578,12 @@ async function loadComplaints() {
 
     const activeComplaints = allComplaints.filter((item) => {
       const status = String(item.status || "").toLowerCase();
-      return ["pending", "validated", "forwarded", "in_progress", "rejected"].includes(status);
+
+      /*
+        Rejected complaints are no longer shown in the active Complaints Management table.
+        They are kept in View History / reports instead.
+      */
+      return ["pending", "validated", "forwarded", "in_progress"].includes(status);
     });
 
     renderComplaintsTable(activeComplaints);
@@ -1613,7 +1618,11 @@ function getFilteredComplaints() {
 
   const activeComplaints = allComplaints.filter((item) => {
     const status = String(item.status || "").toLowerCase();
-    return ["pending", "validated", "forwarded", "in_progress", "rejected"].includes(status);
+
+    /*
+      Rejected complaints are history/report records, not active validation items.
+    */
+    return ["pending", "validated", "forwarded", "in_progress"].includes(status);
   });
 
   return activeComplaints.filter((item) => {
@@ -1648,7 +1657,11 @@ function renderComplaintsTable(complaints) {
 
   const activeComplaints = safeComplaints.filter((item) => {
     const status = String(item.status || "").toLowerCase();
-    return ["pending", "validated", "forwarded", "in_progress", "rejected"].includes(status);
+
+    /*
+      Rejected complaints must move to View History after rejection.
+    */
+    return ["pending", "validated", "forwarded", "in_progress"].includes(status);
   });
 
   if (!activeComplaints.length) {
@@ -2202,6 +2215,14 @@ async function submitComplaintRejection() {
     currentComplaint = null;
 
     await loadComplaints();
+
+    if (typeof loadComplaintHistory === "function") {
+      try {
+        await loadComplaintHistory();
+      } catch (historyError) {
+        console.warn("Complaint history refresh skipped:", historyError);
+      }
+    }
   } catch (error) {
     console.error("submitComplaintRejection error:", error);
     alert(error.message || "Failed to reject complaint.");
@@ -2625,6 +2646,7 @@ function formatComplaintHistoryStatus(status) {
   if (normalized === "accepted_by_barangay") return "Accepted";
   if (normalized === "in_progress") return "In Progress";
   if (normalized === "resolved") return "Resolved";
+  if (normalized === "rejected") return "Rejected";
 
   return status || "-";
 }
