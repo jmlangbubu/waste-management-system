@@ -871,7 +871,8 @@ router.put("/:id/resolve", upload.single("evidence"), (req, res) => {
 });
 
 /* =========================
-   RESOLVED COMPLAINTS HISTORY (WMO)
+   COMPLAINT HISTORY (WMO)
+   Includes resolved and rejected complaints
 ========================= */
 router.get("/history/resolved", (req, res) => {
   const sql = `
@@ -885,24 +886,29 @@ router.get("/history/resolved", (req, res) => {
     LEFT JOIN barangay_reference_points brp
       ON TRIM(LOWER(brp.barangay_name)) = TRIM(LOWER(c.assigned_barangay))
       AND brp.status = 'active'
-    WHERE c.status = 'resolved'
-    ORDER BY c.resolved_at DESC, c.created_at DESC
+    WHERE c.status IN ('resolved', 'rejected')
+    ORDER BY
+      CASE
+        WHEN c.status = 'rejected' THEN COALESCE(c.rejected_at, c.created_at)
+        ELSE COALESCE(c.resolved_at, c.created_at)
+      END DESC,
+      c.created_at DESC
   `;
 
   console.log("GET /api/complaints/history/resolved hit");
 
   db.query(sql, (err, rows) => {
     if (err) {
-      console.error("Resolved complaint history error FULL:", err);
+      console.error("Complaint history error FULL:", err);
       return res.status(500).json({
         success: false,
-        message: "Failed to load resolved complaint history.",
+        message: "Failed to load complaint history.",
         error: err.message,
         code: err.code
       });
     }
 
-    console.log("Resolved complaint history rows:", rows);
+    console.log("Complaint history rows:", rows);
 
     return res.json({
       success: true,
