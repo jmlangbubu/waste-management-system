@@ -553,6 +553,147 @@ router.post("/:id/validate-forward", (req, res) => {
   });
 });
 
+
+/* =========================
+   REJECT COMPLAINT BY WMO
+   Safe additive route:
+   - Does not affect validate/forward/resolve routes.
+   - Saves rejection fields only if the columns exist.
+   - Always updates status to rejected.
+========================= */
+router.patch("/:id/reject", (req, res) => {
+  const complaintId = req.params.id;
+  const { rejection_reason, rejected_by } = req.body || {};
+
+  const reason = cleanText(rejection_reason);
+  const rejectedBy = parseOptionalInt(rejected_by);
+
+  if (!reason || reason.length < 10) {
+    return res.status(400).json({
+      success: false,
+      message: "A clear rejection reason with at least 10 characters is required."
+    });
+  }
+
+  const findSql = `
+    SELECT id, status
+    FROM complaints
+    WHERE id = ?
+    LIMIT 1
+  `;
+
+  db.query(findSql, [complaintId], (findErr, rows) => {
+    if (findErr) {
+      console.error("Find complaint for rejection error:", findErr);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to find complaint.",
+        error: findErr.message,
+        code: findErr.code
+      });
+    }
+
+    if (!rows || rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Complaint not found."
+      });
+    }
+
+    const currentStatus = String(rows[0].status || "").trim().toLowerCase();
+
+    if (currentStatus !== "pending") {
+      return res.status(400).json({
+        success: false,
+        message: "Only pending complaints can be rejected."
+      });
+    }
+
+    getComplaintColumnSet((columnErr, columnSet) => {
+      if (columnErr) {
+        return res.status(500).json({
+          success: false,
+          message: "Failed to inspect complaint table columns.",
+          error: columnErr.message
+        });
+      }
+
+      const setClauses = [
+        "status = 'rejected'"
+      ];
+
+      const values = [];
+
+      if (hasColumn(columnSet, "rejection_reason")) {
+        setClauses.push("rejection_reason = ?");
+        values.push(reason);
+      }
+
+      if (hasColumn(columnSet, "rejected_by")) {
+        setClauses.push("rejected_by = ?");
+        values.push(rejectedBy);
+      }
+
+      if (hasColumn(columnSet, "rejected_at")) {
+        setClauses.push("rejected_at = NOW()");
+      }
+
+      const updateSql = `
+        UPDATE complaints
+        SET ${setClauses.join(",\n            ")}
+        WHERE id = ?
+          AND status = 'pending'
+      `;
+
+      values.push(complaintId);
+
+      db.query(updateSql, values, (updateErr, result) => {
+        if (updateErr) {
+          console.error("Reject complaint error:", updateErr);
+          return res.status(500).json({
+            success: false,
+            message: "Failed to reject complaint.",
+            error: updateErr.message,
+            code: updateErr.code
+          });
+        }
+
+        if (!result || result.affectedRows === 0) {
+          return res.status(400).json({
+            success: false,
+            message: "Complaint could not be rejected. It may have already been processed."
+          });
+        }
+
+        return res.json({
+          success: true,
+          message: "Complaint rejected successfully.",
+          complaint_id: complaintId,
+          rejection_reason_saved: hasColumn(columnSet, "rejection_reason"),
+          rejected_by_saved: hasColumn(columnSet, "rejected_by"),
+          rejected_at_saved: hasColumn(columnSet, "rejected_at"),
+          missing_columns:
+            !hasColumn(columnSet, "rejection_reason") ||
+            !hasColumn(columnSet, "rejected_by") ||
+            !hasColumn(columnSet, "rejected_at")
+              ? {
+                  rejection_reason: !hasColumn(columnSet, "rejection_reason"),
+                  rejected_by: !hasColumn(columnSet, "rejected_by"),
+                  rejected_at: !hasColumn(columnSet, "rejected_at")
+                }
+              : null
+        });
+      });
+    });
+  });
+});
+
+/* Optional fallback if frontend/server sends PUT instead of PATCH. */
+router.put("/:id/reject", (req, res, next) => {
+  req.method = "PATCH";
+  router.handle(req, res, next);
+});
+
 /* =========================
    ACCEPT BY BARANGAY
 ========================= */
