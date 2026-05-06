@@ -2651,6 +2651,69 @@ function formatComplaintHistoryStatus(status) {
   return status || "-";
 }
 
+function getComplaintHistoryStatusClass(status) {
+  const normalized = String(status || "").toLowerCase().trim();
+
+  if (normalized === "resolved") return "resolved";
+  if (normalized === "rejected") return "rejected";
+  if (normalized === "forwarded") return "forwarded";
+  if (normalized === "accepted_by_barangay") return "accepted";
+  if (normalized === "in_progress") return "in-progress";
+
+  return "unknown";
+}
+
+function ensureComplaintHistoryStatusStyles() {
+  if (document.getElementById("complaintHistoryStatusStyles")) return;
+
+  const style = document.createElement("style");
+  style.id = "complaintHistoryStatusStyles";
+  style.textContent = `
+    #complaintHistoryModal .complaint-history-status {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 92px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 900;
+      line-height: 1;
+      border: 1px solid transparent;
+      text-transform: capitalize;
+      white-space: nowrap;
+    }
+
+    #complaintHistoryModal .complaint-history-status.resolved {
+      color: #047857;
+      background: #d1fae5;
+      border-color: #86efac;
+    }
+
+    #complaintHistoryModal .complaint-history-status.rejected {
+      color: #b91c1c;
+      background: #fee2e2;
+      border-color: #fca5a5;
+    }
+
+    #complaintHistoryModal .complaint-history-status.forwarded,
+    #complaintHistoryModal .complaint-history-status.accepted,
+    #complaintHistoryModal .complaint-history-status.in-progress {
+      color: #1d4ed8;
+      background: #dbeafe;
+      border-color: #93c5fd;
+    }
+
+    #complaintHistoryModal .complaint-history-status.unknown {
+      color: #475569;
+      background: #f1f5f9;
+      border-color: #cbd5e1;
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
 async function loadComplaintHistory() {
   const tbody = document.getElementById("complaintHistoryTableBody");
   if (!tbody) return;
@@ -2683,6 +2746,8 @@ async function loadComplaintHistory() {
 }
 
 function renderComplaintHistoryTable(records) {
+  ensureComplaintHistoryStatusStyles();
+
   const tbody = document.getElementById("complaintHistoryTableBody");
   if (!tbody) return;
 
@@ -2703,11 +2768,11 @@ function renderComplaintHistoryTable(records) {
       <td>${escapeHtml(item.citizen_name || item.username || "-")}</td>
       <td>${escapeHtml(item.assigned_barangay || "-")}</td>
       <td>
-        <span class="complaint-history-status resolved">
+        <span class="complaint-history-status ${escapeHtml(getComplaintHistoryStatusClass(item.status))}">
           ${escapeHtml(formatComplaintHistoryStatus(item.status))}
         </span>
       </td>
-      <td>${escapeHtml(formatDateTimeDisplay(item.resolved_at || item.created_at))}</td>
+      <td>${escapeHtml(formatDateTimeDisplay(item.rejected_at || item.resolved_at || item.created_at))}</td>
       <td>
         <button
           type="button"
