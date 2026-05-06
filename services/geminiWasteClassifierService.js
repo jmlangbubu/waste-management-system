@@ -268,6 +268,14 @@ async function classifyWasteWithGemini(base64Image) {
   const model = safeEnv(process.env.GEMINI_MODEL || "gemini-2.5-flash");
   const cleanedBase64 = cleanBase64Image(base64Image);
 
+  /*
+    TEMPORARY DEBUG ONLY:
+    This logs only the last 6 characters of the API key.
+    Use this to confirm Render is using the same paid API key from Google AI Studio.
+    Remove this after checking the logs.
+  */
+  console.log("[Gemini] API key ending:", apiKey ? apiKey.slice(-6) : "missing");
+
   if (!apiKey) {
     return {
       success: false,
