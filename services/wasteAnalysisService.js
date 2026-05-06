@@ -1,3 +1,6 @@
+const http = require("http");
+const https = require("https");
+
 const {
   analyzeWasteByObject,
   getFallbackResult,
@@ -5,7 +8,33 @@ const {
   normalizeText
 } = require("../utils/wasteMapper");
 
-const { classifyWasteWithGemini } = require("./geminiWasteClassifierService");
+/*
+  IMPORTANT:
+  Render direct Gemini call is currently failing with:
+  "User location is not supported for the API use."
+
+  So this service now prioritizes an external Gemini classifier endpoint,
+  preferably hosted on Google Cloud Run.
+
+  Add this to Render Environment when Cloud Run classifier is ready:
+  GEMINI_CLASSIFIER_URL=https://your-cloud-run-url/classify-waste
+
+  Optional:
+  ALLOW_RENDER_GEMINI_DIRECT=true
+  Only use this if Render direct Gemini starts working later.
+*/
+
+let classifyWasteWithGemini = null;
+
+try {
+  classifyWasteWithGemini = require("./geminiWasteClassifierService").classifyWasteWithGemini;
+} catch (error) {
+  console.warn("[WasteAnalysis] Local Gemini service not loaded:", error.message);
+}
+
+function getEnvValue(name) {
+  return process.env[name] ? String(process.env[name]).trim() : "";
+}
 
 function buildCategoryExplanation(category) {
   switch (category) {
@@ -57,10 +86,25 @@ function normalizeCategory(category) {
   const clean = normalizeText(category);
 
   if (clean.includes("recyclable")) return "Recyclable";
+  if (clean.includes("recycle")) return "Recyclable";
+
   if (clean.includes("biodegradable")) return "Biodegradable";
+  if (clean.includes("organic")) return "Biodegradable";
+  if (clean.includes("compost")) return "Biodegradable";
+
   if (clean.includes("special")) return "Special Waste";
   if (clean.includes("hazardous")) return "Special Waste";
+  if (clean.includes("e waste")) return "Special Waste";
+  if (clean.includes("ewaste")) return "Special Waste";
+  if (clean.includes("electronic")) return "Special Waste";
+  if (clean.includes("battery")) return "Special Waste";
+  if (clean.includes("chemical")) return "Special Waste";
+  if (clean.includes("medical")) return "Special Waste";
+
   if (clean.includes("residual")) return "Residual";
+  if (clean.includes("general waste")) return "Residual";
+  if (clean.includes("trash")) return "Residual";
+  if (clean.includes("garbage")) return "Residual";
 
   return "";
 }
@@ -70,6 +114,20 @@ function toSafeString(value, fallback = "") {
 
   const text = String(value).trim();
   return text || fallback;
+}
+
+function toSafeNumberText(value) {
+  if (value === null || value === undefined || value === "") return null;
+
+  const numberValue = Number(value);
+
+  if (Number.isNaN(numberValue)) return null;
+
+  if (numberValue > 1) {
+    return Math.max(0, Math.min(100, numberValue)).toFixed(2);
+  }
+
+  return Math.max(0, Math.min(1, numberValue)).toFixed(2);
 }
 
 function createSafeResult({
@@ -150,6 +208,173 @@ function buildFallbackFromMapper({ detectedObject = "", mlKitLabels = [] } = {})
   return null;
 }
 
+function postJson(urlString, payload, timeoutMs = 35000) {
+  return new Promise((resolve, reject) => {
+    let parsedUrl = null;
+
+    try {
+      parsedUrl = new URL(urlString);
+    } catch (error) {
+      return reject(new Error("Invalid classifier URL."));
+    }
+
+    const bodyString = JSON.stringify(payload);
+    const isHttps = parsedUrl.protocol === "https:";
+    const client = isHttps ? https : http;
+
+    const options = {
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port || (isHttps ? 443 : 80),
+      path: `${parsedUrl.pathname}${parsedUrl.search}`,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(bodyString)
+      },
+      timeout: timeoutMs
+    };
+
+    const req = client.request(options, (res) => {
+      let rawData = "";
+
+      res.on("data", (chunk) => {
+        rawData += chunk;
+      });
+
+      res.on("end", () => {
+        let parsed = null;
+
+        try {
+          parsed = rawData ? JSON.parse(rawData) : {};
+        } catch (_) {
+          parsed = { raw: rawData };
+        }
+
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          const error = new Error(`Classifier request failed with status ${res.statusCode}`);
+          error.statusCode = res.statusCode;
+          error.response = parsed;
+          return reject(error);
+        }
+
+        resolve(parsed);
+      });
+    });
+
+    req.on("timeout", () => {
+      req.destroy(new Error("Classifier request timed out."));
+    });
+
+    req.on("error", (error) => {
+      reject(error);
+    });
+
+    req.write(bodyString);
+    req.end();
+  });
+}
+
+async function classifyWithExternalGeminiService(image) {
+  const classifierUrl =
+    getEnvValue("GEMINI_CLASSIFIER_URL") ||
+    getEnvValue("CLOUD_RUN_GEMINI_CLASSIFIER_URL");
+
+  if (!classifierUrl) {
+    console.warn("[WasteAnalysis] GEMINI_CLASSIFIER_URL is not set. Skipping external Gemini classifier.");
+    return null;
+  }
+
+  try {
+    console.log("[WasteAnalysis] Calling external Gemini classifier:", classifierUrl);
+
+    const response = await postJson(classifierUrl, {
+      image
+    });
+
+    console.log("[WasteAnalysis] External classifier response success:", response?.success);
+    console.log("[WasteAnalysis] External classifier result:", response?.result);
+
+    if (!response?.success || !response?.result) {
+      return {
+        success: false,
+        message: response?.message || "External classifier returned no valid result.",
+        result: null
+      };
+    }
+
+    return {
+      success: true,
+      source: response.source || "cloud_run_gemini_vision",
+      result: response.result
+    };
+  } catch (error) {
+    console.error("[WasteAnalysis] External Gemini classifier error:", error.message);
+
+    if (error.response) {
+      console.error("[WasteAnalysis] External classifier error response:", error.response);
+    }
+
+    return {
+      success: false,
+      message: error.message,
+      result: null
+    };
+  }
+}
+
+async function classifyWithLocalRenderGemini(image) {
+  const allowDirectGemini = getEnvValue("ALLOW_RENDER_GEMINI_DIRECT").toLowerCase() === "true";
+
+  if (!allowDirectGemini) {
+    console.warn("[WasteAnalysis] Render direct Gemini disabled. Set ALLOW_RENDER_GEMINI_DIRECT=true only if Render Gemini works.");
+    return null;
+  }
+
+  if (typeof classifyWasteWithGemini !== "function") {
+    console.warn("[WasteAnalysis] Local Gemini classifier function is unavailable.");
+    return null;
+  }
+
+  try {
+    console.log("[WasteAnalysis] Trying Render direct Gemini classifier.");
+    return await classifyWasteWithGemini(image);
+  } catch (error) {
+    console.error("[WasteAnalysis] Local Gemini classifier fatal error:", error.message);
+
+    return {
+      success: false,
+      message: error.message,
+      result: null
+    };
+  }
+}
+
+function buildAiResultFromClassifier(classifierResult, sourceFallback) {
+  if (!classifierResult?.success || !classifierResult?.result) {
+    return null;
+  }
+
+  const result = classifierResult.result;
+  const category = normalizeCategory(result.category);
+
+  if (!isValidCategory(category)) {
+    return null;
+  }
+
+  return createSafeResult({
+    category,
+    detectedObject: result.itemName || result.detectedObject || category,
+    aiLabel: result.itemName || result.detectedObject || category,
+    aiConfidence: toSafeNumberText(result.confidence),
+    analysisSource: classifierResult.source || sourceFallback,
+    explanation: result.explanation || null,
+    action: result.action || null,
+    warning: result.warning || null,
+    visionLabels: [],
+    mlKitLabels: []
+  });
+}
+
 async function analyzeWaste({ image, detectedObject, mlKitLabels = [] }) {
   console.log("=== analyzeWaste START ===");
   console.log("detectedObject:", detectedObject);
@@ -159,48 +384,47 @@ async function analyzeWaste({ image, detectedObject, mlKitLabels = [] }) {
 
   /*
     FIRST PRIORITY:
-    Gemini Vision.
-    This replaces the failed Roboflow path and avoids ML Kit false labels like "food".
+    External Gemini classifier endpoint, preferably Google Cloud Run.
+
+    This avoids the Render -> Gemini location restriction:
+    "User location is not supported for the API use."
   */
-  try {
-    const geminiResult = await classifyWasteWithGemini(image);
+  const externalGeminiResult = await classifyWithExternalGeminiService(image);
+  const externalAiResult = buildAiResultFromClassifier(
+    externalGeminiResult,
+    "cloud_run_gemini_vision"
+  );
 
-    console.log("[WasteAnalysis] Gemini success:", geminiResult?.success);
-    console.log("[WasteAnalysis] Gemini result:", geminiResult?.result);
-
-    if (geminiResult?.success && geminiResult?.result) {
-      const result = geminiResult.result;
-      const category = normalizeCategory(result.category);
-
-      if (isValidCategory(category)) {
-        console.log("[WasteAnalysis] RETURNING Gemini category:", category);
-
-        return createSafeResult({
-          category,
-          detectedObject: result.itemName || category,
-          aiLabel: result.itemName || category,
-          aiConfidence:
-            result.confidence !== null && result.confidence !== undefined
-              ? Number(result.confidence).toFixed(2)
-              : null,
-          analysisSource: geminiResult.source || "gemini_vision",
-          explanation: result.explanation || null,
-          action: result.action || null,
-          warning: result.warning || null,
-          visionLabels: [],
-          mlKitLabels: []
-        });
-      }
-    }
-  } catch (error) {
-    console.error("[WasteAnalysis] Gemini classifier fatal error:", error.message);
+  if (externalAiResult) {
+    console.log("[WasteAnalysis] RETURNING external Gemini category:", externalAiResult.category);
+    return externalAiResult;
   }
 
   /*
     SECOND PRIORITY:
-    Optional local fallback.
-    Since the Android capture-first flow sends detectedObject = captured_waste_item
-    and empty ML Kit labels, this will usually not falsely classify bottles as food.
+    Optional direct Gemini from Render.
+
+    Disabled by default because Render direct Gemini is currently failing.
+    Only enable with ALLOW_RENDER_GEMINI_DIRECT=true if you confirm it works.
+  */
+  const localGeminiResult = await classifyWithLocalRenderGemini(image);
+  const localAiResult = buildAiResultFromClassifier(
+    localGeminiResult,
+    "gemini_vision"
+  );
+
+  if (localAiResult) {
+    console.log("[WasteAnalysis] RETURNING local Gemini category:", localAiResult.category);
+    return localAiResult;
+  }
+
+  /*
+    THIRD PRIORITY:
+    ML Kit / rule-based local fallback.
+
+    This only works well if Android sends mlKitLabels.
+    If Android sends empty labels and detectedObject is captured_waste_item,
+    there is no reliable image understanding here.
   */
   const mappedFallback = buildFallbackFromMapper({
     detectedObject,
@@ -229,7 +453,7 @@ async function analyzeWaste({ image, detectedObject, mlKitLabels = [] }) {
   /*
     FINAL FALLBACK:
     Do not pretend this is accurate.
-    But keep Residual because your existing frontend/history expects a valid category.
+    Keep a valid category because the frontend/history expects one.
   */
   let fallback = null;
 
@@ -250,7 +474,7 @@ async function analyzeWaste({ image, detectedObject, mlKitLabels = [] }) {
     aiConfidence: null,
     analysisSource: "fallback_no_ai_result",
     visionLabels: [],
-    mlKitLabels: [],
+    mlKitLabels: Array.isArray(mlKitLabels) ? mlKitLabels : [],
     explanation:
       "The system could not confidently identify the waste item using the image classifier.",
     action:
