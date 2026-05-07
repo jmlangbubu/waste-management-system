@@ -395,26 +395,19 @@ function getResolutionIssuePoint(record) {
 
 function getResolutionActualStartPoint(record) {
   /*
-    IMPORTANT:
-    This must use the barangay personnel GPS/start coordinate only.
-    Do NOT use assigned_barangay_lat/lng here because that is usually the barangay/reference location,
-    not the actual start location of the personnel route.
+    Final/blue pin logic for resolved complaints:
+    1. Prefer the GPS captured at resolution submit time.
+       These are the fields saved by the Android barangay personnel app:
+       resolver_latitude / resolver_longitude.
+    2. If older records do not have resolver GPS but have other personnel/final GPS fields,
+       use those.
+    3. If the complaint is already resolved but no personnel GPS exists yet,
+       fall back to the issue location so the map does not show the old barangay/reference point.
+
+    Important: assigned_barangay_lat/lng is intentionally NOT used here because that is only
+    the barangay reference point, not the actual personnel stop/submission point.
   */
   const lat = getFirstValidCoordinate(record, [
-    "start_latitude",
-    "start_lat",
-    "route_start_latitude",
-    "route_start_lat",
-    "personnel_start_latitude",
-    "personnel_start_lat",
-    "barangay_personnel_start_latitude",
-    "barangay_personnel_start_lat",
-    "gps_start_latitude",
-    "gps_start_lat",
-    "origin_latitude",
-    "origin_lat",
-    "from_latitude",
-    "from_lat",
     "resolver_latitude",
     "resolver_lat",
     "resolved_latitude",
@@ -430,31 +423,34 @@ function getResolutionActualStartPoint(record) {
     "current_latitude",
     "current_lat",
     "gps_latitude",
-    "gps_lat"
+    "gps_lat",
+    "final_latitude",
+    "final_lat",
+    "submitted_latitude",
+    "submitted_lat",
+    "submit_latitude",
+    "submit_lat",
+    "stop_latitude",
+    "stop_lat",
+    "last_latitude",
+    "last_lat",
+    "start_latitude",
+    "start_lat",
+    "route_start_latitude",
+    "route_start_lat",
+    "personnel_start_latitude",
+    "personnel_start_lat",
+    "barangay_personnel_start_latitude",
+    "barangay_personnel_start_lat",
+    "gps_start_latitude",
+    "gps_start_lat",
+    "origin_latitude",
+    "origin_lat",
+    "from_latitude",
+    "from_lat"
   ]);
 
   const lng = getFirstValidCoordinate(record, [
-    "start_longitude",
-    "start_lng",
-    "start_long",
-    "route_start_longitude",
-    "route_start_lng",
-    "route_start_long",
-    "personnel_start_longitude",
-    "personnel_start_lng",
-    "personnel_start_long",
-    "barangay_personnel_start_longitude",
-    "barangay_personnel_start_lng",
-    "barangay_personnel_start_long",
-    "gps_start_longitude",
-    "gps_start_lng",
-    "gps_start_long",
-    "origin_longitude",
-    "origin_lng",
-    "origin_long",
-    "from_longitude",
-    "from_lng",
-    "from_long",
     "resolver_longitude",
     "resolver_lng",
     "resolver_long",
@@ -478,27 +474,77 @@ function getResolutionActualStartPoint(record) {
     "current_long",
     "gps_longitude",
     "gps_lng",
-    "gps_long"
+    "gps_long",
+    "final_longitude",
+    "final_lng",
+    "final_long",
+    "submitted_longitude",
+    "submitted_lng",
+    "submitted_long",
+    "submit_longitude",
+    "submit_lng",
+    "submit_long",
+    "stop_longitude",
+    "stop_lng",
+    "stop_long",
+    "last_longitude",
+    "last_lng",
+    "last_long",
+    "start_longitude",
+    "start_lng",
+    "start_long",
+    "route_start_longitude",
+    "route_start_lng",
+    "route_start_long",
+    "personnel_start_longitude",
+    "personnel_start_lng",
+    "personnel_start_long",
+    "barangay_personnel_start_longitude",
+    "barangay_personnel_start_lng",
+    "barangay_personnel_start_long",
+    "gps_start_longitude",
+    "gps_start_lng",
+    "gps_start_long",
+    "origin_longitude",
+    "origin_lng",
+    "origin_long",
+    "from_longitude",
+    "from_lng",
+    "from_long"
   ]);
 
-  if (lat === null || lng === null) return null;
+  if (lat !== null && lng !== null) {
+    return {
+      lat,
+      lng,
+      type: "submitted",
+      label: "Submitted Personnel GPS Point"
+    };
+  }
 
-  return {
-    lat,
-    lng,
-    type: "actual",
-    label: "Barangay Personnel Start"
-  };
+  const normalizedStatus = String(record?.status || "").trim().toLowerCase();
+  const issuePoint = getResolutionIssuePoint(record);
+
+  if ((normalizedStatus === "resolved" || normalizedStatus === "rejected") && issuePoint) {
+    return {
+      lat: issuePoint.lat,
+      lng: issuePoint.lng,
+      type: "issue_fallback",
+      label: "Issue Location Fallback"
+    };
+  }
+
+  return null;
 }
 
 function getResolutionBarangayPoint(record) {
   /*
-    Blue pin meaning:
-    Barangay personnel marker.
+    Blue pin meaning in the web/admin resolved route map:
+    Barangay personnel FINAL/SUBMITTED GPS point.
 
-    This intentionally uses the same ACTUAL GPS/start point as the route start.
-    We are NOT using assigned_barangay_lat/lng anymore because that puts the pin
-    on the barangay/reference coordinate instead of the personnel's actual GPS location.
+    If resolver_latitude/resolver_longitude exists, blue pin uses that real submitted GPS.
+    If not, resolved records fall back to the red issue coordinate so old records will not show
+    the barangay reference location as if it were the personnel location.
   */
   const personnelPoint = getResolutionActualStartPoint(record);
 
@@ -506,8 +552,10 @@ function getResolutionBarangayPoint(record) {
 
   return {
     ...personnelPoint,
-    type: "personnel",
-    label: "Barangay Personnel"
+    type: personnelPoint.type === "issue_fallback" ? "personnel_fallback" : "personnel",
+    label: personnelPoint.type === "issue_fallback"
+      ? "Barangay Personnel Location Fallback"
+      : "Barangay Personnel Submitted Location"
   };
 }
 
@@ -525,12 +573,17 @@ function areResolutionPointsSame(pointA, pointB) {
 }
 
 function getResolutionStartLabel(startPoint) {
-  if (!startPoint) return "Start Point";
+  if (!startPoint) return "Submitted GPS Point";
 
-  if (startPoint.type === "actual") return "Start Point";
-  if (startPoint.type === "personnel") return "Start Point";
+  if (startPoint.type === "issue_fallback" || startPoint.type === "personnel_fallback") {
+    return "Issue Location Fallback";
+  }
 
-  return "Start Point";
+  if (startPoint.type === "submitted" || startPoint.type === "personnel") {
+    return "Submitted GPS Point";
+  }
+
+  return "Submitted GPS Point";
 }
 
 function getResolutionBarangayLabel(record) {
@@ -546,7 +599,11 @@ function getResolutionBarangayLabel(record) {
 function getResolutionRouteNotePrefix(startPoint, barangayPoint) {
   if (!startPoint) return "Route preview.";
 
-  return "Route from the barangay personnel GPS start point to the issue location.";
+  if (startPoint.type === "issue_fallback" || startPoint.type === "personnel_fallback") {
+    return "Submitted GPS was not saved for this old record, so the personnel marker is placed on the issue location as fallback.";
+  }
+
+  return "Route from the barangay personnel submitted GPS point to the issue location.";
 }
 
 
@@ -576,8 +633,8 @@ function ensureResolutionVisibleMarkerStyles() {
     }
 
     /*
-      Map-style target marker for START.
-      Green bullseye so it reads like an origin point.
+      Map-style target marker for SUBMITTED GPS.
+      Green bullseye so it reads like the submitted/final personnel point.
     */
     .resolution-start-icon-wrap .resolution-start-icon {
       background: radial-gradient(circle at center, #ffffff 0 4px, #22c55e 4px 8px, #ffffff 8px 11px, #16a34a 11px 100%);
@@ -606,10 +663,12 @@ function addResolutionStartCircle(map, startPoint, record, markerKey = "startMar
 
   ensureResolutionVisibleMarkerStyles();
 
-  /*
-    Start marker:
-    Map-style green target marker centered exactly on the start GPS coordinate.
-  */
+  const isFallbackPoint = startPoint.type === "issue_fallback" || startPoint.type === "personnel_fallback";
+  const markerTitle = isFallbackPoint ? "Fallback Submitted Point" : "Submitted GPS Point";
+  const markerSubtitle = isFallbackPoint
+    ? "No submitted GPS was saved, so this marker uses the issue location."
+    : "Barangay personnel GPS captured when the resolution was submitted.";
+
   const marker = L.marker([startPoint.lat, startPoint.lng], {
     icon: L.divIcon({
       className: "resolution-start-icon-wrap",
@@ -625,7 +684,8 @@ function addResolutionStartCircle(map, startPoint, record, markerKey = "startMar
 
   marker.bindPopup(`
     <div>
-      <strong>Start Point</strong><br>
+      <strong>${escapeHtml(markerTitle)}</strong><br>
+      ${escapeHtml(markerSubtitle)}<br>
       ${escapeHtml(record?.handled_by_barangay_name || record?.assigned_barangay || "-")}<br>
       Coordinates: ${escapeHtml(String(startPoint.lat))}, ${escapeHtml(String(startPoint.lng))}
     </div>
@@ -674,11 +734,14 @@ function addResolutionBarangayPin(map, barangayPoint, record, markerKey = "baran
   const state = complaintResolutionRouteState;
   if (!map || !barangayPoint) return null;
 
-  /*
-    Blue pin:
-    This remains the barangay personnel GPS marker.
-    No floating label; popup only when clicked.
-  */
+  const isFallbackPoint = barangayPoint.type === "issue_fallback" || barangayPoint.type === "personnel_fallback";
+  const popupTitle = isFallbackPoint
+    ? "Barangay Personnel Location Fallback"
+    : "Barangay Personnel Submitted Location";
+  const popupNote = isFallbackPoint
+    ? "No submitted GPS was saved for this record, so the pin is placed on the issue location."
+    : "This is the GPS point saved when the barangay personnel submitted the resolution.";
+
   const marker = L.marker([barangayPoint.lat, barangayPoint.lng], {
     icon: barangayBlueIcon,
     keyboard: false,
@@ -687,8 +750,9 @@ function addResolutionBarangayPin(map, barangayPoint, record, markerKey = "baran
 
   marker.bindPopup(`
     <div>
-      <strong>Barangay Personnel</strong><br>
+      <strong>${escapeHtml(popupTitle)}</strong><br>
       ${escapeHtml(getResolutionBarangayLabel(record))}<br>
+      ${escapeHtml(popupNote)}<br>
       Coordinates: ${escapeHtml(String(barangayPoint.lat))}, ${escapeHtml(String(barangayPoint.lng))}
     </div>
   `);
@@ -819,9 +883,9 @@ function ensureResolutionRouteMapContainer() {
       </div>
 
       <div class="resolution-route-map-legend" aria-label="Route map legend">
-        <span><i class="route-legend-circle start"></i> Start target</span>
+        <span><i class="route-legend-circle start"></i> Submitted GPS</span>
         <span><i class="route-legend-circle end"></i> Issue target</span>
-        <span><i class="route-legend-pin barangay"></i> Personnel pin</span>
+        <span><i class="route-legend-pin barangay"></i> Personnel final pin</span>
       </div>
 
       <div id="resolutionRouteMap"></div>
@@ -889,7 +953,7 @@ function ensureResolutionFullRouteMapModal() {
         <div class="custom-modal-header">
           <div>
             <h3>Full Route Map</h3>
-            <p id="resolutionFullRouteMapSubtitle">Start target, barangay personnel pin, and end issue location.</p>
+            <p id="resolutionFullRouteMapSubtitle">Submitted GPS point, barangay personnel pin, and end issue location.</p>
           </div>
           <button type="button" id="closeResolutionFullRouteMapModal" class="modal-close-btn">&times;</button>
         </div>
@@ -897,7 +961,7 @@ function ensureResolutionFullRouteMapModal() {
         <div class="custom-modal-body resolution-full-route-map-body">
           <div class="complaint-map-summary">
             <div class="complaint-map-summary-item">
-              <span>Start Point</span>
+              <span>Submitted GPS</span>
               <strong id="resolutionFullMapStartLabel">-</strong>
             </div>
 
@@ -918,9 +982,9 @@ function ensureResolutionFullRouteMapModal() {
           </div>
 
           <div class="resolution-route-map-legend" aria-label="Full route map legend" style="margin:12px 0; display:flex; gap:14px; flex-wrap:wrap;">
-            <span><i class="route-legend-circle start"></i> Start target</span>
+            <span><i class="route-legend-circle start"></i> Submitted GPS</span>
             <span><i class="route-legend-circle end"></i> Issue target</span>
-            <span><i class="route-legend-pin barangay"></i> Personnel pin</span>
+            <span><i class="route-legend-pin barangay"></i> Personnel final pin</span>
           </div>
 
           <div
@@ -1197,7 +1261,7 @@ function renderResolutionFullRouteMap(record) {
   }
 
   if (!startPoint) {
-    alert("Barangay personnel GPS/start point is not available for this resolved complaint record yet.");
+    alert("Barangay personnel submitted GPS point is not available for this resolved complaint record yet.");
     return;
   }
 
@@ -1383,7 +1447,7 @@ function renderResolvedComplaintRouteMap(record) {
     state.map.setView([issuePoint.lat, issuePoint.lng], 17);
     state.issueMarker.openPopup();
     setResolutionMapNote(
-      "Only the issue location is available. Barangay personnel GPS/start point is not included in this resolved complaint record yet."
+      "Only the issue location is available. Submitted personnel GPS is missing, so no separate final personnel point can be shown."
     );
     return;
   }
@@ -1405,8 +1469,8 @@ function renderResolvedComplaintRouteMap(record) {
 
   const sameStartAndBarangay = areResolutionPointsSame(startPoint, barangayPoint);
   const barangayNote = barangayPoint
-    ? " Blue pin is the barangay personnel GPS marker at the start point."
-    : " Barangay personnel GPS pin is not available.";
+    ? " Blue pin is the barangay personnel final/submitted GPS marker."
+    : " Barangay personnel submitted GPS pin is not available.";
 
   setResolutionMapNote(
     `${notePrefix} Straight distance: ${formatDistanceText(straightDistance)}.${barangayNote}`
