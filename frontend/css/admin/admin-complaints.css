@@ -1751,3 +1751,222 @@ body #complaintDetailsModal .complaint-modal-actions {
     max-height: 220px !important;
   }
 }
+
+/* =========================================================
+   COMPLAINT HISTORY MODAL - SCROLL + STATUS + DATE FIX
+   File target: css/admin/admin-complaints.css
+
+   Purpose:
+   - Keep complaint-history styling in CSS, not JS.
+   - Adds horizontal/vertical scroll for all columns.
+   - Fixes squeezed Date column on mobile/tablet views.
+========================================================= */
+
+#complaintHistoryModal .complaint-history-status {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-width: 100px !important;
+  max-width: 118px !important;
+  padding: 8px 12px !important;
+  border-radius: 999px !important;
+  font-size: 13px !important;
+  font-weight: 900 !important;
+  line-height: 1 !important;
+  border: 1px solid transparent !important;
+  text-transform: capitalize !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+#complaintHistoryModal .complaint-history-status.resolved {
+  color: #047857 !important;
+  background: #d1fae5 !important;
+  border-color: #86efac !important;
+}
+
+#complaintHistoryModal .complaint-history-status.rejected {
+  color: #b91c1c !important;
+  background: #fee2e2 !important;
+  border-color: #fca5a5 !important;
+}
+
+#complaintHistoryModal .complaint-history-status.forwarded,
+#complaintHistoryModal .complaint-history-status.accepted,
+#complaintHistoryModal .complaint-history-status.in-progress {
+  color: #1d4ed8 !important;
+  background: #dbeafe !important;
+  border-color: #93c5fd !important;
+}
+
+#complaintHistoryModal .complaint-history-status.unknown {
+  color: #475569 !important;
+  background: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+}
+
+#complaintHistoryModal .complaint-history-table-scroll {
+  width: 100% !important;
+  max-width: 100% !important;
+  max-height: min(58vh, 520px) !important;
+  overflow-x: auto !important;
+  overflow-y: auto !important;
+  border: 1px solid #e5e7eb !important;
+  border-radius: 18px !important;
+  background: #ffffff !important;
+  -webkit-overflow-scrolling: touch !important;
+  scrollbar-width: thin !important;
+}
+
+#complaintHistoryModal .complaint-history-table-scroll::-webkit-scrollbar {
+  height: 10px !important;
+  width: 10px !important;
+}
+
+#complaintHistoryModal .complaint-history-table-scroll::-webkit-scrollbar-thumb {
+  background: #cbd5e1 !important;
+  border-radius: 999px !important;
+}
+
+#complaintHistoryModal .complaint-history-table-scroll::-webkit-scrollbar-track {
+  background: #f8fafc !important;
+  border-radius: 999px !important;
+}
+
+#complaintHistoryModal .complaint-history-table,
+#complaintHistoryModal .complaint-history-table-scroll table,
+#complaintHistoryModal table.complaint-history-table {
+  width: 100% !important;
+  min-width: 900px !important;
+  table-layout: fixed !important;
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+}
+
+#complaintHistoryModal .complaint-history-table thead th {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 2 !important;
+  background: #f8fafc !important;
+  white-space: nowrap !important;
+}
+
+#complaintHistoryModal .complaint-history-table th,
+#complaintHistoryModal .complaint-history-table td {
+  box-sizing: border-box !important;
+  vertical-align: middle !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  line-height: 1.35 !important;
+  font-size: 14px !important;
+  letter-spacing: 0 !important;
+}
+
+/* Subject */
+#complaintHistoryModal .complaint-history-table th:nth-child(1),
+#complaintHistoryModal .complaint-history-table td:nth-child(1) {
+  width: 180px !important;
+  min-width: 180px !important;
+  max-width: 180px !important;
+}
+
+/* Citizen */
+#complaintHistoryModal .complaint-history-table th:nth-child(2),
+#complaintHistoryModal .complaint-history-table td:nth-child(2) {
+  width: 170px !important;
+  min-width: 170px !important;
+  max-width: 170px !important;
+}
+
+/* Assigned Barangay */
+#complaintHistoryModal .complaint-history-table th:nth-child(3),
+#complaintHistoryModal .complaint-history-table td:nth-child(3) {
+  width: 150px !important;
+  min-width: 150px !important;
+  max-width: 150px !important;
+}
+
+/* Status */
+#complaintHistoryModal .complaint-history-table th:nth-child(4),
+#complaintHistoryModal .complaint-history-table td:nth-child(4) {
+  width: 135px !important;
+  min-width: 135px !important;
+  max-width: 135px !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+}
+
+/* Date */
+#complaintHistoryModal .complaint-history-table th:nth-child(5),
+#complaintHistoryModal .complaint-history-table td:nth-child(5) {
+  width: 220px !important;
+  min-width: 220px !important;
+  max-width: 220px !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  color: #1f2937 !important;
+  font-variant-numeric: tabular-nums !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  white-space: nowrap !important;
+}
+
+/* Action */
+#complaintHistoryModal .complaint-history-table th:nth-child(6),
+#complaintHistoryModal .complaint-history-table td:nth-child(6) {
+  width: 110px !important;
+  min-width: 110px !important;
+  max-width: 110px !important;
+  text-align: center !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+}
+
+#complaintHistoryModal .complaint-history-view-btn {
+  min-width: 76px !important;
+  padding: 10px 14px !important;
+  white-space: nowrap !important;
+  font-size: 14px !important;
+  font-weight: 800 !important;
+}
+
+#complaintHistoryModal .complaint-history-scroll-hint {
+  display: none !important;
+  margin: 0 0 10px !important;
+  color: #64748b !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+}
+
+@media (max-width: 992px) {
+  #complaintHistoryModal .complaint-history-table-scroll {
+    max-height: calc(100dvh - 230px) !important;
+  }
+
+  #complaintHistoryModal .complaint-history-scroll-hint {
+    display: block !important;
+  }
+}
+
+@media (max-width: 640px) {
+  #complaintHistoryModal .complaint-history-table,
+  #complaintHistoryModal .complaint-history-table-scroll table,
+  #complaintHistoryModal table.complaint-history-table {
+    min-width: 900px !important;
+  }
+
+  #complaintHistoryModal .complaint-history-table th,
+  #complaintHistoryModal .complaint-history-table td {
+    font-size: 13px !important;
+  }
+
+  #complaintHistoryModal .complaint-history-table th:nth-child(5),
+  #complaintHistoryModal .complaint-history-table td:nth-child(5) {
+    width: 230px !important;
+    min-width: 230px !important;
+    max-width: 230px !important;
+    font-size: 13px !important;
+  }
+}
