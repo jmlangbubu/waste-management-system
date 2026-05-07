@@ -122,12 +122,70 @@ function logUploadedFile(prefix, file) {
   }
 }
 
+function deleteUploadedFileIfExists(file) {
+  try {
+    if (file && file.path && fs.existsSync(file.path)) {
+      fs.unlinkSync(file.path);
+      console.log("Deleted unused uploaded file:", file.path);
+    }
+  } catch (err) {
+    console.error("Failed deleting unused uploaded file:", err);
+  }
+}
+
+function getComplaintByClientRequestId(clientRequestId, callback) {
+  const sql = `
+    SELECT id, reporter_barangay, assigned_barangay, assignment_method, status
+    FROM complaints
+    WHERE client_request_id = ?
+    LIMIT 1
+  `;
+
+  db.query(sql, [clientRequestId], callback);
+}
+
+function respondWithExistingComplaint(res, existingComplaint, uploadedFile) {
+  deleteUploadedFileIfExists(uploadedFile);
+
+  return res.json({
+    success: true,
+    duplicate: true,
+    message: "Complaint already submitted earlier. Duplicate submission was prevented.",
+    complaintId: existingComplaint.id,
+    reporter_barangay: existingComplaint.reporter_barangay || null,
+    assigned_barangay: existingComplaint.assigned_barangay || "Unknown",
+    assignment_method: existingComplaint.assignment_method || null,
+    status: existingComplaint.status || null
+  });
+}
+
+function respondWithExistingComplaintByClientRequestId(res, clientRequestId, uploadedFile) {
+  getComplaintByClientRequestId(clientRequestId, (findErr, rows) => {
+    if (!findErr && rows && rows.length > 0) {
+      return respondWithExistingComplaint(res, rows[0], uploadedFile);
+    }
+
+    deleteUploadedFileIfExists(uploadedFile);
+
+    return res.status(409).json({
+      success: false,
+      message: "Duplicate complaint request detected, but the existing complaint could not be loaded.",
+      error: findErr ? findErr.message : null
+    });
+  });
+}
+
 /* =========================
    CREATE COMPLAINT
+   Duplicate protection:
+   - Android sends client_request_id.
+   - Backend checks existing request before insert.
+   - If same request is received again, it returns existing complaint instead of creating a new one.
 ========================= */
 router.post("/", upload.single("image"), (req, res) => {
   try {
     const {
+      client_request_id,
       citizen_id,
       citizen_name,
       username,
@@ -138,7 +196,11 @@ router.post("/", upload.single("image"), (req, res) => {
       longitude
     } = req.body;
 
+    const clientRequestId = cleanText(client_request_id).slice(0, 80);
+
     if (!citizen_id || !subject || !latitude || !longitude) {
+      deleteUploadedFileIfExists(req.file);
+
       return res.status(400).json({
         success: false,
         message: "Missing required complaint fields."
@@ -153,6 +215,8 @@ router.post("/", upload.single("image"), (req, res) => {
     }
 
     if (req.file.size <= 0) {
+      deleteUploadedFileIfExists(req.file);
+
       return res.status(400).json({
         success: false,
         message: "Uploaded image is empty or corrupted."
@@ -163,157 +227,240 @@ router.post("/", upload.single("image"), (req, res) => {
     const lng = parseFloat(longitude);
 
     if (Number.isNaN(lat) || Number.isNaN(lng)) {
+      deleteUploadedFileIfExists(req.file);
+
       return res.status(400).json({
         success: false,
         message: "Invalid complaint location coordinates."
       });
     }
 
-    const boundarySql = `
-      SELECT barangay_name, polygon_json
-      FROM barangay_boundaries
-      WHERE status = 'active'
-    `;
+    getComplaintColumnSet((columnErr, columnSet) => {
+      if (columnErr) {
+        deleteUploadedFileIfExists(req.file);
 
-    db.query(boundarySql, (boundaryErr, boundaryRows) => {
-      if (boundaryErr) {
-        console.error("Boundary query error:", boundaryErr);
         return res.status(500).json({
           success: false,
-          message: "Failed to load barangay boundaries."
+          message: "Failed to inspect complaint table columns.",
+          error: columnErr.message
         });
       }
 
-      try {
-        console.log("=== COMPLAINT LOCATION DEBUG ===");
-        console.log("Point:", { lat, lng });
-        console.log("Boundary rows count:", (boundaryRows || []).length);
+      const canSaveClientRequestId = hasColumn(columnSet, "client_request_id");
 
-        const polygonMatchedBarangay = resolveBarangayByPolygon(
-          { lat, lng },
-          boundaryRows || []
-        );
-
-        console.log("Polygon matched barangay:", polygonMatchedBarangay);
-
-        let finalBarangay = polygonMatchedBarangay || null;
-        let assignmentMethod = "polygon";
-        let status = "pending";
-
-        if (!finalBarangay) {
-          const nearestBarangay = resolveNearestBarangay(
-            { lat, lng },
-            boundaryRows || []
-          );
-
-          console.log("Nearest fallback barangay:", nearestBarangay);
-
-          if (nearestBarangay && typeof nearestBarangay === "string") {
-            finalBarangay = nearestBarangay;
-            assignmentMethod = "nearest_fallback";
-          } else {
-            finalBarangay = "For Verification";
-            assignmentMethod = "manual_review";
-          }
-        }
-
-        if (!finalBarangay || finalBarangay === "undefined") {
-          finalBarangay = "For Verification";
-          assignmentMethod = "manual_review";
-        }
-
-        console.log("FINAL assigned barangay:", finalBarangay);
-        console.log("Assignment method:", assignmentMethod);
-
-        const imageUrl = `/uploads/complaints/${req.file.filename}`;
-
-        const insertSql = `
-          INSERT INTO complaints (
-            citizen_id,
-            citizen_name,
-            username,
-            reporter_barangay,
-            subject,
-            description,
-            image_url,
-            latitude,
-            longitude,
-            assigned_barangay,
-            assignment_method,
-            status
-          )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      const continueComplaintCreation = () => {
+        const boundarySql = `
+          SELECT barangay_name, polygon_json
+          FROM barangay_boundaries
+          WHERE status = 'active'
         `;
 
-        const insertValues = [
-          citizen_id,
-          citizen_name || null,
-          username || null,
-          reporter_barangay || null,
-          subject,
-          description || null,
-          imageUrl,
-          lat,
-          lng,
-          finalBarangay || "For Verification",
-          assignmentMethod || "manual_review",
-          status || "pending"
-        ];
+        db.query(boundarySql, (boundaryErr, boundaryRows) => {
+          if (boundaryErr) {
+            deleteUploadedFileIfExists(req.file);
 
-        db.query(insertSql, insertValues, (insertErr, insertResult) => {
-          if (insertErr) {
-            console.error("Complaint insert error:", insertErr);
+            console.error("Boundary query error:", boundaryErr);
             return res.status(500).json({
               success: false,
-              message: "Failed to save complaint.",
-              sqlError: insertErr.message,
-              sqlCode: insertErr.code
+              message: "Failed to load barangay boundaries."
             });
           }
 
-          const complaintId = insertResult.insertId;
+          try {
+            console.log("=== COMPLAINT LOCATION DEBUG ===");
+            console.log("Client request id:", clientRequestId || "none");
+            console.log("Can save client_request_id:", canSaveClientRequestId);
+            console.log("Point:", { lat, lng });
+            console.log("Boundary rows count:", (boundaryRows || []).length);
 
-          const notifSql = `
-            INSERT INTO complaint_notifications (
-              complaint_id,
-              target_type,
-              target_name
-            )
-            VALUES (?, 'wmo', 'WMO')
-          `;
+            const polygonMatchedBarangay = resolveBarangayByPolygon(
+              { lat, lng },
+              boundaryRows || []
+            );
 
-          db.query(notifSql, [complaintId], (notifErr) => {
-            if (notifErr) {
-              console.error("WMO notification insert error:", notifErr);
+            console.log("Polygon matched barangay:", polygonMatchedBarangay);
+
+            let finalBarangay = polygonMatchedBarangay || null;
+            let assignmentMethod = "polygon";
+            let status = "pending";
+
+            if (!finalBarangay) {
+              const nearestBarangay = resolveNearestBarangay(
+                { lat, lng },
+                boundaryRows || []
+              );
+
+              console.log("Nearest fallback barangay:", nearestBarangay);
+
+              if (nearestBarangay && typeof nearestBarangay === "string") {
+                finalBarangay = nearestBarangay;
+                assignmentMethod = "nearest_fallback";
+              } else {
+                finalBarangay = "For Verification";
+                assignmentMethod = "manual_review";
+              }
             }
 
-            logUploadedFile("=== CREATE COMPLAINT UPLOAD DEBUG ===", req.file);
+            if (!finalBarangay || finalBarangay === "undefined") {
+              finalBarangay = "For Verification";
+              assignmentMethod = "manual_review";
+            }
 
-            return res.json({
-              success: true,
-              message:
-                assignmentMethod === "polygon"
-                  ? "Complaint submitted successfully."
-                  : assignmentMethod === "nearest_fallback"
-                  ? "Complaint submitted successfully and auto-assigned to the nearest barangay."
-                  : "Complaint submitted successfully and marked for manual verification.",
-              complaintId,
-              reporter_barangay: reporter_barangay || null,
-              assigned_barangay: finalBarangay,
-              assignment_method: assignmentMethod
+            console.log("FINAL assigned barangay:", finalBarangay);
+            console.log("Assignment method:", assignmentMethod);
+
+            const imageUrl = `/uploads/complaints/${req.file.filename}`;
+
+            const insertColumns = [
+              "citizen_id",
+              "citizen_name",
+              "username",
+              "reporter_barangay",
+              "subject",
+              "description",
+              "image_url",
+              "latitude",
+              "longitude",
+              "assigned_barangay",
+              "assignment_method",
+              "status"
+            ];
+
+            const insertValues = [
+              citizen_id,
+              citizen_name || null,
+              username || null,
+              reporter_barangay || null,
+              subject,
+              description || null,
+              imageUrl,
+              lat,
+              lng,
+              finalBarangay || "For Verification",
+              assignmentMethod || "manual_review",
+              status || "pending"
+            ];
+
+            if (canSaveClientRequestId) {
+              insertColumns.push("client_request_id");
+              insertValues.push(clientRequestId || null);
+            }
+
+            const placeholders = insertColumns.map(() => "?").join(", ");
+
+            const insertSql = `
+              INSERT INTO complaints (
+                ${insertColumns.join(",\n                ")}
+              )
+              VALUES (${placeholders})
+            `;
+
+            db.query(insertSql, insertValues, (insertErr, insertResult) => {
+              if (insertErr) {
+                console.error("Complaint insert error:", insertErr);
+
+                if (
+                  canSaveClientRequestId &&
+                  clientRequestId &&
+                  insertErr.code === "ER_DUP_ENTRY"
+                ) {
+                  return respondWithExistingComplaintByClientRequestId(
+                    res,
+                    clientRequestId,
+                    req.file
+                  );
+                }
+
+                deleteUploadedFileIfExists(req.file);
+
+                return res.status(500).json({
+                  success: false,
+                  message: "Failed to save complaint.",
+                  sqlError: insertErr.message,
+                  sqlCode: insertErr.code
+                });
+              }
+
+              const complaintId = insertResult.insertId;
+
+              const notifSql = `
+                INSERT INTO complaint_notifications (
+                  complaint_id,
+                  target_type,
+                  target_name
+                )
+                VALUES (?, 'wmo', 'WMO')
+              `;
+
+              db.query(notifSql, [complaintId], (notifErr) => {
+                if (notifErr) {
+                  console.error("WMO notification insert error:", notifErr);
+                }
+
+                logUploadedFile("=== CREATE COMPLAINT UPLOAD DEBUG ===", req.file);
+
+                return res.json({
+                  success: true,
+                  duplicate: false,
+                  message:
+                    assignmentMethod === "polygon"
+                      ? "Complaint submitted successfully."
+                      : assignmentMethod === "nearest_fallback"
+                      ? "Complaint submitted successfully and auto-assigned to the nearest barangay."
+                      : "Complaint submitted successfully and marked for manual verification.",
+                  complaintId,
+                  reporter_barangay: reporter_barangay || null,
+                  assigned_barangay: finalBarangay,
+                  assignment_method: assignmentMethod,
+                  client_request_id_saved: canSaveClientRequestId && Boolean(clientRequestId),
+                  missing_columns: !canSaveClientRequestId
+                    ? {
+                        client_request_id: true
+                      }
+                    : null
+                });
+              });
             });
-          });
+          } catch (resolutionError) {
+            deleteUploadedFileIfExists(req.file);
+
+            console.error("Complaint barangay resolution error:", resolutionError);
+            return res.status(500).json({
+              success: false,
+              message: "Barangay resolution failed.",
+              error: resolutionError.message
+            });
+          }
         });
-      } catch (resolutionError) {
-        console.error("Complaint barangay resolution error:", resolutionError);
-        return res.status(500).json({
-          success: false,
-          message: "Barangay resolution failed.",
-          error: resolutionError.message
+      };
+
+      if (canSaveClientRequestId && clientRequestId) {
+        return getComplaintByClientRequestId(clientRequestId, (findErr, rows) => {
+          if (findErr) {
+            deleteUploadedFileIfExists(req.file);
+
+            console.error("Duplicate complaint lookup error:", findErr);
+            return res.status(500).json({
+              success: false,
+              message: "Failed to check duplicate complaint request.",
+              error: findErr.message,
+              code: findErr.code
+            });
+          }
+
+          if (rows && rows.length > 0) {
+            return respondWithExistingComplaint(res, rows[0], req.file);
+          }
+
+          return continueComplaintCreation();
         });
       }
+
+      return continueComplaintCreation();
     });
   } catch (error) {
+    deleteUploadedFileIfExists(req.file);
+
     console.error("Complaint submit server error:", error);
     return res.status(500).json({
       success: false,
