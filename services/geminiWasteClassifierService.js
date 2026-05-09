@@ -44,6 +44,26 @@ function isValidCategory(category) {
   return ["Biodegradable", "Recyclable", "Residual", "Special Waste"].includes(category);
 }
 
+function includesAny(text, keywords = []) {
+  const clean = normalizeText(text);
+
+  return keywords.some((keyword) => clean.includes(normalizeText(keyword)));
+}
+
+function clampConfidence(value, fallback = 0.55) {
+  let confidence = Number(value);
+
+  if (Number.isNaN(confidence)) {
+    confidence = fallback;
+  }
+
+  if (confidence > 1) {
+    confidence = confidence / 100;
+  }
+
+  return Math.max(0, Math.min(1, confidence));
+}
+
 function buildDefaultDetails(category) {
   switch (category) {
     case "Biodegradable":
@@ -89,33 +109,77 @@ function buildDefaultDetails(category) {
   }
 }
 
+function buildUnclearMaterialDetails(itemName) {
+  return {
+    itemName,
+    category: "Recyclable",
+    confidence: 0.42,
+    explanation:
+      "A bottle or container is visible, but the material is not clear enough to confidently identify it as glass, plastic, metal, or paper-based.",
+    action:
+      "Retake the photo with the item centered, closer, and well-lit. Show the body material clearly before disposal.",
+    warning:
+      "The system should not guess the exact material. Do not treat this as a confirmed plastic or glass result."
+  };
+}
+
+function buildDirtyPaperCupDetails() {
+  return {
+    itemName: "used or contaminated paper cup",
+    category: "Residual",
+    confidence: 0.78,
+    explanation:
+      "The item appears to be a used paper cup or coated paper cup. Used, wet, stained, or plastic-coated paper cups are usually not accepted as clean paper recycling.",
+    action:
+      "Place it in the residual waste bin unless your local facility specifically accepts clean paper cups.",
+    warning:
+      "Paper cups can be misleading because many have plastic lining. If it has liquid, food stain, or plastic coating, do not place it with clean paper recyclables."
+  };
+}
+
 function buildGeminiPrompt() {
   return `
 You are a waste classification assistant for a municipal waste management system.
 
-Analyze the image and classify the MAIN visible waste item into exactly one category:
+Analyze the image and classify ONLY the MAIN visible waste item into exactly one category:
 
 1. Biodegradable
 2. Recyclable
 3. Residual
 4. Special Waste
 
-Important rules:
-- A plastic beverage bottle, water bottle, C2 bottle, Coke bottle, Sprite bottle, PET bottle, plastic container, clean bottle, or drink bottle is Recyclable.
-- Do not classify a plastic bottle as Biodegradable just because the label contains fruit, leaves, apple, tea, or natural graphics.
+CRITICAL ACCURACY RULES:
+- Focus on the physical waste item and its material. Do not rely only on brand name, logo, printed fruit, color, or label design.
+- Do NOT guess the exact material. If the object is a bottle, cup, container, or wrapper, identify the material first.
+- A bottle is NOT automatically plastic. A bottle can be glass, plastic/PET, metal, or unclear.
+- Only call it "plastic bottle" if the bottle body clearly looks plastic/PET.
+- Only call it "glass bottle" if the bottle body clearly looks glass, rigid, shiny/reflective, or transparent glass.
+- If a bottle is visible but the material is unclear, return itemName "bottle - material unclear", category "Recyclable", confidence 0.45 or lower, and tell the user to retake a clearer photo.
+- If the image shows a brand such as Magnolia, Coke, Sprite, C2, McDo, or any drink brand, classify based on the material of the container, not the brand.
+- A plastic beverage bottle, water bottle, PET bottle, clear plastic bottle, or clean plastic container is Recyclable.
+- A clean glass bottle or glass jar is Recyclable.
+- A clean metal can or aluminum can is Recyclable.
 - Food scraps, banana peel, fruit peel, vegetable waste, leaves, grass, and organic waste are Biodegradable.
 - Sachets, candy wrappers, chips wrappers, dirty plastic wrappers, styrofoam, diapers, used tissue, and contaminated packaging are Residual.
 - Batteries, chargers, bulbs, wires, electronics, medicine, chemicals, paint, syringes, and hazardous items are Special Waste.
-- Focus on the physical object, not only the brand label, logo, or printed design.
-- If the image shows a bottle with a food or fruit label, classify based on the bottle material, not the label design.
-- If uncertain, choose the safest category and explain the uncertainty.
+
+PAPER CUP RULES:
+- A clean and dry paper cup can be Recyclable only if it appears paper-based and not dirty.
+- A used paper cup, wet paper cup, cup with drink residue, stained cup, greasy cup, or plastic-coated paper cup should be Residual.
+- If unsure whether the paper cup is coated or contaminated, mention the uncertainty and use lower confidence.
+
+OUTPUT QUALITY RULES:
+- The explanation must mention visible evidence for the material, for example: "clear glass body", "plastic/PET body", "paper cup", "metal can", "food residue", or "dirty wrapper".
+- Do not say "plastic bottle" in itemName unless the explanation also gives visible plastic/PET evidence.
+- If the image is blurry, too far, partially covered, or the material is unclear, do not force a specific material. Use a low confidence and ask for a clearer photo.
+- Confidence should be high only when the object and material are clearly visible.
 
 Return JSON only with this exact shape:
 {
   "itemName": "short name of detected item",
   "category": "Biodegradable | Recyclable | Residual | Special Waste",
   "confidence": 0.0,
-  "explanation": "simple explanation",
+  "explanation": "simple explanation that includes visible material evidence",
   "action": "recommended disposal action",
   "warning": "important warning"
 }
@@ -231,35 +295,179 @@ function sanitizeGeminiResult(parsed) {
     return null;
   }
 
-  const category = normalizeCategory(parsed.category);
+  let category = normalizeCategory(parsed.category);
 
   if (!isValidCategory(category)) {
     return null;
   }
 
+  const rawItemName = String(parsed.itemName || parsed.item || category).trim() || category;
+  const rawExplanation = String(parsed.explanation || "").trim();
+  const rawAction = String(parsed.action || "").trim();
+  const rawWarning = String(parsed.warning || "").trim();
+
+  const itemClean = normalizeText(rawItemName);
+  const explanationClean = normalizeText(rawExplanation);
+  const combinedClean = normalizeText(`${rawItemName} ${rawExplanation} ${rawAction} ${rawWarning}`);
+
+  let confidence = clampConfidence(parsed.confidence, 0.55);
+
+  const bottleTerms = ["bottle", "jar"];
+  const genericBottleTerms = [
+    "bottle",
+    "drink bottle",
+    "beverage bottle",
+    "clean bottle",
+    "empty bottle",
+    "container bottle"
+  ];
+
+  const visiblePlasticEvidenceTerms = [
+    "plastic body",
+    "pet body",
+    "pet bottle",
+    "plastic bottle body",
+    "clear plastic",
+    "transparent plastic",
+    "thin plastic",
+    "flexible plastic",
+    "squeezable",
+    "crumpled plastic",
+    "plastic container"
+  ];
+
+  const visibleGlassEvidenceTerms = [
+    "glass body",
+    "glass bottle",
+    "clear glass",
+    "transparent glass",
+    "rigid glass",
+    "shiny glass",
+    "reflective glass",
+    "glass jar"
+  ];
+
+  const paperCupTerms = [
+    "paper cup",
+    "mcdo cup",
+    "mcdonalds cup",
+    "mcdonald s cup",
+    "fast food cup",
+    "drink cup"
+  ];
+
+  const dirtyCupTerms = [
+    "used",
+    "dirty",
+    "wet",
+    "stained",
+    "greasy",
+    "oily",
+    "food residue",
+    "drink residue",
+    "liquid residue",
+    "contaminated",
+    "plastic coated",
+    "coated paper",
+    "wax coated"
+  ];
+
+  const hasBottle = includesAny(itemClean, bottleTerms);
+  const isGenericBottle =
+    genericBottleTerms.includes(itemClean) ||
+    (hasBottle &&
+      !includesAny(itemClean, ["plastic", "pet", "glass", "metal", "aluminum", "steel"]));
+
+  const saysPlasticBottle = includesAny(itemClean, ["plastic bottle", "pet bottle"]);
+  const saysGlassBottle = includesAny(itemClean, ["glass bottle", "glass jar"]);
+  const hasPlasticEvidence = includesAny(explanationClean, visiblePlasticEvidenceTerms);
+  const hasGlassEvidence = includesAny(explanationClean, visibleGlassEvidenceTerms);
+
+  /*
+    Guard 1:
+    Do not allow a generic "bottle" result to pretend that the exact material is known.
+    Keep the valid category, but lower the confidence and ask for clearer material evidence.
+  */
+  if (isGenericBottle) {
+    const unclear = buildUnclearMaterialDetails("bottle - material unclear");
+
+    return {
+      ...unclear,
+      confidence: Math.min(confidence, unclear.confidence)
+    };
+  }
+
+  /*
+    Guard 2:
+    If Gemini says plastic bottle but gives no visible plastic/PET evidence,
+    downgrade the item name to material unclear instead of showing a wrong specific result.
+  */
+  if (saysPlasticBottle && !hasPlasticEvidence) {
+    const unclear = buildUnclearMaterialDetails("bottle - material unclear");
+
+    return {
+      ...unclear,
+      confidence: Math.min(confidence, unclear.confidence),
+      warning:
+        "The AI tried to identify this as plastic, but the response did not include enough visible plastic/PET evidence. Retake the photo to confirm the material."
+    };
+  }
+
+  /*
+    Guard 3:
+    If Gemini says glass bottle but gives no visible glass evidence,
+    keep it cautious instead of confidently showing a material-specific result.
+  */
+  if (saysGlassBottle && !hasGlassEvidence) {
+    const unclear = buildUnclearMaterialDetails("bottle - material unclear");
+
+    return {
+      ...unclear,
+      confidence: Math.min(confidence, unclear.confidence),
+      warning:
+        "The AI tried to identify this as glass, but the response did not include enough visible glass evidence. Retake the photo to confirm the material."
+    };
+  }
+
+  /*
+    Guard 4:
+    Paper cups are often coated or contaminated. If the result contains used/dirty/coated context,
+    Residual is safer than clean paper recycling.
+  */
+  if (includesAny(combinedClean, paperCupTerms) && includesAny(combinedClean, dirtyCupTerms)) {
+    const dirtyPaperCup = buildDirtyPaperCupDetails();
+
+    return {
+      ...dirtyPaperCup,
+      confidence: Math.min(Math.max(confidence, 0.65), dirtyPaperCup.confidence)
+    };
+  }
+
   const defaults = buildDefaultDetails(category);
 
-  const itemName = String(parsed.itemName || parsed.item || category).trim() || category;
+  let itemName = rawItemName;
 
-  let confidence = Number(parsed.confidence);
-
-  if (Number.isNaN(confidence)) {
-    confidence = 0.75;
+  /*
+    Small item-name cleanup for common cases.
+    This improves display without changing the core category.
+  */
+  if (saysPlasticBottle) {
+    itemName = "plastic bottle";
+    category = "Recyclable";
+  } else if (saysGlassBottle) {
+    itemName = itemClean.includes("jar") ? "glass jar" : "glass bottle";
+    category = "Recyclable";
+  } else if (includesAny(itemClean, ["paper cup"])) {
+    itemName = "paper cup";
   }
-
-  if (confidence > 1) {
-    confidence = confidence / 100;
-  }
-
-  confidence = Math.max(0, Math.min(1, confidence));
 
   return {
     itemName,
     category,
     confidence,
-    explanation: String(parsed.explanation || defaults.explanation).trim(),
-    action: String(parsed.action || defaults.action).trim(),
-    warning: String(parsed.warning || defaults.warning).trim()
+    explanation: rawExplanation || defaults.explanation,
+    action: rawAction || defaults.action,
+    warning: rawWarning || defaults.warning
   };
 }
 
@@ -267,14 +475,6 @@ async function classifyWasteWithGemini(base64Image) {
   const apiKey = safeEnv(process.env.GEMINI_API_KEY);
   const model = safeEnv(process.env.GEMINI_MODEL || "gemini-2.5-flash");
   const cleanedBase64 = cleanBase64Image(base64Image);
-
-  /*
-    TEMPORARY DEBUG ONLY:
-    This logs only the last 6 characters of the API key.
-    Use this to confirm Render is using the same paid API key from Google AI Studio.
-    Remove this after checking the logs.
-  */
-  console.log("[Gemini] API key ending:", apiKey ? apiKey.slice(-6) : "missing");
 
   if (!apiKey) {
     return {
@@ -310,9 +510,9 @@ async function classifyWasteWithGemini(base64Image) {
       }
     ],
     generationConfig: {
-      temperature: 0.1,
-      topP: 0.8,
-      topK: 40,
+      temperature: 0.05,
+      topP: 0.7,
+      topK: 20,
       responseMimeType: "application/json"
     }
   };
@@ -347,7 +547,7 @@ async function classifyWasteWithGemini(base64Image) {
 
     return {
       success: true,
-      source: "gemini_vision",
+      source: "gemini_vision_material_checked",
       result,
       rawResponse: response,
       rawText: text
