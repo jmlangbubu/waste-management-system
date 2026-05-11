@@ -1066,6 +1066,10 @@ router.get("/history/resolved", (req, res) => {
 
 /* =========================
    BARANGAY COMPLAINT ANALYTICS
+   Citizen dashboard resolved count:
+   - Shows RESOLVED complaints only.
+   - Filters by current month using resolved_at.
+   - Also returns total_issues for old Android compatibility.
 ========================= */
 router.get("/barangay-analytics/:barangay", (req, res) => {
   try {
@@ -1078,11 +1082,21 @@ router.get("/barangay-analytics/:barangay", (req, res) => {
       });
     }
 
+    /*
+      Monthly reset logic:
+      This counts only complaints that were resolved within the current month.
+      Example:
+      - May resolved complaints show in May.
+      - When June starts, May resolved complaints are no longer counted here.
+    */
     const sql = `
-      SELECT COUNT(*) AS total_issues
+      SELECT
+        COUNT(*) AS resolved_this_month
       FROM complaints
       WHERE LOWER(TRIM(assigned_barangay)) = LOWER(TRIM(?))
         AND LOWER(TRIM(status)) = 'resolved'
+        AND resolved_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
+        AND resolved_at < DATE_ADD(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 1 MONTH)
     `;
 
     db.query(sql, [barangay], (err, rows) => {
@@ -1091,16 +1105,30 @@ router.get("/barangay-analytics/:barangay", (req, res) => {
         return res.status(500).json({
           success: false,
           message: "Failed to load barangay complaint analytics.",
-          error: err.message
+          error: err.message,
+          code: err.code
         });
       }
 
-      const summary = rows && rows.length ? rows[0] : { total_issues: 0 };
+      const summary = rows && rows.length
+        ? rows[0]
+        : { resolved_this_month: 0 };
+
+      const resolvedThisMonth = Number(summary.resolved_this_month || 0);
 
       return res.json({
         success: true,
         summary: {
-          total_issues: Number(summary.total_issues || 0)
+          resolved_this_month: resolvedThisMonth,
+          resolved_issues: resolvedThisMonth,
+          resolved_count: resolvedThisMonth,
+
+          /*
+            Keep this for backward compatibility with any older mobile build
+            still reading summary.total_issues.
+            Current updated CitizenHomeActivity reads resolved_this_month first.
+          */
+          total_issues: resolvedThisMonth
         }
       });
     });
