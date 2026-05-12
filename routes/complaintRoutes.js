@@ -1279,6 +1279,87 @@ router.get("/notifications/barangay/:barangayName", (req, res) => {
   });
 });
 
+
+/* =========================
+   CLEAR SINGLE BARANGAY NOTIFICATION
+   User must select one notification first.
+   This only clears one notification row.
+========================= */
+router.post("/notifications/barangay/:barangayName/:notificationId/clear", (req, res) => {
+  const barangayName = decodeURIComponent(req.params.barangayName || "").trim();
+  const notificationId = parseOptionalInt(req.params.notificationId);
+  const clearedBy = cleanText(req.body && req.body.cleared_by) || barangayName || "barangay";
+
+  if (!barangayName) {
+    return res.status(400).json({
+      success: false,
+      message: "Barangay name is required."
+    });
+  }
+
+  if (!notificationId) {
+    return res.status(400).json({
+      success: false,
+      message: "Valid notification id is required."
+    });
+  }
+
+  ensureComplaintNotificationClearColumns((ensureErr) => {
+    if (ensureErr) {
+      return res.status(500).json({
+        success: false,
+        message: "Failed to prepare barangay notification clearing.",
+        error: ensureErr.message,
+        code: ensureErr.code
+      });
+    }
+
+    const sql = `
+      UPDATE complaint_notifications cn
+      INNER JOIN complaints c ON c.id = cn.complaint_id
+      SET cn.cleared_at = NOW(),
+          cn.cleared_by = ?
+      WHERE cn.id = ?
+        AND cn.target_type = 'barangay'
+        AND TRIM(LOWER(cn.target_name)) = TRIM(LOWER(?))
+        AND cn.cleared_at IS NULL
+        AND c.status IN ('forwarded', 'in_progress', 'accepted_by_barangay')
+    `;
+
+    db.query(sql, [clearedBy, notificationId, barangayName], (err, result) => {
+      if (err) {
+        console.error("Clear single barangay notification error:", err);
+        return res.status(500).json({
+          success: false,
+          message: "Failed to clear selected notification.",
+          error: err.message,
+          code: err.code
+        });
+      }
+
+      if (!result || result.affectedRows === 0) {
+        return res.status(404).json({
+          success: false,
+          message: "Selected notification was not found or already cleared."
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: "Selected notification cleared.",
+        barangay: barangayName,
+        notification_id: notificationId,
+        cleared_count: result.affectedRows || 0
+      });
+    });
+  });
+});
+
+router.patch("/notifications/barangay/:barangayName/:notificationId/clear", (req, res, next) => {
+  req.method = "POST";
+  router.handle(req, res, next);
+});
+
 /* =========================
    CLEAR BARANGAY NOTIFICATIONS
    This only clears the notification badge/dropdown.
