@@ -8,7 +8,7 @@ const db = require("../config/db");
 
    Purpose:
    - Save certificate records permanently in MySQL.
-   - Allow the Citizen mobile app to reload the certificate after logout/login.
+   - Allow the Citizen mobile app to reload the certificate after logout/login/reinstall.
    - Allow WMO/Admin to view issued certificate records later.
 
    Mount in server.js:
@@ -43,7 +43,7 @@ function parseOptionalInt(value) {
 
   const num = Number(cleaned);
 
-  if (!Number.isInteger(num)) return null;
+  if (!Number.isInteger(num) || num <= 0) return null;
 
   return num;
 }
@@ -136,10 +136,59 @@ function ensureCertificatesTable(callback) {
   db.query(sql, callback);
 }
 
+function findExistingCertificate({ citizenId, username, orientationToken, certificateNumber }, callback) {
+  const conditions = [];
+  const values = [];
+
+  if (citizenId) {
+    conditions.push("citizen_id = ?");
+    values.push(citizenId);
+  }
+
+  if (orientationToken) {
+    conditions.push("orientation_token = ?");
+    values.push(orientationToken);
+  }
+
+  if (certificateNumber) {
+    conditions.push("certificate_number = ?");
+    values.push(certificateNumber);
+  }
+
+  if (username) {
+    conditions.push("LOWER(TRIM(username)) = LOWER(TRIM(?))");
+    values.push(username);
+  }
+
+  if (conditions.length === 0) {
+    return callback(null, null);
+  }
+
+  const sql = `
+    SELECT *
+    FROM certificates
+    WHERE (${conditions.join(" OR ")})
+      AND status = 'active'
+    ORDER BY
+      CASE
+        WHEN citizen_id IS NOT NULL AND citizen_id = ? THEN 0
+        ELSE 1
+      END,
+      issued_at DESC,
+      id DESC
+    LIMIT 1
+  `;
+
+  values.push(citizenId || 0);
+
+  db.query(sql, values, (err, rows) => {
+    if (err) return callback(err);
+    return callback(null, rows && rows.length > 0 ? rows[0] : null);
+  });
+}
+
 /*
   Safe startup table creation.
-  If DB user has CREATE privilege, the table will be created automatically.
-  If not, use the SQL file included in the generated bundle.
 */
 ensureCertificatesTable((err) => {
   if (err) {
@@ -152,32 +201,41 @@ ensureCertificatesTable((err) => {
 /* =========================
    CREATE / UPSERT CERTIFICATE
    Used after citizen completes/passes orientation/test.
+
+   V2 Robust Fix:
+   - citizen_id is no longer strictly required.
+   - Saves by username/token when user_id is missing.
+   - This prevents Android session key issues from blocking persistence.
 ========================= */
 router.post("/", (req, res) => {
   const body = req.body || {};
 
-  const citizenId = parseOptionalInt(body.citizen_id || body.user_id);
+  const citizenId = parseOptionalInt(body.citizen_id || body.user_id || body.id);
   const fullName = cleanText(body.full_name || body.citizen_name || body.name);
   const username = cleanText(body.username);
   const barangay = cleanText(body.barangay || body.citizen_barangay);
   const orientationToken = cleanText(body.orientation_token || body.token || body.certificate_token);
   const certificateNumber = buildCertificateNumber(
-    body.certificate_number || body.certificate_no || orientationToken,
+    body.certificate_number ||
+      body.certificate_no ||
+      orientationToken ||
+      username ||
+      citizenId,
     citizenId
   );
   const status = normalizeStatus(body.status);
-
-  if (!citizenId) {
-    return res.status(400).json({
-      success: false,
-      message: "citizen_id is required."
-    });
-  }
 
   if (!fullName) {
     return res.status(400).json({
       success: false,
       message: "full_name is required."
+    });
+  }
+
+  if (!citizenId && !username && !orientationToken) {
+    return res.status(400).json({
+      success: false,
+      message: "At least one identifier is required: citizen_id, username, or orientation_token."
     });
   }
 
@@ -192,86 +250,140 @@ router.post("/", (req, res) => {
       });
     }
 
-    const sql = `
-      INSERT INTO certificates (
-        citizen_id,
-        full_name,
+    findExistingCertificate(
+      {
+        citizenId,
         username,
-        barangay,
-        orientation_token,
-        certificate_number,
-        issued_at,
-        status
-      )
-      VALUES (?, ?, ?, ?, ?, ?, NOW(), ?)
-      ON DUPLICATE KEY UPDATE
-        full_name = VALUES(full_name),
-        username = VALUES(username),
-        barangay = VALUES(barangay),
-        orientation_token = COALESCE(VALUES(orientation_token), orientation_token),
-        certificate_number = VALUES(certificate_number),
-        status = VALUES(status),
-        updated_at = NOW(),
-        id = LAST_INSERT_ID(id)
-    `;
-
-    const values = [
-      citizenId,
-      fullName,
-      username || null,
-      barangay || null,
-      orientationToken || null,
-      certificateNumber,
-      status
-    ];
-
-    db.query(sql, values, (err, result) => {
-      if (err) {
-        console.error("Create certificate error:", err);
-        return res.status(500).json({
-          success: false,
-          message: "Failed to save certificate record.",
-          error: err.message,
-          code: err.code
-        });
-      }
-
-      const certificateId = result && result.insertId ? result.insertId : null;
-
-      const findSql = `
-        SELECT *
-        FROM certificates
-        WHERE id = ?
-        LIMIT 1
-      `;
-
-      db.query(findSql, [certificateId], (findErr, rows) => {
+        orientationToken,
+        certificateNumber
+      },
+      (findErr, existingCertificate) => {
         if (findErr) {
-          console.error("Find saved certificate error:", findErr);
+          console.error("Find existing certificate error:", findErr);
           return res.status(500).json({
             success: false,
-            message: "Certificate saved but failed to reload record.",
+            message: "Failed to check existing certificate.",
             error: findErr.message,
             code: findErr.code
           });
         }
 
-        const certificate = rows && rows.length > 0 ? normalizeCertificate(rows[0]) : null;
+        if (existingCertificate) {
+          const updateSql = `
+            UPDATE certificates
+            SET
+              citizen_id = COALESCE(?, citizen_id),
+              full_name = ?,
+              username = COALESCE(NULLIF(?, ''), username),
+              barangay = COALESCE(NULLIF(?, ''), barangay),
+              orientation_token = COALESCE(NULLIF(?, ''), orientation_token),
+              certificate_number = ?,
+              status = ?,
+              updated_at = NOW()
+            WHERE id = ?
+            LIMIT 1
+          `;
 
-        return res.json({
-          success: true,
-          message: "Certificate record saved successfully.",
-          has_certificate: Boolean(certificate),
-          certificate
+          const updateValues = [
+            citizenId,
+            fullName,
+            username,
+            barangay,
+            orientationToken,
+            certificateNumber,
+            status,
+            existingCertificate.id
+          ];
+
+          return db.query(updateSql, updateValues, (updateErr) => {
+            if (updateErr) {
+              console.error("Update certificate error:", updateErr);
+              return res.status(500).json({
+                success: false,
+                message: "Failed to update certificate record.",
+                error: updateErr.message,
+                code: updateErr.code
+              });
+            }
+
+            return reloadCertificateById(existingCertificate.id, res, "Certificate record updated successfully.");
+          });
+        }
+
+        const insertSql = `
+          INSERT INTO certificates (
+            citizen_id,
+            full_name,
+            username,
+            barangay,
+            orientation_token,
+            certificate_number,
+            issued_at,
+            status
+          )
+          VALUES (?, ?, ?, ?, ?, ?, NOW(), ?)
+        `;
+
+        const insertValues = [
+          citizenId,
+          fullName,
+          username || null,
+          barangay || null,
+          orientationToken || null,
+          certificateNumber,
+          status
+        ];
+
+        db.query(insertSql, insertValues, (insertErr, result) => {
+          if (insertErr) {
+            console.error("Create certificate error:", insertErr);
+            return res.status(500).json({
+              success: false,
+              message: "Failed to save certificate record.",
+              error: insertErr.message,
+              code: insertErr.code
+            });
+          }
+
+          return reloadCertificateById(result.insertId, res, "Certificate record saved successfully.");
         });
-      });
-    });
+      }
+    );
   });
 });
 
+function reloadCertificateById(id, res, message) {
+  const sql = `
+    SELECT *
+    FROM certificates
+    WHERE id = ?
+    LIMIT 1
+  `;
+
+  db.query(sql, [id], (findErr, rows) => {
+    if (findErr) {
+      console.error("Find saved certificate error:", findErr);
+      return res.status(500).json({
+        success: false,
+        message: "Certificate saved but failed to reload record.",
+        error: findErr.message,
+        code: findErr.code
+      });
+    }
+
+    const certificate = rows && rows.length > 0 ? normalizeCertificate(rows[0]) : null;
+
+    return res.json({
+      success: true,
+      message,
+      has_certificate: Boolean(certificate),
+      certificate
+    });
+  });
+}
+
 /* =========================
    GET CERTIFICATE BY USER ID
-   Used by CitizenHomeActivity / CertificateActivity.
 ========================= */
 router.get("/user/:userId", (req, res) => {
   const userId = parseOptionalInt(req.params.userId);
@@ -331,10 +443,8 @@ router.get("/user/:userId", (req, res) => {
   });
 });
 
-
 /* =========================
    GET CERTIFICATE BY USERNAME
-   Fallback lookup when Android session has username but no numeric user_id.
 ========================= */
 router.get("/username/:username", (req, res) => {
   const username = cleanText(req.params.username);
@@ -396,7 +506,6 @@ router.get("/username/:username", (req, res) => {
 
 /* =========================
    GET CERTIFICATE BY TOKEN
-   Optional lookup by orientation/certificate token.
 ========================= */
 router.get("/token/:token", (req, res) => {
   const token = cleanText(req.params.token);
@@ -458,7 +567,6 @@ router.get("/token/:token", (req, res) => {
 
 /* =========================
    GET ALL CERTIFICATES
-   For WMO/Admin certificate records.
 ========================= */
 router.get("/", (req, res) => {
   ensureCertificatesTable((tableErr) => {
