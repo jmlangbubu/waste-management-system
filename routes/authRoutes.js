@@ -9,14 +9,14 @@ let nodemailer = null;
 try {
   nodemailer = require("nodemailer");
 } catch (err) {
-  console.warn("⚠️ nodemailer is not installed. Email verification sending will be disabled.");
+  console.warn("⚠️ nodemailer is not installed. Run: npm install nodemailer");
 }
 
 console.log("✅ authRoutes.js file executed");
 
-/* =========================
-   SMALL HELPERS
-========================= */
+/* =========================================================
+   HELPERS
+   ========================================================= */
 
 function cleanText(value) {
   if (value === null || value === undefined) return "";
@@ -32,18 +32,26 @@ function cleanText(value) {
 
 function isValidEmail(email) {
   const value = cleanText(email).toLowerCase();
-
   if (!value) return false;
 
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
-function getUsersColumnSet(callback) {
-  const sql = `SHOW COLUMNS FROM users`;
+function generateVerificationCode() {
+  return String(crypto.randomInt(100000, 999999));
+}
 
-  db.query(sql, (err, rows) => {
+function getVerificationExpiryDate() {
+  return new Date(Date.now() + 15 * 60 * 1000);
+}
+
+function toMySqlDateTime(date) {
+  return date.toISOString().slice(0, 19).replace("T", " ");
+}
+
+function getUsersColumnSet(callback) {
+  db.query("SHOW COLUMNS FROM users", (err, rows) => {
     if (err) {
-      console.error("Failed to inspect users columns:", err);
       return callback(err, new Set());
     }
 
@@ -69,10 +77,6 @@ function runSequentialSql(sqlList, callback) {
 
     db.query(statements[index], (err) => {
       if (err) {
-        /*
-          If a concurrent request already added the same column,
-          do not break the app.
-        */
         if (err.code === "ER_DUP_FIELDNAME") {
           return runNext(index + 1);
         }
@@ -87,7 +91,7 @@ function runSequentialSql(sqlList, callback) {
   return runNext(0);
 }
 
-function ensureEmailVerificationColumns(callback) {
+function ensureUsersEmailColumns(callback) {
   getUsersColumnSet((columnErr, columnSet) => {
     if (columnErr) {
       return callback(columnErr);
@@ -109,17 +113,10 @@ function ensureEmailVerificationColumns(callback) {
       `);
     }
 
-    if (!hasColumn(columnSet, "email_verification_code")) {
+    if (!hasColumn(columnSet, "email_verified_at")) {
       alterSql.push(`
         ALTER TABLE users
-        ADD COLUMN email_verification_code VARCHAR(10) NULL
-      `);
-    }
-
-    if (!hasColumn(columnSet, "email_verification_expires_at")) {
-      alterSql.push(`
-        ALTER TABLE users
-        ADD COLUMN email_verification_expires_at DATETIME NULL
+        ADD COLUMN email_verified_at DATETIME NULL
       `);
     }
 
@@ -129,44 +126,63 @@ function ensureEmailVerificationColumns(callback) {
 
     runSequentialSql(alterSql, (alterErr) => {
       if (alterErr) {
-        console.error("Failed to add email verification columns:", alterErr);
+        console.error("Failed to add users email columns:", alterErr);
         return callback(alterErr);
       }
 
-      console.log("Users email verification columns checked/added.");
+      console.log("✅ users email columns checked/added.");
       return callback(null);
     });
   });
 }
 
-function generateVerificationCode() {
-  return String(crypto.randomInt(100000, 999999));
+function ensurePendingCitizenSignupsTable(callback) {
+  const sql = `
+    CREATE TABLE IF NOT EXISTS pending_citizen_signups (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      full_name VARCHAR(255) NOT NULL,
+      username VARCHAR(100) NOT NULL,
+      email VARCHAR(255) NOT NULL,
+      password VARCHAR(255) NOT NULL,
+      barangay VARCHAR(150) NOT NULL,
+      verification_code VARCHAR(10) NOT NULL,
+      verification_expires_at DATETIME NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY unique_pending_username (username),
+      UNIQUE KEY unique_pending_email (email)
+    )
+  `;
+
+  db.query(sql, (err) => {
+    if (err) {
+      console.error("Failed to create pending_citizen_signups table:", err);
+      return callback(err);
+    }
+
+    return callback(null);
+  });
 }
 
-function getVerificationExpiryDate() {
-  return new Date(Date.now() + 15 * 60 * 1000);
-}
+function ensureAuthTables(callback) {
+  ensureUsersEmailColumns((usersErr) => {
+    if (usersErr) {
+      return callback(usersErr);
+    }
 
-function toMySqlDateTime(date) {
-  return date.toISOString().slice(0, 19).replace("T", " ");
+    ensurePendingCitizenSignupsTable((pendingErr) => {
+      if (pendingErr) {
+        return callback(pendingErr);
+      }
+
+      return callback(null);
+    });
+  });
 }
 
 function createMailTransporter() {
   if (!nodemailer) return null;
 
-  /*
-    Recommended ENV for Render:
-    SMTP_HOST=smtp.gmail.com
-    SMTP_PORT=465
-    SMTP_SECURE=true
-    SMTP_USER=your_email@gmail.com
-    SMTP_PASS=your_app_password
-    SMTP_FROM="AI Waste Management <your_email@gmail.com>"
-
-    Fallback ENV also supported:
-    EMAIL_USER=your_email@gmail.com
-    EMAIL_PASS=your_app_password
-  */
   const smtpHost = cleanText(process.env.SMTP_HOST);
   const smtpPort = Number(process.env.SMTP_PORT || 465);
   const smtpUser = cleanText(process.env.SMTP_USER || process.env.EMAIL_USER);
@@ -204,7 +220,7 @@ async function sendVerificationEmail(email, fullName, verificationCode) {
   if (!transporter) {
     return {
       sent: false,
-      reason: "Email service is not configured."
+      reason: "Email service is not configured. Check SMTP_USER and SMTP_PASS."
     };
   }
 
@@ -257,9 +273,25 @@ async function sendVerificationEmail(email, fullName, verificationCode) {
   };
 }
 
-/* =========================
-   TEST
-========================= */
+function getErrorMessageFromEmailSend(error) {
+  if (!error) {
+    return "Verification email could not be sent.";
+  }
+
+  if (error.response) {
+    return error.response;
+  }
+
+  if (error.message) {
+    return error.message;
+  }
+
+  return "Verification email could not be sent.";
+}
+
+/* =========================================================
+   ROUTES
+   ========================================================= */
 
 router.get("/test", (req, res) => {
   res.json({
@@ -268,11 +300,14 @@ router.get("/test", (req, res) => {
   });
 });
 
-/* =========================
-   REGISTER CITIZEN
-   Requires email for verification.
-========================= */
-
+/*
+  REGISTER FLOW:
+  1. Validate user details.
+  2. Check users table for existing username/email.
+  3. Store details in pending_citizen_signups only.
+  4. Send code to Gmail.
+  5. No row is inserted into users yet.
+*/
 router.post("/register", async (req, res) => {
   const fullName = cleanText(req.body ? req.body.full_name : null);
   const username = cleanText(req.body ? req.body.username : null);
@@ -287,17 +322,17 @@ router.post("/register", async (req, res) => {
     });
   }
 
-  if (!isValidEmail(email)) {
-    return res.status(400).json({
-      success: false,
-      message: "Please enter a valid email address"
-    });
-  }
-
   if (username.length < 3) {
     return res.status(400).json({
       success: false,
       message: "Username must be at least 3 characters"
+    });
+  }
+
+  if (!isValidEmail(email)) {
+    return res.status(400).json({
+      success: false,
+      message: "Please enter a valid email address"
     });
   }
 
@@ -308,17 +343,17 @@ router.post("/register", async (req, res) => {
     });
   }
 
-  ensureEmailVerificationColumns((ensureErr) => {
+  ensureAuthTables((ensureErr) => {
     if (ensureErr) {
       return res.status(500).json({
         success: false,
-        message: "Failed to prepare email verification fields.",
+        message: "Failed to prepare signup verification tables.",
         error: ensureErr.message,
         code: ensureErr.code
       });
     }
 
-    const checkUserSql = `
+    const checkExistingUserSql = `
       SELECT id, username, email
       FROM users
       WHERE username = ?
@@ -326,11 +361,11 @@ router.post("/register", async (req, res) => {
       LIMIT 1
     `;
 
-    db.query(checkUserSql, [username, email], async (checkErr, checkResults) => {
+    db.query(checkExistingUserSql, [username, email], async (checkErr, checkResults) => {
       if (checkErr) {
         return res.status(500).json({
           success: false,
-          message: "Database error while checking username/email",
+          message: "Database error while checking existing account",
           error: checkErr.message
         });
       }
@@ -338,9 +373,7 @@ router.post("/register", async (req, res) => {
       if (checkResults && checkResults.length > 0) {
         const existingUser = checkResults[0];
 
-        if (
-          cleanText(existingUser.username).toLowerCase() === username.toLowerCase()
-        ) {
+        if (cleanText(existingUser.username).toLowerCase() === username.toLowerCase()) {
           return res.status(409).json({
             success: false,
             message: "Username already exists"
@@ -358,80 +391,103 @@ router.post("/register", async (req, res) => {
         const verificationCode = generateVerificationCode();
         const verificationExpiresAt = toMySqlDateTime(getVerificationExpiryDate());
 
-        const insertSql = `
-          INSERT INTO users (
-            full_name,
-            username,
-            email,
-            password,
-            role,
-            barangay,
-            status,
-            email_verified,
-            email_verification_code,
-            email_verification_expires_at
-          )
-          VALUES (?, ?, ?, ?, 'citizen', ?, 'active', 0, ?, ?)
+        /*
+          Replace old pending attempt with the newest one.
+          This lets a user retry signup if they typed the wrong code or code expired.
+        */
+        const deletePendingSql = `
+          DELETE FROM pending_citizen_signups
+          WHERE username = ?
+             OR LOWER(TRIM(email)) = LOWER(TRIM(?))
         `;
 
-        db.query(
-          insertSql,
-          [
-            fullName,
-            username,
-            email,
-            hashedPassword,
-            barangay,
-            verificationCode,
-            verificationExpiresAt
-          ],
-          async (insertErr, insertResult) => {
-            if (insertErr) {
-              return res.status(500).json({
-                success: false,
-                message: "Database error while creating account",
-                error: insertErr.message,
-                code: insertErr.code
-              });
-            }
-
-            let emailResult = {
-              sent: false,
-              reason: "Email service is not configured."
-            };
-
-            try {
-              emailResult = await sendVerificationEmail(email, fullName, verificationCode);
-            } catch (emailErr) {
-              console.error("Verification email send failed:", emailErr);
-              emailResult = {
-                sent: false,
-                reason: emailErr.message
-              };
-            }
-
-            const message = emailResult.sent
-              ? "Account created. Please check your email for the verification code."
-              : "Account created, but the verification email could not be sent. Please contact WMO support.";
-
-            return res.status(201).json({
-              success: true,
-              message,
-              verification_required: true,
-              verification_email_sent: emailResult.sent,
-              email,
-              user: {
-                id: insertResult.insertId,
-                full_name: fullName,
-                username,
-                role: "citizen",
-                barangay: barangay || "",
-                email,
-                email_verified: false
-              }
+        db.query(deletePendingSql, [username, email], (deleteErr) => {
+          if (deleteErr) {
+            return res.status(500).json({
+              success: false,
+              message: "Database error while resetting previous pending signup",
+              error: deleteErr.message
             });
           }
-        );
+
+          const insertPendingSql = `
+            INSERT INTO pending_citizen_signups (
+              full_name,
+              username,
+              email,
+              password,
+              barangay,
+              verification_code,
+              verification_expires_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+          `;
+
+          db.query(
+            insertPendingSql,
+            [
+              fullName,
+              username,
+              email,
+              hashedPassword,
+              barangay,
+              verificationCode,
+              verificationExpiresAt
+            ],
+            async (insertErr) => {
+              if (insertErr) {
+                return res.status(500).json({
+                  success: false,
+                  message: "Database error while saving pending signup",
+                  error: insertErr.message,
+                  code: insertErr.code
+                });
+              }
+
+              try {
+                const emailResult = await sendVerificationEmail(email, fullName, verificationCode);
+
+                if (!emailResult.sent) {
+                  db.query(
+                    "DELETE FROM pending_citizen_signups WHERE LOWER(TRIM(email)) = LOWER(TRIM(?))",
+                    [email],
+                    () => {}
+                  );
+
+                  return res.status(500).json({
+                    success: false,
+                    message: "Verification email was not sent. Account was not created. Please check SMTP settings.",
+                    email_sent: false,
+                    reason: emailResult.reason
+                  });
+                }
+
+                return res.status(201).json({
+                  success: true,
+                  message: "Verification code sent. Please check your email.",
+                  verification_required: true,
+                  email_sent: true,
+                  email
+                });
+              } catch (emailErr) {
+                console.error("Verification email send failed:", emailErr);
+
+                db.query(
+                  "DELETE FROM pending_citizen_signups WHERE LOWER(TRIM(email)) = LOWER(TRIM(?))",
+                  [email],
+                  () => {}
+                );
+
+                return res.status(500).json({
+                  success: false,
+                  message: "Verification email was not sent. Account was not created. Please check SMTP settings.",
+                  email_sent: false,
+                  error: getErrorMessageFromEmailSend(emailErr)
+                });
+              }
+            }
+          );
+        });
       } catch (hashErr) {
         return res.status(500).json({
           success: false,
@@ -443,10 +499,13 @@ router.post("/register", async (req, res) => {
   });
 });
 
-/* =========================
-   VERIFY EMAIL CODE
-========================= */
-
+/*
+  VERIFY FLOW:
+  1. Check pending_citizen_signups by email.
+  2. Validate code and expiration.
+  3. Insert into users only after successful verification.
+  4. Delete pending signup.
+*/
 router.post("/verify-email", (req, res) => {
   const email = cleanText(req.body ? req.body.email : null).toLowerCase();
   const code = cleanText(req.body ? req.body.code : null);
@@ -465,29 +524,24 @@ router.post("/verify-email", (req, res) => {
     });
   }
 
-  ensureEmailVerificationColumns((ensureErr) => {
+  ensureAuthTables((ensureErr) => {
     if (ensureErr) {
       return res.status(500).json({
         success: false,
-        message: "Failed to prepare email verification fields.",
+        message: "Failed to prepare signup verification tables.",
         error: ensureErr.message,
         code: ensureErr.code
       });
     }
 
-    const findSql = `
-      SELECT
-        id,
-        email,
-        email_verified,
-        email_verification_code,
-        email_verification_expires_at
-      FROM users
+    const findPendingSql = `
+      SELECT *
+      FROM pending_citizen_signups
       WHERE LOWER(TRIM(email)) = LOWER(TRIM(?))
       LIMIT 1
     `;
 
-    db.query(findSql, [email], (findErr, rows) => {
+    db.query(findPendingSql, [email], (findErr, rows) => {
       if (findErr) {
         return res.status(500).json({
           success: false,
@@ -499,30 +553,21 @@ router.post("/verify-email", (req, res) => {
       if (!rows || rows.length === 0) {
         return res.status(404).json({
           success: false,
-          message: "Account not found"
+          message: "No pending signup found. Please sign up again."
         });
       }
 
-      const user = rows[0];
+      const pendingUser = rows[0];
 
-      if (Number(user.email_verified || 0) === 1) {
-        return res.json({
-          success: true,
-          message: "Email is already verified"
-        });
-      }
-
-      const savedCode = cleanText(user.email_verification_code);
-
-      if (!savedCode || savedCode !== code) {
+      if (cleanText(pendingUser.verification_code) !== code) {
         return res.status(400).json({
           success: false,
           message: "Invalid verification code"
         });
       }
 
-      const expiresAt = user.email_verification_expires_at
-        ? new Date(user.email_verification_expires_at)
+      const expiresAt = pendingUser.verification_expires_at
+        ? new Date(pendingUser.verification_expires_at)
         : null;
 
       if (!expiresAt || Date.now() > expiresAt.getTime()) {
@@ -532,37 +577,98 @@ router.post("/verify-email", (req, res) => {
         });
       }
 
-      const updateSql = `
-        UPDATE users
-        SET email_verified = 1,
-            email_verification_code = NULL,
-            email_verification_expires_at = NULL,
-            status = 'active'
-        WHERE id = ?
+      const checkExistingUserSql = `
+        SELECT id, username, email
+        FROM users
+        WHERE username = ?
+           OR LOWER(TRIM(email)) = LOWER(TRIM(?))
+        LIMIT 1
       `;
 
-      db.query(updateSql, [user.id], (updateErr) => {
-        if (updateErr) {
-          return res.status(500).json({
-            success: false,
-            message: "Failed to verify email",
-            error: updateErr.message
-          });
-        }
+      db.query(
+        checkExistingUserSql,
+        [pendingUser.username, pendingUser.email],
+        (checkErr, existingRows) => {
+          if (checkErr) {
+            return res.status(500).json({
+              success: false,
+              message: "Database error while finalizing account",
+              error: checkErr.message
+            });
+          }
 
-        return res.json({
-          success: true,
-          message: "Email verified successfully. You can now log in."
-        });
-      });
+          if (existingRows && existingRows.length > 0) {
+            return res.status(409).json({
+              success: false,
+              message: "Account already exists. Please go back to login."
+            });
+          }
+
+          const insertUserSql = `
+            INSERT INTO users (
+              full_name,
+              username,
+              email,
+              password,
+              role,
+              barangay,
+              status,
+              email_verified,
+              email_verified_at
+            )
+            VALUES (?, ?, ?, ?, 'citizen', ?, 'active', 1, NOW())
+          `;
+
+          db.query(
+            insertUserSql,
+            [
+              pendingUser.full_name,
+              pendingUser.username,
+              pendingUser.email,
+              pendingUser.password,
+              pendingUser.barangay
+            ],
+            (insertErr, insertResult) => {
+              if (insertErr) {
+                return res.status(500).json({
+                  success: false,
+                  message: "Database error while creating verified account",
+                  error: insertErr.message,
+                  code: insertErr.code
+                });
+              }
+
+              db.query(
+                "DELETE FROM pending_citizen_signups WHERE id = ?",
+                [pendingUser.id],
+                () => {}
+              );
+
+              return res.status(201).json({
+                success: true,
+                message: "Email verified successfully. Your account is now created.",
+                user: {
+                  id: insertResult.insertId,
+                  full_name: pendingUser.full_name,
+                  username: pendingUser.username,
+                  email: pendingUser.email,
+                  role: "citizen",
+                  barangay: pendingUser.barangay || "",
+                  email_verified: true
+                }
+              });
+            }
+          );
+        }
+      );
     });
   });
 });
 
-/* =========================
-   RESEND VERIFICATION CODE
-========================= */
-
+/*
+  RESEND FLOW:
+  Resend code only for pending signups.
+*/
 router.post("/resend-verification", (req, res) => {
   const email = cleanText(req.body ? req.body.email : null).toLowerCase();
   const username = cleanText(req.body ? req.body.username : null);
@@ -574,34 +680,29 @@ router.post("/resend-verification", (req, res) => {
     });
   }
 
-  ensureEmailVerificationColumns((ensureErr) => {
+  ensureAuthTables((ensureErr) => {
     if (ensureErr) {
       return res.status(500).json({
         success: false,
-        message: "Failed to prepare email verification fields.",
+        message: "Failed to prepare signup verification tables.",
         error: ensureErr.message,
         code: ensureErr.code
       });
     }
 
-    const findSql = `
-      SELECT
-        id,
-        full_name,
-        username,
-        email,
-        email_verified
-      FROM users
+    const findPendingSql = `
+      SELECT *
+      FROM pending_citizen_signups
       WHERE LOWER(TRIM(email)) = LOWER(TRIM(?))
          OR username = ?
       LIMIT 1
     `;
 
-    db.query(findSql, [email, username], async (findErr, rows) => {
+    db.query(findPendingSql, [email, username], (findErr, rows) => {
       if (findErr) {
         return res.status(500).json({
           success: false,
-          message: "Database error while finding account",
+          message: "Database error while finding pending signup",
           error: findErr.message
         });
       }
@@ -609,90 +710,70 @@ router.post("/resend-verification", (req, res) => {
       if (!rows || rows.length === 0) {
         return res.status(404).json({
           success: false,
-          message: "Account not found"
+          message: "No pending signup found. Please sign up again."
         });
       }
 
-      const user = rows[0];
+      const pendingUser = rows[0];
+      const newCode = generateVerificationCode();
+      const newExpiresAt = toMySqlDateTime(getVerificationExpiryDate());
 
-      if (!isValidEmail(user.email)) {
-        return res.status(400).json({
-          success: false,
-          message: "This account does not have a valid email address"
-        });
-      }
-
-      if (Number(user.email_verified || 0) === 1) {
-        return res.json({
-          success: true,
-          message: "Email is already verified"
-        });
-      }
-
-      const verificationCode = generateVerificationCode();
-      const verificationExpiresAt = toMySqlDateTime(getVerificationExpiryDate());
-
-      const updateSql = `
-        UPDATE users
-        SET email_verification_code = ?,
-            email_verification_expires_at = ?
+      const updatePendingSql = `
+        UPDATE pending_citizen_signups
+        SET verification_code = ?,
+            verification_expires_at = ?
         WHERE id = ?
       `;
 
-      db.query(
-        updateSql,
-        [verificationCode, verificationExpiresAt, user.id],
-        async (updateErr) => {
-          if (updateErr) {
-            return res.status(500).json({
-              success: false,
-              message: "Failed to update verification code",
-              error: updateErr.message
-            });
-          }
+      db.query(updatePendingSql, [newCode, newExpiresAt, pendingUser.id], async (updateErr) => {
+        if (updateErr) {
+          return res.status(500).json({
+            success: false,
+            message: "Failed to update verification code",
+            error: updateErr.message
+          });
+        }
 
-          let emailResult = {
-            sent: false,
-            reason: "Email service is not configured."
-          };
-
-          try {
-            emailResult = await sendVerificationEmail(
-              user.email,
-              user.full_name || user.username,
-              verificationCode
-            );
-          } catch (emailErr) {
-            console.error("Resend verification email failed:", emailErr);
-            emailResult = {
-              sent: false,
-              reason: emailErr.message
-            };
-          }
+        try {
+          const emailResult = await sendVerificationEmail(
+            pendingUser.email,
+            pendingUser.full_name,
+            newCode
+          );
 
           if (!emailResult.sent) {
             return res.status(500).json({
               success: false,
-              message: "Verification code was updated, but the email could not be sent. Please contact WMO support.",
-              verification_email_sent: false
+              message: "Verification email was not sent. Please check SMTP settings.",
+              email_sent: false,
+              reason: emailResult.reason
             });
           }
 
           return res.json({
             success: true,
             message: "Verification code resent. Please check your email.",
-            verification_email_sent: true
+            email_sent: true
+          });
+        } catch (emailErr) {
+          console.error("Resend verification email failed:", emailErr);
+
+          return res.status(500).json({
+            success: false,
+            message: "Verification email was not sent. Please check SMTP settings.",
+            email_sent: false,
+            error: getErrorMessageFromEmailSend(emailErr)
           });
         }
-      );
+      });
     });
   });
 });
 
-/* =========================
-   LOGIN
-========================= */
-
+/*
+  LOGIN:
+  Pending signups are not in users table, so they cannot login yet.
+*/
 router.post("/login", (req, res) => {
   console.log("==== LOGIN REQUEST START ====");
   console.log("headers content-type:", req.headers["content-type"]);
@@ -715,11 +796,11 @@ router.post("/login", (req, res) => {
     });
   }
 
-  ensureEmailVerificationColumns((ensureErr) => {
+  ensureUsersEmailColumns((ensureErr) => {
     if (ensureErr) {
       return res.status(500).json({
         success: false,
-        message: "Failed to prepare email verification fields.",
+        message: "Failed to prepare login fields.",
         error: ensureErr.message,
         code: ensureErr.code
       });
@@ -788,8 +869,9 @@ router.post("/login", (req, res) => {
       }
 
       /*
-        Only accounts with an email address are required to verify.
-        Older accounts without an email remain compatible.
+        Compatibility:
+        Old accounts without email are allowed.
+        New citizen accounts created through verify-email have email_verified = 1.
       */
       if (cleanText(user.email) && Number(user.email_verified || 0) !== 1) {
         return res.status(403).json({
