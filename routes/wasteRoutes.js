@@ -596,6 +596,34 @@ router.get("/history", (req, res) => {
   });
 });
 
+
+/* =========================================
+   CLEAR ALL SCAN HISTORY
+   Used by Android Scan History "Clear All".
+========================================= */
+router.delete("/history", (req, res) => {
+  const sql = `DELETE FROM scan_history`;
+
+  db.query(sql, (err, result) => {
+    if (err) {
+      console.error("[DB] Failed to clear scan history:", err);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to clear scan history",
+        error: err.message
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: "All scan history deleted successfully",
+      deleted_count: result && typeof result.affectedRows === "number"
+        ? result.affectedRows
+        : 0
+    });
+  });
+});
+
 /* =========================================
    DELETE SCAN HISTORY
 ========================================= */
