@@ -1,8 +1,190 @@
 const express = require("express");
 const router = express.Router();
+const path = require("path");
+const fs = require("fs");
 const db = require("../config/db");
 const { analyzeWaste } = require("../services/wasteAnalysisService");
 const wasteController = require("../controllers/wasteController");
+
+/* =========================================
+   SCAN IMAGE STORAGE HELPERS
+   - Saves the base64 image sent by the Android scanner.
+   - Stores the public URL in scan_history.image_url.
+   - /uploads is already served by server.js.
+========================================= */
+const UPLOADS_DIR = path.join(__dirname, "..", "uploads");
+const WASTE_SCAN_UPLOADS_DIR = path.join(UPLOADS_DIR, "waste-scans");
+
+if (!fs.existsSync(WASTE_SCAN_UPLOADS_DIR)) {
+  fs.mkdirSync(WASTE_SCAN_UPLOADS_DIR, { recursive: true });
+}
+
+function cleanText(value) {
+  if (value === null || value === undefined) return "";
+
+  const text = String(value).trim();
+
+  if (!text || text.toLowerCase() === "null" || text.toLowerCase() === "undefined") {
+    return "";
+  }
+
+  return text;
+}
+
+function getScanHistoryColumnSet(callback) {
+  const sql = `SHOW COLUMNS FROM scan_history`;
+
+  db.query(sql, (err, rows) => {
+    if (err) {
+      console.error("[DB] Failed to inspect scan_history columns:", err);
+      return callback(err, new Set());
+    }
+
+    const columnSet = new Set(
+      (rows || []).map((row) => String(row.Field || "").trim())
+    );
+
+    return callback(null, columnSet);
+  });
+}
+
+function hasColumn(columnSet, columnName) {
+  return columnSet && columnSet.has(columnName);
+}
+
+function ensureScanHistoryOptionalColumns(callback) {
+  getScanHistoryColumnSet((columnErr, columnSet) => {
+    if (columnErr) {
+      return callback(columnErr, columnSet || new Set());
+    }
+
+    const alters = [];
+
+    if (!hasColumn(columnSet, "image_url")) {
+      alters.push("ADD COLUMN image_url VARCHAR(500) NULL");
+    }
+
+    if (!hasColumn(columnSet, "analysis_source")) {
+      alters.push("ADD COLUMN analysis_source VARCHAR(120) NULL");
+    }
+
+    if (!hasColumn(columnSet, "ai_label")) {
+      alters.push("ADD COLUMN ai_label VARCHAR(255) NULL");
+    }
+
+    if (!hasColumn(columnSet, "ai_confidence")) {
+      alters.push("ADD COLUMN ai_confidence VARCHAR(50) NULL");
+    }
+
+    if (alters.length === 0) {
+      return callback(null, columnSet);
+    }
+
+    const alterSql = `
+      ALTER TABLE scan_history
+      ${alters.join(",\n      ")}
+    `;
+
+    db.query(alterSql, (alterErr) => {
+      if (alterErr) {
+        console.error("[DB] Failed to add optional scan_history columns:", alterErr);
+        console.error("[DB] The API will continue, but captured image URLs may not be saved until columns are added.");
+        return callback(null, columnSet);
+      }
+
+      return getScanHistoryColumnSet(callback);
+    });
+  });
+}
+
+ensureScanHistoryOptionalColumns((err) => {
+  if (err) {
+    console.error("[DB] scan_history optional column check failed:", err.message);
+  } else {
+    console.log("[DB] scan_history optional columns ready.");
+  }
+});
+
+function getBase64Payload(image) {
+  const raw = cleanText(image);
+
+  if (!raw) return "";
+
+  const commaIndex = raw.indexOf(",");
+
+  if (raw.startsWith("data:image/") && commaIndex !== -1) {
+    return raw.substring(commaIndex + 1);
+  }
+
+  return raw;
+}
+
+function inferImageExtension(buffer, rawImage) {
+  const raw = cleanText(rawImage).toLowerCase();
+
+  if (raw.startsWith("data:image/png")) return "png";
+  if (raw.startsWith("data:image/webp")) return "webp";
+  if (raw.startsWith("data:image/jpeg") || raw.startsWith("data:image/jpg")) return "jpg";
+
+  if (buffer && buffer.length >= 12) {
+    if (buffer[0] === 0xff && buffer[1] === 0xd8) return "jpg";
+    if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) return "png";
+    if (
+      buffer[0] === 0x52 &&
+      buffer[1] === 0x49 &&
+      buffer[2] === 0x46 &&
+      buffer[3] === 0x46
+    ) {
+      return "webp";
+    }
+  }
+
+  return "jpg";
+}
+
+function saveScanImageFromBase64(image) {
+  try {
+    const payload = getBase64Payload(image);
+
+    if (!payload) {
+      return null;
+    }
+
+    const buffer = Buffer.from(payload, "base64");
+
+    if (!buffer || buffer.length <= 0) {
+      return null;
+    }
+
+    const ext = inferImageExtension(buffer, image);
+    const fileName = `scan_${Date.now()}_${Math.round(Math.random() * 1000000000)}.${ext}`;
+    const filePath = path.join(WASTE_SCAN_UPLOADS_DIR, fileName);
+
+    fs.writeFileSync(filePath, buffer);
+
+    return {
+      fileName,
+      filePath,
+      imageUrl: `/uploads/waste-scans/${fileName}`,
+      sizeBytes: buffer.length
+    };
+  } catch (err) {
+    console.error("[UPLOAD] Failed to save scan image:", err);
+    return null;
+  }
+}
+
+function getFirstAvailableString(row, keys) {
+  for (const key of keys) {
+    const value = cleanText(row ? row[key] : "");
+
+    if (value) {
+      return value;
+    }
+  }
+
+  return "";
+}
 
 function buildEmergencyResult(detectedObject = "", mlKitLabels = []) {
   const objectText = String(detectedObject || "").toLowerCase();
@@ -193,60 +375,108 @@ router.post("/analyze", async (req, res) => {
     const aiConfidence = analysisResult.aiConfidence || null;
     const analysisSource = analysisResult.analysisSource || "fallback";
 
-    const insertSql = `
-      INSERT INTO scan_history
-      (item_name, category, explanation, action_text, warning_text, detected_object, image_length)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `;
+    const savedScanImage = saveScanImageFromBase64(image);
+    const imageUrl = savedScanImage ? savedScanImage.imageUrl : null;
 
-    const values = [
-      String(itemName),
-      String(category),
-      String(explanation),
-      String(action),
-      String(warning),
-      String(savedDetectedObject),
-      Number(image.length || 0)
-    ];
+    ensureScanHistoryOptionalColumns((columnErr, columnSet) => {
+      if (columnErr) {
+        console.error("[DB] Failed to inspect scan_history columns before insert:", columnErr);
+      }
 
-    db.query(insertSql, values, (err, result) => {
-      if (err) {
-        console.error("[DB] Failed to save scan history:", err);
-        console.error("[DB] Returning success anyway for app stability.");
+      const insertColumns = [
+        "item_name",
+        "category",
+        "explanation",
+        "action_text",
+        "warning_text",
+        "detected_object",
+        "image_length"
+      ];
+
+      const values = [
+        String(itemName),
+        String(category),
+        String(explanation),
+        String(action),
+        String(warning),
+        String(savedDetectedObject),
+        Number(image.length || 0)
+      ];
+
+      if (imageUrl && hasColumn(columnSet, "image_url")) {
+        insertColumns.push("image_url");
+        values.push(imageUrl);
+      }
+
+      if (hasColumn(columnSet, "analysis_source")) {
+        insertColumns.push("analysis_source");
+        values.push(String(analysisSource || ""));
+      }
+
+      if (hasColumn(columnSet, "ai_label")) {
+        insertColumns.push("ai_label");
+        values.push(aiLabel ? String(aiLabel) : null);
+      }
+
+      if (hasColumn(columnSet, "ai_confidence")) {
+        insertColumns.push("ai_confidence");
+        values.push(aiConfidence !== null && aiConfidence !== undefined ? String(aiConfidence) : null);
+      }
+
+      const placeholders = insertColumns.map(() => "?").join(", ");
+
+      const insertSql = `
+        INSERT INTO scan_history
+        (${insertColumns.join(", ")})
+        VALUES (${placeholders})
+      `;
+
+      db.query(insertSql, values, (err, result) => {
+        if (err) {
+          console.error("[DB] Failed to save scan history:", err);
+          console.error("[DB] Returning success anyway for app stability.");
+
+          return res.json({
+            success: true,
+            result: {
+              id: 0,
+              itemName,
+              category,
+              explanation,
+              action,
+              warning,
+              detectedObject: savedDetectedObject,
+              imageUrl,
+              image_path: imageUrl,
+              image_url: imageUrl,
+              aiLabel,
+              aiConfidence,
+              analysisSource: analysisSource + "_db_save_failed"
+            }
+          });
+        }
+
+        console.log("[API] Analysis saved with ID:", result.insertId);
+        console.log("[API] Saved scan image URL:", imageUrl || "none");
 
         return res.json({
           success: true,
           result: {
-            id: 0,
+            id: result.insertId,
             itemName,
             category,
             explanation,
             action,
             warning,
             detectedObject: savedDetectedObject,
+            imageUrl,
+            image_path: imageUrl,
+            image_url: imageUrl,
             aiLabel,
             aiConfidence,
-            analysisSource: analysisSource + "_db_save_failed"
+            analysisSource
           }
         });
-      }
-
-      console.log("[API] Analysis saved with ID:", result.insertId);
-
-      return res.json({
-        success: true,
-        result: {
-          id: result.insertId,
-          itemName,
-          category,
-          explanation,
-          action,
-          warning,
-          detectedObject: savedDetectedObject,
-          aiLabel,
-          aiConfidence,
-          analysisSource
-        }
       });
     });
   } catch (error) {
@@ -274,6 +504,96 @@ router.post("/analyze", async (req, res) => {
       }
     });
   }
+});
+
+
+/* =========================================
+   GET SCAN HISTORY
+   Includes captured scan image URL for Android detail preview.
+========================================= */
+router.get("/history", (req, res) => {
+  ensureScanHistoryOptionalColumns((columnErr, columnSet) => {
+    if (columnErr) {
+      console.error("[DB] Failed to inspect scan_history columns:", columnErr);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to load scan history",
+        error: columnErr.message
+      });
+    }
+
+    const fields = [
+      "id",
+      "item_name",
+      "category",
+      "explanation",
+      "action_text",
+      "warning_text",
+      "detected_object",
+      "image_length",
+      "created_at"
+    ];
+
+    if (hasColumn(columnSet, "image_url")) {
+      fields.push("image_url");
+    }
+
+    if (hasColumn(columnSet, "analysis_source")) {
+      fields.push("analysis_source");
+    }
+
+    if (hasColumn(columnSet, "ai_label")) {
+      fields.push("ai_label");
+    }
+
+    if (hasColumn(columnSet, "ai_confidence")) {
+      fields.push("ai_confidence");
+    }
+
+    const sql = `
+      SELECT ${fields.join(", ")}
+      FROM scan_history
+      ORDER BY created_at DESC, id DESC
+    `;
+
+    db.query(sql, (err, rows) => {
+      if (err) {
+        console.error("[DB] Failed to fetch scan history:", err);
+        return res.status(500).json({
+          success: false,
+          message: "Failed to load scan history",
+          error: err.message
+        });
+      }
+
+      const history = (rows || []).map((row) => {
+        const imageUrl = getFirstAvailableString(row, ["image_url"]);
+
+        return {
+          id: row.id,
+          item_name: row.item_name || row.category || "Unknown Item",
+          category: row.category || "Residual",
+          detected_object: row.detected_object || row.item_name || row.category || "Unknown",
+          created_at: row.created_at,
+          explanation: row.explanation || "",
+          action: row.action_text || "",
+          warning: row.warning_text || "",
+          analysis_source: row.analysis_source || "",
+          ai_label: row.ai_label || "",
+          ai_confidence: row.ai_confidence || "",
+          image_path: imageUrl,
+          image_url: imageUrl,
+          scan_image_path: imageUrl,
+          captured_image_path: imageUrl
+        };
+      });
+
+      return res.json({
+        success: true,
+        history
+      });
+    });
+  });
 });
 
 /* =========================================
