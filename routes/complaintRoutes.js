@@ -105,6 +105,81 @@ function getComplaintColumnSet(callback) {
   });
 }
 
+function getComplaintNotificationColumnSet(callback) {
+  const sql = `SHOW COLUMNS FROM complaint_notifications`;
+
+  db.query(sql, (err, rows) => {
+    if (err) {
+      console.error("Failed to inspect complaint_notifications columns:", err);
+      return callback(err, new Set());
+    }
+
+    const columnSet = new Set(
+      (rows || []).map((row) => String(row.Field || "").trim())
+    );
+
+    return callback(null, columnSet);
+  });
+}
+
+function runSequentialSql(sqlList, callback) {
+  const statements = sqlList || [];
+
+  const runNext = (index) => {
+    if (index >= statements.length) {
+      return callback(null);
+    }
+
+    db.query(statements[index], (err) => {
+      if (err) {
+        return callback(err);
+      }
+
+      return runNext(index + 1);
+    });
+  };
+
+  return runNext(0);
+}
+
+function ensureComplaintNotificationClearColumns(callback) {
+  getComplaintNotificationColumnSet((columnErr, columnSet) => {
+    if (columnErr) {
+      return callback(columnErr);
+    }
+
+    const alterSql = [];
+
+    if (!hasColumn(columnSet, "cleared_at")) {
+      alterSql.push(`
+        ALTER TABLE complaint_notifications
+        ADD COLUMN cleared_at DATETIME NULL
+      `);
+    }
+
+    if (!hasColumn(columnSet, "cleared_by")) {
+      alterSql.push(`
+        ALTER TABLE complaint_notifications
+        ADD COLUMN cleared_by VARCHAR(255) NULL
+      `);
+    }
+
+    if (alterSql.length === 0) {
+      return callback(null);
+    }
+
+    runSequentialSql(alterSql, (alterErr) => {
+      if (alterErr) {
+        console.error("Failed to add notification clear columns:", alterErr);
+        return callback(alterErr);
+      }
+
+      console.log("Complaint notification clear columns checked/added.");
+      return callback(null);
+    });
+  });
+}
+
 function hasColumn(columnSet, columnName) {
   return columnSet && columnSet.has(columnName);
 }
@@ -177,10 +252,6 @@ function respondWithExistingComplaintByClientRequestId(res, clientRequestId, upl
 
 /* =========================
    CREATE COMPLAINT
-   Duplicate protection:
-   - Android sends client_request_id.
-   - Backend checks existing request before insert.
-   - If same request is received again, it returns existing complaint instead of creating a new one.
 ========================= */
 router.post("/", upload.single("image"), (req, res) => {
   try {
@@ -267,18 +338,10 @@ router.post("/", upload.single("image"), (req, res) => {
           }
 
           try {
-            console.log("=== COMPLAINT LOCATION DEBUG ===");
-            console.log("Client request id:", clientRequestId || "none");
-            console.log("Can save client_request_id:", canSaveClientRequestId);
-            console.log("Point:", { lat, lng });
-            console.log("Boundary rows count:", (boundaryRows || []).length);
-
             const polygonMatchedBarangay = resolveBarangayByPolygon(
               { lat, lng },
               boundaryRows || []
             );
-
-            console.log("Polygon matched barangay:", polygonMatchedBarangay);
 
             let finalBarangay = polygonMatchedBarangay || null;
             let assignmentMethod = "polygon";
@@ -289,8 +352,6 @@ router.post("/", upload.single("image"), (req, res) => {
                 { lat, lng },
                 boundaryRows || []
               );
-
-              console.log("Nearest fallback barangay:", nearestBarangay);
 
               if (nearestBarangay && typeof nearestBarangay === "string") {
                 finalBarangay = nearestBarangay;
@@ -305,9 +366,6 @@ router.post("/", upload.single("image"), (req, res) => {
               finalBarangay = "For Verification";
               assignmentMethod = "manual_review";
             }
-
-            console.log("FINAL assigned barangay:", finalBarangay);
-            console.log("Assignment method:", assignmentMethod);
 
             const imageUrl = `/uploads/complaints/${req.file.filename}`;
 
@@ -473,8 +531,6 @@ router.post("/", upload.single("image"), (req, res) => {
    GET ALL COMPLAINTS (WMO)
 ========================= */
 router.get("/", (req, res) => {
-  console.log("GET /api/complaints hit");
-
   const sql = `
     SELECT *
     FROM complaints
@@ -482,8 +538,6 @@ router.get("/", (req, res) => {
   `;
 
   db.query(sql, (err, rows) => {
-    console.log("GET /api/complaints query callback reached");
-
     if (err) {
       console.error("Complaint list error:", err);
       return res.status(500).json({
@@ -501,7 +555,6 @@ router.get("/", (req, res) => {
 
 /* =========================
    NEARBY BARANGAY REFERENCE POINTS
-   MUST STAY BEFORE ANY DYNAMIC GET ROUTES
 ========================= */
 router.get("/nearby-barangays", (req, res) => {
   const { latitude, longitude } = req.query;
@@ -561,8 +614,6 @@ router.get("/nearby-barangays", (req, res) => {
       .filter(Boolean)
       .sort((a, b) => a.distance_meters - b.distance_meters)
       .slice(0, 10);
-
-    console.log("Nearby barangay candidates:", candidates);
 
     return res.json({
       success: true,
@@ -700,13 +751,8 @@ router.post("/:id/validate-forward", (req, res) => {
   });
 });
 
-
 /* =========================
    REJECT COMPLAINT BY WMO
-   Safe additive route:
-   - Does not affect validate/forward/resolve routes.
-   - Saves rejection fields only if the columns exist.
-   - Always updates status to rejected.
 ========================= */
 router.patch("/:id/reject", (req, res) => {
   const complaintId = req.params.id;
@@ -835,7 +881,6 @@ router.patch("/:id/reject", (req, res) => {
   });
 });
 
-/* Optional fallback if frontend/server sends PUT instead of PATCH. */
 router.put("/:id/reject", (req, res, next) => {
   req.method = "PATCH";
   router.handle(req, res, next);
@@ -878,7 +923,6 @@ router.put("/:id/accept", (req, res) => {
 
 /* =========================
    RESOLVE BY BARANGAY
-   OPTIONAL GPS START POINT SUPPORT
 ========================= */
 router.put("/:id/resolve", upload.single("evidence"), (req, res) => {
   const complaintId = req.params.id;
@@ -893,13 +937,6 @@ router.put("/:id/resolve", upload.single("evidence"), (req, res) => {
 
   const handledBy = cleanText(handled_by_barangay_name);
   const report = cleanText(resolution_report);
-
-  /*
-    IMPORTANT:
-    complaints.resolved_by is INT in your DB.
-    Mobile may send username/barangay text.
-    If it is not numeric, save NULL to prevent SQL type errors.
-  */
   const resolvedBy = parseOptionalInt(resolved_by);
 
   if (!handledBy || !report) {
@@ -958,7 +995,7 @@ router.put("/:id/resolve", upload.single("evidence"), (req, res) => {
       UPDATE complaints
       SET ${setClauses.join(",\n          ")}
       WHERE id = ?
-        AND status IN ('forwarded', 'in_progress')
+        AND status IN ('forwarded', 'in_progress', 'accepted_by_barangay')
     `;
 
     values.push(complaintId);
@@ -982,16 +1019,6 @@ router.put("/:id/resolve", upload.single("evidence"), (req, res) => {
       }
 
       logUploadedFile("=== RESOLUTION UPLOAD DEBUG ===", req.file);
-
-      console.log("=== RESOLUTION GPS DEBUG ===");
-      console.log("raw resolved_by from mobile:", resolved_by);
-      console.log("saved resolvedBy:", resolvedBy);
-      console.log("resolver_latitude from mobile:", resolver_latitude);
-      console.log("resolver_longitude from mobile:", resolver_longitude);
-      console.log("parsed resolverLat:", resolverLat);
-      console.log("parsed resolverLng:", resolverLng);
-      console.log("canSaveResolverLatitude:", canSaveResolverLatitude);
-      console.log("canSaveResolverLongitude:", canSaveResolverLongitude);
 
       return res.json({
         success: true,
@@ -1019,7 +1046,6 @@ router.put("/:id/resolve", upload.single("evidence"), (req, res) => {
 
 /* =========================
    COMPLAINT HISTORY (WMO)
-   Includes resolved and rejected complaints
 ========================= */
 router.get("/history/resolved", (req, res) => {
   const sql = `
@@ -1042,8 +1068,6 @@ router.get("/history/resolved", (req, res) => {
       c.created_at DESC
   `;
 
-  console.log("GET /api/complaints/history/resolved hit");
-
   db.query(sql, (err, rows) => {
     if (err) {
       console.error("Complaint history error FULL:", err);
@@ -1055,8 +1079,6 @@ router.get("/history/resolved", (req, res) => {
       });
     }
 
-    console.log("Complaint history rows:", rows);
-
     return res.json({
       success: true,
       complaints: rows || []
@@ -1066,10 +1088,6 @@ router.get("/history/resolved", (req, res) => {
 
 /* =========================
    BARANGAY COMPLAINT ANALYTICS
-   Citizen dashboard resolved count:
-   - Shows RESOLVED complaints only.
-   - Filters by current month using resolved_at.
-   - Also returns total_issues for old Android compatibility.
 ========================= */
 router.get("/barangay-analytics/:barangay", (req, res) => {
   try {
@@ -1082,13 +1100,6 @@ router.get("/barangay-analytics/:barangay", (req, res) => {
       });
     }
 
-    /*
-      Monthly reset logic:
-      This counts only complaints that were resolved within the current month.
-      Example:
-      - May resolved complaints show in May.
-      - When June starts, May resolved complaints are no longer counted here.
-    */
     const sql = `
       SELECT
         COUNT(*) AS resolved_this_month
@@ -1122,12 +1133,6 @@ router.get("/barangay-analytics/:barangay", (req, res) => {
           resolved_this_month: resolvedThisMonth,
           resolved_issues: resolvedThisMonth,
           resolved_count: resolvedThisMonth,
-
-          /*
-            Keep this for backward compatibility with any older mobile build
-            still reading summary.total_issues.
-            Current updated CitizenHomeActivity reads resolved_this_month first.
-          */
           total_issues: resolvedThisMonth
         }
       });
@@ -1144,12 +1149,11 @@ router.get("/barangay-analytics/:barangay", (req, res) => {
 
 /* =========================
    BARANGAY COMPLAINT LIST
-   NOW INCLUDES REFERENCE POINT COORDINATES
+   Actual active concerns count/list.
+   Do not use this as the notification badge source.
 ========================= */
 router.get("/barangay/:barangayName", (req, res) => {
   const barangayName = decodeURIComponent(req.params.barangayName || "").trim();
-
-  console.log("Barangay complaint request:", barangayName);
 
   const sql = `
     SELECT
@@ -1163,7 +1167,7 @@ router.get("/barangay/:barangayName", (req, res) => {
       ON TRIM(LOWER(brp.barangay_name)) = TRIM(LOWER(c.assigned_barangay))
       AND brp.status = 'active'
     WHERE TRIM(LOWER(c.assigned_barangay)) = TRIM(LOWER(?))
-      AND c.status IN ('forwarded', 'in_progress')
+      AND c.status IN ('forwarded', 'in_progress', 'accepted_by_barangay')
     ORDER BY c.created_at DESC
   `;
 
@@ -1221,46 +1225,125 @@ router.get("/notifications/wmo", (req, res) => {
 
 /* =========================
    BARANGAY NOTIFICATIONS
+   Source of truth for the barangay bell badge/dropdown.
+   Cleared notifications stay in MySQL with cleared_at and will not appear again.
 ========================= */
 router.get("/notifications/barangay/:barangayName", (req, res) => {
-  const barangayName = req.params.barangayName;
+  const barangayName = decodeURIComponent(req.params.barangayName || "").trim();
 
-  const sql = `
-    SELECT
-      cn.*,
-      c.subject,
-      c.assigned_barangay,
-      c.status,
-      c.image_url,
-      c.latitude,
-      c.longitude,
-      c.created_at AS complaint_created_at
-    FROM complaint_notifications cn
-    INNER JOIN complaints c ON c.id = cn.complaint_id
-    WHERE cn.target_type = 'barangay'
-      AND cn.target_name = ?
-    ORDER BY cn.created_at DESC
-  `;
-
-  db.query(sql, [barangayName], (err, rows) => {
-    if (err) {
-      console.error("Barangay complaint notification error:", err);
+  ensureComplaintNotificationClearColumns((ensureErr) => {
+    if (ensureErr) {
       return res.status(500).json({
         success: false,
-        message: "Failed to load barangay complaint notifications."
+        message: "Failed to prepare barangay notification clearing.",
+        error: ensureErr.message,
+        code: ensureErr.code
       });
     }
 
-    return res.json({
-      success: true,
-      notifications: rows || []
+    const sql = `
+      SELECT
+        cn.*,
+        c.subject,
+        c.assigned_barangay,
+        c.status,
+        c.image_url,
+        c.latitude,
+        c.longitude,
+        c.created_at AS complaint_created_at
+      FROM complaint_notifications cn
+      INNER JOIN complaints c ON c.id = cn.complaint_id
+      WHERE cn.target_type = 'barangay'
+        AND TRIM(LOWER(cn.target_name)) = TRIM(LOWER(?))
+        AND cn.cleared_at IS NULL
+        AND c.status IN ('forwarded', 'in_progress', 'accepted_by_barangay')
+      ORDER BY cn.created_at DESC
+    `;
+
+    db.query(sql, [barangayName], (err, rows) => {
+      if (err) {
+        console.error("Barangay complaint notification error:", err);
+        return res.status(500).json({
+          success: false,
+          message: "Failed to load barangay complaint notifications.",
+          error: err.message,
+          code: err.code
+        });
+      }
+
+      return res.json({
+        success: true,
+        notifications: rows || []
+      });
     });
   });
 });
 
 /* =========================
+   CLEAR BARANGAY NOTIFICATIONS
+   This only clears the notification badge/dropdown.
+   It does NOT delete complaints and does NOT remove actual forwarded concerns.
+========================= */
+router.post("/notifications/barangay/:barangayName/clear", (req, res) => {
+  const barangayName = decodeURIComponent(req.params.barangayName || "").trim();
+  const clearedBy = cleanText(req.body && req.body.cleared_by) || barangayName || "barangay";
+
+  if (!barangayName) {
+    return res.status(400).json({
+      success: false,
+      message: "Barangay name is required."
+    });
+  }
+
+  ensureComplaintNotificationClearColumns((ensureErr) => {
+    if (ensureErr) {
+      return res.status(500).json({
+        success: false,
+        message: "Failed to prepare barangay notification clearing.",
+        error: ensureErr.message,
+        code: ensureErr.code
+      });
+    }
+
+    const sql = `
+      UPDATE complaint_notifications cn
+      INNER JOIN complaints c ON c.id = cn.complaint_id
+      SET cn.cleared_at = NOW(),
+          cn.cleared_by = ?
+      WHERE cn.target_type = 'barangay'
+        AND TRIM(LOWER(cn.target_name)) = TRIM(LOWER(?))
+        AND cn.cleared_at IS NULL
+        AND c.status IN ('forwarded', 'in_progress', 'accepted_by_barangay')
+    `;
+
+    db.query(sql, [clearedBy, barangayName], (err, result) => {
+      if (err) {
+        console.error("Clear barangay notifications error:", err);
+        return res.status(500).json({
+          success: false,
+          message: "Failed to clear barangay notifications.",
+          error: err.message,
+          code: err.code
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: "Barangay notifications cleared.",
+        barangay: barangayName,
+        cleared_count: result ? result.affectedRows || 0 : 0
+      });
+    });
+  });
+});
+
+router.patch("/notifications/barangay/:barangayName/clear", (req, res, next) => {
+  req.method = "POST";
+  router.handle(req, res, next);
+});
+
+/* =========================
    MARK AS IN PROGRESS
-   Trigger when barangay opens complaint
 ========================= */
 router.put("/:id/in-progress", (req, res) => {
   const complaintId = req.params.id;
@@ -1294,7 +1377,6 @@ router.put("/:id/in-progress", (req, res) => {
 
 /* =========================
    GET SINGLE COMPLAINT
-   NOW INCLUDES REFERENCE POINT COORDINATES
    KEEP THIS LAST
 ========================= */
 router.get("/:id", (req, res) => {
