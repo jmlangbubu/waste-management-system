@@ -181,40 +181,47 @@ function ensureAuthTables(callback) {
 }
 
 function createMailTransporter() {
-  if (!nodemailer) return null;
+  if (!nodemailer) {
+    console.warn("⚠️ nodemailer package is not available.");
+    return null;
+  }
 
   const smtpHost = cleanText(process.env.SMTP_HOST);
   const smtpPort = Number(process.env.SMTP_PORT || 465);
   const smtpUser = cleanText(process.env.SMTP_USER || process.env.EMAIL_USER);
   const smtpPass = cleanText(process.env.SMTP_PASS || process.env.EMAIL_PASS);
   const smtpSecureRaw = cleanText(process.env.SMTP_SECURE || "true").toLowerCase();
+  const timeoutMs = getSmtpTimeoutMs();
 
   if (!smtpUser || !smtpPass) {
+    console.warn("⚠️ SMTP credentials are missing. Check SMTP_USER/SMTP_PASS or EMAIL_USER/EMAIL_PASS.");
     return null;
   }
+
+  const baseOptions = {
+    connectionTimeout: timeoutMs,
+    greetingTimeout: timeoutMs,
+    socketTimeout: timeoutMs,
+    auth: {
+      user: smtpUser,
+      pass: smtpPass
+    }
+  };
 
   if (smtpHost) {
     return nodemailer.createTransport({
       host: smtpHost,
       port: smtpPort,
       secure: smtpSecureRaw !== "false",
-      auth: {
-        user: smtpUser,
-        pass: smtpPass
-      }
+      ...baseOptions
     });
   }
 
   return nodemailer.createTransport({
     service: "gmail",
-    auth: {
-      user: smtpUser,
-      pass: smtpPass
-    }
+    ...baseOptions
   });
-}
-
-async function sendVerificationEmail(email, fullName, verificationCode) {
+}$1(email, fullName, verificationCode) {
   const transporter = createMailTransporter();
 
   if (!transporter) {
@@ -259,6 +266,8 @@ async function sendVerificationEmail(email, fullName, verificationCode) {
     </div>
   `;
 
+  console.log("📧 Sending verification email to:", email);
+
   await transporter.sendMail({
     from: smtpFrom,
     to: email,
@@ -266,6 +275,8 @@ async function sendVerificationEmail(email, fullName, verificationCode) {
     text,
     html
   });
+
+  console.log("✅ Verification email sent to:", email);
 
   return {
     sent: true,
@@ -278,6 +289,14 @@ function getErrorMessageFromEmailSend(error) {
     return "Verification email could not be sent.";
   }
 
+  if (error.code === "ETIMEDOUT" || error.code === "ESOCKET") {
+    return "SMTP connection timed out. Check Gmail App Password, SMTP settings, or network access.";
+  }
+
+  if (error.code === "EAUTH") {
+    return "Gmail authentication failed. Check SMTP_USER and SMTP_PASS App Password.";
+  }
+
   if (error.response) {
     return error.response;
   }
@@ -288,6 +307,35 @@ function getErrorMessageFromEmailSend(error) {
 
   return "Verification email could not be sent.";
 }
+
+
+function getSmtpTimeoutMs() {
+  const configuredTimeout = Number(process.env.SMTP_TIMEOUT_MS || 15000);
+
+  if (!Number.isFinite(configuredTimeout) || configuredTimeout < 5000) {
+    return 15000;
+  }
+
+  return configuredTimeout;
+}
+
+function logSmtpConfigStatus() {
+  const smtpHost = cleanText(process.env.SMTP_HOST);
+  const smtpPort = cleanText(process.env.SMTP_PORT || "465");
+  const smtpUser = cleanText(process.env.SMTP_USER || process.env.EMAIL_USER);
+  const smtpPass = cleanText(process.env.SMTP_PASS || process.env.EMAIL_PASS);
+  const smtpFrom = cleanText(process.env.SMTP_FROM);
+
+  console.log("📧 SMTP CONFIG STATUS:", {
+    host: smtpHost || "(gmail service fallback)",
+    port: smtpPort,
+    userConfigured: !!smtpUser,
+    passConfigured: !!smtpPass,
+    fromConfigured: !!smtpFrom,
+    timeoutMs: getSmtpTimeoutMs()
+  });
+}
+
 
 /* =========================================================
    ROUTES
