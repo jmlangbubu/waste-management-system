@@ -16,6 +16,7 @@ const appointmentRoutes = require("../routes/appointmentRoutes");
 const trackingRoutes = require("../routes/trackingRoutes");
 const notificationRoutes = require("../routes/notificationRoutes");
 const complaintRoutes = require("../routes/complaintRoutes");
+const certificateRoutes = require("../routes/certificateRoutes");
 const invoiceRoutes = require("../routes/invoiceRoutes");
 
 /* =========================
@@ -156,6 +157,7 @@ app.use("/api/appointments", appointmentRoutes);
 app.use("/api/tracking", trackingRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/complaints", complaintRoutes);
+app.use("/api/certificates", certificateRoutes);
 app.use("/api/invoices", invoiceRoutes);
 
 /* =========================
