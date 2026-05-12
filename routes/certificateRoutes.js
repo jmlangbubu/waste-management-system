@@ -1,4 +1,3 @@
-
 const express = require("express");
 const router = express.Router();
 
@@ -307,6 +306,69 @@ router.get("/user/:userId", (req, res) => {
     db.query(sql, [userId], (err, rows) => {
       if (err) {
         console.error("Get certificate by user error:", err);
+        return res.status(500).json({
+          success: false,
+          message: "Failed to load certificate.",
+          error: err.message,
+          code: err.code
+        });
+      }
+
+      if (!rows || rows.length === 0) {
+        return res.json({
+          success: true,
+          has_certificate: false,
+          certificate: null
+        });
+      }
+
+      return res.json({
+        success: true,
+        has_certificate: true,
+        certificate: normalizeCertificate(rows[0])
+      });
+    });
+  });
+});
+
+
+/* =========================
+   GET CERTIFICATE BY USERNAME
+   Fallback lookup when Android session has username but no numeric user_id.
+========================= */
+router.get("/username/:username", (req, res) => {
+  const username = cleanText(req.params.username);
+
+  if (!username) {
+    return res.status(400).json({
+      success: false,
+      message: "Username is required."
+    });
+  }
+
+  ensureCertificatesTable((tableErr) => {
+    if (tableErr) {
+      console.error("Certificate table check error:", tableErr);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to prepare certificate table.",
+        error: tableErr.message,
+        code: tableErr.code
+      });
+    }
+
+    const sql = `
+      SELECT *
+      FROM certificates
+      WHERE LOWER(TRIM(username)) = LOWER(TRIM(?))
+        AND status = 'active'
+      ORDER BY issued_at DESC, id DESC
+      LIMIT 1
+    `;
+
+    db.query(sql, [username], (err, rows) => {
+      if (err) {
+        console.error("Get certificate by username error:", err);
         return res.status(500).json({
           success: false,
           message: "Failed to load certificate.",
