@@ -1,10 +1,32 @@
+/* =========================================================
+   ADMIN APPOINTMENTS
+   File: css/admin/admin-appointments.css
+
+   Scope:
+   - Active appointments table
+   - Appointment status badges
+   - Appointment action buttons
+   - Appointment History modal
+   - Appointment modal table centering fix
+
+   Important:
+   CSS-only update. Do not change JS.
+========================================================= */
+
 /* =========================
    APPOINTMENTS
 ========================= */
 
+#appointmentsSection {
+  min-width: 0;
+}
+
 #appointmentsSection .page-card {
   padding: 26px;
+  border: 1px solid #e5eaf1;
   border-radius: 24px;
+  background: #ffffff;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.055);
 }
 
 #appointmentsSection .page-card-header,
@@ -18,6 +40,7 @@
 
 #appointmentsSection .appointment-toolbar {
   display: flex;
+  align-items: center;
   gap: 10px;
   flex-wrap: wrap;
 }
@@ -28,15 +51,22 @@
 
 #appointmentsSection .table-shell {
   width: 100%;
+  max-width: 100%;
   overflow-x: auto;
   overflow-y: hidden;
   border: 1px solid #e5e7eb;
   border-radius: 16px;
   background: #ffffff;
+  -webkit-overflow-scrolling: touch;
 }
 
 #appointmentsSection .table-shell::-webkit-scrollbar {
   height: 8px;
+}
+
+#appointmentsSection .table-shell::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 999px;
 }
 
 #appointmentsSection .table-shell::-webkit-scrollbar-thumb {
@@ -62,20 +92,18 @@
 
 #appointmentsSection th {
   background: #f5f7fa;
-  font-weight: 800;
+  font-weight: 850;
+  text-align: center;
 }
 
 #appointmentsSection td {
   background: #ffffff;
   border-top: 1px solid #edf0f2;
+  text-align: center;
 }
 
-/* Allow purpose to wrap only */
-#appointmentsSection th:nth-child(5),
-#appointmentsSection td:nth-child(5) {
-  min-width: 210px;
-  white-space: normal;
-  line-height: 1.35;
+#appointmentsSection tbody tr:hover td {
+  background: #f8fafc;
 }
 
 /* Column minimum widths */
@@ -86,7 +114,8 @@
 
 #appointmentsSection th:nth-child(2),
 #appointmentsSection td:nth-child(2) {
-  min-width: 100px;
+  min-width: 120px;
+  text-align: left;
 }
 
 #appointmentsSection th:nth-child(3),
@@ -99,6 +128,15 @@
   min-width: 135px;
 }
 
+/* Allow purpose to wrap only */
+#appointmentsSection th:nth-child(5),
+#appointmentsSection td:nth-child(5) {
+  min-width: 210px;
+  white-space: normal;
+  line-height: 1.35;
+  text-align: left;
+}
+
 #appointmentsSection th:nth-child(6),
 #appointmentsSection td:nth-child(6) {
   min-width: 190px;
@@ -106,7 +144,7 @@
 
 #appointmentsSection th:nth-child(7),
 #appointmentsSection td:nth-child(7) {
-  min-width: 130px;
+  min-width: 140px;
   text-align: center;
 }
 
@@ -130,27 +168,37 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+
   min-width: 92px;
-  height: 34px;
+  min-height: 34px;
   padding: 0 14px;
+
   border-radius: 999px;
+
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 850;
+  line-height: 1;
+  white-space: nowrap;
 }
 
-.status-badge.resolved {
+.status-badge.resolved,
+.status-badge.approved,
+.status-badge.completed {
   background: #dcfce7;
   color: #15803d;
   border: 1px solid #bbf7d0;
 }
 
-.status-badge.rejected {
+.status-badge.rejected,
+.status-badge.cancelled,
+.status-badge.declined {
   background: #fee2e2;
   color: #b91c1c;
   border: 1px solid #fecaca;
 }
 
-.status-badge.forwarded {
+.status-badge.forwarded,
+.status-badge.rescheduled {
   background: #dbeafe;
   color: #1d4ed8;
   border: 1px solid #bfdbfe;
@@ -160,6 +208,20 @@
   background: #fef3c7;
   color: #b45309;
   border: 1px solid #fde68a;
+}
+
+.status-badge.no-show {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+}
+
+#appointmentsSection .status-badge {
+  min-width: 132px;
+  min-height: 42px;
+  padding: 0 18px;
+  font-size: 13px;
+  font-weight: 900;
 }
 
 .rescheduled-note {
@@ -179,55 +241,81 @@
   justify-content: center;
   align-items: center;
   gap: 8px;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
 }
 
-.inline-action-btn {
-  height: 32px;
-  border-radius: 8px;
-  padding: 0 12px;
+.inline-action-btn,
+#appointmentsSection td:last-child button,
+#appointmentsSection .appointment-action-buttons button {
+  min-height: 34px;
+  border-radius: 10px;
+  padding: 0 13px;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
   font-size: 12px;
-  font-weight: 800;
-  cursor: pointer;
+  font-weight: 850;
+  line-height: 1;
   white-space: nowrap;
-  transition: 0.2s ease;
+
+  cursor: pointer;
+  transition:
+    transform 0.16s ease,
+    box-shadow 0.16s ease,
+    background 0.16s ease,
+    border-color 0.16s ease;
 }
 
-.inline-action-btn:hover {
+.inline-action-btn:hover,
+#appointmentsSection td:last-child button:hover,
+#appointmentsSection .appointment-action-buttons button:hover {
   transform: translateY(-1px);
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.09);
 }
 
 .inline-action-btn.assign-btn,
-.inline-action-btn.success-btn {
-  background: #16a34a;
-  color: #ffffff;
-  border: none;
+.inline-action-btn.success-btn,
+#appointmentsSection td:last-child button.accept-btn,
+#appointmentsSection td:last-child button.approve-btn {
+  background: #dcfce7;
+  color: #047857;
+  border: 1px solid #bbf7d0;
 }
 
 .inline-action-btn.assign-btn:hover,
-.inline-action-btn.success-btn:hover {
-  background: #15803d;
+.inline-action-btn.success-btn:hover,
+#appointmentsSection td:last-child button.accept-btn:hover,
+#appointmentsSection td:last-child button.approve-btn:hover {
+  background: #bbf7d0;
 }
 
-.inline-action-btn.warning-btn {
+.inline-action-btn.warning-btn,
+#appointmentsSection td:last-child button.reschedule-btn {
   background: #e0f2fe;
   color: #0369a1;
   border: 1px solid #bae6fd;
 }
 
-.inline-action-btn.warning-btn:hover {
+.inline-action-btn.warning-btn:hover,
+#appointmentsSection td:last-child button.reschedule-btn:hover {
   background: #bae6fd;
 }
 
 .inline-action-btn.delete-btn,
-.inline-action-btn.danger-btn {
+.inline-action-btn.danger-btn,
+#appointmentsSection td:last-child button.reject-btn,
+#appointmentsSection td:last-child button.cancel-btn {
   background: #fee2e2;
   color: #b91c1c;
   border: 1px solid #fecaca;
 }
 
 .inline-action-btn.delete-btn:hover,
-.inline-action-btn.danger-btn:hover {
+.inline-action-btn.danger-btn:hover,
+#appointmentsSection td:last-child button.reject-btn:hover,
+#appointmentsSection td:last-child button.cancel-btn:hover {
   background: #fecaca;
 }
 
@@ -243,9 +331,298 @@
   font-weight: 700;
 }
 
-/* =========================
+/* =========================================================
+   APPOINTMENT HISTORY MODAL
+   Fix:
+   - Centered modal inside main content area
+   - Not full-screen looking
+   - Better inner spacing
+   - Table box not touching edges
+========================================================= */
+
+#appointmentHistoryModal.history-modal,
+#appointmentHistoryModal.custom-modal {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 99990 !important;
+}
+
+#appointmentHistoryModal .history-modal-overlay,
+#appointmentHistoryModal .custom-modal-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  background: rgba(15, 23, 42, 0.58) !important;
+  backdrop-filter: blur(6px) !important;
+}
+
+/* Main modal box */
+#appointmentHistoryModal .history-modal-content,
+#appointmentHistoryModal .custom-modal-content {
+  position: fixed !important;
+  top: 50% !important;
+  left: calc(280px + ((100vw - 280px) / 2)) !important;
+  transform: translate(-50%, -50%) !important;
+
+  width: min(1240px, calc(100vw - 380px)) !important;
+  max-width: calc(100vw - 380px) !important;
+  height: auto !important;
+  max-height: 86vh !important;
+
+  display: flex !important;
+  flex-direction: column !important;
+
+  padding: 0 !important;
+  overflow: hidden !important;
+
+  border: 1px solid rgba(226, 232, 240, 0.95) !important;
+  border-radius: 26px !important;
+  background: #ffffff !important;
+  box-shadow: 0 32px 90px rgba(15, 23, 42, 0.34) !important;
+}
+
+/* Header */
+#appointmentHistoryModal .history-modal-header,
+#appointmentHistoryModal .custom-modal-header {
+  flex: 0 0 auto !important;
+
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) 56px !important;
+  align-items: start !important;
+  gap: 18px !important;
+
+  padding: 30px 36px 26px !important;
+  border-bottom: 1px solid #e5e7eb !important;
+  background: #ffffff !important;
+}
+
+#appointmentHistoryModal .history-modal-header h2,
+#appointmentHistoryModal .custom-modal-header h2,
+#appointmentHistoryModal .custom-modal-header h3 {
+  margin: 0 !important;
+  color: #173c2a !important;
+  font-size: 26px !important;
+  font-weight: 950 !important;
+  line-height: 1.12 !important;
+  letter-spacing: -0.035em !important;
+}
+
+#appointmentHistoryModal .history-modal-header p,
+#appointmentHistoryModal .custom-modal-header p {
+  margin: 7px 0 0 !important;
+  color: #64748b !important;
+  font-size: 15px !important;
+  line-height: 1.45 !important;
+}
+
+#appointmentHistoryModal .history-modal-header button,
+#appointmentHistoryModal .history-close-btn,
+#appointmentHistoryModal .modal-close-btn,
+#appointmentHistoryModal button[onclick*="close" i] {
+  width: 56px !important;
+  height: 56px !important;
+  min-width: 56px !important;
+  min-height: 56px !important;
+
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+
+  padding: 0 !important;
+  margin: 0 !important;
+
+  border: none !important;
+  border-radius: 999px !important;
+  background: #f1f5f9 !important;
+  color: #475569 !important;
+
+  font-size: 30px !important;
+  font-weight: 900 !important;
+  line-height: 1 !important;
+
+  cursor: pointer !important;
+
+  transition:
+    transform 0.16s ease,
+    background 0.16s ease,
+    color 0.16s ease,
+    box-shadow 0.16s ease !important;
+}
+
+#appointmentHistoryModal .history-modal-header button:hover,
+#appointmentHistoryModal .history-close-btn:hover,
+#appointmentHistoryModal .modal-close-btn:hover,
+#appointmentHistoryModal button[onclick*="close" i]:hover {
+  background: #e2e8f0 !important;
+  color: #0f172a !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12) !important;
+}
+
+/* Body/table spacing */
+#appointmentHistoryModal .history-modal-body,
+#appointmentHistoryModal .custom-modal-body {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+}
+
+#appointmentHistoryModal .table-shell {
+  width: calc(100% - 60px) !important;
+  max-width: calc(100% - 60px) !important;
+
+  max-height: calc(86vh - 172px) !important;
+
+  margin: 30px auto 32px !important;
+
+  overflow-x: auto !important;
+  overflow-y: auto !important;
+
+  box-sizing: border-box !important;
+
+  border: 1px solid #e5e7eb !important;
+  border-radius: 18px !important;
+  background: #ffffff !important;
+
+  -webkit-overflow-scrolling: touch !important;
+  scrollbar-width: thin !important;
+}
+
+#appointmentHistoryModal .table-shell::-webkit-scrollbar {
+  width: 9px !important;
+  height: 9px !important;
+}
+
+#appointmentHistoryModal .table-shell::-webkit-scrollbar-track {
+  background: #f1f5f9 !important;
+  border-radius: 999px !important;
+}
+
+#appointmentHistoryModal .table-shell::-webkit-scrollbar-thumb {
+  background: #cbd5e1 !important;
+  border-radius: 999px !important;
+}
+
+#appointmentHistoryModal table {
+  width: 100% !important;
+  min-width: 1180px !important;
+
+  border-collapse: collapse !important;
+  table-layout: auto !important;
+}
+
+#appointmentHistoryModal th,
+#appointmentHistoryModal td {
+  padding: 15px 18px !important;
+  vertical-align: middle !important;
+
+  color: #0f172a !important;
+
+  font-size: 14px !important;
+  line-height: 1.35 !important;
+
+  border-bottom: 1px solid #eef2f7 !important;
+  white-space: nowrap !important;
+}
+
+#appointmentHistoryModal th {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 3 !important;
+
+  background: #f8fafc !important;
+  color: #1e293b !important;
+
+  font-size: 14px !important;
+  font-weight: 950 !important;
+  text-align: left !important;
+}
+
+#appointmentHistoryModal td {
+  background: #ffffff !important;
+}
+
+#appointmentHistoryModal tbody tr:hover td {
+  background: #f8fafc !important;
+}
+
+#appointmentHistoryModal th:nth-child(6),
+#appointmentHistoryModal td:nth-child(6),
+#appointmentHistoryModal th:nth-child(7),
+#appointmentHistoryModal td:nth-child(7),
+#appointmentHistoryModal th:nth-child(9),
+#appointmentHistoryModal td:nth-child(9) {
+  text-align: center !important;
+}
+
+#appointmentHistoryModal td:nth-child(2),
+#appointmentHistoryModal td:nth-child(5) {
+  white-space: normal !important;
+  min-width: 135px !important;
+}
+
+#appointmentHistoryModal td:nth-child(7) .status-badge {
+  margin: 0 auto !important;
+}
+
+#appointmentHistoryModal th:last-child,
+#appointmentHistoryModal td:last-child {
+  padding-right: 26px !important;
+}
+
+
+/* =========================================================
    RESPONSIVE
-========================= */
+========================================================= */
+
+@media (max-width: 1180px) {
+  #appointmentHistoryModal .history-modal-content,
+  #appointmentHistoryModal .custom-modal-content {
+    left: 50% !important;
+    width: calc(100vw - 34px) !important;
+    max-width: calc(100vw - 34px) !important;
+    max-height: calc(100dvh - 34px) !important;
+  }
+
+  #appointmentHistoryModal .history-modal-header,
+  #appointmentHistoryModal .custom-modal-header {
+    padding: 24px 26px 20px !important;
+    grid-template-columns: minmax(0, 1fr) 50px !important;
+  }
+
+  #appointmentHistoryModal .history-modal-header h2,
+  #appointmentHistoryModal .custom-modal-header h2,
+  #appointmentHistoryModal .custom-modal-header h3 {
+    font-size: 23px !important;
+  }
+
+  #appointmentHistoryModal .history-modal-header p,
+  #appointmentHistoryModal .custom-modal-header p {
+    font-size: 14px !important;
+  }
+
+  #appointmentHistoryModal .history-modal-header button,
+  #appointmentHistoryModal .history-close-btn,
+  #appointmentHistoryModal .modal-close-btn,
+  #appointmentHistoryModal button[onclick*="close" i] {
+    width: 50px !important;
+    height: 50px !important;
+    min-width: 50px !important;
+    min-height: 50px !important;
+    font-size: 26px !important;
+  }
+
+  #appointmentHistoryModal .table-shell {
+    width: calc(100% - 44px) !important;
+    max-width: calc(100% - 44px) !important;
+    max-height: calc(100dvh - 150px) !important;
+    margin: 24px auto 26px !important;
+  }
+
+  #appointmentHistoryModal table {
+    min-width: 1160px !important;
+  }
+}
 
 @media (max-width: 900px) {
   #appointmentsSection .page-card {
@@ -266,3 +643,1125 @@
     width: 100%;
   }
 }
+
+@media (max-width: 640px) {
+  #appointmentHistoryModal .history-modal-content,
+  #appointmentHistoryModal .custom-modal-content {
+    width: calc(100vw - 20px) !important;
+    max-width: calc(100vw - 20px) !important;
+    max-height: calc(100dvh - 20px) !important;
+    border-radius: 20px !important;
+  }
+
+  #appointmentHistoryModal .history-modal-header,
+  #appointmentHistoryModal .custom-modal-header {
+    padding: 18px !important;
+    grid-template-columns: minmax(0, 1fr) 44px !important;
+  }
+
+  #appointmentHistoryModal .history-modal-header h2,
+  #appointmentHistoryModal .custom-modal-header h2,
+  #appointmentHistoryModal .custom-modal-header h3 {
+    font-size: 20px !important;
+  }
+
+  #appointmentHistoryModal .history-modal-header p,
+  #appointmentHistoryModal .custom-modal-header p {
+    font-size: 13px !important;
+  }
+
+  #appointmentHistoryModal .history-modal-header button,
+  #appointmentHistoryModal .history-close-btn,
+  #appointmentHistoryModal .modal-close-btn,
+  #appointmentHistoryModal button[onclick*="close" i] {
+    width: 44px !important;
+    height: 44px !important;
+    min-width: 44px !important;
+    min-height: 44px !important;
+    font-size: 24px !important;
+  }
+
+  #appointmentHistoryModal .table-shell {
+    width: calc(100% - 24px) !important;
+    max-width: calc(100% - 24px) !important;
+    max-height: calc(100dvh - 142px) !important;
+    margin: 16px auto 20px !important;
+  }
+
+  #appointmentHistoryModal table {
+    min-width: 1040px !important;
+  }
+
+  #appointmentHistoryModal th,
+  #appointmentHistoryModal td {
+    padding: 13px 12px !important;
+    font-size: 13px !important;
+  }
+}
+
+
+/* =========================================================
+   APPOINTMENT HISTORY MODAL - FINAL COLUMN CENTERING FIX
+   Purpose:
+   - Make every table header and table cell centered
+   - Keep long text wrapped but still visually centered
+   - Center status badges inside their column
+   - Add stronger final selectors in case older rules exist above
+========================================================= */
+
+#appointmentHistoryModal table {
+  table-layout: auto !important;
+}
+
+#appointmentHistoryModal thead th,
+#appointmentHistoryModal tbody td,
+#appointmentHistoryModal th,
+#appointmentHistoryModal td {
+  text-align: center !important;
+  vertical-align: middle !important;
+}
+
+/* Long text columns: allow wrapping but keep centered alignment */
+#appointmentHistoryModal th:nth-child(2),
+#appointmentHistoryModal td:nth-child(2),
+#appointmentHistoryModal th:nth-child(5),
+#appointmentHistoryModal td:nth-child(5),
+#appointmentHistoryModal th:nth-child(8),
+#appointmentHistoryModal td:nth-child(8),
+#appointmentHistoryModal th:nth-child(9),
+#appointmentHistoryModal td:nth-child(9) {
+  text-align: center !important;
+  white-space: normal !important;
+}
+
+/* Keep date/time and updated-at clean and centered */
+#appointmentHistoryModal th:nth-child(6),
+#appointmentHistoryModal td:nth-child(6),
+#appointmentHistoryModal th:last-child,
+#appointmentHistoryModal td:last-child {
+  text-align: center !important;
+  white-space: normal !important;
+}
+
+/* Center badges perfectly */
+#appointmentHistoryModal .status-badge {
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+/* Avoid the last column sticking to the right edge */
+#appointmentHistoryModal th:last-child,
+#appointmentHistoryModal td:last-child {
+  padding-right: 18px !important;
+  padding-left: 18px !important;
+}
+
+/* Make header text center even if previous rules set left */
+#appointmentHistoryModal th {
+  text-align: center !important;
+}
+
+/* =========================================================
+   ACTIVE APPOINTMENTS TABLE - FINAL MICRO FIT FIX
+   Purpose:
+   - Fits all 10 columns after adding Email Address
+   - Removes desktop horizontal clipping/scroll
+   - Keeps fix scoped only to Active Appointments table
+   - Does not affect Appointment History modal or other modules
+========================================================= */
+
+@media (min-width: 1025px) {
+  #appointmentsSection .page-card {
+    padding: 22px 18px 24px !important;
+  }
+
+  #appointmentsSection .page-card-header,
+  #appointmentsSection .appointment-header {
+    margin-bottom: 16px !important;
+  }
+
+  #appointmentsSection .table-shell {
+    overflow-x: hidden !important;
+    overflow-y: hidden !important;
+  }
+
+  #appointmentsSection .appointments-table {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    table-layout: fixed !important;
+    border-collapse: collapse !important;
+  }
+
+  #appointmentsSection .appointments-table th,
+  #appointmentsSection .appointments-table td {
+    min-width: 0 !important;
+    padding: 10px 6px !important;
+    font-size: 12px !important;
+    line-height: 1.18 !important;
+    white-space: normal !important;
+    overflow-wrap: anywhere !important;
+    word-break: normal !important;
+    text-align: center !important;
+  }
+
+  #appointmentsSection .appointments-table th {
+    font-size: 11.7px !important;
+    font-weight: 900 !important;
+    letter-spacing: -0.015em !important;
+  }
+
+  #appointmentsSection .appointments-table td {
+    height: 50px !important;
+  }
+
+  /* 10-column desktop width distribution */
+  #appointmentsSection .appointments-table th:nth-child(1),
+  #appointmentsSection .appointments-table td:nth-child(1) {
+    width: 8% !important;
+  }
+
+  #appointmentsSection .appointments-table th:nth-child(2),
+  #appointmentsSection .appointments-table td:nth-child(2) {
+    width: 6% !important;
+  }
+
+  #appointmentsSection .appointments-table th:nth-child(3),
+  #appointmentsSection .appointments-table td:nth-child(3) {
+    width: 7% !important;
+  }
+
+  #appointmentsSection .appointments-table th:nth-child(4),
+  #appointmentsSection .appointments-table td:nth-child(4) {
+    width: 7.5% !important;
+  }
+
+  #appointmentsSection .appointments-table th:nth-child(5),
+  #appointmentsSection .appointments-table td:nth-child(5) {
+    width: 15% !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  #appointmentsSection .appointments-table th:nth-child(6),
+  #appointmentsSection .appointments-table td:nth-child(6) {
+    width: 14% !important;
+  }
+
+  #appointmentsSection .appointments-table th:nth-child(7),
+  #appointmentsSection .appointments-table td:nth-child(7) {
+    width: 10% !important;
+  }
+
+  #appointmentsSection .appointments-table th:nth-child(8),
+  #appointmentsSection .appointments-table td:nth-child(8) {
+    width: 8% !important;
+  }
+
+  #appointmentsSection .appointments-table th:nth-child(9),
+  #appointmentsSection .appointments-table td:nth-child(9) {
+    width: 8.5% !important;
+  }
+
+  #appointmentsSection .appointments-table th:nth-child(10),
+  #appointmentsSection .appointments-table td:nth-child(10) {
+    width: 16% !important;
+    padding-left: 4px !important;
+    padding-right: 4px !important;
+  }
+
+  #appointmentsSection .status-badge {
+    min-width: 86px !important;
+    min-height: 30px !important;
+    padding: 0 9px !important;
+    font-size: 11.2px !important;
+    font-weight: 900 !important;
+  }
+
+  #appointmentsSection .rescheduled-note {
+    margin-top: 2px !important;
+    font-size: 10.2px !important;
+    line-height: 1 !important;
+  }
+
+  #appointmentsSection .appointment-action-buttons {
+    width: 100% !important;
+    display: flex !important;
+    justify-content: center !important;
+    align-items: center !important;
+    gap: 5px !important;
+    flex-wrap: nowrap !important;
+  }
+
+  #appointmentsSection .appointment-action-buttons button,
+  #appointmentsSection td:last-child button,
+  #appointmentsSection .inline-action-btn {
+    min-width: 0 !important;
+    min-height: 28px !important;
+    height: 28px !important;
+    padding: 0 8px !important;
+    border-radius: 8px !important;
+    font-size: 10.8px !important;
+    font-weight: 900 !important;
+    line-height: 1 !important;
+    letter-spacing: -0.015em !important;
+    white-space: nowrap !important;
+  }
+
+  #appointmentsSection .appointment-action-buttons .warning-btn {
+    padding-left: 9px !important;
+    padding-right: 9px !important;
+  }
+
+  #appointmentsSection .appointment-action-buttons .assign-btn,
+  #appointmentsSection .appointment-action-buttons .delete-btn,
+  #appointmentsSection .appointment-action-buttons .danger-btn {
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+  }
+}
+
+/* Keep smaller screens safe with horizontal scroll instead of broken text */
+@media (max-width: 1024px) {
+  #appointmentsSection .table-shell {
+    overflow-x: auto !important;
+  }
+
+  #appointmentsSection .appointments-table {
+    min-width: 1120px !important;
+    table-layout: auto !important;
+  }
+}
+
+/* =========================================================
+   APPOINTMENT HISTORY MODAL - TRUE CENTER + NO HORIZONTAL SCROLL FIX
+   Purpose:
+   - Centers Appointment History modal in the full browser viewport
+   - Removes sidebar-offset modal positioning
+   - Fits all history columns inside the modal on desktop
+   - Removes horizontal table scrolling on desktop
+   - Keeps fix scoped only to #appointmentHistoryModal
+========================================================= */
+
+@media (min-width: 1025px) {
+  #appointmentHistoryModal.history-modal {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 99999 !important;
+
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+
+    padding: 18px !important;
+    box-sizing: border-box !important;
+  }
+
+  #appointmentHistoryModal.history-modal.hidden {
+    display: none !important;
+  }
+
+  #appointmentHistoryModal .history-modal-overlay {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 1 !important;
+    background: rgba(15, 23, 42, 0.62) !important;
+    backdrop-filter: blur(6px) !important;
+  }
+
+  #appointmentHistoryModal .history-modal-content {
+    position: relative !important;
+    inset: auto !important;
+    top: auto !important;
+    left: auto !important;
+    right: auto !important;
+    bottom: auto !important;
+    transform: none !important;
+    z-index: 2 !important;
+
+    width: min(1360px, calc(100vw - 36px)) !important;
+    max-width: min(1360px, calc(100vw - 36px)) !important;
+    height: auto !important;
+    max-height: calc(100dvh - 36px) !important;
+
+    display: flex !important;
+    flex-direction: column !important;
+
+    margin: 0 auto !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+
+    border-radius: 24px !important;
+    background: #ffffff !important;
+    border: 1px solid rgba(226, 232, 240, 0.98) !important;
+    box-shadow: 0 32px 90px rgba(15, 23, 42, 0.36) !important;
+  }
+
+  #appointmentHistoryModal .history-modal-header {
+    flex: 0 0 auto !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) 52px !important;
+    align-items: center !important;
+    gap: 16px !important;
+
+    padding: 22px 28px 18px !important;
+    border-bottom: 1px solid #e5e7eb !important;
+    background: #ffffff !important;
+  }
+
+  #appointmentHistoryModal .history-modal-header h2 {
+    margin: 0 !important;
+    font-size: 25px !important;
+    line-height: 1.12 !important;
+    font-weight: 950 !important;
+    letter-spacing: -0.035em !important;
+    color: #123826 !important;
+  }
+
+  #appointmentHistoryModal .history-modal-header p {
+    margin: 6px 0 0 !important;
+    font-size: 14px !important;
+    line-height: 1.35 !important;
+    color: #64748b !important;
+  }
+
+  #appointmentHistoryModal .history-close-btn {
+    width: 52px !important;
+    height: 52px !important;
+    min-width: 52px !important;
+    min-height: 52px !important;
+    padding: 0 !important;
+
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+
+    border: 0 !important;
+    border-radius: 999px !important;
+    background: #f1f5f9 !important;
+    color: #334155 !important;
+    font-size: 28px !important;
+    font-weight: 900 !important;
+    line-height: 1 !important;
+  }
+
+  #appointmentHistoryModal .table-shell {
+    width: calc(100% - 48px) !important;
+    max-width: calc(100% - 48px) !important;
+    max-height: none !important;
+
+    margin: 18px auto 24px !important;
+
+    overflow-x: hidden !important;
+    overflow-y: visible !important;
+
+    border: 1px solid #e5e7eb !important;
+    border-radius: 16px !important;
+    background: #ffffff !important;
+    box-sizing: border-box !important;
+  }
+
+  #appointmentHistoryModal table {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    table-layout: fixed !important;
+    border-collapse: collapse !important;
+  }
+
+  #appointmentHistoryModal th,
+  #appointmentHistoryModal td {
+    min-width: 0 !important;
+    padding: 11px 7px !important;
+
+    font-size: 12.2px !important;
+    line-height: 1.18 !important;
+    color: #0f172a !important;
+
+    text-align: center !important;
+    vertical-align: middle !important;
+
+    white-space: normal !important;
+    overflow-wrap: anywhere !important;
+    word-break: normal !important;
+
+    border-bottom: 1px solid #eef2f7 !important;
+  }
+
+  #appointmentHistoryModal th {
+    position: static !important;
+    top: auto !important;
+    z-index: auto !important;
+
+    background: #f8fafc !important;
+    font-size: 11.8px !important;
+    font-weight: 950 !important;
+    letter-spacing: -0.015em !important;
+  }
+
+  #appointmentHistoryModal td {
+    height: 48px !important;
+    background: #ffffff !important;
+  }
+
+  /* 10-column Appointment History width distribution */
+  #appointmentHistoryModal th:nth-child(1),
+  #appointmentHistoryModal td:nth-child(1) {
+    width: 9% !important;
+  }
+
+  #appointmentHistoryModal th:nth-child(2),
+  #appointmentHistoryModal td:nth-child(2) {
+    width: 9% !important;
+  }
+
+  #appointmentHistoryModal th:nth-child(3),
+  #appointmentHistoryModal td:nth-child(3) {
+    width: 7% !important;
+  }
+
+  #appointmentHistoryModal th:nth-child(4),
+  #appointmentHistoryModal td:nth-child(4) {
+    width: 8% !important;
+  }
+
+  #appointmentHistoryModal th:nth-child(5),
+  #appointmentHistoryModal td:nth-child(5) {
+    width: 15% !important;
+  }
+
+  #appointmentHistoryModal th:nth-child(6),
+  #appointmentHistoryModal td:nth-child(6) {
+    width: 12% !important;
+  }
+
+  #appointmentHistoryModal th:nth-child(7),
+  #appointmentHistoryModal td:nth-child(7) {
+    width: 11% !important;
+  }
+
+  #appointmentHistoryModal th:nth-child(8),
+  #appointmentHistoryModal td:nth-child(8) {
+    width: 8.5% !important;
+  }
+
+  #appointmentHistoryModal th:nth-child(9),
+  #appointmentHistoryModal td:nth-child(9) {
+    width: 9.5% !important;
+  }
+
+  #appointmentHistoryModal th:nth-child(10),
+  #appointmentHistoryModal td:nth-child(10) {
+    width: 11% !important;
+  }
+
+  #appointmentHistoryModal .status-badge {
+    min-width: 84px !important;
+    min-height: 29px !important;
+    padding: 0 9px !important;
+
+    margin-left: auto !important;
+    margin-right: auto !important;
+
+    font-size: 10.8px !important;
+    font-weight: 900 !important;
+    line-height: 1 !important;
+  }
+}
+
+/* Tablet/mobile safety: allow horizontal scroll instead of broken columns */
+@media (max-width: 1024px) {
+  #appointmentHistoryModal.history-modal {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 14px !important;
+  }
+
+  #appointmentHistoryModal.history-modal.hidden {
+    display: none !important;
+  }
+
+  #appointmentHistoryModal .history-modal-content {
+    position: relative !important;
+    top: auto !important;
+    left: auto !important;
+    transform: none !important;
+    width: calc(100vw - 28px) !important;
+    max-width: calc(100vw - 28px) !important;
+    max-height: calc(100dvh - 28px) !important;
+  }
+
+  #appointmentHistoryModal .table-shell {
+    overflow-x: auto !important;
+    overflow-y: auto !important;
+  }
+
+  #appointmentHistoryModal table {
+    min-width: 1080px !important;
+    table-layout: auto !important;
+  }
+}
+
+/* =========================================================
+   APPOINTMENT HISTORY MODAL - PORTAL ABOVE SIDEBAR FINAL FIX
+   Purpose:
+   - Modal sits above sidebar/topbar
+   - Overlay covers the whole browser viewport
+   - Modal content is centered in the full screen
+   - Desktop view shows all columns without horizontal scroll
+   - Scoped only to Appointment History modal
+========================================================= */
+
+body > #appointmentHistoryModal.history-modal {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 2147483000 !important;
+
+  width: 100vw !important;
+  height: 100dvh !important;
+
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+
+  padding: 18px !important;
+  box-sizing: border-box !important;
+
+  overflow: hidden !important;
+}
+
+body > #appointmentHistoryModal.history-modal.hidden {
+  display: none !important;
+}
+
+body > #appointmentHistoryModal .history-modal-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 1 !important;
+
+  width: 100vw !important;
+  height: 100dvh !important;
+
+  background: rgba(15, 23, 42, 0.66) !important;
+  backdrop-filter: blur(7px) !important;
+}
+
+body > #appointmentHistoryModal .history-modal-content {
+  position: relative !important;
+  inset: auto !important;
+  top: auto !important;
+  left: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  transform: none !important;
+  z-index: 2 !important;
+
+  width: min(1520px, calc(100vw - 52px)) !important;
+  max-width: min(1520px, calc(100vw - 52px)) !important;
+  height: auto !important;
+  max-height: calc(100dvh - 52px) !important;
+
+  margin: 0 auto !important;
+  padding: 0 !important;
+
+  display: flex !important;
+  flex-direction: column !important;
+
+  overflow: hidden !important;
+
+  border-radius: 24px !important;
+  background: #ffffff !important;
+  border: 1px solid rgba(226, 232, 240, 0.96) !important;
+  box-shadow: 0 34px 95px rgba(15, 23, 42, 0.38) !important;
+}
+
+body > #appointmentHistoryModal .history-modal-header {
+  flex: 0 0 auto !important;
+
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) 54px !important;
+  align-items: center !important;
+  gap: 18px !important;
+
+  padding: 22px 30px 18px !important;
+
+  background: #ffffff !important;
+  border-bottom: 1px solid #e5e7eb !important;
+}
+
+body > #appointmentHistoryModal .history-modal-header h2 {
+  margin: 0 !important;
+  color: #123826 !important;
+  font-size: 26px !important;
+  font-weight: 950 !important;
+  line-height: 1.1 !important;
+  letter-spacing: -0.035em !important;
+}
+
+body > #appointmentHistoryModal .history-modal-header p {
+  margin: 6px 0 0 !important;
+  color: #64748b !important;
+  font-size: 14px !important;
+  line-height: 1.35 !important;
+}
+
+body > #appointmentHistoryModal .history-close-btn {
+  width: 54px !important;
+  height: 54px !important;
+  min-width: 54px !important;
+  min-height: 54px !important;
+
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+
+  background: #f1f5f9 !important;
+  color: #334155 !important;
+
+  font-size: 30px !important;
+  font-weight: 900 !important;
+  line-height: 1 !important;
+
+  cursor: pointer !important;
+}
+
+body > #appointmentHistoryModal .history-close-btn:hover {
+  background: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+body > #appointmentHistoryModal .table-shell {
+  flex: 1 1 auto !important;
+
+  width: calc(100% - 48px) !important;
+  max-width: calc(100% - 48px) !important;
+  max-height: calc(100dvh - 150px) !important;
+
+  margin: 18px auto 24px !important;
+
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+
+  border: 1px solid #e5e7eb !important;
+  border-radius: 16px !important;
+  background: #ffffff !important;
+  box-sizing: border-box !important;
+
+  scrollbar-width: thin !important;
+}
+
+body > #appointmentHistoryModal .table-shell::-webkit-scrollbar {
+  width: 8px !important;
+  height: 8px !important;
+}
+
+body > #appointmentHistoryModal .table-shell::-webkit-scrollbar-track {
+  background: #f1f5f9 !important;
+  border-radius: 999px !important;
+}
+
+body > #appointmentHistoryModal .table-shell::-webkit-scrollbar-thumb {
+  background: #9ca3af !important;
+  border-radius: 999px !important;
+}
+
+body > #appointmentHistoryModal table {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+
+  table-layout: fixed !important;
+  border-collapse: collapse !important;
+}
+
+body > #appointmentHistoryModal th,
+body > #appointmentHistoryModal td {
+  min-width: 0 !important;
+
+  padding: 10px 6px !important;
+
+  color: #0f172a !important;
+  font-size: 12px !important;
+  line-height: 1.16 !important;
+
+  text-align: center !important;
+  vertical-align: middle !important;
+
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+  word-break: normal !important;
+
+  border-bottom: 1px solid #eef2f7 !important;
+}
+
+body > #appointmentHistoryModal th {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 3 !important;
+
+  background: #f8fafc !important;
+  font-size: 11.5px !important;
+  font-weight: 950 !important;
+  letter-spacing: -0.018em !important;
+}
+
+body > #appointmentHistoryModal td {
+  height: 45px !important;
+  background: #ffffff !important;
+}
+
+body > #appointmentHistoryModal tbody tr:hover td {
+  background: #f8fafc !important;
+}
+
+/* 10-column distribution for history table after Email Address column */
+body > #appointmentHistoryModal th:nth-child(1),
+body > #appointmentHistoryModal td:nth-child(1) {
+  width: 8.5% !important;
+}
+
+body > #appointmentHistoryModal th:nth-child(2),
+body > #appointmentHistoryModal td:nth-child(2) {
+  width: 8.5% !important;
+}
+
+body > #appointmentHistoryModal th:nth-child(3),
+body > #appointmentHistoryModal td:nth-child(3) {
+  width: 6.8% !important;
+}
+
+body > #appointmentHistoryModal th:nth-child(4),
+body > #appointmentHistoryModal td:nth-child(4) {
+  width: 7.8% !important;
+}
+
+body > #appointmentHistoryModal th:nth-child(5),
+body > #appointmentHistoryModal td:nth-child(5) {
+  width: 14% !important;
+}
+
+body > #appointmentHistoryModal th:nth-child(6),
+body > #appointmentHistoryModal td:nth-child(6) {
+  width: 12.5% !important;
+}
+
+body > #appointmentHistoryModal th:nth-child(7),
+body > #appointmentHistoryModal td:nth-child(7) {
+  width: 11% !important;
+}
+
+body > #appointmentHistoryModal th:nth-child(8),
+body > #appointmentHistoryModal td:nth-child(8) {
+  width: 8.2% !important;
+}
+
+body > #appointmentHistoryModal th:nth-child(9),
+body > #appointmentHistoryModal td:nth-child(9) {
+  width: 8.7% !important;
+}
+
+body > #appointmentHistoryModal th:nth-child(10),
+body > #appointmentHistoryModal td:nth-child(10) {
+  width: 14% !important;
+}
+
+body > #appointmentHistoryModal .status-badge {
+  min-width: 82px !important;
+  min-height: 28px !important;
+  padding: 0 8px !important;
+
+  margin-left: auto !important;
+  margin-right: auto !important;
+
+  font-size: 10.6px !important;
+  font-weight: 900 !important;
+  line-height: 1 !important;
+}
+
+/* Smaller screen fallback: keep modal above sidebar but allow horizontal scroll */
+@media (max-width: 1024px) {
+  body > #appointmentHistoryModal.history-modal {
+    padding: 12px !important;
+  }
+
+  body > #appointmentHistoryModal .history-modal-content {
+    width: calc(100vw - 24px) !important;
+    max-width: calc(100vw - 24px) !important;
+    max-height: calc(100dvh - 24px) !important;
+    border-radius: 20px !important;
+  }
+
+  body > #appointmentHistoryModal .history-modal-header {
+    padding: 18px !important;
+    grid-template-columns: minmax(0, 1fr) 46px !important;
+  }
+
+  body > #appointmentHistoryModal .history-modal-header h2 {
+    font-size: 21px !important;
+  }
+
+  body > #appointmentHistoryModal .history-modal-header p {
+    font-size: 13px !important;
+  }
+
+  body > #appointmentHistoryModal .history-close-btn {
+    width: 46px !important;
+    height: 46px !important;
+    min-width: 46px !important;
+    min-height: 46px !important;
+    font-size: 25px !important;
+  }
+
+  body > #appointmentHistoryModal .table-shell {
+    width: calc(100% - 24px) !important;
+    max-width: calc(100% - 24px) !important;
+    max-height: calc(100dvh - 132px) !important;
+    margin: 12px auto 16px !important;
+    overflow-x: auto !important;
+  }
+
+  body > #appointmentHistoryModal table {
+    min-width: 1080px !important;
+    table-layout: auto !important;
+  }
+}
+
+/* =========================================================
+   APPOINTMENT HISTORY SEARCH BAR
+   Scoped only to Appointment History modal.
+========================================================= */
+
+body > #appointmentHistoryModal .appointment-history-search-toolbar,
+#appointmentHistoryModal .appointment-history-search-toolbar {
+  flex: 0 0 auto !important;
+
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  align-items: center !important;
+  gap: 14px !important;
+
+  width: calc(100% - 48px) !important;
+  max-width: calc(100% - 48px) !important;
+
+  margin: 14px auto 0 !important;
+  padding: 0 !important;
+  box-sizing: border-box !important;
+}
+
+body > #appointmentHistoryModal .appointment-history-search-box,
+#appointmentHistoryModal .appointment-history-search-box {
+  position: relative !important;
+  min-width: 0 !important;
+}
+
+body > #appointmentHistoryModal .appointment-history-search-icon,
+#appointmentHistoryModal .appointment-history-search-icon {
+  position: absolute !important;
+  left: 15px !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+
+  color: #64748b !important;
+  font-size: 18px !important;
+  font-weight: 900 !important;
+  pointer-events: none !important;
+}
+
+body > #appointmentHistoryModal .appointment-history-search-input,
+#appointmentHistoryModal .appointment-history-search-input {
+  width: 100% !important;
+  height: 44px !important;
+
+  padding: 0 44px 0 42px !important;
+
+  border: 1px solid #dbe4dc !important;
+  border-radius: 14px !important;
+  outline: none !important;
+
+  background: #f8fafc !important;
+  color: #0f172a !important;
+
+  font-size: 13px !important;
+  font-weight: 650 !important;
+
+  box-sizing: border-box !important;
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    background 0.16s ease !important;
+}
+
+body > #appointmentHistoryModal .appointment-history-search-input:focus,
+#appointmentHistoryModal .appointment-history-search-input:focus {
+  border-color: #2f8a34 !important;
+  background: #ffffff !important;
+  box-shadow: 0 0 0 4px rgba(47, 138, 52, 0.12) !important;
+}
+
+body > #appointmentHistoryModal .appointment-history-search-input::placeholder,
+#appointmentHistoryModal .appointment-history-search-input::placeholder {
+  color: #94a3b8 !important;
+  font-weight: 600 !important;
+}
+
+body > #appointmentHistoryModal .appointment-history-search-clear,
+#appointmentHistoryModal .appointment-history-search-clear {
+  position: absolute !important;
+  right: 9px !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+
+  width: 28px !important;
+  height: 28px !important;
+  min-width: 28px !important;
+  min-height: 28px !important;
+
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+
+  border: 0 !important;
+  border-radius: 999px !important;
+
+  background: #e2e8f0 !important;
+  color: #475569 !important;
+
+  font-size: 20px !important;
+  font-weight: 900 !important;
+  line-height: 1 !important;
+
+  cursor: pointer !important;
+}
+
+body > #appointmentHistoryModal .appointment-history-search-clear:hover,
+#appointmentHistoryModal .appointment-history-search-clear:hover {
+  background: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+body > #appointmentHistoryModal .appointment-history-search-meta,
+#appointmentHistoryModal .appointment-history-search-meta {
+  min-width: 118px !important;
+  padding: 10px 12px !important;
+
+  border: 1px solid #dceee0 !important;
+  border-radius: 999px !important;
+
+  background: #f0faf2 !important;
+  color: #166534 !important;
+
+  font-size: 12px !important;
+  font-weight: 900 !important;
+  line-height: 1 !important;
+  text-align: center !important;
+  white-space: nowrap !important;
+}
+
+/* Reduce table margin because search toolbar now uses the space above it */
+body > #appointmentHistoryModal .appointment-history-search-toolbar + .table-shell,
+#appointmentHistoryModal .appointment-history-search-toolbar + .table-shell {
+  margin-top: 12px !important;
+}
+
+/* Search toolbar height adjustment for the centered portal modal */
+@media (min-width: 1025px) {
+  body > #appointmentHistoryModal .table-shell {
+    max-height: calc(100dvh - 206px) !important;
+  }
+}
+
+@media (max-width: 720px) {
+  body > #appointmentHistoryModal .appointment-history-search-toolbar,
+  #appointmentHistoryModal .appointment-history-search-toolbar {
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+    width: calc(100% - 24px) !important;
+    max-width: calc(100% - 24px) !important;
+    margin-top: 12px !important;
+  }
+
+  body > #appointmentHistoryModal .appointment-history-search-meta,
+  #appointmentHistoryModal .appointment-history-search-meta {
+    width: fit-content !important;
+  }
+
+  body > #appointmentHistoryModal .appointment-history-search-input,
+  #appointmentHistoryModal .appointment-history-search-input {
+    height: 42px !important;
+    font-size: 12.5px !important;
+  }
+}
+
+/* =========================================================
+   APPOINTMENT HISTORY SEARCH BAR - COMPACT SIZE FIX
+   Purpose:
+   - Makes the history modal search bar moderate in width
+   - Keeps the search bar professional and not full-width
+   - Scoped only to Appointment History modal
+========================================================= */
+
+body > #appointmentHistoryModal .appointment-history-search-toolbar,
+#appointmentHistoryModal .appointment-history-search-toolbar {
+  width: min(640px, calc(100% - 48px)) !important;
+  max-width: min(640px, calc(100% - 48px)) !important;
+
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  justify-content: start !important;
+  align-items: center !important;
+
+  margin: 12px 0 0 24px !important;
+  gap: 10px !important;
+}
+
+body > #appointmentHistoryModal .appointment-history-search-input,
+#appointmentHistoryModal .appointment-history-search-input {
+  height: 40px !important;
+  padding-left: 38px !important;
+  padding-right: 38px !important;
+  border-radius: 12px !important;
+  font-size: 12.5px !important;
+}
+
+body > #appointmentHistoryModal .appointment-history-search-icon,
+#appointmentHistoryModal .appointment-history-search-icon {
+  left: 13px !important;
+  font-size: 16px !important;
+}
+
+body > #appointmentHistoryModal .appointment-history-search-clear,
+#appointmentHistoryModal .appointment-history-search-clear {
+  width: 25px !important;
+  height: 25px !important;
+  min-width: 25px !important;
+  min-height: 25px !important;
+  right: 8px !important;
+  font-size: 18px !important;
+}
+
+body > #appointmentHistoryModal .appointment-history-search-meta,
+#appointmentHistoryModal .appointment-history-search-meta {
+  min-width: 94px !important;
+  padding: 9px 10px !important;
+  font-size: 11px !important;
+}
+
+/* Keep table closer after smaller search bar */
+body > #appointmentHistoryModal .appointment-history-search-toolbar + .table-shell,
+#appointmentHistoryModal .appointment-history-search-toolbar + .table-shell {
+  margin-top: 10px !important;
+}
+
+@media (max-width: 720px) {
+  body > #appointmentHistoryModal .appointment-history-search-toolbar,
+  #appointmentHistoryModal .appointment-history-search-toolbar {
+    width: calc(100% - 24px) !important;
+    max-width: calc(100% - 24px) !important;
+    margin: 10px auto 0 !important;
+    grid-template-columns: 1fr !important;
+  }
+}
+
