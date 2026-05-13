@@ -196,6 +196,92 @@ function resolveBarangayByPolygon(point, boundaries) {
   return null;
 }
 
+
+function toProjectedPoint(point, referenceLat) {
+  const lat = Number(point.lat);
+  const lng = Number(point.lng);
+
+  if (Number.isNaN(lat) || Number.isNaN(lng)) {
+    return null;
+  }
+
+  const earthRadius = 6371000;
+  const latRad = toRadians(lat);
+  const lngRad = toRadians(lng);
+  const referenceLatRad = toRadians(Number(referenceLat) || 0);
+
+  return {
+    x: earthRadius * lngRad * Math.cos(referenceLatRad),
+    y: earthRadius * latRad
+  };
+}
+
+function calculatePointToSegmentDistanceMeters(point, segmentStart, segmentEnd) {
+  const referenceLat = Number(point.lat);
+
+  const p = toProjectedPoint(point, referenceLat);
+  const a = toProjectedPoint(segmentStart, referenceLat);
+  const b = toProjectedPoint(segmentEnd, referenceLat);
+
+  if (!p || !a || !b) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  const abX = b.x - a.x;
+  const abY = b.y - a.y;
+  const apX = p.x - a.x;
+  const apY = p.y - a.y;
+
+  const abLengthSquared = abX * abX + abY * abY;
+
+  if (abLengthSquared === 0) {
+    return Math.sqrt(apX * apX + apY * apY);
+  }
+
+  const t = Math.max(
+    0,
+    Math.min(1, (apX * abX + apY * abY) / abLengthSquared)
+  );
+
+  const closestX = a.x + t * abX;
+  const closestY = a.y + t * abY;
+
+  const dx = p.x - closestX;
+  const dy = p.y - closestY;
+
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function getDistanceToPolygonMeters(point, polygon) {
+  if (!Array.isArray(polygon) || polygon.length < 3) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  /*
+    If the point is inside the polygon, distance is zero.
+    This protects exact boundary assignments.
+  */
+  if (isPointInPolygon(point, polygon)) {
+    return 0;
+  }
+
+  let nearestDistance = Number.POSITIVE_INFINITY;
+
+  for (let i = 0; i < polygon.length; i++) {
+    const current = polygon[i];
+    const next = polygon[(i + 1) % polygon.length];
+
+    const distance = calculatePointToSegmentDistanceMeters(point, current, next);
+
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+    }
+  }
+
+  return nearestDistance;
+}
+
+
 function resolveNearestBarangay(point, boundaries) {
   if (!Array.isArray(boundaries) || boundaries.length === 0) {
     return null;
@@ -222,12 +308,26 @@ function resolveNearestBarangay(point, boundaries) {
       continue;
     }
 
-    const centroid = getPolygonCentroid(normalizedPolygon);
-    if (!centroid) {
-      continue;
-    }
+    /*
+      More accurate than centroid-only:
+      - Measures the point's distance to the barangay polygon edges.
+      - This prevents assigning to a barangay only because its centroid is near,
+        while another polygon boundary is actually closer.
+    */
+    let distance = getDistanceToPolygonMeters(point, normalizedPolygon);
 
-    const distance = calculateDistanceMeters(point, centroid);
+    /*
+      Fallback safety:
+      If distance-to-polygon fails, use centroid distance.
+    */
+    if (!Number.isFinite(distance)) {
+      const centroid = getPolygonCentroid(normalizedPolygon);
+      if (!centroid) {
+        continue;
+      }
+
+      distance = calculateDistanceMeters(point, centroid);
+    }
 
     if (distance < nearestDistance) {
       nearestDistance = distance;
@@ -244,5 +344,6 @@ module.exports = {
   resolveBarangayByPolygon,
   getPolygonCentroid,
   calculateDistanceMeters,
+  getDistanceToPolygonMeters,
   resolveNearestBarangay
 };
