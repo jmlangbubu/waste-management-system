@@ -112,6 +112,82 @@ function getCurrentMonthDateFilter(columnSet) {
   };
 }
 
+function getCurrentYearDateFilter(columnSet) {
+  /*
+    Monthly modal must reset every year.
+    This returns only records from January 1 to December 31 of the current year.
+    Old records stay in the database for reports/history.
+  */
+  const candidateColumns = [
+    "validated_at",
+    "validation_date",
+    "date_validated",
+    "validated_date",
+    "created_at",
+    "submitted_at",
+    "period_from"
+  ];
+
+  for (const columnName of candidateColumns) {
+    if (hasColumn(columnSet, columnName)) {
+      return {
+        columnName,
+        sql: `
+          AND ${columnName} >= MAKEDATE(YEAR(CURDATE()), 1)
+          AND ${columnName} < MAKEDATE(YEAR(CURDATE()) + 1, 1)
+        `
+      };
+    }
+  }
+
+  return {
+    columnName: "",
+    sql: ""
+  };
+}
+
+function getMonthName(monthNumber) {
+  const names = [
+    "",
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December"
+  ];
+
+  return names[Number(monthNumber)] || "Unknown";
+}
+
+function buildMonthlyAssistantComment(total, biodegradable, recyclable, residual, special) {
+  const numericTotal = Number(total || 0);
+
+  if (numericTotal <= 0) {
+    return "No validated waste data is recorded for this month yet.";
+  }
+
+  const values = [
+    { key: "Biodegradable", value: Number(biodegradable || 0), tip: "Composting and proper food waste segregation should continue." },
+    { key: "Recyclable", value: Number(recyclable || 0), tip: "Keep recyclable materials clean and separated before collection." },
+    { key: "Residual", value: Number(residual || 0), tip: "Residual waste is high, so reduce single-use packaging when possible." },
+    { key: "Special Waste", value: Number(special || 0), tip: "Special waste needs safe handling and should not be mixed with regular waste." }
+  ];
+
+  values.sort((a, b) => b.value - a.value);
+
+  const top = values[0];
+  const percent = numericTotal > 0 ? Math.round((top.value / numericTotal) * 100) : 0;
+
+  return `${top.key} has the highest share this month at ${percent}%. ${top.tip}`;
+}
+
 function ensureScanHistoryOptionalColumns(callback) {
   getScanHistoryColumnSet((columnErr, columnSet) => {
     if (columnErr) {
@@ -396,6 +472,145 @@ router.get("/analytics/barangay", (req, res) => {
     });
   });
 });
+
+
+/* =========================================
+   BARANGAY MONTHLY ANALYTICS FOR CITIZEN MODAL
+   - Current year only
+   - Resets visually every year without deleting old records
+========================================= */
+router.get("/analytics/barangay/monthly", (req, res) => {
+  const barangay = req.query ? String(req.query.barangay || "").trim() : "";
+
+  if (!barangay) {
+    return res.status(400).json({
+      success: false,
+      message: "Barangay is required"
+    });
+  }
+
+  getTableColumnSet("validated_waste_records", (columnErr, columnSet) => {
+    if (columnErr) {
+      console.error("[DB] Failed to inspect validated_waste_records columns:", columnErr);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to inspect waste analytics table",
+        error: columnErr.message
+      });
+    }
+
+    const yearFilter = getCurrentYearDateFilter(columnSet);
+
+    if (!yearFilter.columnName) {
+      return res.json({
+        success: true,
+        data: {
+          barangay,
+          scope: "current_year",
+          year: new Date().getFullYear(),
+          date_column_used: null,
+          grand_total: 0,
+          total_records: 0,
+          months: Array.from({ length: 12 }, (_, index) => ({
+            month: index + 1,
+            month_name: getMonthName(index + 1),
+            biodegradable: 0,
+            recyclable: 0,
+            residual: 0,
+            special: 0,
+            total: 0,
+            total_records: 0,
+            assistant_comment: "No validated waste data is recorded for this month yet."
+          }))
+        }
+      });
+    }
+
+    const sql = `
+      SELECT
+        MONTH(${yearFilter.columnName}) AS month_number,
+        COALESCE(SUM(CAST(biodegradable_subtotal AS DECIMAL(12,2))), 0) AS biodegradable,
+        COALESCE(SUM(CAST(recyclable_subtotal AS DECIMAL(12,2))), 0) AS recyclable,
+        COALESCE(SUM(CAST(residual_subtotal AS DECIMAL(12,2))), 0) AS residual,
+        COALESCE(SUM(CAST(special_subtotal AS DECIMAL(12,2))), 0) AS special,
+        COALESCE(SUM(CAST(grand_total AS DECIMAL(12,2))), 0) AS total_records_waste,
+        COUNT(*) AS total_records
+      FROM validated_waste_records
+      WHERE LOWER(TRIM(barangay_name)) = LOWER(TRIM(?))
+        AND LOWER(TRIM(validation_status)) = 'validated'
+        ${yearFilter.sql}
+      GROUP BY MONTH(${yearFilter.columnName})
+      ORDER BY month_number ASC
+    `;
+
+    db.query(sql, [barangay], (err, rows) => {
+      if (err) {
+        console.error("[DB] Failed to load barangay monthly analytics:", err);
+        return res.status(500).json({
+          success: false,
+          message: "Failed to load barangay monthly analytics",
+          error: err.message
+        });
+      }
+
+      const rowMap = new Map();
+
+      (rows || []).forEach((row) => {
+        rowMap.set(Number(row.month_number || 0), row);
+      });
+
+      let grandTotal = 0;
+      let totalRecords = 0;
+
+      const months = Array.from({ length: 12 }, (_, index) => {
+        const monthNumber = index + 1;
+        const row = rowMap.get(monthNumber) || {};
+
+        const biodegradable = Number(row.biodegradable || 0);
+        const recyclable = Number(row.recyclable || 0);
+        const residual = Number(row.residual || 0);
+        const special = Number(row.special || 0);
+        const total = Number(row.total_records_waste || 0);
+        const records = Number(row.total_records || 0);
+
+        grandTotal += total;
+        totalRecords += records;
+
+        return {
+          month: monthNumber,
+          month_name: getMonthName(monthNumber),
+          biodegradable,
+          recyclable,
+          residual,
+          special,
+          total,
+          total_records: records,
+          assistant_comment: buildMonthlyAssistantComment(
+            total,
+            biodegradable,
+            recyclable,
+            residual,
+            special
+          )
+        };
+      });
+
+      return res.json({
+        success: true,
+        data: {
+          barangay,
+          scope: "current_year",
+          year: new Date().getFullYear(),
+          date_column_used: yearFilter.columnName,
+          grand_total: Number(grandTotal.toFixed(2)),
+          total_records: totalRecords,
+          months
+        }
+      });
+    });
+  });
+});
+
 
 /* =========================================
    AI ANALYZE
