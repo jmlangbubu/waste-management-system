@@ -3050,31 +3050,86 @@ function closeComplaintHistoryModal() {
 // COMPLAINT RESOLUTION MODAL
 // =========================
 
-function getValidResolutionImagePath(record) {
-  const candidates = [
+function isValidResolutionImagePath(path) {
+  if (!path) return false;
+
+  const value = String(path).trim();
+
+  if (!value) return false;
+
+  const lowered = value.toLowerCase();
+
+  if (lowered === "null" || lowered === "undefined") return false;
+
+  /*
+    Reject folder-only values.
+    These are not actual image files and will always fail.
+  */
+  if (
+    lowered === "/uploads/complaints" ||
+    lowered === "uploads/complaints" ||
+    lowered === "/uploads/complaints/" ||
+    lowered === "uploads/complaints/" ||
+    lowered === "/uploads/cplaints" ||
+    lowered === "uploads/cplaints" ||
+    lowered === "/uploads/cplaints/" ||
+    lowered === "uploads/cplaints/"
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+function getResolutionImageCandidates(record = {}) {
+  const rawCandidates = [
+    /*
+      Priority 1:
+      Barangay resolution evidence uploaded during resolve action.
+    */
     record?.resolution_evidence_url,
+    record?.resolution_image_url,
+    record?.resolution_photo_url,
+    record?.resolved_evidence_url,
+    record?.resolved_image_url,
+    record?.resolved_photo_url,
+
+    /*
+      Priority 2:
+      Original complaint image / older field names.
+      This makes the modal still show a usable image when the resolution
+      evidence path is missing, old, or failed after redeploy.
+    */
     record?.image_url,
+    record?.complaint_image_url,
     record?.evidence_url,
     record?.photo_url
   ];
 
-  return candidates.find((path) => {
-    if (!path) return false;
+  const seen = new Set();
 
-    const value = String(path).trim().toLowerCase();
+  return rawCandidates
+    .filter(isValidResolutionImagePath)
+    .map((path) => String(path).trim())
+    .filter((path) => {
+      const key = path.toLowerCase();
+      if (seen.has(key)) return false;
 
-    if (!value || value === "null" || value === "undefined") return false;
+      seen.add(key);
+      return true;
+    });
+}
 
-    if (
-      value === "/uploads/complaints" ||
-      value === "uploads/complaints" ||
-      value.endsWith("/uploads/complaints/")
-    ) {
-      return false;
-    }
+function getValidResolutionImagePath(record) {
+  const candidates = getResolutionImageCandidates(record);
+  return candidates[0] || "";
+}
 
-    return true;
-  }) || "";
+function addCacheBusterToImageUrl(url) {
+  if (!url) return "";
+
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}t=${Date.now()}`;
 }
 
 function renderResolutionEvidenceImage(record) {
@@ -3084,12 +3139,17 @@ function renderResolutionEvidenceImage(record) {
 
   if (!evidenceImg) return;
 
-  const rawImage = getValidResolutionImagePath(record);
-  const evidenceUrl = getImageUrl(rawImage);
+  const rawCandidates = getResolutionImageCandidates(record);
+  const imageCandidates = rawCandidates
+    .map((rawPath) => ({
+      rawPath,
+      imageUrl: getImageUrl(rawPath)
+    }))
+    .filter((item) => item.imageUrl);
 
   console.log("CURRENT RESOLUTION DATA:", record);
-  console.log("RAW IMAGE PATH:", rawImage);
-  console.log("FINAL IMAGE URL:", evidenceUrl);
+  console.log("RAW IMAGE CANDIDATES:", rawCandidates);
+  console.log("FINAL IMAGE URL CANDIDATES:", imageCandidates.map(item => item.imageUrl));
 
   evidenceImg.onload = null;
   evidenceImg.onerror = null;
@@ -3105,40 +3165,66 @@ function renderResolutionEvidenceImage(record) {
     noEvidence.classList.remove("hidden");
   }
 
-  if (!evidenceUrl) {
+  if (!imageCandidates.length) {
     if (noEvidence) noEvidence.textContent = "No evidence image submitted.";
     return;
   }
 
-  evidenceImg.onload = () => {
-    evidenceImg.classList.remove("hidden");
-    evidenceImg.style.display = "block";
+  let currentIndex = 0;
 
-    if (evidenceFrame) evidenceFrame.style.display = "flex";
-    if (noEvidence) noEvidence.classList.add("hidden");
+  const tryLoadImage = () => {
+    const current = imageCandidates[currentIndex];
 
-    if (typeof enableImagePreview === "function") {
-      enableImagePreview(evidenceImg);
+    if (!current) {
+      evidenceImg.removeAttribute("src");
+      evidenceImg.classList.add("hidden");
+      evidenceImg.style.display = "none";
+
+      if (evidenceFrame) evidenceFrame.style.display = "none";
+
+      if (noEvidence) {
+        noEvidence.textContent = "Image failed to load.";
+        noEvidence.classList.remove("hidden");
+      }
+
+      return;
     }
-  };
-
-  evidenceImg.onerror = () => {
-    console.error("Image failed to load:", evidenceUrl);
-
-    evidenceImg.removeAttribute("src");
-    evidenceImg.classList.add("hidden");
-    evidenceImg.style.display = "none";
-
-    if (evidenceFrame) evidenceFrame.style.display = "none";
 
     if (noEvidence) {
-      noEvidence.textContent = "Image failed to load.";
+      noEvidence.textContent =
+        imageCandidates.length > 1
+          ? `Loading evidence image ${currentIndex + 1} of ${imageCandidates.length}...`
+          : "Loading evidence image...";
       noEvidence.classList.remove("hidden");
     }
+
+    evidenceImg.onload = () => {
+      console.log("Resolution image loaded:", current.imageUrl);
+
+      evidenceImg.classList.remove("hidden");
+      evidenceImg.style.display = "block";
+
+      if (evidenceFrame) evidenceFrame.style.display = "flex";
+      if (noEvidence) noEvidence.classList.add("hidden");
+
+      if (typeof enableImagePreview === "function") {
+        enableImagePreview(evidenceImg);
+      }
+    };
+
+    evidenceImg.onerror = () => {
+      console.warn("Resolution image failed, trying next if available:", current.imageUrl);
+
+      currentIndex += 1;
+      tryLoadImage();
+    };
+
+    evidenceImg.src = addCacheBusterToImageUrl(current.imageUrl);
   };
 
-  evidenceImg.src = evidenceUrl;
+  tryLoadImage();
 }
+
 
 function openComplaintResolutionModal(complaintId) {
   mountComplaintModalsToBody();
