@@ -13,6 +13,7 @@
   "dependencies": {
     "@google-cloud/vision": "^5.3.5",
     "bcrypt": "^6.0.0",
+    "cloudinary": "^2.5.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.0",
