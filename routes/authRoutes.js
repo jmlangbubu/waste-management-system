@@ -92,6 +92,16 @@ function cleanText(value) {
   return text;
 }
 
+
+function escapeHtml(value) {
+  return cleanText(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function isValidEmail(email) {
   const value = cleanText(email).toLowerCase();
   if (!value) return false;
@@ -440,35 +450,127 @@ async function sendVerificationEmail(email, fullName, verificationCode) {
   logEmailProviderStatus();
 
   const safeName = cleanText(fullName) || "Citizen";
+  const safeNameHtml = escapeHtml(safeName);
+  const safeCode = cleanText(verificationCode);
+  const safeCodeHtml = escapeHtml(safeCode);
 
-  const subject = "Verify your WMO account";
+  const subject = "Verify your WMO Account";
 
   const text = [
     `Hello ${safeName},`,
     "",
+    "Welcome to WMO.",
+    "",
     "Use this verification code to activate your account:",
     "",
-    verificationCode,
+    safeCode,
     "",
     "This code will expire in 15 minutes.",
+    "Do not share this code with anyone.",
     "",
     "If you did not create this account, you can ignore this email.",
     "",
-    "WMO"
-  ].join("\\n");
+    "Waste Management Office"
+  ].join("\n");
 
   const html = `
-    <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #173C2C;">
-      <h2 style="margin-bottom: 8px;">Verify your account</h2>
-      <p>Hello <strong>${safeName}</strong>,</p>
-      <p>Use this verification code to activate your WMO account:</p>
-      <div style="font-size: 28px; font-weight: bold; letter-spacing: 4px; padding: 14px 18px; background: #F1F8F3; border-radius: 12px; display: inline-block; color: #2F8A34;">
-        ${verificationCode}
-      </div>
-      <p style="margin-top: 18px;">This code will expire in <strong>15 minutes</strong>.</p>
-      <p>If you did not create this account, you can ignore this email.</p>
-      <p style="color: #66766D;">WMO</p>
-    </div>
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Verify your WMO Account</title>
+      </head>
+      <body style="margin:0; padding:0; background:#F3F8F4; font-family:Arial, Helvetica, sans-serif; color:#173C2C;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#F3F8F4; margin:0; padding:24px 12px;">
+          <tr>
+            <td align="center">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:620px; background:#FFFFFF; border-radius:22px; overflow:hidden; border:1px solid #DCE9DF; box-shadow:0 8px 22px rgba(18,56,38,0.08);">
+                <tr>
+                  <td style="background:#0B4B2B; padding:24px 28px;">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                      <tr>
+                        <td style="vertical-align:middle;">
+                          <div style="display:inline-block; width:46px; height:46px; line-height:46px; text-align:center; border-radius:16px; background:#E7F5EA; color:#0B4B2B; font-weight:800; font-size:15px; letter-spacing:0.5px;">
+                            WMO
+                          </div>
+                        </td>
+                        <td style="vertical-align:middle; padding-left:14px;">
+                          <div style="font-size:20px; line-height:1.25; font-weight:800; color:#FFFFFF;">
+                            Waste Management Office
+                          </div>
+                          <div style="font-size:12px; line-height:1.5; color:#CFE6D6; margin-top:2px;">
+                            Account Verification
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <tr>
+                  <td style="padding:30px 28px 10px 28px;">
+                    <div style="font-size:24px; line-height:1.25; font-weight:800; color:#123826; margin:0 0 10px 0;">
+                      Verify your account
+                    </div>
+
+                    <div style="font-size:15px; line-height:1.7; color:#40564A; margin:0 0 20px 0;">
+                      Hello <strong style="color:#123826;">${safeNameHtml}</strong>, use the code below to activate your WMO account.
+                    </div>
+
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 22px 0;">
+                      <tr>
+                        <td align="center" style="background:#F0FAF2; border:1px solid #D4EBDD; border-radius:18px; padding:22px 14px;">
+                          <div style="font-size:11px; line-height:1.4; color:#60756A; font-weight:700; letter-spacing:0.8px; text-transform:uppercase; margin-bottom:8px;">
+                            Verification Code
+                          </div>
+                          <div style="font-size:34px; line-height:1; font-weight:900; letter-spacing:8px; color:#2F8A34; font-family:Arial, Helvetica, sans-serif;">
+                            ${safeCodeHtml}
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
+
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 20px 0;">
+                      <tr>
+                        <td style="background:#FFF8E7; border:1px solid #F1D28A; border-radius:16px; padding:14px 16px;">
+                          <div style="font-size:14px; line-height:1.6; color:#5F4A1A;">
+                            This code will expire in <strong>15 minutes</strong>. For security, do not share this code with anyone.
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
+
+                    <div style="font-size:14px; line-height:1.7; color:#60756A;">
+                      If you did not create this account, you can safely ignore this email.
+                    </div>
+                  </td>
+                </tr>
+
+                <tr>
+                  <td style="padding:22px 28px 28px 28px;">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-top:1px solid #E4EEE7;">
+                      <tr>
+                        <td style="padding-top:18px;">
+                          <div style="font-size:13px; line-height:1.6; color:#7B8C82;">
+                            Waste Management Office<br>
+                            General Santos City
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+
+              <div style="max-width:620px; margin:14px auto 0 auto; font-size:11px; line-height:1.6; color:#7B8C82; text-align:center;">
+                This is an automated message. Please do not reply to this email.
+              </div>
+            </td>
+          </tr>
+        </table>
+      </body>
+    </html>
   `;
 
   /*
