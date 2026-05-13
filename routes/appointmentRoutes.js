@@ -90,7 +90,7 @@ function buildAppointmentStatusUrl(appointmentCode, contact) {
     cleanText(process.env.FRONTEND_URL) ||
     "https://wastegensan.com/";
 
-  const hashFromEnv = cleanText(process.env.APPOINTMENT_STATUS_HASH) || "appointment-status";
+  const hashFromEnv = cleanText(process.env.APPOINTMENT_STATUS_HASH) || "appointmentStatusSection";
 
   let baseUrl = configuredUrl;
   let hashValue = hashFromEnv;
@@ -150,7 +150,7 @@ function buildAppointmentRescheduledEmailText(details) {
     "",
     `Check appointment status: ${cleanText(details.statusUrl) || "-"}`,
     "",
-    "Please be guided by the updated schedule. If you have questions, contact the Waste Management Office.",
+    "Please be guided by the updated schedule. Save or copy your reference code because you will need it when checking your appointment status on the public portal. If you have questions, contact the Waste Management Office.",
     "",
     "Waste Management Office",
     "General Santos City"
@@ -164,7 +164,7 @@ function buildAppointmentRescheduledEmailHtml(details) {
   const purpose = escapeHtml(details.purpose || "Appointment");
   const appointmentCode = escapeHtml(details.appointmentCode || `Appointment #${details.appointmentId || ""}`);
   const assignedTo = escapeHtml(details.assignedTo || "WMO Personnel");
-  const statusUrl = escapeHtml(details.statusUrl || "https://wastegensan.com/#appointment-status");
+  const statusUrl = escapeHtml(details.statusUrl || "https://wastegensan.com/#appointmentStatusSection");
 
   return `
     <!doctype html>
@@ -255,7 +255,7 @@ function buildAppointmentRescheduledEmailHtml(details) {
                       <tr>
                         <td style="background:#FFF8E7; border:1px solid #F1D28A; border-radius:16px; padding:14px 16px;">
                           <div style="font-size:14px; line-height:1.6; color:#5F4A1A;">
-                            Please be guided by the updated schedule. Arrive on time and bring any required information related to your appointment.
+                            Please be guided by the updated schedule. Save or copy your reference code because you will need it when checking your appointment status on the public portal.
                           </div>
                         </td>
                       </tr>
