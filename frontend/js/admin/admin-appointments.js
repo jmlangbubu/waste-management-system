@@ -66,7 +66,9 @@ async function loadAppointments() {
     ]);
 
     renderAppointmentsTable(sortedActiveAppointments);
-    renderAppointmentHistory(sortedHistoryAppointments);
+    appointmentHistoryRecords = sortedHistoryAppointments;
+
+    renderAppointmentHistory(appointmentHistoryRecords, true);
   } catch (error) {
     console.error("Error loading appointments:", error);
     allAppointments = [];
@@ -215,7 +217,7 @@ function renderAppointmentsTable(appointments) {
   if (!Array.isArray(appointments) || !appointments.length) {
     tableBody.innerHTML = `
       <tr>
-        <td colspan="9" class="empty-state">No active appointments found.</td>
+        <td colspan="10" class="empty-state">No active appointments found.</td>
       </tr>
     `;
     return;
@@ -231,6 +233,13 @@ function renderAppointmentsTable(appointments) {
       app.contact_number ||
       app.phone ||
       app.mobile_number ||
+      "-";
+    const displayEmail =
+      app.email ||
+      app.email_address ||
+      app.user_email ||
+      app.client_email ||
+      app.appointment_email ||
       "-";
     const displayPurpose = app.purpose || app.waste_type || "-";
     const displayDate = app.appointment_date || app.preferred_date || null;
@@ -252,6 +261,7 @@ function renderAppointmentsTable(appointments) {
         <td>${escapeHtml(displayName)}</td>
         <td>${escapeHtml(displayBarangay)}</td>
         <td>${escapeHtml(displayContact)}</td>
+        <td>${escapeHtml(displayEmail)}</td>
         <td>${escapeHtml(displayPurpose)}</td>
         <td>
           ${formatDateTimeDisplay(displayDate)}
@@ -342,17 +352,198 @@ function renderStatusBadge(status) {
 }
 
 /* =========================
+   APPOINTMENT MODAL PORTAL FIX
+   Keeps Appointment History modal above sidebar/topbar by moving
+   the existing modal DOM node to <body>. Event listeners are preserved.
+========================= */
+
+const APPOINTMENT_PORTAL_MODAL_IDS = [
+  "appointmentHistoryModal"
+];
+
+function mountAppointmentModalsToBody() {
+  APPOINTMENT_PORTAL_MODAL_IDS.forEach((modalId) => {
+    const modal = document.getElementById(modalId);
+
+    if (!modal) return;
+
+    if (modal.parentElement !== document.body) {
+      document.body.appendChild(modal);
+    }
+  });
+}
+
+window.mountAppointmentModalsToBody = mountAppointmentModalsToBody;
+
+/* =========================
+   APPOINTMENT HISTORY SEARCH STATE
+========================= */
+
+let appointmentHistoryRecords = [];
+let appointmentHistorySearchQuery = "";
+
+/* =========================
    APPOINTMENT HISTORY
 ========================= */
 
+function normalizeAppointmentHistorySearchText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getAppointmentEmail(app = {}) {
+  return (
+    app.email ||
+    app.email_address ||
+    app.user_email ||
+    app.client_email ||
+    app.appointment_email ||
+    "-"
+  );
+}
+
+function getAppointmentHistorySearchText(app = {}) {
+  const values = [
+    app.appointment_code,
+    app.name,
+    app.full_name,
+    app.barangay,
+    app.contact,
+    app.contact_number,
+    app.phone,
+    app.mobile_number,
+    getAppointmentEmail(app),
+    app.purpose,
+    app.waste_type,
+    app.appointment_date,
+    app.preferred_date,
+    app.status,
+    app.assigned_personnel,
+    app.assigned_personnel_name,
+    app.assigned_to,
+    app.updated_at,
+    app.created_at
+  ];
+
+  return normalizeAppointmentHistorySearchText(values.join(" "));
+}
+
+function getFilteredAppointmentHistory(records = []) {
+  const query = normalizeAppointmentHistorySearchText(appointmentHistorySearchQuery);
+
+  if (!query) return records;
+
+  return records.filter((app) => getAppointmentHistorySearchText(app).includes(query));
+}
+
+function updateAppointmentHistorySearchMeta(totalCount, visibleCount) {
+  const meta = document.getElementById("appointmentHistorySearchMeta");
+  if (!meta) return;
+
+  const query = normalizeAppointmentHistorySearchText(appointmentHistorySearchQuery);
+
+  if (!totalCount) {
+    meta.textContent = "No records";
+    return;
+  }
+
+  if (!query) {
+    meta.textContent = `${totalCount} record${totalCount === 1 ? "" : "s"}`;
+    return;
+  }
+
+  meta.textContent = `${visibleCount} of ${totalCount} shown`;
+}
+
+function ensureAppointmentHistorySearchBar() {
+  const modal = document.getElementById("appointmentHistoryModal");
+  const content = modal?.querySelector(".history-modal-content");
+  const header = modal?.querySelector(".history-modal-header");
+
+  if (!modal || !content || !header) return null;
+
+  let toolbar = document.getElementById("appointmentHistorySearchToolbar");
+
+  if (!toolbar) {
+    toolbar = document.createElement("div");
+    toolbar.id = "appointmentHistorySearchToolbar";
+    toolbar.className = "appointment-history-search-toolbar";
+
+    toolbar.innerHTML = `
+      <div class="appointment-history-search-box">
+        <span class="appointment-history-search-icon" aria-hidden="true">⌕</span>
+        <input
+          type="text"
+          id="appointmentHistorySearchInput"
+          class="appointment-history-search-input"
+          placeholder="Search appointment history..."
+          autocomplete="off"
+        />
+        <button
+          type="button"
+          id="clearAppointmentHistorySearchBtn"
+          class="appointment-history-search-clear"
+          aria-label="Clear appointment history search"
+          title="Clear search"
+        >
+          ×
+        </button>
+      </div>
+
+      <div id="appointmentHistorySearchMeta" class="appointment-history-search-meta">
+        No records
+      </div>
+    `;
+
+    header.insertAdjacentElement("afterend", toolbar);
+  }
+
+  const input = document.getElementById("appointmentHistorySearchInput");
+  const clearBtn = document.getElementById("clearAppointmentHistorySearchBtn");
+
+  if (input && !input.dataset.boundAppointmentHistorySearch) {
+    input.dataset.boundAppointmentHistorySearch = "true";
+
+    input.addEventListener("input", () => {
+      appointmentHistorySearchQuery = input.value || "";
+      renderAppointmentHistory(appointmentHistoryRecords, true);
+    });
+  }
+
+  if (clearBtn && !clearBtn.dataset.boundAppointmentHistorySearch) {
+    clearBtn.dataset.boundAppointmentHistorySearch = "true";
+
+    clearBtn.addEventListener("click", () => {
+      appointmentHistorySearchQuery = "";
+
+      if (input) {
+        input.value = "";
+        input.focus();
+      }
+
+      renderAppointmentHistory(appointmentHistoryRecords, true);
+    });
+  }
+
+  if (input && input.value !== appointmentHistorySearchQuery) {
+    input.value = appointmentHistorySearchQuery;
+  }
+
+  return toolbar;
+}
+
 async function openAppointmentHistory() {
+  mountAppointmentModalsToBody();
+  ensureAppointmentHistorySearchBar();
   const modal = document.getElementById("appointmentHistoryModal");
   const tableBody = document.getElementById("appointmentHistoryTableBody");
 
   if (tableBody) {
     tableBody.innerHTML = `
       <tr>
-        <td colspan="8" class="loading-state">Loading appointment history...</td>
+        <td colspan="10" class="loading-state">Loading appointment history...</td>
       </tr>
     `;
   }
@@ -382,7 +573,9 @@ async function openAppointmentHistory() {
       ? data
       : (data.history || data.data || []);
 
-    renderAppointmentHistory(sortAppointmentRecordsByReference(historyAppointments));
+    appointmentHistoryRecords = sortAppointmentRecordsByReference(historyAppointments);
+
+    renderAppointmentHistory(appointmentHistoryRecords, true);
 
     if (modal) {
       modal.classList.remove("hidden");
@@ -393,7 +586,7 @@ async function openAppointmentHistory() {
     if (tableBody) {
       tableBody.innerHTML = `
         <tr>
-          <td colspan="8" class="empty-state">Failed to load appointment history.</td>
+          <td colspan="10" class="empty-state">Failed to load appointment history.</td>
         </tr>
       `;
     }
@@ -409,25 +602,53 @@ function closeAppointmentHistory() {
   modal?.classList.add("hidden");
 }
 
-function renderAppointmentHistory(history = []) {
+function renderAppointmentHistory(history = [], preserveSearch = false) {
   const tableBody = document.getElementById("appointmentHistoryTableBody");
   if (!tableBody) return;
 
-  if (!Array.isArray(history) || !history.length) {
+  ensureAppointmentHistorySearchBar();
+
+  const sourceHistory = Array.isArray(history) ? history : [];
+
+  appointmentHistoryRecords = sortAppointmentRecordsByReference(sourceHistory);
+
+  if (!preserveSearch && !appointmentHistorySearchQuery) {
+    const input = document.getElementById("appointmentHistorySearchInput");
+    if (input) input.value = "";
+  }
+
+  const filteredHistory = getFilteredAppointmentHistory(appointmentHistoryRecords);
+
+  updateAppointmentHistorySearchMeta(appointmentHistoryRecords.length, filteredHistory.length);
+
+  if (!appointmentHistoryRecords.length) {
     tableBody.innerHTML = `
       <tr>
-        <td colspan="9" class="empty-state">No history</td>
+        <td colspan="10" class="empty-state">No history</td>
       </tr>
     `;
     return;
   }
 
-  const sortedHistory = sortAppointmentRecordsByReference(history);
+  if (!filteredHistory.length) {
+    tableBody.innerHTML = `
+      <tr>
+        <td colspan="10" class="empty-state">No appointment history matches your search.</td>
+      </tr>
+    `;
+    return;
+  }
 
-  tableBody.innerHTML = sortedHistory.map((app) => {
+  tableBody.innerHTML = filteredHistory.map((app) => {
     const displayName = app.name || app.full_name || "-";
     const displayBarangay = app.barangay || "-";
-    const displayContact = app.contact || app.contact_number || "-";
+    const displayContact =
+      app.contact ||
+      app.contact_number ||
+      app.phone ||
+      app.mobile_number ||
+      "-";
+    const displayEmail = getAppointmentEmail(app);
     const displayPurpose = app.purpose || app.waste_type || "-";
     const displayDate = app.appointment_date || app.preferred_date || null;
     const displayAssigned =
@@ -442,8 +663,9 @@ function renderAppointmentHistory(history = []) {
         <td>${escapeHtml(displayName)}</td>
         <td>${escapeHtml(displayBarangay)}</td>
         <td>${escapeHtml(displayContact)}</td>
+        <td>${escapeHtml(displayEmail)}</td>
         <td>${escapeHtml(displayPurpose)}</td>
-       <td>${formatDateTimeDisplay(displayDate)}</td>
+        <td>${formatDateTimeDisplay(displayDate)}</td>
         <td>${renderStatusBadge(app.status)}</td>
         <td>${escapeHtml(displayAssigned)}</td>
         <td>${formatDate(app.updated_at || app.created_at)}</td>
@@ -608,6 +830,8 @@ async function handleCancel(id) {
 }
 
 function initializeAppointments() {
+  mountAppointmentModalsToBody();
+  ensureAppointmentHistorySearchBar();
   const openBtn = document.getElementById("openAppointmentHistoryBtn");
   const closeBtn = document.getElementById("closeAppointmentHistoryBtn");
   const overlay = document.getElementById("historyModalOverlay");
@@ -1026,6 +1250,8 @@ window.addEventListener("scroll", () => {
 }, true);
 
 document.addEventListener("DOMContentLoaded", () => {
+  mountAppointmentModalsToBody();
+  ensureAppointmentHistorySearchBar();
   setupAppointmentCustomDropdowns();
   observeAppointmentCustomDropdowns();
 
@@ -1037,3 +1263,5 @@ document.addEventListener("DOMContentLoaded", () => {
 window.setupAppointmentCustomDropdowns = setupAppointmentCustomDropdowns;
 window.closeAppointmentCustomDropdown = closeAppointmentCustomDropdown;
 window.syncAppointmentCustomDropdown = syncAppointmentCustomDropdown;
+
+window.ensureAppointmentHistorySearchBar = ensureAppointmentHistorySearchBar;
