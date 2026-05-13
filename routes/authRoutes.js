@@ -3,6 +3,9 @@ const router = express.Router();
 const db = require("../config/db");
 const bcrypt = require("bcrypt");
 const crypto = require("crypto");
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
 
 let nodemailer = null;
 let ResendSDK = null;
@@ -21,6 +24,57 @@ try {
 }
 
 console.log("✅ authRoutes.js file executed");
+
+/* =========================================================
+   PROFILE UPLOAD CONFIG
+   ========================================================= */
+
+const ROOT_DIR = path.join(__dirname, "..");
+const UPLOADS_DIR = path.join(ROOT_DIR, "uploads");
+const PROFILE_UPLOADS_DIR = path.join(UPLOADS_DIR, "profiles");
+
+if (!fs.existsSync(PROFILE_UPLOADS_DIR)) {
+  fs.mkdirSync(PROFILE_UPLOADS_DIR, { recursive: true });
+}
+
+const profileStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, PROFILE_UPLOADS_DIR);
+  },
+  filename: (req, file, cb) => {
+    const userId = cleanText(req.params ? req.params.userId : "user");
+    const ext = path.extname(file.originalname || "").toLowerCase() || ".jpg";
+    const safeExt = [".jpg", ".jpeg", ".png", ".webp"].includes(ext) ? ext : ".jpg";
+    cb(null, `PROFILE_${userId}_${Date.now()}${safeExt}`);
+  }
+});
+
+const profileUpload = multer({
+  storage: profileStorage,
+  limits: {
+    fileSize: 5 * 1024 * 1024
+  },
+  fileFilter: (req, file, cb) => {
+    const mimetype = (file.mimetype || "").toLowerCase();
+
+    if (!mimetype.startsWith("image/")) {
+      return cb(new Error("Only image files are allowed."));
+    }
+
+    return cb(null, true);
+  }
+});
+
+const DEFAULT_PROFILE_AVATAR_KEYS = new Set([
+  "avatar_leaf",
+  "avatar_recycle",
+  "avatar_green",
+  "avatar_blue",
+  "avatar_orange",
+  "avatar_purple"
+]);
+
+
 
 /* =========================================================
    HELPERS
@@ -144,6 +198,111 @@ function ensureUsersEmailColumns(callback) {
   });
 }
 
+
+function ensureUsersProfileColumns(callback) {
+  getUsersColumnSet((columnErr, columnSet) => {
+    if (columnErr) {
+      return callback(columnErr);
+    }
+
+    const alterSql = [];
+
+    if (!hasColumn(columnSet, "profile_image_url")) {
+      alterSql.push(`
+        ALTER TABLE users
+        ADD COLUMN profile_image_url VARCHAR(500) NULL
+      `);
+    }
+
+    if (!hasColumn(columnSet, "profile_avatar_key")) {
+      alterSql.push(`
+        ALTER TABLE users
+        ADD COLUMN profile_avatar_key VARCHAR(100) NULL
+      `);
+    }
+
+    if (!hasColumn(columnSet, "profile_updated_at")) {
+      alterSql.push(`
+        ALTER TABLE users
+        ADD COLUMN profile_updated_at DATETIME NULL
+      `);
+    }
+
+    if (alterSql.length === 0) {
+      return callback(null);
+    }
+
+    runSequentialSql(alterSql, (alterErr) => {
+      if (alterErr) {
+        console.error("Failed to add users profile columns:", alterErr);
+        return callback(alterErr);
+      }
+
+      console.log("✅ users profile columns checked/added.");
+      return callback(null);
+    });
+  });
+}
+
+function ensureUserProfileReady(callback) {
+  ensureUsersEmailColumns((emailErr) => {
+    if (emailErr) {
+      return callback(emailErr);
+    }
+
+    ensureUsersProfileColumns(callback);
+  });
+}
+
+function buildPublicUrl(req, relativePath) {
+  const cleanPath = cleanText(relativePath);
+
+  if (!cleanPath) return "";
+
+  if (cleanPath.startsWith("http://") || cleanPath.startsWith("https://")) {
+    return cleanPath;
+  }
+
+  /*
+    Keep relative path in DB, but return a full URL too.
+    x-forwarded-proto helps Render return https:// instead of http://.
+  */
+  const protocol = cleanText(req.headers["x-forwarded-proto"]) || req.protocol || "https";
+  const host = req.get("host");
+
+  if (!host) return cleanPath;
+
+  return `${protocol}://${host}${cleanPath.startsWith("/") ? "" : "/"}${cleanPath}`;
+}
+
+function deleteOldProfileImageIfLocal(oldProfileImageUrl) {
+  const cleanUrl = cleanText(oldProfileImageUrl);
+
+  if (!cleanUrl || !cleanUrl.startsWith("/uploads/profiles/")) {
+    return;
+  }
+
+  const fileName = path.basename(cleanUrl);
+  const filePath = path.join(PROFILE_UPLOADS_DIR, fileName);
+
+  fs.unlink(filePath, (err) => {
+    if (err && err.code !== "ENOENT") {
+      console.warn("Failed to delete old profile image:", err.message);
+    }
+  });
+}
+
+function getSafeUserId(value) {
+  const userId = parseInt(cleanText(value), 10);
+
+  if (!Number.isFinite(userId) || userId <= 0) {
+    return -1;
+  }
+
+  return userId;
+}
+
+
 function ensurePendingCitizenSignupsTable(callback) {
   const sql = `
     CREATE TABLE IF NOT EXISTS pending_citizen_signups (
@@ -178,12 +337,18 @@ function ensureAuthTables(callback) {
       return callback(usersErr);
     }
 
-    ensurePendingCitizenSignupsTable((pendingErr) => {
-      if (pendingErr) {
-        return callback(pendingErr);
+    ensureUsersProfileColumns((profileErr) => {
+      if (profileErr) {
+        return callback(profileErr);
       }
 
-      return callback(null);
+      ensurePendingCitizenSignupsTable((pendingErr) => {
+        if (pendingErr) {
+          return callback(pendingErr);
+        }
+
+        return callback(null);
+      });
     });
   });
 }
@@ -445,6 +610,275 @@ router.get("/test", (req, res) => {
     message: "Auth route is working"
   });
 });
+
+/* =========================================================
+   CITIZEN PROFILE ROUTES
+   Database-backed profile picture and default avatar.
+   ========================================================= */
+
+router.get("/profile/:userId", (req, res) => {
+  const userId = getSafeUserId(req.params.userId);
+
+  if (userId <= 0) {
+    return res.status(400).json({
+      success: false,
+      message: "Valid user ID is required"
+    });
+  }
+
+  ensureUserProfileReady((ensureErr) => {
+    if (ensureErr) {
+      return res.status(500).json({
+        success: false,
+        message: "Failed to prepare profile fields",
+        error: ensureErr.message,
+        code: ensureErr.code
+      });
+    }
+
+    const sql = `
+      SELECT
+        id,
+        full_name,
+        username,
+        email,
+        role,
+        barangay,
+        profile_image_url,
+        profile_avatar_key,
+        profile_updated_at
+      FROM users
+      WHERE id = ?
+      LIMIT 1
+    `;
+
+    db.query(sql, [userId], (err, rows) => {
+      if (err) {
+        return res.status(500).json({
+          success: false,
+          message: "Database error while loading profile",
+          error: err.message
+        });
+      }
+
+      if (!rows || rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: "User profile not found"
+        });
+      }
+
+      const user = rows[0];
+
+      return res.json({
+        success: true,
+        profile: {
+          id: user.id,
+          full_name: user.full_name || "",
+          username: user.username || "",
+          email: user.email || "",
+          role: user.role || "",
+          barangay: user.barangay || "",
+          profile_image_url: user.profile_image_url || "",
+          profile_image_full_url: buildPublicUrl(req, user.profile_image_url || ""),
+          profile_avatar_key: user.profile_avatar_key || "avatar_leaf",
+          profile_updated_at: user.profile_updated_at || null
+        }
+      });
+    });
+  });
+});
+
+router.post("/profile/:userId/avatar", (req, res) => {
+  const userId = getSafeUserId(req.params.userId);
+  const avatarKey = cleanText(req.body ? req.body.profile_avatar_key : "");
+
+  if (userId <= 0) {
+    return res.status(400).json({
+      success: false,
+      message: "Valid user ID is required"
+    });
+  }
+
+  if (!avatarKey || !DEFAULT_PROFILE_AVATAR_KEYS.has(avatarKey)) {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid default avatar selected"
+    });
+  }
+
+  ensureUserProfileReady((ensureErr) => {
+    if (ensureErr) {
+      return res.status(500).json({
+        success: false,
+        message: "Failed to prepare profile fields",
+        error: ensureErr.message,
+        code: ensureErr.code
+      });
+    }
+
+    const findSql = `
+      SELECT profile_image_url
+      FROM users
+      WHERE id = ?
+      LIMIT 1
+    `;
+
+    db.query(findSql, [userId], (findErr, rows) => {
+      if (findErr) {
+        return res.status(500).json({
+          success: false,
+          message: "Database error while checking profile",
+          error: findErr.message
+        });
+      }
+
+      if (!rows || rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: "User profile not found"
+        });
+      }
+
+      const oldProfileImageUrl = rows[0].profile_image_url || "";
+
+      const updateSql = `
+        UPDATE users
+        SET profile_avatar_key = ?,
+            profile_image_url = NULL,
+            profile_updated_at = NOW()
+        WHERE id = ?
+      `;
+
+      db.query(updateSql, [avatarKey, userId], (updateErr) => {
+        if (updateErr) {
+          return res.status(500).json({
+            success: false,
+            message: "Database error while saving avatar",
+            error: updateErr.message
+          });
+        }
+
+        deleteOldProfileImageIfLocal(oldProfileImageUrl);
+
+        return res.json({
+          success: true,
+          message: "Profile avatar updated successfully",
+          profile: {
+            id: userId,
+            profile_avatar_key: avatarKey,
+            profile_image_url: "",
+            profile_image_full_url: ""
+          }
+        });
+      });
+    });
+  });
+});
+
+router.post("/profile/:userId/photo", profileUpload.single("profile_image"), (req, res) => {
+  const userId = getSafeUserId(req.params.userId);
+
+  if (userId <= 0) {
+    if (req.file && req.file.path) {
+      fs.unlink(req.file.path, () => {});
+    }
+
+    return res.status(400).json({
+      success: false,
+      message: "Valid user ID is required"
+    });
+  }
+
+  if (!req.file) {
+    return res.status(400).json({
+      success: false,
+      message: "Profile image is required"
+    });
+  }
+
+  ensureUserProfileReady((ensureErr) => {
+    if (ensureErr) {
+      if (req.file && req.file.path) {
+        fs.unlink(req.file.path, () => {});
+      }
+
+      return res.status(500).json({
+        success: false,
+        message: "Failed to prepare profile fields",
+        error: ensureErr.message,
+        code: ensureErr.code
+      });
+    }
+
+    const relativeImageUrl = `/uploads/profiles/${req.file.filename}`;
+
+    const findSql = `
+      SELECT profile_image_url
+      FROM users
+      WHERE id = ?
+      LIMIT 1
+    `;
+
+    db.query(findSql, [userId], (findErr, rows) => {
+      if (findErr) {
+        fs.unlink(req.file.path, () => {});
+
+        return res.status(500).json({
+          success: false,
+          message: "Database error while checking profile",
+          error: findErr.message
+        });
+      }
+
+      if (!rows || rows.length === 0) {
+        fs.unlink(req.file.path, () => {});
+
+        return res.status(404).json({
+          success: false,
+          message: "User profile not found"
+        });
+      }
+
+      const oldProfileImageUrl = rows[0].profile_image_url || "";
+
+      const updateSql = `
+        UPDATE users
+        SET profile_image_url = ?,
+            profile_avatar_key = NULL,
+            profile_updated_at = NOW()
+        WHERE id = ?
+      `;
+
+      db.query(updateSql, [relativeImageUrl, userId], (updateErr) => {
+        if (updateErr) {
+          fs.unlink(req.file.path, () => {});
+
+          return res.status(500).json({
+            success: false,
+            message: "Database error while saving profile image",
+            error: updateErr.message
+          });
+        }
+
+        deleteOldProfileImageIfLocal(oldProfileImageUrl);
+
+        return res.json({
+          success: true,
+          message: "Profile picture updated successfully",
+          profile: {
+            id: userId,
+            profile_avatar_key: "",
+            profile_image_url: relativeImageUrl,
+            profile_image_full_url: buildPublicUrl(req, relativeImageUrl)
+          }
+        });
+      });
+    });
+  });
+});
+
+
 
 /*
   REGISTER FLOW:
@@ -942,7 +1376,7 @@ router.post("/login", (req, res) => {
     });
   }
 
-  ensureUsersEmailColumns((ensureErr) => {
+  ensureUserProfileReady((ensureErr) => {
     if (ensureErr) {
       return res.status(500).json({
         success: false,
@@ -959,6 +1393,8 @@ router.post("/login", (req, res) => {
         username,
         email,
         email_verified,
+        profile_image_url,
+        profile_avatar_key,
         password,
         role,
         mobile_role,
@@ -1045,7 +1481,9 @@ router.post("/login", (req, res) => {
           role: resolvedRole,
           barangay: resolvedBarangay,
           email: user.email || "",
-          email_verified: cleanText(user.email) ? Number(user.email_verified || 0) === 1 : true
+          email_verified: cleanText(user.email) ? Number(user.email_verified || 0) === 1 : true,
+          profile_image_url: user.profile_image_url || "",
+          profile_avatar_key: user.profile_avatar_key || ""
         };
 
         console.log("LOGIN RESPONSE USER:", responseUser);
