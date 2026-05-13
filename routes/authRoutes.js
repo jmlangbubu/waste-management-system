@@ -221,7 +221,11 @@ function createMailTransporter() {
     service: "gmail",
     ...baseOptions
   });
-}$1(email, fullName, verificationCode) {
+}
+
+async function sendVerificationEmail(email, fullName, verificationCode) {
+  logSmtpConfigStatus();
+
   const transporter = createMailTransporter();
 
   if (!transporter) {
