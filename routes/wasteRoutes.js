@@ -477,6 +477,7 @@ router.get("/analytics/barangay", (req, res) => {
 /* =========================================
    BARANGAY MONTHLY ANALYTICS FOR CITIZEN MODAL
    - Current year only
+   - Shows only January up to the current month
    - Resets visually every year without deleting old records
 ========================================= */
 router.get("/analytics/barangay/monthly", (req, res) => {
@@ -508,10 +509,11 @@ router.get("/analytics/barangay/monthly", (req, res) => {
           barangay,
           scope: "current_year",
           year: new Date().getFullYear(),
+          current_month: new Date().getMonth() + 1,
           date_column_used: null,
           grand_total: 0,
           total_records: 0,
-          months: Array.from({ length: 12 }, (_, index) => ({
+          months: Array.from({ length: new Date().getMonth() + 1 }, (_, index) => ({
             month: index + 1,
             month_name: getMonthName(index + 1),
             biodegradable: 0,
@@ -554,6 +556,7 @@ router.get("/analytics/barangay/monthly", (req, res) => {
       }
 
       const rowMap = new Map();
+      const currentMonth = new Date().getMonth() + 1;
 
       (rows || []).forEach((row) => {
         rowMap.set(Number(row.month_number || 0), row);
@@ -562,7 +565,7 @@ router.get("/analytics/barangay/monthly", (req, res) => {
       let grandTotal = 0;
       let totalRecords = 0;
 
-      const months = Array.from({ length: 12 }, (_, index) => {
+      const months = Array.from({ length: currentMonth }, (_, index) => {
         const monthNumber = index + 1;
         const row = rowMap.get(monthNumber) || {};
 
@@ -601,6 +604,7 @@ router.get("/analytics/barangay/monthly", (req, res) => {
           barangay,
           scope: "current_year",
           year: new Date().getFullYear(),
+          current_month: currentMonth,
           date_column_used: yearFilter.columnName,
           grand_total: Number(grandTotal.toFixed(2)),
           total_records: totalRecords,
