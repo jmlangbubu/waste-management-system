@@ -3082,11 +3082,11 @@ function isValidResolutionImagePath(path) {
 }
 
 function getResolutionImageCandidates(record = {}) {
+  /*
+    Keep all possible fields. Some old records use image_url or typo folders,
+    while newer resolved records use resolution_evidence_url.
+  */
   const rawCandidates = [
-    /*
-      Priority 1:
-      Barangay resolution evidence uploaded during resolve action.
-    */
     record?.resolution_evidence_url,
     record?.resolution_image_url,
     record?.resolution_photo_url,
@@ -3094,12 +3094,6 @@ function getResolutionImageCandidates(record = {}) {
     record?.resolved_image_url,
     record?.resolved_photo_url,
 
-    /*
-      Priority 2:
-      Original complaint image / older field names.
-      This makes the modal still show a usable image when the resolution
-      evidence path is missing, old, or failed after redeploy.
-    */
     record?.image_url,
     record?.complaint_image_url,
     record?.evidence_url,
@@ -3171,22 +3165,42 @@ function renderResolutionEvidenceImage(record) {
   }
 
   let currentIndex = 0;
+  let loadTimeout = null;
+  let finished = false;
+
+  const clearImageLoadTimeout = () => {
+    if (loadTimeout) {
+      clearTimeout(loadTimeout);
+      loadTimeout = null;
+    }
+  };
+
+  const showFailedState = () => {
+    clearImageLoadTimeout();
+
+    evidenceImg.onload = null;
+    evidenceImg.onerror = null;
+    evidenceImg.removeAttribute("src");
+    evidenceImg.classList.add("hidden");
+    evidenceImg.style.display = "none";
+
+    if (evidenceFrame) evidenceFrame.style.display = "none";
+
+    if (noEvidence) {
+      noEvidence.textContent = "Image failed to load.";
+      noEvidence.classList.remove("hidden");
+    }
+  };
 
   const tryLoadImage = () => {
+    clearImageLoadTimeout();
+
+    if (finished) return;
+
     const current = imageCandidates[currentIndex];
 
     if (!current) {
-      evidenceImg.removeAttribute("src");
-      evidenceImg.classList.add("hidden");
-      evidenceImg.style.display = "none";
-
-      if (evidenceFrame) evidenceFrame.style.display = "none";
-
-      if (noEvidence) {
-        noEvidence.textContent = "Image failed to load.";
-        noEvidence.classList.remove("hidden");
-      }
-
+      showFailedState();
       return;
     }
 
@@ -3198,7 +3212,14 @@ function renderResolutionEvidenceImage(record) {
       noEvidence.classList.remove("hidden");
     }
 
+    const finalUrl = addCacheBusterToImageUrl(current.imageUrl);
+
     evidenceImg.onload = () => {
+      if (finished) return;
+
+      finished = true;
+      clearImageLoadTimeout();
+
       console.log("Resolution image loaded:", current.imageUrl);
 
       evidenceImg.classList.remove("hidden");
@@ -3213,13 +3234,35 @@ function renderResolutionEvidenceImage(record) {
     };
 
     evidenceImg.onerror = () => {
+      if (finished) return;
+
+      clearImageLoadTimeout();
       console.warn("Resolution image failed, trying next if available:", current.imageUrl);
 
       currentIndex += 1;
       tryLoadImage();
     };
 
-    evidenceImg.src = addCacheBusterToImageUrl(current.imageUrl);
+    /*
+      Important:
+      Some hosted image requests can hang instead of immediately firing error.
+      This timeout forces the modal to try the next candidate, such as image_url,
+      when resolution_evidence_url is missing/stale after deploy.
+    */
+    loadTimeout = setTimeout(() => {
+      if (finished) return;
+
+      console.warn("Resolution image timed out, trying next if available:", current.imageUrl);
+
+      evidenceImg.onload = null;
+      evidenceImg.onerror = null;
+      evidenceImg.removeAttribute("src");
+
+      currentIndex += 1;
+      tryLoadImage();
+    }, 3500);
+
+    evidenceImg.src = finalUrl;
   };
 
   tryLoadImage();
