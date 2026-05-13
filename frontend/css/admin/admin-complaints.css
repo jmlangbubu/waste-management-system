@@ -1970,3 +1970,296 @@ body #complaintDetailsModal .complaint-modal-actions {
     font-size: 13px !important;
   }
 }
+
+/* =========================================================
+   COMPLAINT HISTORY MODAL - SEARCH + BARANGAY FILTER TOOLBAR
+   File target: css/admin/admin-complaints.css
+
+   Purpose:
+   - Compact search input inside Complaint History modal
+   - Barangay filter dropdown generated from loaded history data
+   - Result counter
+   - Scoped only to complaint history modal
+========================================================= */
+
+#complaintHistoryModal .complaint-history-filter-toolbar {
+  width: calc(100% - 48px) !important;
+  max-width: calc(100% - 48px) !important;
+
+  display: grid !important;
+  grid-template-columns: minmax(280px, 430px) minmax(180px, 230px) auto !important;
+  align-items: center !important;
+  justify-content: start !important;
+  gap: 10px !important;
+
+  margin: 2px auto 2px !important;
+  padding: 0 !important;
+  box-sizing: border-box !important;
+}
+
+#complaintHistoryModal .complaint-history-search-box {
+  position: relative !important;
+  min-width: 0 !important;
+}
+
+#complaintHistoryModal .complaint-history-search-icon {
+  position: absolute !important;
+  left: 13px !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+
+  color: #64748b !important;
+  font-size: 16px !important;
+  font-weight: 900 !important;
+  pointer-events: none !important;
+}
+
+#complaintHistoryModal .complaint-history-search-input {
+  width: 100% !important;
+  height: 40px !important;
+
+  padding: 0 38px 0 38px !important;
+
+  border: 1px solid #dce6de !important;
+  border-radius: 12px !important;
+  outline: none !important;
+
+  background: #f8fafc !important;
+  color: #0f172a !important;
+
+  font-size: 12.5px !important;
+  font-weight: 650 !important;
+
+  box-sizing: border-box !important;
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    background 0.16s ease !important;
+}
+
+#complaintHistoryModal .complaint-history-search-input:focus {
+  border-color: #2f8a34 !important;
+  background: #ffffff !important;
+  box-shadow: 0 0 0 4px rgba(47, 138, 52, 0.12) !important;
+}
+
+#complaintHistoryModal .complaint-history-search-input::placeholder {
+  color: #94a3b8 !important;
+  font-weight: 600 !important;
+}
+
+#complaintHistoryModal .complaint-history-search-clear {
+  position: absolute !important;
+  right: 8px !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+
+  width: 25px !important;
+  height: 25px !important;
+  min-width: 25px !important;
+  min-height: 25px !important;
+
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+
+  border: 0 !important;
+  border-radius: 999px !important;
+
+  background: #e2e8f0 !important;
+  color: #475569 !important;
+
+  font-size: 18px !important;
+  font-weight: 900 !important;
+  line-height: 1 !important;
+
+  cursor: pointer !important;
+}
+
+#complaintHistoryModal .complaint-history-search-clear:hover {
+  background: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+#complaintHistoryModal .complaint-history-barangay-filter-wrap {
+  min-width: 0 !important;
+}
+
+#complaintHistoryModal .complaint-history-barangay-filter {
+  width: 100% !important;
+  height: 40px !important;
+
+  padding: 0 12px !important;
+
+  border: 1px solid #dce6de !important;
+  border-radius: 12px !important;
+  outline: none !important;
+
+  background: #ffffff !important;
+  color: #0f172a !important;
+
+  font-size: 12.5px !important;
+  font-weight: 800 !important;
+
+  cursor: pointer !important;
+  box-sizing: border-box !important;
+}
+
+#complaintHistoryModal .complaint-history-barangay-filter:focus {
+  border-color: #2f8a34 !important;
+  box-shadow: 0 0 0 4px rgba(47, 138, 52, 0.12) !important;
+}
+
+#complaintHistoryModal .complaint-history-filter-meta {
+  min-width: 96px !important;
+  padding: 9px 10px !important;
+
+  border: 1px solid #dceee0 !important;
+  border-radius: 999px !important;
+
+  background: #f0faf2 !important;
+  color: #166534 !important;
+
+  font-size: 11px !important;
+  font-weight: 900 !important;
+  line-height: 1 !important;
+  text-align: center !important;
+  white-space: nowrap !important;
+}
+
+/* Keep table close to compact toolbar */
+#complaintHistoryModal .complaint-history-filter-toolbar + .table-shell,
+#complaintHistoryModal .complaint-history-filter-toolbar + .complaint-history-table-scroll {
+  margin-top: 10px !important;
+}
+
+/* Toolbar consumes height, so table scroll area is slightly reduced */
+#complaintHistoryModal .complaint-history-table-scroll {
+  max-height: min(52vh, 470px) !important;
+}
+
+@media (max-width: 992px) {
+  #complaintHistoryModal .complaint-history-filter-toolbar {
+    width: calc(100% - 32px) !important;
+    max-width: calc(100% - 32px) !important;
+    grid-template-columns: 1fr 210px !important;
+    gap: 9px !important;
+  }
+
+  #complaintHistoryModal .complaint-history-filter-meta {
+    grid-column: 1 / -1 !important;
+    width: fit-content !important;
+  }
+
+  #complaintHistoryModal .complaint-history-table-scroll {
+    max-height: calc(100dvh - 285px) !important;
+  }
+}
+
+@media (max-width: 640px) {
+  #complaintHistoryModal .complaint-history-filter-toolbar {
+    width: calc(100% - 24px) !important;
+    max-width: calc(100% - 24px) !important;
+    grid-template-columns: 1fr !important;
+    margin-top: 0 !important;
+  }
+
+  #complaintHistoryModal .complaint-history-search-input,
+  #complaintHistoryModal .complaint-history-barangay-filter {
+    height: 39px !important;
+    font-size: 12px !important;
+  }
+
+  #complaintHistoryModal .complaint-history-filter-meta {
+    width: fit-content !important;
+  }
+
+  #complaintHistoryModal .complaint-history-table-scroll {
+    max-height: calc(100dvh - 330px) !important;
+  }
+}
+
+/* =========================================================
+   COMPLAINTS MANAGEMENT PAGE - COMPACT SEARCH + CENTER SUBJECT FIX
+   File target: css/admin/admin-complaints.css
+
+   Purpose:
+   - Makes the main Complaints search bar moderate in width
+   - Keeps Status filter beside it
+   - Centers Subject column content
+   - Scoped only to #complaintsSection
+========================================================= */
+
+#complaintsSection .complaints-toolbar {
+  justify-content: flex-start !important;
+  align-items: end !important;
+  gap: 14px !important;
+}
+
+#complaintsSection .complaints-search-wrap {
+  flex: 0 1 620px !important;
+  width: min(620px, 100%) !important;
+  max-width: 620px !important;
+  min-width: 320px !important;
+}
+
+#complaintsSection .complaints-filter-wrap {
+  flex: 0 0 230px !important;
+  width: 230px !important;
+  max-width: 230px !important;
+}
+
+#complaintsSection .complaints-search-input,
+#complaintsSection .complaints-filter-select {
+  height: 42px !important;
+  border-radius: 13px !important;
+  font-size: 13px !important;
+}
+
+#complaintsSection .complaints-search-input {
+  padding-left: 14px !important;
+  padding-right: 14px !important;
+}
+
+#complaintsSection .complaints-table th:first-child,
+#complaintsSection .complaints-table td:first-child {
+  text-align: center !important;
+}
+
+#complaintsSection .complaints-table td:first-child {
+  font-weight: 800 !important;
+}
+
+#complaintsSection .complaint-subject-cell {
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+}
+
+#complaintsSection .complaint-subject-main,
+#complaintsSection .complaint-subject-sub {
+  width: 100% !important;
+  text-align: center !important;
+}
+
+#complaintsSection .complaints-table td {
+  vertical-align: middle !important;
+}
+
+/* Keep the toolbar clean on smaller screens */
+@media (max-width: 900px) {
+  #complaintsSection .complaints-toolbar {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    align-items: stretch !important;
+  }
+
+  #complaintsSection .complaints-search-wrap,
+  #complaintsSection .complaints-filter-wrap {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    flex: none !important;
+  }
+}
+
