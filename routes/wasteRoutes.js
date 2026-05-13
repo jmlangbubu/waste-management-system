@@ -52,6 +52,66 @@ function hasColumn(columnSet, columnName) {
   return columnSet && columnSet.has(columnName);
 }
 
+function getTableColumnSet(tableName, callback) {
+  const safeTableName = String(tableName || "").replace(/[^a-zA-Z0-9_]/g, "");
+
+  if (!safeTableName) {
+    return callback(new Error("Invalid table name"), new Set());
+  }
+
+  db.query(`SHOW COLUMNS FROM ${safeTableName}`, (err, rows) => {
+    if (err) {
+      console.error(`[DB] Failed to inspect ${safeTableName} columns:`, err);
+      return callback(err, new Set());
+    }
+
+    const columnSet = new Set(
+      (rows || []).map((row) => String(row.Field || "").trim())
+    );
+
+    return callback(null, columnSet);
+  });
+}
+
+function getCurrentMonthDateFilter(columnSet) {
+  /*
+    Citizen dashboard analytics must reset every month.
+    We do not delete old records; we only filter the dashboard total
+    to records within the current month.
+
+    Priority:
+    1. validated_at / validation_date / date_validated = best audit date
+    2. created_at / submitted_at = fallback if validation date is not present
+    3. period_from = last fallback for older table structures
+  */
+  const candidateColumns = [
+    "validated_at",
+    "validation_date",
+    "date_validated",
+    "validated_date",
+    "created_at",
+    "submitted_at",
+    "period_from"
+  ];
+
+  for (const columnName of candidateColumns) {
+    if (hasColumn(columnSet, columnName)) {
+      return {
+        columnName,
+        sql: `
+          AND ${columnName} >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
+          AND ${columnName} < DATE_ADD(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 1 MONTH)
+        `
+      };
+    }
+  }
+
+  return {
+    columnName: "",
+    sql: ""
+  };
+}
+
 function ensureScanHistoryOptionalColumns(callback) {
   getScanHistoryColumnSet((columnErr, columnSet) => {
     if (columnErr) {
@@ -280,42 +340,59 @@ router.get("/analytics/barangay", (req, res) => {
     });
   }
 
-  const sql = `
-    SELECT
-      COALESCE(SUM(CAST(biodegradable_subtotal AS DECIMAL(12,2))), 0) AS biodegradable,
-      COALESCE(SUM(CAST(recyclable_subtotal AS DECIMAL(12,2))), 0) AS recyclable,
-      COALESCE(SUM(CAST(residual_subtotal AS DECIMAL(12,2))), 0) AS residual,
-      COALESCE(SUM(CAST(special_subtotal AS DECIMAL(12,2))), 0) AS special,
-      COALESCE(SUM(CAST(grand_total AS DECIMAL(12,2))), 0) AS total_records_waste,
-      COUNT(*) AS total_records
-    FROM validated_waste_records
-    WHERE LOWER(TRIM(barangay_name)) = LOWER(TRIM(?))
-      AND LOWER(TRIM(validation_status)) = 'validated'
-  `;
-
-  db.query(sql, [barangay], (err, results) => {
-    if (err) {
-      console.error("[DB] Failed to load barangay analytics:", err);
+  getTableColumnSet("validated_waste_records", (columnErr, columnSet) => {
+    if (columnErr) {
+      console.error("[DB] Failed to inspect validated_waste_records columns:", columnErr);
       return res.status(500).json({
         success: false,
-        message: "Failed to load barangay analytics",
-        error: err.message
+        message: "Failed to inspect waste analytics table",
+        error: columnErr.message
       });
     }
 
-    const row = Array.isArray(results) && results.length > 0 ? results[0] : {};
+    const monthFilter = getCurrentMonthDateFilter(columnSet);
 
-    return res.json({
-      success: true,
-      data: {
-        barangay,
-        biodegradable: Number(row.biodegradable || 0),
-        recyclable: Number(row.recyclable || 0),
-        residual: Number(row.residual || 0),
-        special: Number(row.special || 0),
-        total: Number(row.total_records_waste || 0),
-        total_records: Number(row.total_records || 0)
+    const sql = `
+      SELECT
+        COALESCE(SUM(CAST(biodegradable_subtotal AS DECIMAL(12,2))), 0) AS biodegradable,
+        COALESCE(SUM(CAST(recyclable_subtotal AS DECIMAL(12,2))), 0) AS recyclable,
+        COALESCE(SUM(CAST(residual_subtotal AS DECIMAL(12,2))), 0) AS residual,
+        COALESCE(SUM(CAST(special_subtotal AS DECIMAL(12,2))), 0) AS special,
+        COALESCE(SUM(CAST(grand_total AS DECIMAL(12,2))), 0) AS total_records_waste,
+        COUNT(*) AS total_records
+      FROM validated_waste_records
+      WHERE LOWER(TRIM(barangay_name)) = LOWER(TRIM(?))
+        AND LOWER(TRIM(validation_status)) = 'validated'
+        ${monthFilter.sql}
+    `;
+
+    db.query(sql, [barangay], (err, results) => {
+      if (err) {
+        console.error("[DB] Failed to load barangay analytics:", err);
+        return res.status(500).json({
+          success: false,
+          message: "Failed to load barangay analytics",
+          error: err.message
+        });
       }
+
+      const row = Array.isArray(results) && results.length > 0 ? results[0] : {};
+
+      return res.json({
+        success: true,
+        data: {
+          barangay,
+          scope: "current_month",
+          month: new Date().toISOString().slice(0, 7),
+          date_column_used: monthFilter.columnName || null,
+          biodegradable: Number(row.biodegradable || 0),
+          recyclable: Number(row.recyclable || 0),
+          residual: Number(row.residual || 0),
+          special: Number(row.special || 0),
+          total: Number(row.total_records_waste || 0),
+          total_records: Number(row.total_records || 0)
+        }
+      });
     });
   });
 });
