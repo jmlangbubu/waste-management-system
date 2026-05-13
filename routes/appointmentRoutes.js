@@ -81,6 +81,54 @@ function formatAppointmentEmailDate(value) {
   return `${datePart}, ${timePart}`;
 }
 
+
+function buildAppointmentStatusUrl(appointmentCode, contact) {
+  const configuredUrl =
+    cleanText(process.env.APPOINTMENT_STATUS_URL) ||
+    cleanText(process.env.LANDING_APPOINTMENT_STATUS_URL) ||
+    cleanText(process.env.PUBLIC_FRONTEND_URL) ||
+    cleanText(process.env.FRONTEND_URL) ||
+    "https://wastegensan.com/";
+
+  const hashFromEnv = cleanText(process.env.APPOINTMENT_STATUS_HASH) || "appointment-status";
+
+  let baseUrl = configuredUrl;
+  let hashValue = hashFromEnv;
+
+  const hashIndex = baseUrl.indexOf("#");
+
+  if (hashIndex >= 0) {
+    hashValue = cleanText(baseUrl.slice(hashIndex + 1)) || hashValue;
+    baseUrl = baseUrl.slice(0, hashIndex);
+  }
+
+  if (!baseUrl.endsWith("/") && !baseUrl.includes("?")) {
+    /*
+      Keep root domain clean:
+      https://wastegensan.com + ?appointment_code=...
+    */
+  }
+
+  const params = new URLSearchParams();
+
+  const safeAppointmentCode = cleanText(appointmentCode);
+  const safeContact = cleanText(contact);
+
+  if (safeAppointmentCode) {
+    params.set("appointment_code", safeAppointmentCode);
+  }
+
+  if (safeContact) {
+    params.set("contact", safeContact);
+  }
+
+  const queryString = params.toString();
+  const separator = baseUrl.includes("?") ? "&" : "?";
+  const queryPart = queryString ? `${separator}${queryString}` : "";
+
+  return `${baseUrl}${queryPart}#${hashValue}`;
+}
+
 function buildAppointmentRescheduledEmailText(details) {
   const fullName = cleanText(details.fullName) || "Client";
   const newDate = cleanText(details.newDate) || "-";
@@ -100,6 +148,8 @@ function buildAppointmentRescheduledEmailText(details) {
     `New Schedule: ${newDate}`,
     `Updated by: ${assignedTo}`,
     "",
+    `Check appointment status: ${cleanText(details.statusUrl) || "-"}`,
+    "",
     "Please be guided by the updated schedule. If you have questions, contact the Waste Management Office.",
     "",
     "Waste Management Office",
@@ -114,6 +164,7 @@ function buildAppointmentRescheduledEmailHtml(details) {
   const purpose = escapeHtml(details.purpose || "Appointment");
   const appointmentCode = escapeHtml(details.appointmentCode || `Appointment #${details.appointmentId || ""}`);
   const assignedTo = escapeHtml(details.assignedTo || "WMO Personnel");
+  const statusUrl = escapeHtml(details.statusUrl || "https://wastegensan.com/#appointment-status");
 
   return `
     <!doctype html>
@@ -206,6 +257,16 @@ function buildAppointmentRescheduledEmailHtml(details) {
                           <div style="font-size:14px; line-height:1.6; color:#5F4A1A;">
                             Please be guided by the updated schedule. Arrive on time and bring any required information related to your appointment.
                           </div>
+                        </td>
+                      </tr>
+                    </table>
+
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 20px 0;">
+                      <tr>
+                        <td align="center">
+                          <a href="${statusUrl}" target="_blank" style="display:inline-block; background:#0B4B2B; color:#FFFFFF; text-decoration:none; font-size:15px; font-weight:800; padding:14px 24px; border-radius:14px;">
+                            Check Appointment Status
+                          </a>
                         </td>
                       </tr>
                     </table>
@@ -850,7 +911,11 @@ if (email) {
       purpose: appointment.purpose,
       appointmentCode: appointment.appointment_code,
       appointmentId: appointment.id,
-      assignedTo: cleanPersonnelName
+      assignedTo: cleanPersonnelName,
+      statusUrl: buildAppointmentStatusUrl(
+        appointment.appointment_code || generateAppointmentCode(appointment.id),
+        appointment.email
+      )
     };
 
     await resend.emails.send({
