@@ -3,6 +3,7 @@ const router = express.Router();
 const path = require("path");
 const fs = require("fs");
 const multer = require("multer");
+const cloudinary = require("cloudinary").v2;
 
 const db = require("../config/db");
 const {
@@ -17,15 +18,30 @@ if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname || ".jpg");
-    cb(null, `complaint_${Date.now()}${ext}`);
-  }
-});
+const isCloudinaryConfigured = Boolean(
+  process.env.CLOUDINARY_CLOUD_NAME &&
+  process.env.CLOUDINARY_API_KEY &&
+  process.env.CLOUDINARY_API_SECRET
+);
+
+if (isCloudinaryConfigured) {
+  cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+    secure: true
+  });
+} else {
+  console.warn(
+    "Cloudinary is not configured. Complaint uploads will fall back to local /uploads storage."
+  );
+}
+
+/*
+  Use memory storage so uploads can be sent directly to Cloudinary.
+  Local disk is only used as fallback when Cloudinary env variables are missing.
+*/
+const storage = multer.memoryStorage();
 
 const upload = multer({
   storage,
@@ -42,6 +58,96 @@ const upload = multer({
     cb(null, true);
   }
 });
+
+function getUploadExtension(file) {
+  const allowedExts = new Set([".jpg", ".jpeg", ".png", ".webp"]);
+  const originalExt = path.extname(file?.originalname || "").toLowerCase();
+
+  if (allowedExts.has(originalExt)) {
+    return originalExt;
+  }
+
+  const mimeExtMap = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp"
+  };
+
+  return mimeExtMap[file?.mimetype] || ".jpg";
+}
+
+function buildLocalUploadFilename(prefix, file) {
+  const safePrefix = cleanText(prefix) || "complaint";
+  const uniquePart = `${Date.now()}_${Math.round(Math.random() * 1e9)}`;
+  return `${safePrefix}_${uniquePart}${getUploadExtension(file)}`;
+}
+
+function uploadBufferToCloudinary(file, folderName = "complaints") {
+  return new Promise((resolve, reject) => {
+    if (!file || !file.buffer || file.buffer.length <= 0) {
+      return reject(new Error("No image buffer found for upload."));
+    }
+
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        folder: `wmo/${folderName}`,
+        resource_type: "image",
+        use_filename: false,
+        unique_filename: true,
+        overwrite: false
+      },
+      (error, result) => {
+        if (error) {
+          return reject(error);
+        }
+
+        if (!result || !result.secure_url) {
+          return reject(new Error("Cloudinary upload did not return a secure URL."));
+        }
+
+        return resolve(result.secure_url);
+      }
+    );
+
+    uploadStream.end(file.buffer);
+  });
+}
+
+function saveUploadedImageLocally(file, prefix = "complaint") {
+  return new Promise((resolve, reject) => {
+    if (!file || !file.buffer || file.buffer.length <= 0) {
+      return reject(new Error("No image buffer found for local upload."));
+    }
+
+    const filename = buildLocalUploadFilename(prefix, file);
+    const absolutePath = path.join(uploadDir, filename);
+    const publicPath = `/uploads/complaints/${filename}`;
+
+    fs.writeFile(absolutePath, file.buffer, (err) => {
+      if (err) {
+        return reject(err);
+      }
+
+      return resolve(publicPath);
+    });
+  });
+}
+
+function saveUploadedComplaintImage(file, folderName = "complaints") {
+  if (!file) {
+    return Promise.resolve(null);
+  }
+
+  if (!file.buffer || file.buffer.length <= 0) {
+    return Promise.reject(new Error("Uploaded image is empty or corrupted."));
+  }
+
+  if (isCloudinaryConfigured) {
+    return uploadBufferToCloudinary(file, folderName);
+  }
+
+  return saveUploadedImageLocally(file, folderName === "resolutions" ? "resolution" : "complaint");
+}
 
 /* =========================
    SMALL HELPERS
@@ -188,10 +294,11 @@ function logUploadedFile(prefix, file) {
   console.log(prefix);
 
   if (file) {
-    console.log("File name:", file.filename);
-    console.log("File path:", file.path);
+    console.log("Original file name:", file.originalname || file.filename || "memory-upload");
+    console.log("File path:", file.path || "memory/cloud upload");
     console.log("File size:", file.size);
     console.log("Mime type:", file.mimetype);
+    console.log("Storage target:", isCloudinaryConfigured ? "cloudinary" : "local fallback");
   } else {
     console.log("NO FILE RECEIVED");
   }
@@ -278,14 +385,14 @@ router.post("/", upload.single("image"), (req, res) => {
       });
     }
 
-    if (!req.file || !req.file.path) {
+    if (!req.file || !req.file.buffer) {
       return res.status(400).json({
         success: false,
         message: "Image upload failed or missing."
       });
     }
 
-    if (req.file.size <= 0) {
+    if (req.file.size <= 0 || req.file.buffer.length <= 0) {
       deleteUploadedFileIfExists(req.file);
 
       return res.status(400).json({
@@ -367,118 +474,131 @@ router.post("/", upload.single("image"), (req, res) => {
               assignmentMethod = "manual_review";
             }
 
-            const imageUrl = `/uploads/complaints/${req.file.filename}`;
+            saveUploadedComplaintImage(req.file, "complaints")
+              .then((imageUrl) => {
+                const insertColumns = [
+                  "citizen_id",
+                  "citizen_name",
+                  "username",
+                  "reporter_barangay",
+                  "subject",
+                  "description",
+                  "image_url",
+                  "latitude",
+                  "longitude",
+                  "assigned_barangay",
+                  "assignment_method",
+                  "status"
+                ];
 
-            const insertColumns = [
-              "citizen_id",
-              "citizen_name",
-              "username",
-              "reporter_barangay",
-              "subject",
-              "description",
-              "image_url",
-              "latitude",
-              "longitude",
-              "assigned_barangay",
-              "assignment_method",
-              "status"
-            ];
+                const insertValues = [
+                  citizen_id,
+                  citizen_name || null,
+                  username || null,
+                  reporter_barangay || null,
+                  subject,
+                  description || null,
+                  imageUrl,
+                  lat,
+                  lng,
+                  finalBarangay || "For Verification",
+                  assignmentMethod || "manual_review",
+                  status || "pending"
+                ];
 
-            const insertValues = [
-              citizen_id,
-              citizen_name || null,
-              username || null,
-              reporter_barangay || null,
-              subject,
-              description || null,
-              imageUrl,
-              lat,
-              lng,
-              finalBarangay || "For Verification",
-              assignmentMethod || "manual_review",
-              status || "pending"
-            ];
-
-            if (canSaveClientRequestId) {
-              insertColumns.push("client_request_id");
-              insertValues.push(clientRequestId || null);
-            }
-
-            const placeholders = insertColumns.map(() => "?").join(", ");
-
-            const insertSql = `
-              INSERT INTO complaints (
-                ${insertColumns.join(",\n                ")}
-              )
-              VALUES (${placeholders})
-            `;
-
-            db.query(insertSql, insertValues, (insertErr, insertResult) => {
-              if (insertErr) {
-                console.error("Complaint insert error:", insertErr);
-
-                if (
-                  canSaveClientRequestId &&
-                  clientRequestId &&
-                  insertErr.code === "ER_DUP_ENTRY"
-                ) {
-                  return respondWithExistingComplaintByClientRequestId(
-                    res,
-                    clientRequestId,
-                    req.file
-                  );
+                if (canSaveClientRequestId) {
+                  insertColumns.push("client_request_id");
+                  insertValues.push(clientRequestId || null);
                 }
 
-                deleteUploadedFileIfExists(req.file);
+                const placeholders = insertColumns.map(() => "?").join(", ");
+
+                const insertSql = `
+                  INSERT INTO complaints (
+                    ${insertColumns.join(",\n                    ")}
+                  )
+                  VALUES (${placeholders})
+                `;
+
+                db.query(insertSql, insertValues, (insertErr, insertResult) => {
+                  if (insertErr) {
+                    console.error("Complaint insert error:", insertErr);
+
+                    if (
+                      canSaveClientRequestId &&
+                      clientRequestId &&
+                      insertErr.code === "ER_DUP_ENTRY"
+                    ) {
+                      return respondWithExistingComplaintByClientRequestId(
+                        res,
+                        clientRequestId,
+                        req.file
+                      );
+                    }
+
+                    deleteUploadedFileIfExists(req.file);
+
+                    return res.status(500).json({
+                      success: false,
+                      message: "Failed to save complaint.",
+                      sqlError: insertErr.message,
+                      sqlCode: insertErr.code
+                    });
+                  }
+
+                  const complaintId = insertResult.insertId;
+
+                  const notifSql = `
+                    INSERT INTO complaint_notifications (
+                      complaint_id,
+                      target_type,
+                      target_name
+                    )
+                    VALUES (?, 'wmo', 'WMO')
+                  `;
+
+                  db.query(notifSql, [complaintId], (notifErr) => {
+                    if (notifErr) {
+                      console.error("WMO notification insert error:", notifErr);
+                    }
+
+                    logUploadedFile("=== CREATE COMPLAINT UPLOAD DEBUG ===", req.file);
+
+                    return res.json({
+                      success: true,
+                      duplicate: false,
+                      message:
+                        assignmentMethod === "polygon"
+                          ? "Complaint submitted successfully."
+                          : assignmentMethod === "nearest_fallback"
+                          ? "Complaint submitted successfully and auto-assigned to the nearest barangay."
+                          : "Complaint submitted successfully and marked for manual verification.",
+                      complaintId,
+                      reporter_barangay: reporter_barangay || null,
+                      assigned_barangay: finalBarangay,
+                      assignment_method: assignmentMethod,
+                      image_url: imageUrl,
+                      storage: isCloudinaryConfigured ? "cloudinary" : "local",
+                      client_request_id_saved: canSaveClientRequestId && Boolean(clientRequestId),
+                      missing_columns: !canSaveClientRequestId
+                        ? {
+                            client_request_id: true
+                          }
+                        : null
+                    });
+                  });
+                });
+              })
+              .catch((uploadErr) => {
+                console.error("Complaint image upload error:", uploadErr);
 
                 return res.status(500).json({
                   success: false,
-                  message: "Failed to save complaint.",
-                  sqlError: insertErr.message,
-                  sqlCode: insertErr.code
-                });
-              }
-
-              const complaintId = insertResult.insertId;
-
-              const notifSql = `
-                INSERT INTO complaint_notifications (
-                  complaint_id,
-                  target_type,
-                  target_name
-                )
-                VALUES (?, 'wmo', 'WMO')
-              `;
-
-              db.query(notifSql, [complaintId], (notifErr) => {
-                if (notifErr) {
-                  console.error("WMO notification insert error:", notifErr);
-                }
-
-                logUploadedFile("=== CREATE COMPLAINT UPLOAD DEBUG ===", req.file);
-
-                return res.json({
-                  success: true,
-                  duplicate: false,
-                  message:
-                    assignmentMethod === "polygon"
-                      ? "Complaint submitted successfully."
-                      : assignmentMethod === "nearest_fallback"
-                      ? "Complaint submitted successfully and auto-assigned to the nearest barangay."
-                      : "Complaint submitted successfully and marked for manual verification.",
-                  complaintId,
-                  reporter_barangay: reporter_barangay || null,
-                  assigned_barangay: finalBarangay,
-                  assignment_method: assignmentMethod,
-                  client_request_id_saved: canSaveClientRequestId && Boolean(clientRequestId),
-                  missing_columns: !canSaveClientRequestId
-                    ? {
-                        client_request_id: true
-                      }
-                    : null
+                  message: "Failed to upload complaint image.",
+                  error: uploadErr.message,
+                  storage: isCloudinaryConfigured ? "cloudinary" : "local"
                 });
               });
-            });
           } catch (resolutionError) {
             deleteUploadedFileIfExists(req.file);
 
@@ -946,10 +1066,6 @@ router.put("/:id/resolve", upload.single("evidence"), (req, res) => {
     });
   }
 
-  const evidenceUrl = req.file
-    ? `/uploads/complaints/${req.file.filename}`
-    : null;
-
   const resolverLat = parseOptionalCoordinate(resolver_latitude);
   const resolverLng = parseOptionalCoordinate(resolver_longitude);
 
@@ -962,85 +1078,99 @@ router.put("/:id/resolve", upload.single("evidence"), (req, res) => {
       });
     }
 
-    const setClauses = [
-      "status = 'resolved'",
-      "handled_by_barangay_name = ?",
-      "resolution_report = ?",
-      "resolution_evidence_url = ?",
-      "resolved_by = ?",
-      "resolved_at = NOW()"
-    ];
+    saveUploadedComplaintImage(req.file, "resolutions")
+      .then((evidenceUrl) => {
+        const setClauses = [
+          "status = 'resolved'",
+          "handled_by_barangay_name = ?",
+          "resolution_report = ?",
+          "resolution_evidence_url = ?",
+          "resolved_by = ?",
+          "resolved_at = NOW()"
+        ];
 
-    const values = [
-      handledBy,
-      report,
-      evidenceUrl,
-      resolvedBy
-    ];
+        const values = [
+          handledBy,
+          report,
+          evidenceUrl,
+          resolvedBy
+        ];
 
-    const canSaveResolverLatitude = hasColumn(columnSet, "resolver_latitude");
-    const canSaveResolverLongitude = hasColumn(columnSet, "resolver_longitude");
+        const canSaveResolverLatitude = hasColumn(columnSet, "resolver_latitude");
+        const canSaveResolverLongitude = hasColumn(columnSet, "resolver_longitude");
 
-    if (resolverLat !== null && canSaveResolverLatitude) {
-      setClauses.push("resolver_latitude = ?");
-      values.push(resolverLat);
-    }
+        if (resolverLat !== null && canSaveResolverLatitude) {
+          setClauses.push("resolver_latitude = ?");
+          values.push(resolverLat);
+        }
 
-    if (resolverLng !== null && canSaveResolverLongitude) {
-      setClauses.push("resolver_longitude = ?");
-      values.push(resolverLng);
-    }
+        if (resolverLng !== null && canSaveResolverLongitude) {
+          setClauses.push("resolver_longitude = ?");
+          values.push(resolverLng);
+        }
 
-    const sql = `
-      UPDATE complaints
-      SET ${setClauses.join(",\n          ")}
-      WHERE id = ?
-        AND status IN ('forwarded', 'in_progress', 'accepted_by_barangay')
-    `;
+        const sql = `
+          UPDATE complaints
+          SET ${setClauses.join(",\n              ")}
+          WHERE id = ?
+            AND status IN ('forwarded', 'in_progress', 'accepted_by_barangay')
+        `;
 
-    values.push(complaintId);
+        values.push(complaintId);
 
-    db.query(sql, values, (err, result) => {
-      if (err) {
-        console.error("Resolve complaint error:", err);
+        db.query(sql, values, (err, result) => {
+          if (err) {
+            console.error("Resolve complaint error:", err);
+            return res.status(500).json({
+              success: false,
+              message: "Failed to resolve complaint.",
+              error: err.message,
+              code: err.code
+            });
+          }
+
+          if (!result || result.affectedRows === 0) {
+            return res.status(400).json({
+              success: false,
+              message: "Complaint could not be resolved. It may already be resolved or not forwarded yet."
+            });
+          }
+
+          logUploadedFile("=== RESOLUTION UPLOAD DEBUG ===", req.file);
+
+          return res.json({
+            success: true,
+            message: "Complaint resolved successfully.",
+            complaint_id: complaintId,
+            resolution_evidence_url: evidenceUrl,
+            storage: isCloudinaryConfigured ? "cloudinary" : "local",
+            resolved_by_saved: resolvedBy,
+            resolver_location_received: resolverLat !== null && resolverLng !== null,
+            resolver_location_saved:
+              resolverLat !== null &&
+              resolverLng !== null &&
+              canSaveResolverLatitude &&
+              canSaveResolverLongitude,
+            missing_columns:
+              !canSaveResolverLatitude || !canSaveResolverLongitude
+                ? {
+                    resolver_latitude: !canSaveResolverLatitude,
+                    resolver_longitude: !canSaveResolverLongitude
+                  }
+                : null
+          });
+        });
+      })
+      .catch((uploadErr) => {
+        console.error("Resolution evidence upload error:", uploadErr);
+
         return res.status(500).json({
           success: false,
-          message: "Failed to resolve complaint.",
-          error: err.message,
-          code: err.code
+          message: "Failed to upload resolution evidence.",
+          error: uploadErr.message,
+          storage: isCloudinaryConfigured ? "cloudinary" : "local"
         });
-      }
-
-      if (!result || result.affectedRows === 0) {
-        return res.status(400).json({
-          success: false,
-          message: "Complaint could not be resolved. It may already be resolved or not forwarded yet."
-        });
-      }
-
-      logUploadedFile("=== RESOLUTION UPLOAD DEBUG ===", req.file);
-
-      return res.json({
-        success: true,
-        message: "Complaint resolved successfully.",
-        complaint_id: complaintId,
-        resolution_evidence_url: evidenceUrl,
-        resolved_by_saved: resolvedBy,
-        resolver_location_received: resolverLat !== null && resolverLng !== null,
-        resolver_location_saved:
-          resolverLat !== null &&
-          resolverLng !== null &&
-          canSaveResolverLatitude &&
-          canSaveResolverLongitude,
-        missing_columns:
-          !canSaveResolverLatitude || !canSaveResolverLongitude
-            ? {
-                resolver_latitude: !canSaveResolverLatitude,
-                resolver_longitude: !canSaveResolverLongitude
-              }
-            : null
       });
-    });
   });
 });
 
