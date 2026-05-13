@@ -5,11 +5,19 @@ const bcrypt = require("bcrypt");
 const crypto = require("crypto");
 
 let nodemailer = null;
+let ResendSDK = null;
 
 try {
   nodemailer = require("nodemailer");
 } catch (err) {
   console.warn("⚠️ nodemailer is not installed. Run: npm install nodemailer");
+}
+
+try {
+  const resendPackage = require("resend");
+  ResendSDK = resendPackage.Resend;
+} catch (err) {
+  console.warn("⚠️ resend is not installed. Run: npm install resend");
 }
 
 console.log("✅ authRoutes.js file executed");
@@ -180,6 +188,46 @@ function ensureAuthTables(callback) {
   });
 }
 
+
+function createResendClient() {
+  const resendApiKey = cleanText(process.env.RESEND_API_KEY || process.env.RESEND_KEY);
+
+  if (!ResendSDK || !resendApiKey) {
+    return null;
+  }
+
+  return new ResendSDK(resendApiKey);
+}
+
+function getResendFromAddress() {
+  /*
+    Recommended:
+    RESEND_FROM=WMO <noreply@wastegensan.com>
+
+    For quick testing, Resend usually allows:
+    RESEND_FROM=WMO <onboarding@resend.dev>
+
+    For production/custom domain, verify wastegensan.com inside Resend first.
+  */
+  return cleanText(process.env.RESEND_FROM) ||
+    cleanText(process.env.SMTP_FROM) ||
+    "WMO <onboarding@resend.dev>";
+}
+
+function logEmailProviderStatus() {
+  const resendApiKey = cleanText(process.env.RESEND_API_KEY || process.env.RESEND_KEY);
+  const resendFrom = getResendFromAddress();
+
+  console.log("📨 EMAIL PROVIDER STATUS:", {
+    resendInstalled: !!ResendSDK,
+    resendApiKeyConfigured: !!resendApiKey,
+    resendFrom,
+    smtpUserConfigured: !!cleanText(process.env.SMTP_USER || process.env.EMAIL_USER),
+    smtpPassConfigured: !!cleanText(process.env.SMTP_PASS || process.env.EMAIL_PASS)
+  });
+}
+
+
 function createMailTransporter() {
   if (!nodemailer) {
     console.warn("⚠️ nodemailer package is not available.");
@@ -224,23 +272,11 @@ function createMailTransporter() {
 }
 
 async function sendVerificationEmail(email, fullName, verificationCode) {
-  logSmtpConfigStatus();
-
-  const transporter = createMailTransporter();
-
-  if (!transporter) {
-    return {
-      sent: false,
-      reason: "Email service is not configured. Check SMTP_USER and SMTP_PASS."
-    };
-  }
-
-  const smtpUser = cleanText(process.env.SMTP_USER || process.env.EMAIL_USER);
-  const smtpFrom = cleanText(process.env.SMTP_FROM) || `AI Waste Management <${smtpUser}>`;
+  logEmailProviderStatus();
 
   const safeName = cleanText(fullName) || "Citizen";
 
-  const subject = "Verify your AI Waste Management account";
+  const subject = "Verify your WMO account";
 
   const text = [
     `Hello ${safeName},`,
@@ -253,24 +289,78 @@ async function sendVerificationEmail(email, fullName, verificationCode) {
     "",
     "If you did not create this account, you can ignore this email.",
     "",
-    "AI Waste Management"
-  ].join("\n");
+    "WMO"
+  ].join("\\n");
 
   const html = `
     <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #173C2C;">
       <h2 style="margin-bottom: 8px;">Verify your account</h2>
       <p>Hello <strong>${safeName}</strong>,</p>
-      <p>Use this verification code to activate your AI Waste Management account:</p>
+      <p>Use this verification code to activate your WMO account:</p>
       <div style="font-size: 28px; font-weight: bold; letter-spacing: 4px; padding: 14px 18px; background: #F1F8F3; border-radius: 12px; display: inline-block; color: #2F8A34;">
         ${verificationCode}
       </div>
       <p style="margin-top: 18px;">This code will expire in <strong>15 minutes</strong>.</p>
       <p>If you did not create this account, you can ignore this email.</p>
-      <p style="color: #66766D;">AI Waste Management</p>
+      <p style="color: #66766D;">WMO</p>
     </div>
   `;
 
-  console.log("📧 Sending verification email to:", email);
+  /*
+    PRIMARY PROVIDER: Resend API
+    This avoids Gmail SMTP connection timeout on Render.
+  */
+  const resend = createResendClient();
+
+  if (resend) {
+    const resendFrom = getResendFromAddress();
+
+    console.log("📨 Sending verification email via Resend API to:", email);
+
+    const result = await resend.emails.send({
+      from: resendFrom,
+      to: [email],
+      subject,
+      text,
+      html
+    });
+
+    if (result && result.error) {
+      console.error("Resend email error:", result.error);
+
+      return {
+        sent: false,
+        reason: result.error.message || JSON.stringify(result.error)
+      };
+    }
+
+    console.log("✅ Verification email sent via Resend API to:", email);
+
+    return {
+      sent: true,
+      reason: null
+    };
+  }
+
+  /*
+    FALLBACK PROVIDER: Gmail SMTP / Nodemailer
+    Use this only when RESEND_API_KEY is not configured.
+  */
+  logSmtpConfigStatus();
+
+  const transporter = createMailTransporter();
+
+  if (!transporter) {
+    return {
+      sent: false,
+      reason: "Email service is not configured. Add RESEND_API_KEY/RESEND_FROM or SMTP_USER/SMTP_PASS."
+    };
+  }
+
+  const smtpUser = cleanText(process.env.SMTP_USER || process.env.EMAIL_USER);
+  const smtpFrom = cleanText(process.env.SMTP_FROM) || `WMO <${smtpUser}>`;
+
+  console.log("📧 Sending verification email via SMTP to:", email);
 
   await transporter.sendMail({
     from: smtpFrom,
@@ -280,7 +370,7 @@ async function sendVerificationEmail(email, fullName, verificationCode) {
     html
   });
 
-  console.log("✅ Verification email sent to:", email);
+  console.log("✅ Verification email sent via SMTP to:", email);
 
   return {
     sent: true,
@@ -293,8 +383,12 @@ function getErrorMessageFromEmailSend(error) {
     return "Verification email could not be sent.";
   }
 
+  if (error.name === "validation_error") {
+    return "Resend validation failed. Check RESEND_FROM sender/domain and recipient email.";
+  }
+
   if (error.code === "ETIMEDOUT" || error.code === "ESOCKET") {
-    return "SMTP connection timed out. Check Gmail App Password, SMTP settings, or network access.";
+    return "SMTP connection timed out. Use RESEND_API_KEY to send through Resend API instead of Gmail SMTP.";
   }
 
   if (error.code === "EAUTH") {
