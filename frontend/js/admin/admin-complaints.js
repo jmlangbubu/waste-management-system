@@ -2639,6 +2639,9 @@ async function validateAndForwardComplaint() {
 // COMPLAINT HISTORY
 // =========================
 
+let complaintHistorySearchQuery = "";
+let complaintHistoryBarangayFilter = "all";
+
 function formatComplaintHistoryStatus(status) {
   const normalized = String(status || "").toLowerCase().trim();
 
@@ -2731,8 +2734,209 @@ function prepareComplaintHistoryTableScroll() {
   }
 }
 
+
+function normalizeComplaintHistoryFilterValue(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getComplaintHistoryBarangayValue(item = {}) {
+  return (
+    item.assigned_barangay ||
+    item.handled_by_barangay_name ||
+    item.reporter_barangay ||
+    "-"
+  );
+}
+
+function getComplaintHistorySearchText(item = {}) {
+  const statusLabel = formatComplaintHistoryStatus(item.status);
+  const dateLabel = formatDateTimeDisplay(item.rejected_at || item.resolved_at || item.created_at);
+
+  return normalizeComplaintHistoryFilterValue([
+    item.subject,
+    item.description,
+    item.citizen_name,
+    item.username,
+    getComplaintHistoryBarangayValue(item),
+    item.status,
+    statusLabel,
+    dateLabel,
+    item.rejected_at,
+    item.resolved_at,
+    item.created_at
+  ].join(" "));
+}
+
+function getFilteredComplaintHistoryRecords(records = []) {
+  const searchValue = normalizeComplaintHistoryFilterValue(complaintHistorySearchQuery);
+  const barangayValue = normalizeComplaintHistoryFilterValue(complaintHistoryBarangayFilter);
+
+  return (Array.isArray(records) ? records : []).filter((item) => {
+    const itemBarangay = normalizeComplaintHistoryFilterValue(getComplaintHistoryBarangayValue(item));
+    const matchesSearch = !searchValue || getComplaintHistorySearchText(item).includes(searchValue);
+    const matchesBarangay = barangayValue === "all" || itemBarangay === barangayValue;
+
+    return matchesSearch && matchesBarangay;
+  });
+}
+
+function getComplaintHistoryBarangayOptions(records = []) {
+  const barangaySet = new Set();
+
+  (Array.isArray(records) ? records : []).forEach((item) => {
+    const barangay = String(getComplaintHistoryBarangayValue(item) || "").trim();
+
+    if (barangay && barangay !== "-") {
+      barangaySet.add(barangay);
+    }
+  });
+
+  return Array.from(barangaySet).sort((a, b) =>
+    a.localeCompare(b, undefined, {
+      sensitivity: "base"
+    })
+  );
+}
+
+function updateComplaintHistoryMeta(totalCount, visibleCount) {
+  const meta = document.getElementById("complaintHistoryFilterMeta");
+  if (!meta) return;
+
+  if (!totalCount) {
+    meta.textContent = "No records";
+    return;
+  }
+
+  const hasSearch = Boolean(normalizeComplaintHistoryFilterValue(complaintHistorySearchQuery));
+  const hasBarangayFilter = normalizeComplaintHistoryFilterValue(complaintHistoryBarangayFilter) !== "all";
+
+  if (!hasSearch && !hasBarangayFilter) {
+    meta.textContent = `${totalCount} record${totalCount === 1 ? "" : "s"}`;
+    return;
+  }
+
+  meta.textContent = `${visibleCount} of ${totalCount} shown`;
+}
+
+function updateComplaintHistoryBarangayFilterOptions(records = []) {
+  const select = document.getElementById("complaintHistoryBarangayFilter");
+  if (!select) return;
+
+  const selectedValue = complaintHistoryBarangayFilter || "all";
+  const barangays = getComplaintHistoryBarangayOptions(records);
+
+  select.innerHTML = `
+    <option value="all">All Barangays</option>
+    ${barangays.map((barangay) => `
+      <option value="${escapeHtml(barangay)}">${escapeHtml(barangay)}</option>
+    `).join("")}
+  `;
+
+  const optionExists = Array.from(select.options).some((option) => option.value === selectedValue);
+  complaintHistoryBarangayFilter = optionExists ? selectedValue : "all";
+  select.value = complaintHistoryBarangayFilter;
+}
+
+function ensureComplaintHistoryToolbar() {
+  const modal = document.getElementById("complaintHistoryModal");
+  const header = modal?.querySelector(".history-modal-header");
+
+  if (!modal || !header) return null;
+
+  let toolbar = document.getElementById("complaintHistoryFilterToolbar");
+
+  if (!toolbar) {
+    toolbar = document.createElement("div");
+    toolbar.id = "complaintHistoryFilterToolbar";
+    toolbar.className = "complaint-history-filter-toolbar";
+
+    toolbar.innerHTML = `
+      <div class="complaint-history-search-box">
+        <span class="complaint-history-search-icon" aria-hidden="true">⌕</span>
+        <input
+          type="text"
+          id="complaintHistorySearchInput"
+          class="complaint-history-search-input"
+          placeholder="Search complaint history..."
+          autocomplete="off"
+        />
+        <button
+          type="button"
+          id="clearComplaintHistorySearchBtn"
+          class="complaint-history-search-clear"
+          aria-label="Clear complaint history search"
+          title="Clear search"
+        >
+          ×
+        </button>
+      </div>
+
+      <div class="complaint-history-barangay-filter-wrap">
+        <select id="complaintHistoryBarangayFilter" class="complaint-history-barangay-filter" aria-label="Filter complaint history by barangay">
+          <option value="all">All Barangays</option>
+        </select>
+      </div>
+
+      <div id="complaintHistoryFilterMeta" class="complaint-history-filter-meta">
+        No records
+      </div>
+    `;
+
+    header.insertAdjacentElement("afterend", toolbar);
+  }
+
+  const searchInput = document.getElementById("complaintHistorySearchInput");
+  const clearBtn = document.getElementById("clearComplaintHistorySearchBtn");
+  const barangaySelect = document.getElementById("complaintHistoryBarangayFilter");
+
+  if (searchInput && searchInput.dataset.boundComplaintHistorySearch !== "true") {
+    searchInput.dataset.boundComplaintHistorySearch = "true";
+
+    searchInput.addEventListener("input", () => {
+      complaintHistorySearchQuery = searchInput.value || "";
+      renderComplaintHistoryTable(complaintHistoryRecords);
+    });
+  }
+
+  if (clearBtn && clearBtn.dataset.boundComplaintHistorySearch !== "true") {
+    clearBtn.dataset.boundComplaintHistorySearch = "true";
+
+    clearBtn.addEventListener("click", () => {
+      complaintHistorySearchQuery = "";
+
+      if (searchInput) {
+        searchInput.value = "";
+        searchInput.focus();
+      }
+
+      renderComplaintHistoryTable(complaintHistoryRecords);
+    });
+  }
+
+  if (barangaySelect && barangaySelect.dataset.boundComplaintHistoryBarangay !== "true") {
+    barangaySelect.dataset.boundComplaintHistoryBarangay = "true";
+
+    barangaySelect.addEventListener("change", () => {
+      complaintHistoryBarangayFilter = barangaySelect.value || "all";
+      renderComplaintHistoryTable(complaintHistoryRecords);
+    });
+  }
+
+  if (searchInput && searchInput.value !== complaintHistorySearchQuery) {
+    searchInput.value = complaintHistorySearchQuery;
+  }
+
+  updateComplaintHistoryBarangayFilterOptions(complaintHistoryRecords);
+
+  return toolbar;
+}
+
 async function loadComplaintHistory() {
   ensureComplaintHistoryModalScrollStyles();
+  ensureComplaintHistoryToolbar();
   prepareComplaintHistoryTableScroll();
 
   const tbody = document.getElementById("complaintHistoryTableBody");
@@ -2753,6 +2957,8 @@ async function loadComplaintHistory() {
     }
 
     complaintHistoryRecords = Array.isArray(data.complaints) ? data.complaints : [];
+    ensureComplaintHistoryToolbar();
+    updateComplaintHistoryBarangayFilterOptions(complaintHistoryRecords);
     renderComplaintHistoryTable(complaintHistoryRecords);
   } catch (error) {
     console.error("loadComplaintHistory error:", error);
@@ -2767,12 +2973,17 @@ async function loadComplaintHistory() {
 
 function renderComplaintHistoryTable(records) {
   ensureComplaintHistoryStatusStyles();
+  ensureComplaintHistoryToolbar();
   prepareComplaintHistoryTableScroll();
 
   const tbody = document.getElementById("complaintHistoryTableBody");
   if (!tbody) return;
 
   const safeRecords = Array.isArray(records) ? records : [];
+  const filteredRecords = getFilteredComplaintHistoryRecords(safeRecords);
+
+  updateComplaintHistoryBarangayFilterOptions(safeRecords);
+  updateComplaintHistoryMeta(safeRecords.length, filteredRecords.length);
 
   if (!safeRecords.length) {
     tbody.innerHTML = `
@@ -2783,11 +2994,20 @@ function renderComplaintHistoryTable(records) {
     return;
   }
 
-  tbody.innerHTML = safeRecords.map(item => `
+  if (!filteredRecords.length) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="6" class="empty-state-cell">No complaint history matches your search or barangay filter.</td>
+      </tr>
+    `;
+    return;
+  }
+
+  tbody.innerHTML = filteredRecords.map(item => `
     <tr>
       <td>${escapeHtml(item.subject || "-")}</td>
       <td>${escapeHtml(item.citizen_name || item.username || "-")}</td>
-      <td>${escapeHtml(item.assigned_barangay || "-")}</td>
+      <td>${escapeHtml(getComplaintHistoryBarangayValue(item))}</td>
       <td>
         <span class="complaint-history-status ${escapeHtml(getComplaintHistoryStatusClass(item.status))}">
           ${escapeHtml(formatComplaintHistoryStatus(item.status))}
@@ -2810,6 +3030,7 @@ function renderComplaintHistoryTable(records) {
 function openComplaintHistoryModal() {
   mountComplaintModalsToBody();
   ensureComplaintHistoryModalScrollStyles();
+  ensureComplaintHistoryToolbar();
 
   openComplaintModalWithPosition("complaintHistoryModal");
 
@@ -3007,6 +3228,7 @@ function setupComplaintResolutionModal() {
 
 function setupComplaintsModule() {
   mountComplaintModalsToBody();
+  ensureComplaintHistoryToolbar();
   setupComplaintResolutionModal();
 
   document.getElementById("btnRefreshComplaints")
@@ -3086,3 +3308,5 @@ function setupComplaintsModule() {
 function ensureComplaintHistoryDateReadableStyles() {
   return;
 }
+
+window.ensureComplaintHistoryToolbar = ensureComplaintHistoryToolbar;
