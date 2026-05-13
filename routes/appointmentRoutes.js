@@ -15,6 +15,235 @@ function generateOrientationToken(appointmentId) {
   return `ORI-${appointmentId}-${timestamp}`;
 }
 
+
+function cleanText(value) {
+  if (value === null || value === undefined) return "";
+
+  const text = String(value).trim();
+
+  if (!text || text.toLowerCase() === "null" || text.toLowerCase() === "undefined") {
+    return "";
+  }
+
+  return text;
+}
+
+function escapeHtml(value) {
+  return cleanText(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function formatAppointmentEmailDate(value) {
+  const raw = cleanText(value);
+
+  if (!raw) return "-";
+
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::\d{2})?)?/);
+
+  if (!match) {
+    return raw;
+  }
+
+  const year = Number(match[1]);
+  const monthIndex = Number(match[2]) - 1;
+  const day = Number(match[3]);
+  const hour = Number(match[4] || 0);
+  const minute = Number(match[5] || 0);
+
+  const parsed = new Date(year, monthIndex, day, hour, minute, 0);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return raw;
+  }
+
+  const hasTime = Boolean(match[4] && match[5]);
+
+  const datePart = new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    day: "2-digit",
+    year: "numeric"
+  }).format(parsed);
+
+  if (!hasTime) {
+    return datePart;
+  }
+
+  const timePart = new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true
+  }).format(parsed);
+
+  return `${datePart}, ${timePart}`;
+}
+
+function buildAppointmentRescheduledEmailText(details) {
+  const fullName = cleanText(details.fullName) || "Client";
+  const newDate = cleanText(details.newDate) || "-";
+  const barangay = cleanText(details.barangay) || "-";
+  const purpose = cleanText(details.purpose) || "Appointment";
+  const appointmentCode = cleanText(details.appointmentCode) || `Appointment #${details.appointmentId || ""}`;
+  const assignedTo = cleanText(details.assignedTo) || "WMO Personnel";
+
+  return [
+    `Hello ${fullName},`,
+    "",
+    "Your WMO appointment has been rescheduled.",
+    "",
+    `Reference: ${appointmentCode}`,
+    `Purpose: ${purpose}`,
+    `Barangay: ${barangay}`,
+    `New Schedule: ${newDate}`,
+    `Updated by: ${assignedTo}`,
+    "",
+    "Please be guided by the updated schedule. If you have questions, contact the Waste Management Office.",
+    "",
+    "Waste Management Office",
+    "General Santos City"
+  ].join("\n");
+}
+
+function buildAppointmentRescheduledEmailHtml(details) {
+  const fullName = escapeHtml(details.fullName || "Client");
+  const newDate = escapeHtml(details.newDate || "-");
+  const barangay = escapeHtml(details.barangay || "-");
+  const purpose = escapeHtml(details.purpose || "Appointment");
+  const appointmentCode = escapeHtml(details.appointmentCode || `Appointment #${details.appointmentId || ""}`);
+  const assignedTo = escapeHtml(details.assignedTo || "WMO Personnel");
+
+  return `
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Appointment Rescheduled</title>
+      </head>
+      <body style="margin:0; padding:0; background:#F3F8F4; font-family:Arial, Helvetica, sans-serif; color:#173C2C;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#F3F8F4; margin:0; padding:24px 12px;">
+          <tr>
+            <td align="center">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:620px; background:#FFFFFF; border-radius:22px; overflow:hidden; border:1px solid #DCE9DF; box-shadow:0 8px 22px rgba(18,56,38,0.08);">
+                <tr>
+                  <td style="background:#0B4B2B; padding:24px 28px;">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                      <tr>
+                        <td style="vertical-align:middle; width:46px;">
+                          <div style="width:46px; height:46px; line-height:46px; text-align:center; border-radius:16px; background:#E7F5EA; color:#0B4B2B; font-weight:800; font-size:15px; letter-spacing:0.5px;">
+                            WMO
+                          </div>
+                        </td>
+                        <td style="vertical-align:middle; padding-left:14px;">
+                          <div style="font-size:20px; line-height:1.25; font-weight:800; color:#FFFFFF;">
+                            Appointment Rescheduled
+                          </div>
+                          <div style="font-size:12px; line-height:1.5; color:#CFE6D6; margin-top:2px;">
+                            Waste Management Office · General Santos City
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <tr>
+                  <td style="padding:30px 28px 10px 28px;">
+                    <div style="font-size:23px; line-height:1.25; font-weight:800; color:#123826; margin:0 0 10px 0;">
+                      Your appointment schedule was updated
+                    </div>
+
+                    <div style="font-size:15px; line-height:1.7; color:#40564A; margin:0 0 20px 0;">
+                      Hello <strong style="color:#123826;">${fullName}</strong>, your WMO appointment has been <strong>rescheduled</strong>. Please review the updated details below.
+                    </div>
+
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 22px 0;">
+                      <tr>
+                        <td align="center" style="background:#F0FAF2; border:1px solid #D4EBDD; border-radius:18px; padding:22px 14px;">
+                          <div style="font-size:11px; line-height:1.4; color:#60756A; font-weight:700; letter-spacing:0.8px; text-transform:uppercase; margin-bottom:8px;">
+                            New Schedule
+                          </div>
+                          <div style="font-size:26px; line-height:1.25; font-weight:900; color:#2F8A34; font-family:Arial, Helvetica, sans-serif;">
+                            ${newDate}
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
+
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border:1px solid #E0ECE3; border-radius:18px; overflow:hidden; margin:0 0 20px 0;">
+                      <tr>
+                        <td style="background:#F7FBF8; padding:14px 16px; border-bottom:1px solid #E0ECE3;">
+                          <div style="font-size:12px; color:#60756A; font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">Reference</div>
+                          <div style="font-size:15px; color:#173C2C; font-weight:700; margin-top:4px;">${appointmentCode}</div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding:14px 16px; border-bottom:1px solid #E0ECE3;">
+                          <div style="font-size:12px; color:#60756A; font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">Purpose</div>
+                          <div style="font-size:15px; color:#173C2C; margin-top:4px;">${purpose}</div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding:14px 16px; border-bottom:1px solid #E0ECE3;">
+                          <div style="font-size:12px; color:#60756A; font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">Barangay</div>
+                          <div style="font-size:15px; color:#173C2C; margin-top:4px;">${barangay}</div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding:14px 16px;">
+                          <div style="font-size:12px; color:#60756A; font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">Updated By</div>
+                          <div style="font-size:15px; color:#173C2C; margin-top:4px;">${assignedTo}</div>
+                        </td>
+                      </tr>
+                    </table>
+
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 20px 0;">
+                      <tr>
+                        <td style="background:#FFF8E7; border:1px solid #F1D28A; border-radius:16px; padding:14px 16px;">
+                          <div style="font-size:14px; line-height:1.6; color:#5F4A1A;">
+                            Please be guided by the updated schedule. Arrive on time and bring any required information related to your appointment.
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
+
+                    <div style="font-size:14px; line-height:1.7; color:#60756A;">
+                      If you have questions, please contact the Waste Management Office.
+                    </div>
+                  </td>
+                </tr>
+
+                <tr>
+                  <td style="padding:22px 28px 28px 28px;">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-top:1px solid #E4EEE7;">
+                      <tr>
+                        <td style="padding-top:18px;">
+                          <div style="font-size:13px; line-height:1.6; color:#7B8C82;">
+                            Waste Management Office<br>
+                            General Santos City
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+
+              <div style="max-width:620px; margin:14px auto 0 auto; font-size:11px; line-height:1.6; color:#7B8C82; text-align:center;">
+                This is an automated message. Please do not reply to this email.
+              </div>
+            </td>
+          </tr>
+        </table>
+      </body>
+    </html>
+  `;
+}
+
+
 /* =========================================
    GET ALL APPOINTMENTS
 ========================================= */
@@ -547,7 +776,15 @@ router.put("/:id/reschedule", (req, res) => {
   const cleanPersonnelName = String(personnel_name).trim();
 
   const checkSql = `
-    SELECT id, status, preferred_date, email, full_name
+    SELECT
+      id,
+      appointment_code,
+      status,
+      preferred_date,
+      email,
+      full_name,
+      barangay,
+      purpose
     FROM appointments
     WHERE id = ?
     LIMIT 1
@@ -606,16 +843,22 @@ const fullName = appointment.full_name;
 
 if (email) {
   try {
+    const emailDetails = {
+      fullName,
+      newDate: formatAppointmentEmailDate(new_date),
+      barangay: appointment.barangay,
+      purpose: appointment.purpose,
+      appointmentCode: appointment.appointment_code,
+      appointmentId: appointment.id,
+      assignedTo: cleanPersonnelName
+    };
+
     await resend.emails.send({
       from: "WMO System <noreply@wastegensan.com>",
       to: email,
-      subject: "Appointment Rescheduled",
-      html: `
-        <h3>Hello ${fullName},</h3>
-        <p>Your appointment has been <b>rescheduled</b>.</p>
-        <p><b>New Date:</b> ${new_date}</p>
-        <p>Please be guided accordingly.</p>
-      `
+      subject: "Appointment Rescheduled - WMO",
+      text: buildAppointmentRescheduledEmailText(emailDetails),
+      html: buildAppointmentRescheduledEmailHtml(emailDetails)
     });
 
     console.log("Reschedule email sent to:", email);
