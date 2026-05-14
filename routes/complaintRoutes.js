@@ -1696,15 +1696,30 @@ router.get("/history/resolved", (req, res) => {
       brp.reference_name AS assigned_reference_name,
       brp.latitude AS assigned_barangay_lat,
       brp.longitude AS assigned_barangay_lng,
-      brp.image_url AS assigned_barangay_image_url
+      brp.image_url AS assigned_barangay_image_url,
+      forwarded.forwarded_to_barangays,
+      forwarded.forwarded_barangay_count
     FROM complaints c
     LEFT JOIN barangay_reference_points brp
       ON TRIM(LOWER(brp.barangay_name)) = TRIM(LOWER(c.assigned_barangay))
       AND brp.status = 'active'
-    WHERE c.status IN ('resolved', 'rejected')
+    LEFT JOIN (
+      SELECT
+        complaint_id,
+        GROUP_CONCAT(DISTINCT target_name ORDER BY target_name SEPARATOR ' & ') AS forwarded_to_barangays,
+        COUNT(DISTINCT target_name) AS forwarded_barangay_count
+      FROM complaint_notifications
+      WHERE target_type = 'barangay'
+        AND target_name IS NOT NULL
+        AND TRIM(target_name) <> ''
+      GROUP BY complaint_id
+    ) forwarded
+      ON forwarded.complaint_id = c.id
+    WHERE c.status IN ('resolved', 'rejected', 'forwarded', 'accepted_by_barangay', 'in_progress')
     ORDER BY
       CASE
         WHEN c.status = 'rejected' THEN COALESCE(c.rejected_at, c.created_at)
+        WHEN c.status IN ('forwarded', 'accepted_by_barangay', 'in_progress') THEN COALESCE(c.validated_at, c.accepted_at, c.in_progress_at, c.created_at)
         ELSE COALESCE(c.resolved_at, c.created_at)
       END DESC,
       c.created_at DESC
