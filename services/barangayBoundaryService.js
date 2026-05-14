@@ -322,6 +322,5 @@ module.exports = {
   getPolygonCentroid,
   calculateDistanceMeters,
   calculatePolygonAreaScore,
-  getDistanceToPolygonMeters,
   resolveNearestBarangay
 };
