@@ -7,6 +7,8 @@ function showAccountMessage(message, type) {
 }
 
 async function loadWebUsers() {
+  ensureUserManagementLayoutStyles();
+
   try {
     const res = await fetch(getAccountsApiUrl(), {
       headers: { Accept: "application/json" }
@@ -69,12 +71,348 @@ function formatAccountRoleLabel(role) {
   return labels[value] || role || "-";
 }
 
+
+function ensureUserManagementLayoutStyles() {
+  if (document.getElementById("userManagementRuntimeStyles")) return;
+
+  const style = document.createElement("style");
+  style.id = "userManagementRuntimeStyles";
+  style.textContent = `
+    /*
+      FIX:
+      The previous two-column User Management layout squeezed the accounts table.
+      This full-width vertical layout keeps Create Account on top and gives
+      All Accounts the full page width, so columns no longer break into letters.
+    */
+    #userManagementSection #superAdminContent.users-layout {
+      display: flex !important;
+      flex-direction: column !important;
+      gap: 18px !important;
+      align-items: stretch !important;
+      width: 100% !important;
+    }
+
+    #userManagementSection #superAdminContent.users-layout > .page-card {
+      width: 100% !important;
+      max-width: 100% !important;
+    }
+
+    #userManagementSection .account-form .form-grid {
+      display: grid !important;
+      grid-template-columns: repeat(3, minmax(180px, 1fr)) !important;
+      gap: 14px 18px !important;
+      align-items: end !important;
+    }
+
+    #userManagementSection .account-form .form-actions {
+      display: flex !important;
+      justify-content: flex-end !important;
+      margin-top: 14px !important;
+    }
+
+    #userManagementSection .account-form .create-btn {
+      min-width: 190px !important;
+    }
+
+    #userManagementSection .accounts-toolbar {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: space-between !important;
+      gap: 14px !important;
+      flex-wrap: wrap !important;
+      margin-bottom: 14px !important;
+    }
+
+    #userManagementSection .account-search-input {
+      width: min(100%, 560px) !important;
+      min-height: 42px !important;
+      font-size: 14px !important;
+    }
+
+    #userManagementSection .accounts-table-shell {
+      width: 100% !important;
+      overflow-x: auto !important;
+      border-radius: 18px !important;
+    }
+
+    #userManagementSection .accounts-table {
+      width: 100% !important;
+      min-width: 1180px !important;
+      table-layout: auto !important;
+      border-collapse: collapse !important;
+    }
+
+    #userManagementSection .accounts-table th,
+    #userManagementSection .accounts-table td {
+      vertical-align: middle !important;
+      padding: 13px 12px !important;
+      font-size: 13px !important;
+      line-height: 1.35 !important;
+      white-space: normal !important;
+      word-break: normal !important;
+      overflow-wrap: anywhere !important;
+    }
+
+    #userManagementSection .accounts-table th {
+      font-size: 13px !important;
+      font-weight: 900 !important;
+      letter-spacing: .01em !important;
+      white-space: nowrap !important;
+      word-break: normal !important;
+      overflow-wrap: normal !important;
+    }
+
+    #userManagementSection .accounts-table th:nth-child(1),
+    #userManagementSection .accounts-table td:nth-child(1) {
+      min-width: 155px !important;
+      font-weight: 800 !important;
+    }
+
+    #userManagementSection .accounts-table th:nth-child(2),
+    #userManagementSection .accounts-table td:nth-child(2) {
+      min-width: 135px !important;
+    }
+
+    #userManagementSection .accounts-table th:nth-child(3),
+    #userManagementSection .accounts-table td:nth-child(3) {
+      min-width: 180px !important;
+    }
+
+    #userManagementSection .accounts-table th:nth-child(4),
+    #userManagementSection .accounts-table td:nth-child(4) {
+      min-width: 86px !important;
+      text-align: center !important;
+    }
+
+    #userManagementSection .accounts-table th:nth-child(5),
+    #userManagementSection .accounts-table td:nth-child(5) {
+      min-width: 125px !important;
+    }
+
+    #userManagementSection .accounts-table th:nth-child(6),
+    #userManagementSection .accounts-table td:nth-child(6) {
+      min-width: 165px !important;
+    }
+
+    #userManagementSection .accounts-table th:nth-child(7),
+    #userManagementSection .accounts-table td:nth-child(7) {
+      min-width: 120px !important;
+      text-align: center !important;
+    }
+
+    #userManagementSection .accounts-table th:nth-child(8),
+    #userManagementSection .accounts-table td:nth-child(8) {
+      min-width: 150px !important;
+      white-space: normal !important;
+      overflow-wrap: normal !important;
+    }
+
+    #userManagementSection .accounts-table th:nth-child(9),
+    #userManagementSection .accounts-table td:nth-child(9) {
+      min-width: 170px !important;
+      text-align: center !important;
+    }
+
+    #userManagementSection .account-subtle-text {
+      display: block !important;
+      margin-top: 3px !important;
+      color: #64748b !important;
+      font-size: 11px !important;
+      font-weight: 600 !important;
+      white-space: nowrap !important;
+    }
+
+    #userManagementSection .account-source-chip {
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      min-width: 72px !important;
+      min-height: 28px !important;
+      padding: 0 11px !important;
+      border-radius: 999px !important;
+      font-size: 12px !important;
+      font-weight: 900 !important;
+      white-space: nowrap !important;
+    }
+
+    #userManagementSection .account-source-chip.web {
+      background: #eff6ff !important;
+      color: #1d4ed8 !important;
+      border: 1px solid #bfdbfe !important;
+    }
+
+    #userManagementSection .account-source-chip.mobile {
+      background: #ecfdf5 !important;
+      color: #047857 !important;
+      border: 1px solid #a7f3d0 !important;
+    }
+
+    #userManagementSection .account-action-buttons {
+      display: flex !important;
+      gap: 8px !important;
+      justify-content: center !important;
+      flex-wrap: nowrap !important;
+    }
+
+    #userManagementSection .account-action-buttons .inline-action-btn {
+      min-width: 78px !important;
+      min-height: 36px !important;
+      padding: 7px 10px !important;
+      border-radius: 10px !important;
+      font-size: 12px !important;
+      white-space: nowrap !important;
+    }
+
+    @media (max-width: 980px) {
+      #userManagementSection .account-form .form-grid {
+        grid-template-columns: 1fr !important;
+      }
+
+      #userManagementSection .account-form .form-actions {
+        justify-content: stretch !important;
+      }
+
+      #userManagementSection .account-form .create-btn {
+        width: 100% !important;
+      }
+
+      #userManagementSection .accounts-table {
+        min-width: 1120px !important;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+function cleanAccountValue(value) {
+  const text = String(value ?? "").trim();
+
+  if (
+    !text ||
+    text.toLowerCase() === "null" ||
+    text.toLowerCase() === "undefined" ||
+    text === "-"
+  ) {
+    return "";
+  }
+
+  return text;
+}
+
+function getAccountSource(user = {}) {
+  return String(user.account_source || user.source || "web").toLowerCase().trim() === "mobile"
+    ? "mobile"
+    : "web";
+}
+
+function getAccountUsername(user = {}) {
+  return (
+    cleanAccountValue(user.username) ||
+    cleanAccountValue(user.user_name) ||
+    cleanAccountValue(user.login_username) ||
+    cleanAccountValue(user.email) ||
+    cleanAccountValue(user.contact_number) ||
+    "-"
+  );
+}
+
+function getAccountEmail(user = {}) {
+  return (
+    cleanAccountValue(user.email) ||
+    cleanAccountValue(user.email_address) ||
+    cleanAccountValue(user.emailAddress) ||
+    cleanAccountValue(user.user_email) ||
+    cleanAccountValue(user.contact_email) ||
+    "-"
+  );
+}
+
+function getMobileAssignmentLabel(user = {}) {
+  const role = String(user.mobile_role || user.role || "").toLowerCase().trim();
+
+  const barangay = (
+    cleanAccountValue(user.assigned_source_name) ||
+    cleanAccountValue(user.assigned_barangay) ||
+    cleanAccountValue(user.barangay) ||
+    cleanAccountValue(user.barangay_name) ||
+    cleanAccountValue(user.user_barangay) ||
+    cleanAccountValue(user.address_barangay) ||
+    cleanAccountValue(user.location_barangay) ||
+    cleanAccountValue(user.division_barangay) ||
+    cleanAccountValue(user.area_barangay) ||
+    cleanAccountValue(user.assigned_area)
+  );
+
+  const establishment = (
+    cleanAccountValue(user.establishment_name) ||
+    cleanAccountValue(user.business_name) ||
+    cleanAccountValue(user.company_name) ||
+    cleanAccountValue(user.assigned_source_name)
+  );
+
+  if (role === "establishment") {
+    return establishment || barangay || "-";
+  }
+
+  if (role === "citizen" || role === "barangay" || role === "enforcer" || role === "mobile_user") {
+    return barangay || "Barangay not set";
+  }
+
+  return barangay || establishment || "-";
+}
+
+function getAccountAssignmentLabel(user = {}) {
+  const source = getAccountSource(user);
+
+  if (source === "mobile") {
+    return getMobileAssignmentLabel(user);
+  }
+
+  return (
+    cleanAccountValue(user.division_name) ||
+    cleanAccountValue(user.division) ||
+    cleanAccountValue(user.office_division) ||
+    "-"
+  );
+}
+
+function renderAccountMutedValue(value) {
+  const text = cleanAccountValue(value);
+
+  if (!text) {
+    return `<span class="account-subtle-text">Not provided</span>`;
+  }
+
+  return escapeHtml(text);
+}
+
+function renderAccountSourceChip(source) {
+  const safeSource = source === "mobile" ? "mobile" : "web";
+  const label = safeSource === "mobile" ? "Mobile" : "Web";
+
+  return `<span class="account-source-chip ${safeSource}">${label}</span>`;
+}
+
+function renderAccountNameCell(user = {}) {
+  const fullName = cleanAccountValue(user.full_name) || cleanAccountValue(user.name) || "-";
+  const id = cleanAccountValue(user.id);
+
+  return `
+    <strong>${escapeHtml(fullName)}</strong>
+    ${id ? `<span class="account-subtle-text">ID: ${escapeHtml(id)}</span>` : ""}
+  `;
+}
+
+
 function renderWebUsers(users) {
+  ensureUserManagementLayoutStyles();
+
   const tableBody = document.getElementById("webUsersTableBody");
   if (!tableBody) return;
 
   if (!Array.isArray(users) || !users.length) {
-    tableBody.innerHTML = `<tr><td colspan="8" class="empty-state">No accounts found</td></tr>`;
+    tableBody.innerHTML = `<tr><td colspan="9" class="empty-state">No accounts found</td></tr>`;
     return;
   }
 
@@ -84,13 +422,13 @@ function renderWebUsers(users) {
   });
 
   if (!activeUsers.length) {
-    tableBody.innerHTML = `<tr><td colspan="8" class="empty-state">No active accounts found</td></tr>`;
+    tableBody.innerHTML = `<tr><td colspan="9" class="empty-state">No active accounts found</td></tr>`;
     return;
   }
 
   tableBody.innerHTML = activeUsers.map((user) => {
     const accountId = Number(user.id);
-    const accountSource = user.account_source || "web";
+    const accountSource = getAccountSource(user);
     const status = String(user.status || "active").toLowerCase().trim();
 
     const isDeactivated =
@@ -98,36 +436,29 @@ function renderWebUsers(users) {
       status === "inactive" ||
       status === "suspended";
 
-    const primaryIdentity =
-      user.username ||
-      user.email ||
-      user.contact_number ||
-      "-";
-
-    const sourceLabel = accountSource === "mobile" ? "Mobile" : "Web";
+    const usernameLabel = getAccountUsername(user);
+    const emailLabel = getAccountEmail(user);
 
     const roleLabel =
       accountSource === "mobile"
         ? formatAccountRoleLabel(user.mobile_role || user.role || "mobile_user")
         : formatAccountRoleLabel(user.role || "-");
 
-    const assignmentLabel =
-      accountSource === "mobile"
-        ? (user.assigned_source_name || user.barangay || user.establishment_name || "-")
-        : (user.division_name || "-");
+    const assignmentLabel = getAccountAssignmentLabel(user);
 
     const actionLabel = isDeactivated ? "Activate" : "Deactivate";
     const nextStatus = isDeactivated ? "active" : "suspended";
 
     return `
       <tr>
-        <td>${escapeHtml(user.full_name || "-")}</td>
-        <td>${escapeHtml(primaryIdentity)}</td>
-        <td>${escapeHtml(sourceLabel)}</td>
+        <td>${renderAccountNameCell(user)}</td>
+        <td>${escapeHtml(usernameLabel)}</td>
+        <td>${renderAccountMutedValue(emailLabel)}</td>
+        <td>${renderAccountSourceChip(accountSource)}</td>
         <td>${escapeHtml(roleLabel)}</td>
         <td>${escapeHtml(assignmentLabel)}</td>
         <td>${renderStatusBadge(status)}</td>
-        <td>${formatDate(user.created_at || user.createdAt)}</td>
+        <td>${formatDate(user.created_at || user.createdAt || user.date_created)}</td>
         <td>
           <div class="account-action-buttons">
             <button
@@ -158,18 +489,12 @@ function getFilteredWebUsers() {
   if (!searchValue) return allWebUsers;
 
   return allWebUsers.filter((user) => {
-    const fullName = String(user.full_name || "").toLowerCase();
-    const username = String(user.username || "").toLowerCase();
-    const email = String(user.email || "").toLowerCase();
-    const source = String(user.account_source || "web").toLowerCase();
+    const fullName = String(user.full_name || user.name || "").toLowerCase();
+    const username = String(getAccountUsername(user)).toLowerCase();
+    const email = String(getAccountEmail(user)).toLowerCase();
+    const source = String(getAccountSource(user)).toLowerCase();
     const role = String(user.mobile_role || user.role || "").toLowerCase();
-    const assignment = String(
-      user.assigned_source_name ||
-      user.barangay ||
-      user.establishment_name ||
-      user.division_name ||
-      ""
-    ).toLowerCase();
+    const assignment = String(getAccountAssignmentLabel(user)).toLowerCase();
     const status = String(user.status || "active").toLowerCase();
 
     return (
@@ -192,6 +517,8 @@ function getDeactivatedWebUsers() {
 }
 
 function renderDeactivatedAccountsHistory() {
+  ensureUserManagementLayoutStyles();
+
   const tableBody = document.getElementById("deactivatedAccountsTableBody");
   if (!tableBody) return;
 
@@ -200,7 +527,7 @@ function renderDeactivatedAccountsHistory() {
   if (!users.length) {
     tableBody.innerHTML = `
       <tr>
-        <td colspan="8" class="empty-state">No deactivated accounts found.</td>
+        <td colspan="9" class="empty-state">No deactivated accounts found.</td>
       </tr>
     `;
     return;
@@ -208,35 +535,28 @@ function renderDeactivatedAccountsHistory() {
 
   tableBody.innerHTML = users.map((user) => {
     const accountId = Number(user.id);
-    const accountSource = user.account_source || "web";
+    const accountSource = getAccountSource(user);
 
-    const primaryIdentity =
-      user.username ||
-      user.email ||
-      user.contact_number ||
-      "-";
-
-    const sourceLabel = accountSource === "mobile" ? "Mobile" : "Web";
+    const usernameLabel = getAccountUsername(user);
+    const emailLabel = getAccountEmail(user);
 
     const roleLabel =
       accountSource === "mobile"
         ? formatAccountRoleLabel(user.mobile_role || user.role || "mobile_user")
         : formatAccountRoleLabel(user.role || "-");
 
-    const assignmentLabel =
-      accountSource === "mobile"
-        ? (user.assigned_source_name || user.barangay || user.establishment_name || "-")
-        : (user.division_name || "-");
+    const assignmentLabel = getAccountAssignmentLabel(user);
 
     return `
       <tr>
-        <td>${escapeHtml(user.full_name || "-")}</td>
-        <td>${escapeHtml(primaryIdentity)}</td>
-        <td>${escapeHtml(sourceLabel)}</td>
+        <td>${renderAccountNameCell(user)}</td>
+        <td>${escapeHtml(usernameLabel)}</td>
+        <td>${renderAccountMutedValue(emailLabel)}</td>
+        <td>${renderAccountSourceChip(accountSource)}</td>
         <td>${escapeHtml(roleLabel)}</td>
         <td>${escapeHtml(assignmentLabel)}</td>
         <td>${renderStatusBadge(user.status || "deactivated")}</td>
-        <td>${formatDate(user.created_at || user.createdAt)}</td>
+        <td>${formatDate(user.created_at || user.createdAt || user.date_created)}</td>
         <td>
           <div class="account-action-buttons">
             <button
@@ -720,6 +1040,8 @@ function setupCreateAccountForm() {
           password,
           mobile_role: role,
           assigned_source_name: assignmentName,
+          barangay: role === "barangay" || role === "enforcer" ? assignmentName : null,
+          establishment_name: role === "establishment" ? assignmentName : null,
           status: "active"
         };
       } else {
