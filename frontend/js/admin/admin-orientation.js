@@ -342,7 +342,158 @@ function sortOrientationHistoryNewestFirst(records = []) {
   });
 }
 
+function ensureOrientationHistoryReportLayoutStyles() {
+  if (document.getElementById("orientationHistoryReportLayoutStyles")) return;
+
+  const style = document.createElement("style");
+  style.id = "orientationHistoryReportLayoutStyles";
+  style.textContent = `
+    /*
+      Orientation History / Report layout-only fix.
+      This does not change QR, exam, certificate, API, or lifecycle logic.
+    */
+    #orientationHistoryModal {
+      padding: 22px !important;
+    }
+
+    #orientationHistoryModal .custom-modal-content,
+    #orientationHistoryModal .modal-content,
+    #orientationHistoryModal .orientation-history-modal-content {
+      width: min(1120px, calc(100vw - 44px)) !important;
+      max-width: 1120px !important;
+      margin: 0 auto !important;
+      border-radius: 24px !important;
+    }
+
+    #orientationHistoryModal .modal-header,
+    #orientationHistoryModal .custom-modal-header,
+    #orientationHistoryModal .orientation-history-header {
+      padding: 28px 34px 20px !important;
+    }
+
+    #orientationHistoryModal .modal-body,
+    #orientationHistoryModal .custom-modal-body,
+    #orientationHistoryModal .orientation-history-body {
+      padding: 26px 34px 34px !important;
+    }
+
+    #orientationHistoryModal .table-shell {
+      width: 100% !important;
+      max-width: 100% !important;
+      margin: 8px auto 0 !important;
+      border-radius: 20px !important;
+      overflow-x: auto !important;
+      border: 1px solid #e5edf4 !important;
+      background: #ffffff !important;
+    }
+
+    #orientationHistoryModal table {
+      width: 100% !important;
+      min-width: 880px !important;
+      border-collapse: collapse !important;
+      table-layout: fixed !important;
+    }
+
+    #orientationHistoryModal thead th {
+      padding: 18px 20px !important;
+      background: #f6f8fa !important;
+      color: #111827 !important;
+      font-size: 13px !important;
+      font-weight: 900 !important;
+      letter-spacing: .02em !important;
+      text-align: left !important;
+      white-space: nowrap !important;
+    }
+
+    #orientationHistoryModal tbody td {
+      padding: 17px 20px !important;
+      color: #334155 !important;
+      font-size: 13px !important;
+      line-height: 1.35 !important;
+      vertical-align: middle !important;
+      border-top: 1px solid #edf1f5 !important;
+      white-space: normal !important;
+      word-break: normal !important;
+    }
+
+    #orientationHistoryModal thead th:nth-child(1),
+    #orientationHistoryModal tbody td:nth-child(1) {
+      width: 22% !important;
+    }
+
+    #orientationHistoryModal thead th:nth-child(2),
+    #orientationHistoryModal tbody td:nth-child(2) {
+      width: 14% !important;
+    }
+
+    #orientationHistoryModal thead th:nth-child(3),
+    #orientationHistoryModal tbody td:nth-child(3),
+    #orientationHistoryModal thead th:nth-child(4),
+    #orientationHistoryModal tbody td:nth-child(4) {
+      width: 15% !important;
+    }
+
+    #orientationHistoryModal thead th:nth-child(5),
+    #orientationHistoryModal tbody td:nth-child(5) {
+      width: 10% !important;
+      text-align: center !important;
+    }
+
+    #orientationHistoryModal thead th:nth-child(6),
+    #orientationHistoryModal tbody td:nth-child(6) {
+      width: 18% !important;
+      text-align: center !important;
+    }
+
+    #orientationHistoryModal .orientation-status {
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      min-width: 110px !important;
+      min-height: 30px !important;
+      padding: 0 14px !important;
+      border-radius: 999px !important;
+      font-size: 12px !important;
+      font-weight: 900 !important;
+      letter-spacing: .04em !important;
+      white-space: nowrap !important;
+    }
+
+    @media (max-width: 820px) {
+      #orientationHistoryModal {
+        padding: 10px !important;
+      }
+
+      #orientationHistoryModal .modal-header,
+      #orientationHistoryModal .custom-modal-header,
+      #orientationHistoryModal .orientation-history-header {
+        padding: 22px 20px 16px !important;
+      }
+
+      #orientationHistoryModal .modal-body,
+      #orientationHistoryModal .custom-modal-body,
+      #orientationHistoryModal .orientation-history-body {
+        padding: 18px 16px 24px !important;
+      }
+
+      #orientationHistoryModal table {
+        min-width: 860px !important;
+      }
+
+      #orientationHistoryModal thead th,
+      #orientationHistoryModal tbody td {
+        padding-left: 16px !important;
+        padding-right: 16px !important;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
 function renderOrientationHistory(records) {
+  ensureOrientationHistoryReportLayoutStyles();
+
   const tableBody = document.getElementById("orientationHistoryTableBody");
   if (!tableBody) return;
 
@@ -638,6 +789,8 @@ function setupUpcomingOrientationModal() {
 ========================= */
 
 function openOrientationHistoryModal() {
+  ensureOrientationHistoryReportLayoutStyles();
+
   const modal = document.getElementById("orientationHistoryModal");
 
   if (!modal) {
