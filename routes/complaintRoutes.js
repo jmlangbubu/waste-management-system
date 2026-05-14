@@ -613,10 +613,6 @@ router.post("/", upload.single("image"), (req, res) => {
                     message:
                       assignmentMethod === "polygon"
                         ? "Complaint submitted successfully and assigned by barangay boundary."
-                        : assignmentMethod === "nearest_reference_point"
-                        ? "Complaint submitted successfully and auto-assigned to the nearest barangay."
-                        : assignmentMethod === "nearest_fallback"
-                        ? "Complaint submitted successfully and auto-assigned to the nearest barangay."
                         : "Complaint submitted successfully and marked for manual verification.",
                     complaintId,
                     reporter_barangay: reporter_barangay || null,
@@ -649,8 +645,16 @@ router.post("/", upload.single("image"), (req, res) => {
 
         /*
           IMPORTANT FIX:
-          Assignment must follow actual barangay coverage first, not nearest hall/reference.
-          Nearest reference point is only a fallback when no polygon covers the issue.
+          Complaint assignment must NOT be based on the nearest barangay hall/reference point.
+          It must follow barangay jurisdiction/boundary.
+
+          Rules:
+          1. If the issue coordinate is inside a barangay polygon, assign to that barangay.
+          2. If no polygon covers the coordinate, mark as "For Verification".
+          3. WMO can then choose the correct barangay manually from the map modal.
+
+          This prevents a Mabuhay-covered issue from being incorrectly assigned to
+          San Isidro only because the San Isidro reference point is nearer.
         */
         const boundarySql = `
           SELECT barangay_name, polygon_json
@@ -681,68 +685,19 @@ router.post("/", upload.single("image"), (req, res) => {
                 "polygon",
                 {
                   source: "barangay_boundaries",
-                  note: "Boundary/polygon match is authoritative. Nearest reference point was not used."
+                  note: "Assigned by barangay jurisdiction polygon. Nearest reference point was not used."
                 }
               );
             }
 
-            /*
-              Fallback only:
-              If no boundary contains the point, use nearest reference point so the complaint
-              is still assigned instead of being stuck as For Verification.
-            */
-            return resolveNearestBarangayByReferencePoint({ lat, lng }, (referenceErr, nearestReference) => {
-              if (referenceErr) {
-                deleteUploadedFileIfExists(req.file);
-
-                return res.status(500).json({
-                  success: false,
-                  message: "Failed to auto-detect nearest barangay reference point.",
-                  error: referenceErr.message,
-                  code: referenceErr.code
-                });
+            return finishComplaintCreation(
+              "For Verification",
+              "manual_review",
+              {
+                source: "manual_review",
+                note: "No barangay boundary polygon covered this coordinate. Nearest barangay was intentionally not used."
               }
-
-              if (nearestReference && nearestReference.barangay_name) {
-                return finishComplaintCreation(
-                  nearestReference.barangay_name,
-                  "nearest_reference_point",
-                  {
-                    source: "barangay_reference_points",
-                    note: "No polygon covered the point, so nearest reference fallback was used.",
-                    reference_name: nearestReference.reference_name || null,
-                    distance_meters: nearestReference.distance_meters,
-                    reference_latitude: nearestReference.latitude,
-                    reference_longitude: nearestReference.longitude
-                  }
-                );
-              }
-
-              const nearestBarangay = resolveNearestBarangay(
-                { lat, lng },
-                boundaryRows || []
-              );
-
-              if (nearestBarangay && typeof nearestBarangay === "string") {
-                return finishComplaintCreation(
-                  nearestBarangay,
-                  "nearest_fallback",
-                  {
-                    source: "barangay_boundaries",
-                    note: "No polygon covered the point and no reference point was available."
-                  }
-                );
-              }
-
-              return finishComplaintCreation(
-                "For Verification",
-                "manual_review",
-                {
-                  source: "manual_review",
-                  note: "No boundary or reference point matched the complaint location."
-                }
-              );
-            });
+            );
           } catch (resolutionError) {
             deleteUploadedFileIfExists(req.file);
 
