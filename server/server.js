@@ -4,8 +4,84 @@ const express = require("express");
 const cors = require("cors");
 const path = require("path");
 const fs = require("fs");
+const http = require("http");
+const { Server } = require("socket.io");
 
 const app = express();
+const server = http.createServer(app);
+
+/* =========================
+   SOCKET.IO REAL-TIME SERVER
+========================= */
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"]
+  },
+  transports: ["websocket", "polling"]
+});
+
+app.set("io", io);
+
+function cleanRoomText(value) {
+  if (value === null || value === undefined) return "";
+
+  return String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/barangay/g, "")
+    .replace(/brgy\.?/g, "")
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function getBarangayRoomName(value) {
+  const key = cleanRoomText(value);
+  return key ? `barangay:${key}` : "";
+}
+
+function getCitizenRoomName(value) {
+  const id = String(value || "").trim();
+  return id ? `citizen:${id}` : "";
+}
+
+io.on("connection", (socket) => {
+  console.log("Realtime client connected:", socket.id);
+
+  socket.on("join:wmo", () => {
+    socket.join("wmo");
+    console.log(`Socket ${socket.id} joined room: wmo`);
+  });
+
+  socket.on("join:barangay", (barangayName) => {
+    const room = getBarangayRoomName(barangayName);
+
+    if (!room) return;
+
+    socket.join(room);
+    console.log(`Socket ${socket.id} joined room: ${room}`);
+  });
+
+  socket.on("join:citizen", (citizenId) => {
+    const room = getCitizenRoomName(citizenId);
+
+    if (!room) return;
+
+    socket.join(room);
+    console.log(`Socket ${socket.id} joined room: ${room}`);
+  });
+
+  socket.on("leave:barangay", (barangayName) => {
+    const room = getBarangayRoomName(barangayName);
+
+    if (!room) return;
+
+    socket.leave(room);
+  });
+
+  socket.on("disconnect", (reason) => {
+    console.log("Realtime client disconnected:", socket.id, reason);
+  });
+});
 
 /* ROUTES */
 const wasteRoutes = require("../routes/wasteRoutes");
@@ -87,6 +163,14 @@ app.get("/api/test", (req, res) => {
   return res.status(200).json({
     success: true,
     message: "API is reachable"
+  });
+});
+
+app.get("/api/realtime/status", (req, res) => {
+  return res.status(200).json({
+    success: true,
+    message: "Realtime server is active",
+    connected_clients: io.engine.clientsCount
   });
 });
 
@@ -205,13 +289,14 @@ process.on("unhandledRejection", (reason) => {
 const PORT = process.env.PORT || 8081;
 const HOST = "0.0.0.0";
 
-app.listen(PORT, HOST, () => {
+server.listen(PORT, HOST, () => {
   console.log("======================================");
   console.log(`Server running on port ${PORT}`);
   console.log(`Server host binding: ${HOST}`);
   console.log(`Local URL: http://localhost:${PORT}`);
   console.log(`Network URL: http://192.168.1.37:${PORT}`);
   console.log("--------------------------------------");
+  console.log(`Realtime Socket.IO: enabled`);
   console.log(`ROOT_DIR: ${ROOT_DIR}`);
   console.log(`FRONTEND_DIR: ${FRONTEND_DIR}`);
   console.log(`UPLOADS_DIR: ${UPLOADS_DIR}`);
