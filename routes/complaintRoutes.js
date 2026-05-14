@@ -611,10 +611,10 @@ router.post("/", upload.single("image"), (req, res) => {
                     success: true,
                     duplicate: false,
                     message:
-                      assignmentMethod === "nearest_reference_point"
+                      assignmentMethod === "polygon"
+                        ? "Complaint submitted successfully and assigned by barangay boundary."
+                        : assignmentMethod === "nearest_reference_point"
                         ? "Complaint submitted successfully and auto-assigned to the nearest barangay."
-                        : assignmentMethod === "polygon"
-                        ? "Complaint submitted successfully."
                         : assignmentMethod === "nearest_fallback"
                         ? "Complaint submitted successfully and auto-assigned to the nearest barangay."
                         : "Complaint submitted successfully and marked for manual verification.",
@@ -649,96 +649,110 @@ router.post("/", upload.single("image"), (req, res) => {
 
         /*
           IMPORTANT FIX:
-          Use the nearest active barangay_reference_points record first.
-          This prevents wrong assignment from inaccurate/oversized polygon data
-          such as a Mabuhay/San Isidro pin being saved as Lagao.
+          Assignment must follow actual barangay coverage first, not nearest hall/reference.
+          Nearest reference point is only a fallback when no polygon covers the issue.
         */
-        resolveNearestBarangayByReferencePoint({ lat, lng }, (referenceErr, nearestReference) => {
-          if (referenceErr) {
+        const boundarySql = `
+          SELECT barangay_name, polygon_json
+          FROM barangay_boundaries
+          WHERE status = 'active'
+        `;
+
+        db.query(boundarySql, (boundaryErr, boundaryRows) => {
+          if (boundaryErr) {
             deleteUploadedFileIfExists(req.file);
 
+            console.error("Boundary query error:", boundaryErr);
             return res.status(500).json({
               success: false,
-              message: "Failed to auto-detect nearest barangay reference point.",
-              error: referenceErr.message,
-              code: referenceErr.code
+              message: "Failed to load barangay boundaries."
             });
           }
 
-          if (nearestReference && nearestReference.barangay_name) {
-            return finishComplaintCreation(
-              nearestReference.barangay_name,
-              "nearest_reference_point",
-              {
-                source: "barangay_reference_points",
-                reference_name: nearestReference.reference_name || null,
-                distance_meters: nearestReference.distance_meters,
-                reference_latitude: nearestReference.latitude,
-                reference_longitude: nearestReference.longitude
-              }
+          try {
+            const polygonMatchedBarangay = resolveBarangayByPolygon(
+              { lat, lng },
+              boundaryRows || []
             );
-          }
 
-          const boundarySql = `
-            SELECT barangay_name, polygon_json
-            FROM barangay_boundaries
-            WHERE status = 'active'
-          `;
-
-          db.query(boundarySql, (boundaryErr, boundaryRows) => {
-            if (boundaryErr) {
-              deleteUploadedFileIfExists(req.file);
-
-              console.error("Boundary query error:", boundaryErr);
-              return res.status(500).json({
-                success: false,
-                message: "Failed to load barangay boundaries."
-              });
+            if (polygonMatchedBarangay) {
+              return finishComplaintCreation(
+                polygonMatchedBarangay,
+                "polygon",
+                {
+                  source: "barangay_boundaries",
+                  note: "Boundary/polygon match is authoritative. Nearest reference point was not used."
+                }
+              );
             }
 
-            try {
-              const polygonMatchedBarangay = resolveBarangayByPolygon(
+            /*
+              Fallback only:
+              If no boundary contains the point, use nearest reference point so the complaint
+              is still assigned instead of being stuck as For Verification.
+            */
+            return resolveNearestBarangayByReferencePoint({ lat, lng }, (referenceErr, nearestReference) => {
+              if (referenceErr) {
+                deleteUploadedFileIfExists(req.file);
+
+                return res.status(500).json({
+                  success: false,
+                  message: "Failed to auto-detect nearest barangay reference point.",
+                  error: referenceErr.message,
+                  code: referenceErr.code
+                });
+              }
+
+              if (nearestReference && nearestReference.barangay_name) {
+                return finishComplaintCreation(
+                  nearestReference.barangay_name,
+                  "nearest_reference_point",
+                  {
+                    source: "barangay_reference_points",
+                    note: "No polygon covered the point, so nearest reference fallback was used.",
+                    reference_name: nearestReference.reference_name || null,
+                    distance_meters: nearestReference.distance_meters,
+                    reference_latitude: nearestReference.latitude,
+                    reference_longitude: nearestReference.longitude
+                  }
+                );
+              }
+
+              const nearestBarangay = resolveNearestBarangay(
                 { lat, lng },
                 boundaryRows || []
               );
 
-              let finalBarangay = polygonMatchedBarangay || null;
-              let assignmentMethod = polygonMatchedBarangay ? "polygon" : "";
-
-              if (!finalBarangay) {
-                const nearestBarangay = resolveNearestBarangay(
-                  { lat, lng },
-                  boundaryRows || []
+              if (nearestBarangay && typeof nearestBarangay === "string") {
+                return finishComplaintCreation(
+                  nearestBarangay,
+                  "nearest_fallback",
+                  {
+                    source: "barangay_boundaries",
+                    note: "No polygon covered the point and no reference point was available."
+                  }
                 );
-
-                if (nearestBarangay && typeof nearestBarangay === "string") {
-                  finalBarangay = nearestBarangay;
-                  assignmentMethod = "nearest_fallback";
-                } else {
-                  finalBarangay = "For Verification";
-                  assignmentMethod = "manual_review";
-                }
               }
 
               return finishComplaintCreation(
-                finalBarangay,
-                assignmentMethod,
+                "For Verification",
+                "manual_review",
                 {
-                  source: assignmentMethod,
-                  note: "barangay_reference_points had no active usable records, so boundary fallback was used."
+                  source: "manual_review",
+                  note: "No boundary or reference point matched the complaint location."
                 }
               );
-            } catch (resolutionError) {
-              deleteUploadedFileIfExists(req.file);
+            });
+          } catch (resolutionError) {
+            deleteUploadedFileIfExists(req.file);
 
-              console.error("Complaint barangay resolution error:", resolutionError);
-              return res.status(500).json({
-                success: false,
-                message: "Barangay resolution failed.",
-                error: resolutionError.message
-              });
-            }
-          });
+            console.error("Complaint barangay resolution error:", resolutionError);
+            return res.status(500).json({
+              success: false,
+              message: "Barangay resolution failed.",
+              error: resolutionError.message
+            });
+          }
         });
       };
 
