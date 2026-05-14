@@ -2330,7 +2330,9 @@ router.get("/history/resolved", (req, res) => {
 ========================= */
 router.get("/barangay-analytics/:barangay", (req, res) => {
   try {
-    const barangay = String(req.params.barangay || "").trim();
+    const barangay = normalizeBarangayName(
+      decodeURIComponent(String(req.params.barangay || "").trim())
+    );
 
     if (!barangay) {
       return res.status(400).json({
@@ -2339,17 +2341,60 @@ router.get("/barangay-analytics/:barangay", (req, res) => {
       });
     }
 
+    const barangayKey = getBarangayMatchParam(barangay);
+
+    /*
+      Permanent barangay complaint analytics.
+
+      resolved_this_month:
+      - complaints finally assigned to this barangay
+      - resolved during the current month
+
+      not_accepted_forwarded_this_month:
+      - complaints forwarded to this barangay
+      - another barangay accepted first
+      - counted from notification history rows, even if viewed/cleared later
+      - this makes the dashboard count permanent and not dependent on the bell badge
+    */
     const sql = `
       SELECT
-        COUNT(*) AS resolved_this_month
-      FROM complaints
-      WHERE LOWER(REPLACE(REPLACE(REPLACE(TRIM(assigned_barangay), ' ', ''), '-', ''), '.', '')) = ?
-        AND LOWER(TRIM(status)) = 'resolved'
-        AND resolved_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
-        AND resolved_at < DATE_ADD(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 1 MONTH)
+        (
+          SELECT COUNT(*)
+          FROM complaints c
+          WHERE ${normalizeSqlBarangayExpression("c.assigned_barangay")} = ?
+            AND LOWER(TRIM(c.status)) = 'resolved'
+            AND c.resolved_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
+            AND c.resolved_at < DATE_ADD(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 1 MONTH)
+        ) AS resolved_this_month,
+
+        (
+          SELECT COUNT(DISTINCT cn.complaint_id)
+          FROM complaint_notifications cn
+          WHERE cn.target_type = 'barangay'
+            AND ${normalizeSqlBarangayExpression("cn.target_name")} = ?
+            AND (
+              LOWER(COALESCE(cn.notification_type, '')) = 'accepted_by_other_barangay'
+              OR LOWER(COALESCE(cn.message, '')) LIKE '%no action is needed from your barangay%'
+              OR LOWER(COALESCE(cn.message, '')) LIKE '%accepted the wmo-forwarded complaint%'
+            )
+            AND cn.created_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
+            AND cn.created_at < DATE_ADD(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 1 MONTH)
+        ) AS not_accepted_forwarded_this_month,
+
+        (
+          SELECT COUNT(DISTINCT cn_all.complaint_id)
+          FROM complaint_notifications cn_all
+          WHERE cn_all.target_type = 'barangay'
+            AND ${normalizeSqlBarangayExpression("cn_all.target_name")} = ?
+            AND (
+              LOWER(COALESCE(cn_all.notification_type, '')) = 'accepted_by_other_barangay'
+              OR LOWER(COALESCE(cn_all.message, '')) LIKE '%no action is needed from your barangay%'
+              OR LOWER(COALESCE(cn_all.message, '')) LIKE '%accepted the wmo-forwarded complaint%'
+            )
+        ) AS not_accepted_forwarded_total
     `;
 
-    db.query(sql, [getBarangayMatchParam(barangay)], (err, rows) => {
+    db.query(sql, [barangayKey, barangayKey, barangayKey], (err, rows) => {
       if (err) {
         console.error("Barangay complaint analytics error:", err);
         return res.status(500).json({
@@ -2360,19 +2405,27 @@ router.get("/barangay-analytics/:barangay", (req, res) => {
         });
       }
 
-      const summary = rows && rows.length
-        ? rows[0]
-        : { resolved_this_month: 0 };
+      const summary = rows && rows.length ? rows[0] : {};
 
       const resolvedThisMonth = Number(summary.resolved_this_month || 0);
+      const notAcceptedForwardedThisMonth = Number(summary.not_accepted_forwarded_this_month || 0);
+      const notAcceptedForwardedTotal = Number(summary.not_accepted_forwarded_total || 0);
 
       return res.json({
         success: true,
+        barangay,
         summary: {
           resolved_this_month: resolvedThisMonth,
           resolved_issues: resolvedThisMonth,
           resolved_count: resolvedThisMonth,
-          total_issues: resolvedThisMonth
+          total_issues: resolvedThisMonth,
+
+          not_accepted_forwarded_this_month: notAcceptedForwardedThisMonth,
+          not_accepted_forwarded: notAcceptedForwardedThisMonth,
+          not_accepted_forwarded_count: notAcceptedForwardedThisMonth,
+          missed_forwarded_count: notAcceptedForwardedThisMonth,
+
+          not_accepted_forwarded_total: notAcceptedForwardedTotal
         }
       });
     });
