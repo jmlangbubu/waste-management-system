@@ -135,7 +135,7 @@ async function loadAppointments() {
     );
 
     const sortedActiveAppointments = sortAppointmentRecordsByReference(visibleActiveAppointments);
-    const sortedHistoryAppointments = sortAppointmentRecordsByReference(mergedHistoryAppointments);
+    const sortedHistoryAppointments = sortAppointmentHistoryNewestFirst(mergedHistoryAppointments);
 
     allAppointments = sortAppointmentRecordsByReference([
       ...sortedActiveAppointments,
@@ -281,6 +281,73 @@ function getAppointmentReferenceNumber(app) {
   }
 
   return Number.MAX_SAFE_INTEGER;
+}
+
+
+function parseAppointmentSortTime(value) {
+  if (!value) return 0;
+
+  const raw = String(value).trim();
+  if (!raw) return 0;
+
+  /*
+    MySQL sometimes returns:
+    - 2026-05-14T13:01:33.000Z
+    - 2026-05-14 21:01:33
+    - 5/14/2026, 9:01:33 PM
+    This normalizes the common SQL datetime format so browser sorting is stable.
+  */
+  const normalized = raw.includes("T") ? raw : raw.replace(" ", "T");
+  const parsed = new Date(normalized);
+  const time = parsed.getTime();
+
+  return Number.isFinite(time) ? time : 0;
+}
+
+function getAppointmentHistorySortTime(app = {}) {
+  const possibleDates = [
+    app.orientation_completed_at,
+    app.completed_at,
+    app.updated_at,
+    app.resolved_at,
+    app.cancelled_at,
+    app.rejected_at,
+    app.preferred_date,
+    app.appointment_date,
+    app.created_at
+  ];
+
+  for (const value of possibleDates) {
+    const time = parseAppointmentSortTime(value);
+    if (time > 0) return time;
+  }
+
+  return 0;
+}
+
+function sortAppointmentHistoryNewestFirst(records = []) {
+  if (!Array.isArray(records)) return [];
+
+  return [...records].sort((a, b) => {
+    const timeA = getAppointmentHistorySortTime(a);
+    const timeB = getAppointmentHistorySortTime(b);
+
+    if (timeA !== timeB) {
+      return timeB - timeA;
+    }
+
+    const numberA = getAppointmentReferenceNumber(a);
+    const numberB = getAppointmentReferenceNumber(b);
+
+    if (numberA !== numberB) {
+      return numberB - numberA;
+    }
+
+    const idA = Number(a?.id || 0);
+    const idB = Number(b?.id || 0);
+
+    return idB - idA;
+  });
 }
 
 /* =========================
@@ -661,7 +728,7 @@ async function openAppointmentHistory() {
       ? data
       : (data.history || data.data || []);
 
-    appointmentHistoryRecords = sortAppointmentRecordsByReference(historyAppointments);
+    appointmentHistoryRecords = sortAppointmentHistoryNewestFirst(historyAppointments);
 
     renderAppointmentHistory(appointmentHistoryRecords, true);
 
@@ -698,7 +765,7 @@ function renderAppointmentHistory(history = [], preserveSearch = false) {
 
   const sourceHistory = Array.isArray(history) ? history : [];
 
-  appointmentHistoryRecords = sortAppointmentRecordsByReference(sourceHistory);
+  appointmentHistoryRecords = sortAppointmentHistoryNewestFirst(sourceHistory);
 
   if (!preserveSearch && !appointmentHistorySearchQuery) {
     const input = document.getElementById("appointmentHistorySearchInput");
