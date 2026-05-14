@@ -1778,10 +1778,15 @@ function getComplaintTableAssignedDisplay(complaint = {}) {
 
   /*
     Pending complaints are still waiting for WMO validation/forwarding.
-    Do not show the citizen-reported concern as final assigned barangay.
+    Forwarded complaints are already sent to barangays, but no barangay
+    has accepted yet, so do not show the citizen concern as final assigned.
   */
   if (status === "pending") {
     return "Awaiting Assignment";
+  }
+
+  if (status === "forwarded") {
+    return "Awaiting Acceptance";
   }
 
   const assigned = String(complaint.assigned_barangay || "").trim();
@@ -1799,6 +1804,7 @@ function getComplaintTableAssignedClass(complaint = {}) {
 
   if (
     status === "pending" ||
+    status === "forwarded" ||
     !assigned ||
     assigned.toLowerCase() === "for verification"
   ) {
@@ -3809,6 +3815,29 @@ function ensureComplaintHistoryForwardedColumnStyles() {
       line-height: 1.2 !important;
     }
 
+    #complaintHistoryModal .complaint-history-assigned-waiting {
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      min-height: 28px !important;
+      padding: 5px 10px !important;
+      border-radius: 999px !important;
+      background: #f8fafc !important;
+      border: 1px solid #dbe3ea !important;
+      color: #64748b !important;
+      font-size: 11.5px !important;
+      font-weight: 850 !important;
+      white-space: nowrap !important;
+    }
+
+    #complaintHistoryModal .complaint-history-assigned-final {
+      color: #102a1d !important;
+      font-size: 12.5px !important;
+      font-weight: 950 !important;
+      line-height: 1.2 !important;
+      white-space: nowrap !important;
+    }
+
     #complaintHistoryModal .complaint-history-forwarded-empty {
       display: inline-flex !important;
       align-items: center !important;
@@ -3877,17 +3906,41 @@ function ensureComplaintHistoryForwardedColumnStyles() {
 
 
 function getComplaintHistoryBarangayValue(item = {}) {
+  const status = String(item.status || "").trim().toLowerCase();
+
+  /*
+    For forwarded records, this is not final assigned yet.
+    It becomes assigned only after one barangay accepts.
+  */
+  if (status === "forwarded") {
+    return "Awaiting Acceptance";
+  }
+
   return (
     item.assigned_barangay ||
     item.handled_by_barangay_name ||
-    item.reporter_barangay ||
     "-"
   );
 }
 
+function renderComplaintHistoryAssignedBarangay(item = {}) {
+  const value = getComplaintHistoryBarangayValue(item);
+  const status = String(item.status || "").trim().toLowerCase();
+
+  if (status === "forwarded" || value === "Awaiting Acceptance") {
+    return `<span class="complaint-history-assigned-waiting">Awaiting Acceptance</span>`;
+  }
+
+  if (!value || value === "-") {
+    return `<span class="complaint-history-assigned-waiting">Not Assigned</span>`;
+  }
+
+  return `<strong class="complaint-history-assigned-final">${escapeHtml(value)}</strong>`;
+}
+
 function getComplaintHistorySearchText(item = {}) {
   const statusLabel = formatComplaintHistoryStatus(item.status);
-  const dateLabel = formatDateTimeDisplay(item.rejected_at || item.resolved_at || item.created_at);
+  const dateLabel = formatDateTimeDisplay(item.rejected_at || item.resolved_at || item.validated_at || item.accepted_at || item.in_progress_at || item.created_at);
 
   return normalizeComplaintHistoryFilterValue([
     item.subject,
@@ -3924,7 +3977,12 @@ function getComplaintHistoryBarangayOptions(records = []) {
   (Array.isArray(records) ? records : []).forEach((item) => {
     const barangay = String(getComplaintHistoryBarangayValue(item) || "").trim();
 
-    if (barangay && barangay !== "-") {
+    if (
+      barangay &&
+      barangay !== "-" &&
+      barangay !== "Awaiting Acceptance" &&
+      barangay !== "Not Assigned"
+    ) {
       barangaySet.add(barangay);
     }
   });
@@ -4144,14 +4202,14 @@ function renderComplaintHistoryTable(records) {
     <tr>
       <td>${escapeHtml(item.subject || "-")}</td>
       <td>${escapeHtml(item.citizen_name || item.username || "-")}</td>
-      <td>${escapeHtml(getComplaintHistoryBarangayValue(item))}</td>
+      <td>${renderComplaintHistoryAssignedBarangay(item)}</td>
       <td>${renderComplaintHistoryForwardedBarangays(item)}</td>
       <td>
         <span class="complaint-history-status ${escapeHtml(getComplaintHistoryStatusClass(item.status))}">
           ${escapeHtml(formatComplaintHistoryStatus(item.status))}
         </span>
       </td>
-      <td>${escapeHtml(formatDateTimeDisplay(item.rejected_at || item.resolved_at || item.created_at))}</td>
+      <td>${escapeHtml(formatDateTimeDisplay(item.rejected_at || item.resolved_at || item.validated_at || item.accepted_at || item.in_progress_at || item.created_at))}</td>
       <td>
         <button
           type="button"
