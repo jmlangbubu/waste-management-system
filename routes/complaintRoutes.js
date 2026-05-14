@@ -547,6 +547,86 @@ function markOtherBarangayNotificationsCleared(complaintId, acceptedBarangay, ca
 }
 
 
+
+function getComplaintBarangayNotificationTargets(complaintId, callback) {
+  const sql = `
+    SELECT target_name
+    FROM complaint_notifications
+    WHERE complaint_id = ?
+      AND target_type = 'barangay'
+      AND target_name IS NOT NULL
+      AND TRIM(target_name) <> ''
+    GROUP BY target_name
+    ORDER BY MIN(created_at) ASC, MIN(id) ASC
+  `;
+
+  db.query(sql, [complaintId], (err, rows) => {
+    if (err) {
+      console.error("Failed loading complaint barangay notification targets:", err);
+      return callback(err, []);
+    }
+
+    const targets = parseBarangayTargets((rows || []).map((row) => row.target_name));
+    return callback(null, targets);
+  });
+}
+
+function insertBarangayInfoNotifications(complaintId, targetBarangays, notificationType, title, message, callback) {
+  const targets = parseBarangayTargets(targetBarangays);
+
+  if (!targets.length) {
+    return callback && callback(null);
+  }
+
+  ensureComplaintNotificationClearColumns((ensureErr) => {
+    if (ensureErr) {
+      console.error("Failed preparing barangay info notifications:", ensureErr);
+      return callback && callback(ensureErr);
+    }
+
+    const placeholders = targets.map(() => "(?, 'barangay', ?, ?, ?, ?, 0)").join(", ");
+    const sql = `
+      INSERT INTO complaint_notifications (
+        complaint_id,
+        target_type,
+        target_name,
+        notification_type,
+        title,
+        message,
+        is_read
+      )
+      VALUES ${placeholders}
+    `;
+
+    const values = [];
+    targets.forEach((barangay) => {
+      values.push(
+        complaintId,
+        barangay,
+        cleanText(notificationType),
+        cleanText(title),
+        cleanText(message)
+      );
+    });
+
+    db.query(sql, values, (err) => {
+      if (err) {
+        console.error("Failed inserting barangay info notifications:", err);
+      }
+
+      return callback && callback(err || null);
+    });
+  });
+}
+
+function truncateNotificationText(value, maxLength = 180) {
+  const clean = cleanText(value);
+
+  if (clean.length <= maxLength) return clean;
+
+  return clean.substring(0, Math.max(0, maxLength - 3)).trim() + "...";
+}
+
 function getComplaintColumnSet(callback) {
   const sql = `SHOW COLUMNS FROM complaints`;
 
@@ -623,17 +703,45 @@ function ensureComplaintNotificationClearColumns(callback) {
       `);
     }
 
+    if (!hasColumn(columnSet, "notification_type")) {
+      alterSql.push(`
+        ALTER TABLE complaint_notifications
+        ADD COLUMN notification_type VARCHAR(80) NULL
+      `);
+    }
+
+    if (!hasColumn(columnSet, "title")) {
+      alterSql.push(`
+        ALTER TABLE complaint_notifications
+        ADD COLUMN title VARCHAR(255) NULL
+      `);
+    }
+
+    if (!hasColumn(columnSet, "message")) {
+      alterSql.push(`
+        ALTER TABLE complaint_notifications
+        ADD COLUMN message TEXT NULL
+      `);
+    }
+
+    if (!hasColumn(columnSet, "is_read")) {
+      alterSql.push(`
+        ALTER TABLE complaint_notifications
+        ADD COLUMN is_read TINYINT(1) NOT NULL DEFAULT 0
+      `);
+    }
+
     if (alterSql.length === 0) {
       return callback(null);
     }
 
     runSequentialSql(alterSql, (alterErr) => {
       if (alterErr) {
-        console.error("Failed to add notification clear columns:", alterErr);
+        console.error("Failed to add notification support columns:", alterErr);
         return callback(alterErr);
       }
 
-      console.log("Complaint notification clear columns checked/added.");
+      console.log("Complaint notification support columns checked/added.");
       return callback(null);
     });
   });
@@ -1568,7 +1676,7 @@ router.put("/:id/accept", (req, res) => {
         FROM complaint_notifications
         WHERE complaint_id = ?
           AND target_type = 'barangay'
-          AND LOWER(REPLACE(REPLACE(REPLACE(TRIM(target_name), ' ', ''), '-', ''), '.', '')) = ?
+          AND ${getBarangayMatchWhereSql("target_name")}
         LIMIT 1
       `;
 
@@ -1590,42 +1698,71 @@ router.put("/:id/accept", (req, res) => {
           });
         }
 
-        const updateSql = `
-          UPDATE complaints
-          SET status = 'accepted_by_barangay',
-              assigned_barangay = ?,
-              assignment_method = 'accepted_by_barangay',
-              accepted_by = ?,
-              accepted_at = NOW()
-          WHERE id = ?
-            AND status IN ('forwarded', 'in_progress')
-        `;
-
-        db.query(updateSql, [cleanBarangay, acceptedBy, complaintId], (updateErr, updateResult) => {
-          if (updateErr) {
-            console.error("Accept complaint error:", updateErr);
+        getComplaintBarangayNotificationTargets(complaintId, (targetErr, allTargets) => {
+          if (targetErr) {
             return res.status(500).json({
               success: false,
-              message: "Failed to accept complaint.",
-              error: updateErr.message,
-              code: updateErr.code
+              message: "Failed to read forwarded barangay targets.",
+              error: targetErr.message,
+              code: targetErr.code
             });
           }
 
-          if (!updateResult || updateResult.affectedRows === 0) {
-            return res.status(400).json({
-              success: false,
-              message: "Complaint could not be accepted. Another barangay may have already accepted it."
-            });
-          }
+          const otherBarangays = (allTargets || []).filter((target) => {
+            return getBarangayMatchParam(target) !== getBarangayMatchParam(cleanBarangay);
+          });
 
-          markOtherBarangayNotificationsCleared(complaintId, cleanBarangay, () => {
-            return res.json({
-              success: true,
-              message: `Complaint accepted by ${cleanBarangay}.`,
-              complaint_id: complaintId,
-              assigned_barangay: cleanBarangay,
-              status: "accepted_by_barangay"
+          const updateSql = `
+            UPDATE complaints
+            SET status = 'accepted_by_barangay',
+                assigned_barangay = ?,
+                assignment_method = 'accepted_by_barangay',
+                accepted_by = ?,
+                accepted_at = NOW()
+            WHERE id = ?
+              AND status IN ('forwarded', 'in_progress')
+          `;
+
+          db.query(updateSql, [cleanBarangay, acceptedBy, complaintId], (updateErr, updateResult) => {
+            if (updateErr) {
+              console.error("Accept complaint error:", updateErr);
+              return res.status(500).json({
+                success: false,
+                message: "Failed to accept complaint.",
+                error: updateErr.message,
+                code: updateErr.code
+              });
+            }
+
+            if (!updateResult || updateResult.affectedRows === 0) {
+              return res.status(400).json({
+                success: false,
+                message: "Complaint could not be accepted. Another barangay may have already accepted it."
+              });
+            }
+
+            markOtherBarangayNotificationsCleared(complaintId, cleanBarangay, () => {
+              const subject = truncateNotificationText(complaint.subject || "Forwarded concern", 80);
+              const infoTitle = `Accepted by ${cleanBarangay}`;
+              const infoMessage = `${cleanBarangay} accepted the WMO-forwarded complaint${subject ? `: ${subject}` : ""}. No action is needed from your barangay.`;
+
+              insertBarangayInfoNotifications(
+                complaintId,
+                otherBarangays,
+                "accepted_by_other_barangay",
+                infoTitle,
+                infoMessage,
+                () => {
+                  return res.json({
+                    success: true,
+                    message: `Complaint accepted by ${cleanBarangay}.`,
+                    complaint_id: complaintId,
+                    assigned_barangay: cleanBarangay,
+                    notified_barangays: otherBarangays,
+                    status: "accepted_by_barangay"
+                  });
+                }
+              );
             });
           });
         });
@@ -1758,26 +1895,57 @@ router.put("/:id/resolve", upload.single("evidence"), (req, res) => {
 
           logUploadedFile("=== RESOLUTION UPLOAD DEBUG ===", req.file);
 
-          return res.json({
-            success: true,
-            message: "Complaint resolved successfully.",
-            complaint_id: complaintId,
-            resolution_evidence_url: evidenceUrl,
-            storage: isCloudinaryConfigured ? "cloudinary" : "local",
-            resolved_by_saved: resolvedBy,
-            resolver_location_received: resolverLat !== null && resolverLng !== null,
-            resolver_location_saved:
-              resolverLat !== null &&
-              resolverLng !== null &&
-              canSaveResolverLatitude &&
-              canSaveResolverLongitude,
-            missing_columns:
-              !canSaveResolverLatitude || !canSaveResolverLongitude
-                ? {
-                    resolver_latitude: !canSaveResolverLatitude,
-                    resolver_longitude: !canSaveResolverLongitude
-                  }
-                : null
+          const notifySql = `
+            SELECT subject, assigned_barangay, handled_by_barangay_name
+            FROM complaints
+            WHERE id = ?
+            LIMIT 1
+          `;
+
+          db.query(notifySql, [complaintId], (notifyLookupErr, notifyRows) => {
+            const notifyComplaint = notifyRows && notifyRows[0] ? notifyRows[0] : {};
+            const notifyBarangay = normalizeBarangayName(
+              notifyComplaint.assigned_barangay || handledBy
+            );
+            const subject = truncateNotificationText(notifyComplaint.subject || "Resolved complaint", 80);
+            const notificationTitle = "Resolution submitted to WMO";
+            const notificationMessage = `Your barangay submitted the resolution report${subject ? ` for: ${subject}` : ""}. It was sent back to WMO for review.`;
+
+            if (notifyLookupErr) {
+              console.error("Resolution notification lookup error:", notifyLookupErr);
+            }
+
+            insertBarangayInfoNotifications(
+              complaintId,
+              notifyBarangay ? [notifyBarangay] : [],
+              "resolution_submitted_to_wmo",
+              notificationTitle,
+              notificationMessage,
+              () => {
+                return res.json({
+                  success: true,
+                  message: "Complaint resolved successfully.",
+                  complaint_id: complaintId,
+                  barangay_notification_target: notifyBarangay,
+                  resolution_evidence_url: evidenceUrl,
+                  storage: isCloudinaryConfigured ? "cloudinary" : "local",
+                  resolved_by_saved: resolvedBy,
+                  resolver_location_received: resolverLat !== null && resolverLng !== null,
+                  resolver_location_saved:
+                    resolverLat !== null &&
+                    resolverLng !== null &&
+                    canSaveResolverLatitude &&
+                    canSaveResolverLongitude,
+                  missing_columns:
+                    !canSaveResolverLatitude || !canSaveResolverLongitude
+                      ? {
+                          resolver_latitude: !canSaveResolverLatitude,
+                          resolver_longitude: !canSaveResolverLongitude
+                        }
+                      : null
+                });
+              }
+            );
           });
         });
       })
@@ -2047,7 +2215,7 @@ router.get("/notifications/barangay/:barangayName", (req, res) => {
       WHERE cn.target_type = 'barangay'
         AND LOWER(REPLACE(REPLACE(REPLACE(TRIM(cn.target_name), ' ', ''), '-', ''), '.', '')) = ?
         AND cn.cleared_at IS NULL
-        AND c.status IN ('forwarded', 'in_progress', 'accepted_by_barangay')
+        AND c.status IN ('forwarded', 'in_progress', 'accepted_by_barangay', 'resolved')
       ORDER BY cn.created_at DESC
     `;
 
@@ -2114,7 +2282,7 @@ router.post("/notifications/barangay/:barangayName/:notificationId/clear", (req,
         AND cn.target_type = 'barangay'
         AND LOWER(REPLACE(REPLACE(REPLACE(TRIM(cn.target_name), ' ', ''), '-', ''), '.', '')) = ?
         AND cn.cleared_at IS NULL
-        AND c.status IN ('forwarded', 'in_progress', 'accepted_by_barangay')
+        AND c.status IN ('forwarded', 'in_progress', 'accepted_by_barangay', 'resolved')
     `;
 
     db.query(sql, [clearedBy, notificationId, getBarangayMatchParam(barangayName)], (err, result) => {
@@ -2185,7 +2353,7 @@ router.post("/notifications/barangay/:barangayName/clear", (req, res) => {
       WHERE cn.target_type = 'barangay'
         AND LOWER(REPLACE(REPLACE(REPLACE(TRIM(cn.target_name), ' ', ''), '-', ''), '.', '')) = ?
         AND cn.cleared_at IS NULL
-        AND c.status IN ('forwarded', 'in_progress', 'accepted_by_barangay')
+        AND c.status IN ('forwarded', 'in_progress', 'accepted_by_barangay', 'resolved')
     `;
 
     db.query(sql, [clearedBy, getBarangayMatchParam(barangayName)], (err, result) => {
