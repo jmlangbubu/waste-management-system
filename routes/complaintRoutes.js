@@ -290,6 +290,106 @@ function resolveNearestBarangayByReferencePoint(point, callback) {
 }
 
 
+
+function resolveBarangayFromLearnedComplaints(point, callback) {
+  const lat = Number(point && point.lat);
+  const lng = Number(point && point.lng);
+
+  if (
+    Number.isNaN(lat) ||
+    Number.isNaN(lng) ||
+    lat === 0 ||
+    lng === 0
+  ) {
+    return callback(null, null);
+  }
+
+  /*
+    Learned fallback:
+    If barangay boundaries are incomplete, use previous complaints that already have
+    a final/selected assigned_barangay near the same coordinate.
+
+    This does NOT replace official boundary polygons.
+    It only helps repeated/same-area reports while polygons are still being completed.
+  */
+  const sql = `
+    SELECT
+      id,
+      assigned_barangay,
+      assignment_method,
+      latitude,
+      longitude,
+      status,
+      created_at
+    FROM complaints
+    WHERE assigned_barangay IS NOT NULL
+      AND TRIM(assigned_barangay) <> ''
+      AND LOWER(TRIM(assigned_barangay)) <> 'for verification'
+      AND latitude IS NOT NULL
+      AND longitude IS NOT NULL
+    ORDER BY
+      CASE
+        WHEN assignment_method IN ('user_selected', 'manual_correction', 'polygon') THEN 0
+        ELSE 1
+      END,
+      id DESC
+    LIMIT 250
+  `;
+
+  db.query(sql, (err, rows) => {
+    if (err) {
+      console.error("Learned barangay lookup error:", err);
+      return callback(err, null);
+    }
+
+    let nearest = null;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+
+    (rows || []).forEach((row) => {
+      const rowLat = Number(row.latitude);
+      const rowLng = Number(row.longitude);
+
+      if (
+        Number.isNaN(rowLat) ||
+        Number.isNaN(rowLng) ||
+        rowLat === 0 ||
+        rowLng === 0
+      ) {
+        return;
+      }
+
+      const distanceMeters = calculateDistanceMeters(
+        { lat, lng },
+        { lat: rowLat, lng: rowLng }
+      );
+
+      if (distanceMeters < nearestDistance) {
+        nearestDistance = distanceMeters;
+        nearest = {
+          complaint_id: row.id,
+          barangay_name: row.assigned_barangay,
+          assignment_method: row.assignment_method,
+          status: row.status,
+          distance_meters: Math.round(distanceMeters),
+          latitude: rowLat,
+          longitude: rowLng
+        };
+      }
+    });
+
+    /*
+      Same location / nearby location threshold.
+      200 meters is practical for mobile GPS drift but still avoids guessing too far.
+    */
+    if (nearest && nearestDistance <= 200) {
+      return callback(null, nearest);
+    }
+
+    return callback(null, null);
+  });
+}
+
+
 function getComplaintColumnSet(callback) {
   const sql = `SHOW COLUMNS FROM complaints`;
 
@@ -731,14 +831,39 @@ router.post("/", upload.single("image"), (req, res) => {
               );
             }
 
-            return finishComplaintCreation(
-              "For Verification",
-              "manual_review",
-              {
-                source: "manual_review",
-                note: "No barangay boundary polygon covered this coordinate. Nearest barangay was intentionally not used."
+            return resolveBarangayFromLearnedComplaints({ lat, lng }, (learnedErr, learnedBarangay) => {
+              if (learnedErr) {
+                deleteUploadedFileIfExists(req.file);
+
+                return res.status(500).json({
+                  success: false,
+                  message: "Failed to check learned barangay records.",
+                  error: learnedErr.message,
+                  code: learnedErr.code
+                });
               }
-            );
+
+              if (learnedBarangay && learnedBarangay.barangay_name) {
+                return finishComplaintCreation(
+                  learnedBarangay.barangay_name,
+                  "learned_previous_complaint",
+                  {
+                    source: "complaints",
+                    note: "No boundary polygon matched. Assigned from a previous selected/verified complaint near this coordinate.",
+                    learned_match: learnedBarangay
+                  }
+                );
+              }
+
+              return finishComplaintCreation(
+                "For Verification",
+                "manual_review",
+                {
+                  source: "manual_review",
+                  note: "No barangay boundary polygon or learned nearby complaint matched this coordinate. Nearest barangay was intentionally not used."
+                }
+              );
+            });
           } catch (resolutionError) {
             deleteUploadedFileIfExists(req.file);
 
@@ -1786,16 +1911,44 @@ router.get("/detect-barangay", (req, res) => {
         });
       }
 
-      return res.json({
-        success: true,
-        assigned_barangay: "For Verification",
-        concern_barangay: "For Verification",
-        assignment_method: "manual_review",
-        message: "No barangay boundary covered this coordinate.",
-        coordinates: {
-          latitude: lat,
-          longitude: lng
+      return resolveBarangayFromLearnedComplaints({ lat, lng }, (learnedErr, learnedBarangay) => {
+        if (learnedErr) {
+          return res.status(500).json({
+            success: false,
+            message: "Failed to check learned barangay records.",
+            assigned_barangay: "For Verification",
+            concern_barangay: "For Verification",
+            assignment_method: "learned_lookup_error",
+            error: learnedErr.message
+          });
         }
+
+        if (learnedBarangay && learnedBarangay.barangay_name) {
+          return res.json({
+            success: true,
+            assigned_barangay: learnedBarangay.barangay_name,
+            concern_barangay: learnedBarangay.barangay_name,
+            assignment_method: "learned_previous_complaint",
+            message: "Barangay matched from a previous verified/selected complaint near this location.",
+            learned_match: learnedBarangay,
+            coordinates: {
+              latitude: lat,
+              longitude: lng
+            }
+          });
+        }
+
+        return res.json({
+          success: true,
+          assigned_barangay: "For Verification",
+          concern_barangay: "For Verification",
+          assignment_method: "manual_review",
+          message: "No barangay boundary or learned nearby record covered this coordinate.",
+          coordinates: {
+            latitude: lat,
+            longitude: lng
+          }
+        });
       });
     } catch (error) {
       console.error("Detect barangay resolution error:", error);
