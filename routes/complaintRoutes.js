@@ -153,6 +153,71 @@ function saveUploadedComplaintImage(file, folderName = "complaints") {
 }
 
 /* =========================
+   REAL-TIME HELPERS
+========================= */
+
+function getRealtimeIo(req) {
+  try {
+    return req && req.app && typeof req.app.get === "function"
+      ? req.app.get("io")
+      : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function getRealtimeBarangayRoom(value) {
+  const key = normalizeBarangayKey(value);
+  return key ? `barangay:${key}` : "";
+}
+
+function getRealtimeCitizenRoom(value) {
+  const id = cleanText(value);
+  return id ? `citizen:${id}` : "";
+}
+
+function emitRealtimeEvent(req, room, eventName, payload = {}) {
+  const io = getRealtimeIo(req);
+
+  if (!io || !room || !eventName) return;
+
+  try {
+    io.to(room).emit(eventName, {
+      ...payload,
+      emitted_at: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error("Realtime emit failed:", eventName, room, error);
+  }
+}
+
+function emitWmoRealtime(req, eventName, payload = {}) {
+  emitRealtimeEvent(req, "wmo", eventName, payload);
+}
+
+function emitBarangayRealtime(req, barangayName, eventName, payload = {}) {
+  const room = getRealtimeBarangayRoom(barangayName);
+  emitRealtimeEvent(req, room, eventName, payload);
+}
+
+function emitBarangayRealtimeMany(req, barangayNames = [], eventName, payload = {}) {
+  const list = parseBarangayTargets(barangayNames);
+
+  list.forEach((barangay) => {
+    emitBarangayRealtime(req, barangay, eventName, {
+      ...payload,
+      barangay
+    });
+  });
+}
+
+function emitCitizenRealtime(req, citizenId, eventName, payload = {}) {
+  const room = getRealtimeCitizenRoom(citizenId);
+  emitRealtimeEvent(req, room, eventName, payload);
+}
+
+
+/* =========================
    SMALL HELPERS
 ========================= */
 
@@ -567,6 +632,10 @@ function normalizeBarangayList(value) {
   });
 
   return list;
+}
+
+function parseBarangayTargets(value) {
+  return normalizeBarangayList(value);
 }
 
 function buildBarangayNotificationInsertSql(count) {
@@ -1112,6 +1181,34 @@ router.post("/", upload.single("image"), (req, res) => {
 
                     logUploadedFile("=== CREATE COMPLAINT UPLOAD DEBUG ===", req.file);
 
+                    emitWmoRealtime(req, "wmo:complaint-received", {
+                      complaint_id: complaintId,
+                      title: notificationTitle,
+                      message: notificationMessage,
+                      subject: cleanText(subject),
+                      citizen_name: cleanText(citizen_name),
+                      reporter_barangay: reporter_barangay || null,
+                      assigned_barangay: finalBarangay,
+                      status
+                    });
+
+                    createComplaintSubmittedCitizenNotification(complaintId, {
+                      citizen_id,
+                      reporter_barangay,
+                      barangay: reporter_barangay,
+                      subject
+                    });
+
+                    emitCitizenRealtime(req, citizen_id, "citizen:complaint-submitted", {
+                      complaint_id: complaintId,
+                      title: "Complaint submitted to WMO",
+                      message: cleanText(subject)
+                        ? `Your complaint "${truncateNotificationText(subject, 80)}" was submitted to WMO for review.`
+                        : "Your complaint was submitted to WMO for review.",
+                      status,
+                      reporter_barangay: reporter_barangay || null
+                    });
+
                     return res.json({
                     success: true,
                     duplicate: false,
@@ -1521,6 +1618,24 @@ router.post("/:id/validate-forward", (req, res) => {
             });
           }
 
+            emitBarangayRealtimeMany(req, finalTargets, "barangay:complaint-forwarded", {
+              complaint_id: complaintId,
+              title: "New forwarded concern",
+              message: `WMO forwarded a complaint to your barangay${cleanText(complaint.subject) ? `: ${truncateNotificationText(complaint.subject, 80)}` : ""}.`,
+              subject: complaint.subject || "",
+              concern_barangay: complaint.assigned_barangay || null,
+              forwarded_to_barangays: finalTargets,
+              status: "forwarded"
+            });
+
+            emitWmoRealtime(req, "wmo:complaint-forwarded", {
+              complaint_id: complaintId,
+              title: "Complaint forwarded",
+              message: `Complaint forwarded to ${finalTargets.join(" and ")}.`,
+              forwarded_to_barangays: finalTargets,
+              status: "forwarded"
+            });
+
             return res.json({
               success: true,
               message:
@@ -1871,6 +1986,33 @@ router.put("/:id/accept", (req, res) => {
                 infoTitle,
                 infoMessage,
                 () => {
+                  emitBarangayRealtime(req, cleanBarangay, "barangay:complaint-accepted", {
+                    complaint_id: complaintId,
+                    title: "Complaint accepted",
+                    message: `Your barangay accepted the forwarded complaint${subject ? `: ${subject}` : ""}.`,
+                    accepted_by_barangay: cleanBarangay,
+                    assigned_barangay: cleanBarangay,
+                    status: "accepted_by_barangay"
+                  });
+
+                  emitBarangayRealtimeMany(req, otherBarangays, "barangay:complaint-accepted-by-other", {
+                    complaint_id: complaintId,
+                    title: infoTitle,
+                    message: infoMessage,
+                    accepted_by_barangay: cleanBarangay,
+                    assigned_barangay: cleanBarangay,
+                    status: "accepted_by_barangay"
+                  });
+
+                  emitWmoRealtime(req, "wmo:complaint-accepted", {
+                    complaint_id: complaintId,
+                    title: "Complaint accepted by barangay",
+                    message: `${cleanBarangay} accepted the forwarded complaint${subject ? `: ${subject}` : ""}.`,
+                    accepted_by_barangay: cleanBarangay,
+                    assigned_barangay: cleanBarangay,
+                    status: "accepted_by_barangay"
+                  });
+
                   return res.json({
                     success: true,
                     message: `Complaint accepted by ${cleanBarangay}.`,
@@ -2058,6 +2200,32 @@ router.put("/:id/resolve", upload.single("evidence"), (req, res) => {
                   wmoResolutionTitle,
                   wmoResolutionMessage,
                   () => {
+                    emitBarangayRealtime(req, notifyBarangay || handledBy, "barangay:resolution-submitted", {
+                      complaint_id: complaintId,
+                      title: notificationTitle,
+                      message: notificationMessage,
+                      assigned_barangay: notifyBarangay || handledBy || "",
+                      status: "resolved"
+                    });
+
+                    emitWmoRealtime(req, "wmo:complaint-resolution-submitted", {
+                      complaint_id: complaintId,
+                      title: wmoResolutionTitle,
+                      message: wmoResolutionMessage,
+                      assigned_barangay: notifyBarangay || handledBy || "",
+                      status: "resolved"
+                    });
+
+                    if (notifyComplaint && notifyComplaint.citizen_id) {
+                      emitCitizenRealtime(req, notifyComplaint.citizen_id, "citizen:complaint-resolved", {
+                        complaint_id: complaintId,
+                        title: "Your complaint was resolved",
+                        message: `${notifyBarangay || handledBy || "The assigned barangay"} submitted a resolution report${subject ? ` for: ${subject}` : ""}.`,
+                        assigned_barangay: notifyBarangay || handledBy || "",
+                        status: "resolved"
+                      });
+                    }
+
                     return res.json({
                   success: true,
                   message: "Complaint resolved successfully.",
@@ -2611,6 +2779,14 @@ router.put("/:id/in-progress", (req, res) => {
 
       if (result && result.affectedRows > 0 && cleanBarangay) {
         return markOtherBarangayNotificationsCleared(complaintId, cleanBarangay, () => {
+          emitBarangayRealtime(req, cleanBarangay, "barangay:complaint-in-progress", {
+            complaint_id: complaintId,
+            title: "Complaint in progress",
+            message: "A forwarded complaint was opened and marked in progress.",
+            assigned_barangay: cleanBarangay,
+            status: "in_progress"
+          });
+
           return res.json({
             success: true,
             message: "Complaint marked as in progress.",
