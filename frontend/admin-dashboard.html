@@ -1659,20 +1659,47 @@
         <div class="resolution-evidence-panel">
           <div class="resolution-evidence-heading">
             <div>
-              <h4>Evidence Image</h4>
-              <p>Submitted proof for the resolved complaint.</p>
+              <h4>Evidence Comparison</h4>
+              <p>Compare the original citizen report evidence with the barangay resolution proof.</p>
             </div>
           </div>
 
-          <div class="resolved-evidence-wrap">
-            <div class="resolved-evidence-frame" id="resolutionEvidenceFrame">
-              <img
-                id="resolutionModalEvidenceImage"
-                class="resolved-evidence-image hidden"
-                alt="Resolution evidence" />
+          <div class="resolution-evidence-comparison-grid">
+            <div class="resolution-evidence-compare-card citizen-evidence-card">
+              <div class="resolution-evidence-subheading">
+                <span class="evidence-compare-label citizen">Citizen Evidence</span>
+                <p>Original proof submitted by the citizen when reporting the complaint.</p>
+              </div>
+
+              <div class="resolved-evidence-wrap">
+                <div class="resolved-evidence-frame" id="resolutionCitizenEvidenceFrame">
+                  <img
+                    id="resolutionModalCitizenEvidenceImage"
+                    class="resolved-evidence-image hidden"
+                    alt="Citizen complaint evidence" />
+                </div>
+
+                <p id="resolutionModalNoCitizenEvidence" class="muted-text">No citizen evidence submitted.</p>
+              </div>
             </div>
 
-            <p id="resolutionModalNoEvidence" class="muted-text">No evidence image submitted.</p>
+            <div class="resolution-evidence-compare-card resolution-evidence-card">
+              <div class="resolution-evidence-subheading">
+                <span class="evidence-compare-label resolution">Resolution Evidence</span>
+                <p>Proof submitted by barangay personnel after resolving the complaint.</p>
+              </div>
+
+              <div class="resolved-evidence-wrap">
+                <div class="resolved-evidence-frame" id="resolutionEvidenceFrame">
+                  <img
+                    id="resolutionModalEvidenceImage"
+                    class="resolved-evidence-image hidden"
+                    alt="Resolution evidence" />
+                </div>
+
+                <p id="resolutionModalNoEvidence" class="muted-text">No resolution evidence submitted.</p>
+              </div>
+            </div>
           </div>
         </div>
       </div>
