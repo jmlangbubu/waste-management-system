@@ -357,6 +357,13 @@ router.get("/active", (req, res) => {
       preferred_date,
       status,
       assigned_to,
+      orientation_token,
+      orientation_qr_status,
+      orientation_completed,
+      orientation_status,
+      orientation_started_at,
+      orientation_completed_at,
+      orientation_score,
       created_at,
       updated_at
     FROM appointments
@@ -366,6 +373,22 @@ router.get("/active", (req, res) => {
       OR LOWER(TRIM(status)) IN ('pending', 'approved', 'rescheduled')
     )
     AND preferred_date >= CURDATE()
+    AND NOT (
+      purpose = 'SWM Orientation & Clearance'
+      AND (
+        LOWER(TRIM(COALESCE(orientation_status, ''))) IN (
+          'completed_orientation',
+          'completed',
+          'no_show',
+          'no-show',
+          'noshow',
+          'incomplete_orientation',
+          'incomplete'
+        )
+        OR COALESCE(orientation_completed, 0) = 1
+        OR orientation_completed_at IS NOT NULL
+      )
+    )
     ORDER BY preferred_date ASC, id DESC
   `;
 
@@ -400,17 +423,57 @@ router.get("/history", (req, res) => {
       email,
       purpose,
       preferred_date,
-      status,
+      CASE
+        WHEN purpose = 'SWM Orientation & Clearance'
+          AND (
+            LOWER(TRIM(COALESCE(orientation_status, ''))) IN (
+              'completed_orientation',
+              'completed',
+              'no_show',
+              'no-show',
+              'noshow',
+              'incomplete_orientation',
+              'incomplete'
+            )
+            OR COALESCE(orientation_completed, 0) = 1
+            OR orientation_completed_at IS NOT NULL
+          )
+        THEN 'completed'
+        ELSE status
+      END AS status,
       assigned_to,
+      orientation_token,
+      orientation_qr_status,
+      orientation_completed,
+      orientation_status,
+      orientation_started_at,
+      orientation_completed_at,
+      orientation_score,
       created_at,
       updated_at
     FROM appointments
-  WHERE
-  LOWER(TRIM(status)) IN ('rejected', 'cancelled', 'completed')
-  OR (
-    LOWER(TRIM(status)) IN ('approved', 'rescheduled')
-    AND preferred_date < CURDATE()
-  )
+    WHERE
+      LOWER(TRIM(status)) IN ('rejected', 'cancelled', 'completed')
+      OR (
+        LOWER(TRIM(status)) IN ('approved', 'rescheduled')
+        AND preferred_date < CURDATE()
+      )
+      OR (
+        purpose = 'SWM Orientation & Clearance'
+        AND (
+          LOWER(TRIM(COALESCE(orientation_status, ''))) IN (
+            'completed_orientation',
+            'completed',
+            'no_show',
+            'no-show',
+            'noshow',
+            'incomplete_orientation',
+            'incomplete'
+          )
+          OR COALESCE(orientation_completed, 0) = 1
+          OR orientation_completed_at IS NOT NULL
+        )
+      )
     ORDER BY updated_at DESC, id DESC
   `;
 
@@ -1273,9 +1336,12 @@ router.put("/orientation/complete/:token", (req, res) => {
   const sql = `
     UPDATE appointments
     SET
+      status = 'completed',
+      orientation_completed = 1,
       orientation_status = 'completed_orientation',
       orientation_completed_at = NOW(),
-      orientation_score = ?
+      orientation_score = ?,
+      updated_at = NOW()
     WHERE orientation_token = ?
   `;
 
@@ -1288,9 +1354,16 @@ router.put("/orientation/complete/:token", (req, res) => {
       });
     }
 
+    if (!result || result.affectedRows === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Orientation record not found"
+      });
+    }
+
     return res.json({
       success: true,
-      message: "Orientation completed"
+      message: "Orientation completed and moved to appointment history"
     });
   });
 });
