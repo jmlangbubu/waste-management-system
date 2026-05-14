@@ -195,6 +195,24 @@ function parseOptionalInt(value) {
 }
 
 
+
+function normalizeBarangayName(value) {
+  const cleaned = cleanText(value);
+
+  if (!cleaned) return "";
+
+  if (
+    cleaned.toLowerCase() === "for verification" ||
+    cleaned.toLowerCase() === "select concern barangay"
+  ) {
+    return "";
+  }
+
+  return cleaned;
+}
+
+
+
 function resolveNearestBarangayByReferencePoint(point, callback) {
   const lat = Number(point && point.lat);
   const lng = Number(point && point.lng);
@@ -449,10 +467,14 @@ router.post("/", upload.single("image"), (req, res) => {
       subject,
       description,
       latitude,
-      longitude
+      longitude,
+      selected_concern_barangay,
+      detected_barangay_preview
     } = req.body;
 
     const clientRequestId = cleanText(client_request_id).slice(0, 80);
+    const selectedConcernBarangay = normalizeBarangayName(selected_concern_barangay);
+    const detectedBarangayPreview = normalizeBarangayName(detected_barangay_preview);
 
     if (!citizen_id || !subject || !latitude || !longitude) {
       deleteUploadedFileIfExists(req.file);
@@ -611,7 +633,9 @@ router.post("/", upload.single("image"), (req, res) => {
                     success: true,
                     duplicate: false,
                     message:
-                      assignmentMethod === "polygon"
+                      assignmentMethod === "user_selected"
+                        ? "Complaint submitted successfully with selected concern barangay."
+                        : assignmentMethod === "polygon"
                         ? "Complaint submitted successfully and assigned by barangay boundary."
                         : "Complaint submitted successfully and marked for manual verification.",
                     complaintId,
@@ -642,6 +666,23 @@ router.post("/", upload.single("image"), (req, res) => {
               });
             });
         };
+
+        /*
+          If the citizen selected a barangay after the pin preview,
+          respect that selection. This is the practical fallback while
+          barangay boundary polygons are still incomplete.
+        */
+        if (selectedConcernBarangay) {
+          return finishComplaintCreation(
+            selectedConcernBarangay,
+            "user_selected",
+            {
+              source: "android_manual_selection",
+              detected_barangay_preview: detectedBarangayPreview || null,
+              note: "Citizen selected the concern barangay after pinning the issue location."
+            }
+          );
+        }
 
         /*
           IMPORTANT FIX:
