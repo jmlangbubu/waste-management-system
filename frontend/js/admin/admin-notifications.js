@@ -29,34 +29,392 @@ function getNotificationCreatedValue(notif = {}) {
   return (
     notif.createdAt ||
     notif.created_at ||
+    notif.notification_created_at ||
+    notif.created ||
     notif.date ||
     notif.timestamp ||
     notif.time ||
+    notif.resolved_at ||
+    notif.validated_at ||
+    notif.updated_at ||
     ""
   );
 }
 
+function getNotificationType(notif = {}) {
+  const rawType = safeNotificationText(
+    notif.notification_type ||
+    notif.type ||
+    notif.category ||
+    notif.target_type ||
+    notif.source ||
+    notif._source ||
+    ""
+  );
+
+  const combined = [
+    rawType,
+    notif.title,
+    notif.subject,
+    notif.message,
+    notif.description,
+    notif.status,
+    notif.action,
+    notif.event
+  ]
+    .map(safeNotificationText)
+    .join(" ")
+    .toLowerCase();
+
+  if (
+    combined.includes("resolution") ||
+    combined.includes("resolved") ||
+    combined.includes("resolve")
+  ) {
+    return "complaint resolution";
+  }
+
+  if (
+    combined.includes("complaint") ||
+    combined.includes("concern") ||
+    combined.includes("report")
+  ) {
+    return "complaint";
+  }
+
+  if (
+    combined.includes("appointment") ||
+    combined.includes("orientation") ||
+    combined.includes("clearance")
+  ) {
+    return "appointment";
+  }
+
+  if (
+    combined.includes("waste") ||
+    combined.includes("validation") ||
+    combined.includes("validated") ||
+    combined.includes("qr")
+  ) {
+    return "waste";
+  }
+
+  return rawType || "system";
+}
+
+function getNotificationTitle(notif = {}) {
+  const directTitle = safeNotificationText(
+    notif.title ||
+    notif.notification_title ||
+    notif.subject ||
+    notif.header ||
+    ""
+  );
+
+  if (directTitle) return directTitle;
+
+  const type = getNotificationType(notif);
+  const status = safeNotificationText(notif.status).toLowerCase();
+
+  if (type.includes("complaint resolution") || status === "resolved") {
+    return "Resolved complaint submitted";
+  }
+
+  if (type.includes("complaint")) {
+    return "New complaint received";
+  }
+
+  return "Notification";
+}
+
+function getNotificationMessage(notif = {}) {
+  const directMessage = safeNotificationText(
+    notif.message ||
+    notif.notification_message ||
+    notif.description ||
+    notif.body ||
+    notif.details ||
+    ""
+  );
+
+  if (directMessage) return directMessage;
+
+  const type = getNotificationType(notif);
+  const subject = safeNotificationText(notif.subject || notif.complaint_subject || "");
+  const barangay = safeNotificationText(
+    notif.barangay ||
+    notif.reporter_barangay ||
+    notif.assigned_barangay ||
+    notif.handled_by_barangay_name ||
+    ""
+  );
+
+  if (type.includes("complaint resolution")) {
+    return barangay
+      ? `${barangay} submitted a resolved complaint report to WMO.`
+      : "A barangay submitted a resolved complaint report to WMO.";
+  }
+
+  if (type.includes("complaint")) {
+    if (subject && barangay) {
+      return `New citizen complaint from ${barangay}: ${subject}`;
+    }
+
+    if (subject) {
+      return `New citizen complaint: ${subject}`;
+    }
+
+    return "A new citizen complaint was submitted for WMO review.";
+  }
+
+  return "";
+}
+
+function getNotificationReferenceId(notif = {}) {
+  return safeNotificationText(
+    notif.reference_id ||
+    notif.referenceId ||
+    notif.complaint_id ||
+    notif.complaintId ||
+    notif.appointment_id ||
+    notif.appointmentId ||
+    notif.record_id ||
+    notif.recordId ||
+    ""
+  );
+}
+
+function getNotificationStatusClass(notif = {}) {
+  const type = getNotificationType(notif).toLowerCase();
+  const status = safeNotificationText(notif.status).toLowerCase();
+  const title = getNotificationTitle(notif).toLowerCase();
+
+  if (
+    type.includes("resolution") ||
+    status.includes("resolved") ||
+    title.includes("resolved")
+  ) {
+    return "resolved";
+  }
+
+  if (type.includes("complaint")) {
+    return "pending";
+  }
+
+  if (type.includes("appointment")) {
+    return "pending";
+  }
+
+  if (type.includes("waste")) {
+    return "validated";
+  }
+
+  return "pending";
+}
+
+function getNotificationSource(notif = {}) {
+  return safeNotificationText(notif.source || notif._source || notif.target_type || "");
+}
+
+function getNotificationsApiBase() {
+  if (typeof getAppApiBase === "function") {
+    return String(getAppApiBase()).replace(/\/$/, "");
+  }
+
+  if (window.APP_CONFIG?.API_BASE_URL) {
+    return String(window.APP_CONFIG.API_BASE_URL).replace(/\/$/, "");
+  }
+
+  if (window.APP_CONFIG?.BASE_URL) {
+    return `${String(window.APP_CONFIG.BASE_URL).replace(/\/$/, "")}/api`;
+  }
+
+  return "/api";
+}
+
+function getWmoComplaintNotificationsApiUrl() {
+  return `${getNotificationsApiBase()}/complaints/notifications/wmo`;
+}
+
+function extractNotificationArrayFromResponse(data) {
+  if (Array.isArray(data)) return data;
+
+  if (!data || typeof data !== "object") return [];
+
+  const keys = [
+    "data",
+    "notifications",
+    "items",
+    "records",
+    "results",
+    "rows"
+  ];
+
+  for (const key of keys) {
+    if (Array.isArray(data[key])) {
+      return data[key];
+    }
+  }
+
+  return [];
+}
+
+function normalizeAdminNotification(notif = {}, source = "") {
+  return {
+    ...notif,
+    _source: source || notif._source || notif.source || "",
+    type: getNotificationType({ ...notif, _source: source || notif._source || notif.source || "" }),
+    title: getNotificationTitle({ ...notif, _source: source || notif._source || notif.source || "" }),
+    message: getNotificationMessage({ ...notif, _source: source || notif._source || notif.source || "" }),
+    createdAt: getNotificationCreatedValue(notif)
+  };
+}
+
+function uniqueNotificationsByStableKey(list = []) {
+  const seen = new Set();
+  const unique = [];
+
+  (Array.isArray(list) ? list : []).forEach((notif) => {
+    const key = getNotificationStableKey(notif);
+
+    if (!key || seen.has(key)) return;
+
+    seen.add(key);
+    unique.push(notif);
+  });
+
+  return unique;
+}
+
+async function fetchNotificationListFromUrl(url, source = "") {
+  if (!url) return [];
+
+  try {
+    const res = await fetch(url, {
+      headers: {
+        Accept: "application/json"
+      }
+    });
+
+    if (!res.ok) {
+      console.warn(`Notification endpoint returned ${res.status}:`, url);
+      return [];
+    }
+
+    const data = await res.json();
+    return extractNotificationArrayFromResponse(data)
+      .map((notif) => normalizeAdminNotification(notif, source));
+  } catch (error) {
+    console.warn("Failed loading notification endpoint:", url, error);
+    return [];
+  }
+}
+
+function tryOpenAdminSection(sectionIds = []) {
+  if (typeof openSection !== "function") return false;
+
+  for (const sectionId of sectionIds) {
+    if (document.getElementById(sectionId)) {
+      openSection(sectionId);
+      return true;
+    }
+  }
+
+  if (sectionIds[0]) {
+    openSection(sectionIds[0]);
+    return true;
+  }
+
+  return false;
+}
+
+function openNotificationTarget(notif = {}) {
+  const type = getNotificationType(notif).toLowerCase();
+  const title = getNotificationTitle(notif).toLowerCase();
+  const message = getNotificationMessage(notif).toLowerCase();
+  const combined = `${type} ${title} ${message}`;
+
+  if (
+    combined.includes("complaint") ||
+    combined.includes("concern") ||
+    combined.includes("resolution") ||
+    combined.includes("resolved")
+  ) {
+    tryOpenAdminSection([
+      "complaintsSection",
+      "complaintSection",
+      "complaintsManagementSection",
+      "complaintManagementSection"
+    ]);
+
+    setTimeout(() => {
+      if (typeof loadComplaints === "function") {
+        loadComplaints();
+      }
+
+      if (
+        (combined.includes("resolved") || combined.includes("resolution")) &&
+        typeof loadComplaintHistory === "function"
+      ) {
+        loadComplaintHistory();
+      }
+    }, 100);
+
+    return;
+  }
+
+  if (
+    combined.includes("appointment") ||
+    combined.includes("orientation") ||
+    combined.includes("clearance")
+  ) {
+    tryOpenAdminSection([
+      "appointmentsSection",
+      "appointmentSection",
+      "orientationSection"
+    ]);
+
+    return;
+  }
+
+  if (
+    combined.includes("waste") ||
+    combined.includes("validation") ||
+    combined.includes("validated") ||
+    combined.includes("qr")
+  ) {
+    tryOpenAdminSection([
+      "wasteRecordsSection",
+      "wasteSection",
+      "dashboardSection"
+    ]);
+
+    return;
+  }
+
+  tryOpenAdminSection(["dashboardSection"]);
+}
+
 function getNotificationStableKey(notif = {}) {
+  const type = safeNotificationText(getNotificationType(notif));
+  const source = getNotificationSource(notif);
+  const referenceId = getNotificationReferenceId(notif);
+
   const directId =
-    notif.id ??
     notif.notification_id ??
     notif.notificationId ??
-    notif.appointment_id ??
-    notif.appointmentId ??
-    notif.complaint_id ??
-    notif.complaintId ??
+    notif.id ??
     "";
 
   if (directId !== null && directId !== undefined && String(directId).trim() !== "") {
-    return `id:${String(directId).trim()}`;
+    return `id:${source}|${type}|${String(directId).trim()}|ref:${referenceId}`;
   }
 
-  const title = safeNotificationText(notif.title || notif.subject || "Notification");
-  const message = safeNotificationText(notif.message || notif.description || "");
-  const type = safeNotificationText(notif.type || notif.category || "system");
+  const title = safeNotificationText(getNotificationTitle(notif));
+  const message = safeNotificationText(getNotificationMessage(notif));
   const created = safeNotificationText(getNotificationCreatedValue(notif));
 
-  return `content:${type}|${title}|${message}|${created}`;
+  return `content:${source}|${type}|${referenceId}|${title}|${message}|${created}`;
 }
 
 function getStoredNotificationKeys(storageKey) {
@@ -206,6 +564,117 @@ function ensureNotificationHeaderActions() {
   }
 }
 
+function ensureNotificationDropdownScrollStyles() {
+  if (document.getElementById("wmo-notification-scroll-style")) return;
+
+  const style = document.createElement("style");
+  style.id = "wmo-notification-scroll-style";
+  style.textContent = `
+    #notificationDropdown {
+      max-height: min(74vh, 560px) !important;
+      overflow: hidden !important;
+      display: flex !important;
+      flex-direction: column !important;
+    }
+
+    #notificationDropdown.hidden {
+      display: none !important;
+    }
+
+    #notificationDropdown .notif-header {
+      flex: 0 0 auto !important;
+    }
+
+    #notificationList {
+      flex: 1 1 auto !important;
+      min-height: 0 !important;
+      max-height: min(62vh, 455px) !important;
+      overflow-y: auto !important;
+      overflow-x: hidden !important;
+      overscroll-behavior: contain !important;
+      -webkit-overflow-scrolling: touch !important;
+      padding-right: 6px !important;
+    }
+
+    #notificationList::-webkit-scrollbar {
+      width: 8px !important;
+    }
+
+    #notificationList::-webkit-scrollbar-thumb {
+      background: #cbd5e1 !important;
+      border-radius: 999px !important;
+    }
+
+    #notificationList::-webkit-scrollbar-track {
+      background: transparent !important;
+    }
+
+    @media (max-width: 640px) {
+      #notificationDropdown {
+        width: min(94vw, 420px) !important;
+        max-height: 76vh !important;
+      }
+
+      #notificationList {
+        max-height: 58vh !important;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+function isNotificationEventInsideDropdown(event) {
+  const dropdown = document.getElementById("notificationDropdown");
+
+  if (!dropdown || !event) return false;
+
+  const target = event.target;
+
+  if (target && dropdown.contains(target)) {
+    return true;
+  }
+
+  if (typeof event.composedPath === "function") {
+    return event.composedPath().includes(dropdown);
+  }
+
+  return false;
+}
+
+function bindNotificationDropdownInnerScrollProtection() {
+  const dropdown = document.getElementById("notificationDropdown");
+  const list = document.getElementById("notificationList");
+
+  if (!dropdown || dropdown.dataset.scrollProtected === "true") return;
+
+  dropdown.dataset.scrollProtected = "true";
+
+  /*
+    Keep the dropdown open while the user scrolls inside it.
+    This fixes mobile/tablet behavior where touchmove/wheel events were
+    treated as page movement and closed the notification panel.
+  */
+  ["wheel", "touchmove"].forEach((eventName) => {
+    dropdown.addEventListener(eventName, (event) => {
+      event.stopPropagation();
+    }, {
+      passive: true
+    });
+  });
+
+  if (list) {
+    ["wheel", "touchmove"].forEach((eventName) => {
+      list.addEventListener(eventName, (event) => {
+        event.stopPropagation();
+      }, {
+        passive: true
+      });
+    });
+  }
+}
+
+
 function closeNotificationDropdownOnPageMove() {
   const notificationDropdown = document.getElementById("notificationDropdown");
 
@@ -223,7 +692,8 @@ function bindNotificationAutoCloseOnScroll() {
   if (window.__wmoNotificationScrollCloseBound === true) return;
   window.__wmoNotificationScrollCloseBound = true;
 
-  const closeOnPageScroll = () => {
+  const closeOnPageScroll = (event) => {
+    if (isNotificationEventInsideDropdown(event)) return;
     closeNotificationDropdownOnPageMove();
   };
 
@@ -277,23 +747,19 @@ function renderNotificationsFromFeed(list = []) {
 
 async function loadNotifications(playSound = true) {
   try {
-    const res = await fetch(getNotificationsApiUrl(), {
-      headers: {
-        Accept: "application/json"
-      }
-    });
+    const genericNotificationsUrl =
+      typeof getNotificationsApiUrl === "function" ? getNotificationsApiUrl() : "";
 
-    const data = await res.json();
+    const [genericNotifications, complaintNotifications] = await Promise.all([
+      fetchNotificationListFromUrl(genericNotificationsUrl, "admin_notifications"),
+      fetchNotificationListFromUrl(getWmoComplaintNotificationsApiUrl(), "wmo_complaints")
+    ]);
 
-    const list = Array.isArray(data)
-      ? data
-      : Array.isArray(data.data)
-      ? data.data
-      : Array.isArray(data.notifications)
-      ? data.notifications
-      : [];
+    notificationFeedItems = uniqueNotificationsByStableKey([
+      ...genericNotifications,
+      ...complaintNotifications
+    ]);
 
-    notificationFeedItems = list;
     renderNotificationsFromFeed(notificationFeedItems);
   } catch (error) {
     console.error("loadNotifications error:", error);
@@ -318,6 +784,8 @@ function renderNotifications(list = []) {
   if (!notificationCount || !notificationList) return;
 
   ensureNotificationHeaderActions();
+  ensureNotificationDropdownScrollStyles();
+  bindNotificationDropdownInnerScrollProtection();
 
   const safeList = Array.isArray(list) ? list : [];
   const dismissedKeys = getDismissedNotificationIds();
@@ -342,11 +810,13 @@ function renderNotifications(list = []) {
   }
 
   notificationList.innerHTML = visibleNotifications.slice(0, 20).map((notif) => {
-    const key = getNotificationStableKey(notif);
-    const title = notif.title || notif.subject || "Notification";
-    const message = notif.message || notif.description || "";
-    const type = notif.type || notif.category || "system";
-    const createdRaw = getNotificationCreatedValue(notif);
+    const normalizedNotif = normalizeAdminNotification(notif, getNotificationSource(notif));
+    const key = getNotificationStableKey(normalizedNotif);
+    const title = getNotificationTitle(normalizedNotif);
+    const message = getNotificationMessage(normalizedNotif);
+    const type = getNotificationType(normalizedNotif);
+    const statusClass = getNotificationStatusClass(normalizedNotif);
+    const createdRaw = getNotificationCreatedValue(normalizedNotif);
     const createdAt = createdRaw ? formatDate(createdRaw) : "";
     const isSeen = seenKeys.includes(key);
 
@@ -362,7 +832,7 @@ function renderNotifications(list = []) {
             <span>${escapeHtml(message)}</span>
           </div>
           <div class="notif-status-row">
-            <span class="notif-status pending">${escapeHtml(type)}</span>
+            <span class="notif-status ${escapeHtml(statusClass)}">${escapeHtml(type)}</span>
             <span class="notif-assigned">${escapeHtml(createdAt)}</span>
           </div>
         </div>
@@ -387,6 +857,8 @@ function bindNotificationActions() {
   if (!notificationBtn || !notificationDropdown) return;
 
   ensureNotificationHeaderActions();
+  ensureNotificationDropdownScrollStyles();
+  bindNotificationDropdownInnerScrollProtection();
   bindNotificationAutoCloseOnScroll();
 
   notificationBtn.onclick = (event) => {
@@ -398,6 +870,8 @@ function bindNotificationActions() {
 
     if (notificationsOpen) {
       notificationsSeen = true;
+      ensureNotificationDropdownScrollStyles();
+      bindNotificationDropdownInnerScrollProtection();
       markVisibleNotificationsAsSeen();
     }
   };
@@ -447,13 +921,19 @@ function bindNotificationActions() {
         }
       }
 
+      const selectedNotification = notificationFeedItems.find(
+        item => getNotificationStableKey(item) === key
+      );
+
       notificationsOpen = false;
       notificationDropdown.classList.add("hidden");
       renderNotificationsFromFeed(notificationFeedItems);
 
-      if (typeof openSection === "function") {
-        openSection("appointmentsSection");
-      }
+      openNotificationTarget(selectedNotification || {
+        type: notifItem.getAttribute("data-type") || "",
+        title: notifItem.querySelector(".notif-title")?.textContent || "",
+        message: notifItem.querySelector(".notif-meta")?.textContent || ""
+      });
     };
   }
 }
