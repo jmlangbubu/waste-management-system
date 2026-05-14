@@ -1,6 +1,56 @@
+function isLikelyPhilippineLatLng(first, second) {
+  /*
+    General Santos / PH coordinate safety check:
+    latitude is usually around 4 to 22,
+    longitude is usually around 116 to 127.
+  */
+  return first >= 4 && first <= 22 && second >= 116 && second <= 127;
+}
+
+function isLikelyPhilippineLngLat(first, second) {
+  return first >= 116 && first <= 127 && second >= 4 && second <= 22;
+}
+
+function normalizeCoordinatePair(firstValue, secondValue) {
+  const first = Number(firstValue);
+  const second = Number(secondValue);
+
+  if (Number.isNaN(first) || Number.isNaN(second)) {
+    return null;
+  }
+
+  /*
+    IMPORTANT FIX:
+    GeoJSON uses [lng, lat], but many Leaflet/manual exports use [lat, lng].
+    If raw barangay_boundaries were saved from a map/Leaflet tool, they may be [lat, lng].
+    This auto-detection prevents valid points from becoming "For Verification".
+  */
+  if (isLikelyPhilippineLatLng(first, second)) {
+    return {
+      lat: first,
+      lng: second
+    };
+  }
+
+  if (isLikelyPhilippineLngLat(first, second)) {
+    return {
+      lng: first,
+      lat: second
+    };
+  }
+
+  /*
+    Safe fallback:
+    Keep old behavior for true GeoJSON-like data.
+  */
+  return {
+    lng: first,
+    lat: second
+  };
+}
+
 function normalizePolygon(polygon) {
   if (!polygon) return [];
-
 
   if (
     typeof polygon === "object" &&
@@ -13,10 +63,11 @@ function normalizePolygon(polygon) {
       .map((coord) => {
         if (!Array.isArray(coord) || coord.length < 2) return null;
 
-        return {
-          lng: Number(coord[0]),
-          lat: Number(coord[1])
-        };
+        /*
+          GeoJSON standard is [lng, lat], but this still uses auto-detect
+          so old/custom data does not break.
+        */
+        return normalizeCoordinatePair(coord[0], coord[1]);
       })
       .filter(
         (point) =>
@@ -26,11 +77,15 @@ function normalizePolygon(polygon) {
       );
   }
 
-  // ✅ Support raw array format: [ [lng, lat], [lng, lat] ]
+  /*
+    Supports raw array formats:
+    - [ [lng, lat], [lng, lat] ] from GeoJSON-style exports
+    - [ [lat, lng], [lat, lng] ] from Leaflet/manual map tools
+    - [ { lat, lng }, { lat, lng } ]
+  */
   if (Array.isArray(polygon)) {
     return polygon
       .map((point) => {
-        // Format: { lat, lng }
         if (
           point &&
           typeof point === "object" &&
@@ -44,12 +99,8 @@ function normalizePolygon(polygon) {
           };
         }
 
-        // Format: [lng, lat]
         if (Array.isArray(point) && point.length >= 2) {
-          return {
-            lng: Number(point[0]),
-            lat: Number(point[1])
-          };
+          return normalizeCoordinatePair(point[0], point[1]);
         }
 
         return null;
