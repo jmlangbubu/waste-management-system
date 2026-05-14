@@ -134,13 +134,13 @@ async function loadAppointments() {
       historyAppointments
     );
 
-    const sortedActiveAppointments = sortAppointmentRecordsByReference(visibleActiveAppointments);
+    const sortedActiveAppointments = sortActiveAppointmentsNewestFirst(visibleActiveAppointments);
     const sortedHistoryAppointments = sortAppointmentHistoryNewestFirst(mergedHistoryAppointments);
 
-    allAppointments = sortAppointmentRecordsByReference([
+    allAppointments = [
       ...sortedActiveAppointments,
       ...sortedHistoryAppointments
-    ]);
+    ];
 
     renderAppointmentsTable(sortedActiveAppointments);
     appointmentHistoryRecords = sortedHistoryAppointments;
@@ -283,6 +283,55 @@ function getAppointmentReferenceNumber(app) {
   return Number.MAX_SAFE_INTEGER;
 }
 
+/*
+  Active Appointments sorting:
+  - New incoming appointments should appear at the top.
+  - Prefer created_at when the backend provides it.
+  - Fallback to higher appointment code / ID so APT-000028 appears above APT-000027.
+  - Do not use appointment_date as primary sort because an older request may have a later scheduled date.
+*/
+function getAppointmentActiveSortTime(app = {}) {
+  const possibleCreatedDates = [
+    app.created_at,
+    app.createdAt,
+    app.date_created,
+    app.submitted_at,
+    app.requested_at
+  ];
+
+  for (const value of possibleCreatedDates) {
+    const time = parseAppointmentSortTime(value);
+    if (time > 0) return time;
+  }
+
+  return 0;
+}
+
+function sortActiveAppointmentsNewestFirst(records = []) {
+  if (!Array.isArray(records)) return [];
+
+  return [...records].sort((a, b) => {
+    const timeA = getAppointmentActiveSortTime(a);
+    const timeB = getAppointmentActiveSortTime(b);
+
+    if (timeA !== timeB) {
+      return timeB - timeA;
+    }
+
+    const numberA = getAppointmentReferenceNumber(a);
+    const numberB = getAppointmentReferenceNumber(b);
+
+    if (numberA !== numberB) {
+      return numberB - numberA;
+    }
+
+    const idA = Number(a?.id || 0);
+    const idB = Number(b?.id || 0);
+
+    return idB - idA;
+  });
+}
+
 
 function parseAppointmentSortTime(value) {
   if (!value) return 0;
@@ -367,7 +416,7 @@ function renderAppointmentsTable(appointments) {
     return;
   }
 
-  const sortedAppointments = sortAppointmentRecordsByReference(
+  const sortedAppointments = sortActiveAppointmentsNewestFirst(
     getVisibleActiveAppointments(appointments)
   );
 
