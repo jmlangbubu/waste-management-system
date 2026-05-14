@@ -155,9 +155,11 @@ async function loadOrientationAppointments() {
     */
     const active = getActiveOrientationRecords(orientationAppointments);
     const upcoming = getUpcomingOrientationRecords(orientationAppointments);
-    const history = orientationAppointments.filter((item) => {
-      return isOrientationHistoryRecord(item);
-    });
+    const history = sortOrientationHistoryNewestFirst(
+      orientationAppointments.filter((item) => {
+        return isOrientationHistoryRecord(item);
+      })
+    );
 
     renderActiveOrientation(active);
     renderUpcomingOrientation(upcoming);
@@ -267,6 +269,79 @@ function renderUpcomingOrientation(records) {
   `).join("");
 }
 
+function parseOrientationSortTime(value) {
+  if (!value) return 0;
+
+  const raw = String(value).trim();
+  if (!raw) return 0;
+
+  /*
+    Supports common backend date formats:
+    - 2026-05-14T13:01:33.000Z
+    - 2026-05-14 21:01:33
+    - 5/14/2026, 9:01:33 PM
+  */
+  const normalized = raw.includes("T") ? raw : raw.replace(" ", "T");
+  const parsed = new Date(normalized);
+  const time = parsed.getTime();
+
+  return Number.isFinite(time) ? time : 0;
+}
+
+function getOrientationHistorySortTime(item = {}) {
+  const possibleDates = [
+    item.orientation_completed_at,
+    item.completed_at,
+    item.updated_at,
+    item.orientation_started_at,
+    item.preferred_date,
+    item.created_at
+  ];
+
+  for (const value of possibleDates) {
+    const time = parseOrientationSortTime(value);
+    if (time > 0) return time;
+  }
+
+  return 0;
+}
+
+function getOrientationReferenceNumber(item = {}) {
+  const code = String(item.appointment_code || item.orientation_code || "").trim();
+  const numberMatch = code.match(/(\d+)\s*$/);
+
+  if (numberMatch) {
+    return Number(numberMatch[1]);
+  }
+
+  const id = Number(item.id || item.appointment_id || 0);
+  return Number.isFinite(id) ? id : 0;
+}
+
+function sortOrientationHistoryNewestFirst(records = []) {
+  if (!Array.isArray(records)) return [];
+
+  return [...records].sort((a, b) => {
+    const timeA = getOrientationHistorySortTime(a);
+    const timeB = getOrientationHistorySortTime(b);
+
+    if (timeA !== timeB) {
+      return timeB - timeA;
+    }
+
+    const referenceA = getOrientationReferenceNumber(a);
+    const referenceB = getOrientationReferenceNumber(b);
+
+    if (referenceA !== referenceB) {
+      return referenceB - referenceA;
+    }
+
+    return String(b.full_name || "").localeCompare(String(a.full_name || ""), undefined, {
+      sensitivity: "base"
+    });
+  });
+}
+
 function renderOrientationHistory(records) {
   const tableBody = document.getElementById("orientationHistoryTableBody");
   if (!tableBody) return;
@@ -276,7 +351,9 @@ function renderOrientationHistory(records) {
     return;
   }
 
-  tableBody.innerHTML = records.map((item) => {
+  const sortedRecords = sortOrientationHistoryNewestFirst(records);
+
+  tableBody.innerHTML = sortedRecords.map((item) => {
     const lifecycleStatus = getOrientationLifecycleStatus(item);
     const score =
       lifecycleStatus === "completed_orientation"
@@ -570,9 +647,11 @@ function openOrientationHistoryModal() {
   }
 
   const history = Array.isArray(orientationAppointments)
-    ? orientationAppointments.filter((item) => {
-        return isOrientationHistoryRecord(item);
-      })
+    ? sortOrientationHistoryNewestFirst(
+        orientationAppointments.filter((item) => {
+          return isOrientationHistoryRecord(item);
+        })
+      )
     : [];
 
   renderOrientationHistory(history);
