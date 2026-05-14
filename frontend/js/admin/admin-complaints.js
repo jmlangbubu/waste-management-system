@@ -1314,7 +1314,11 @@ function renderResolutionFullRouteMap(record) {
   }
 
   if (!startPoint) {
-    alert("Barangay personnel GPS/start point is not available for this resolved complaint record yet.");
+    alert(
+      isComplaintResolvedRecord(record)
+        ? "Barangay personnel GPS/start point was not included in this resolved complaint record."
+        : "Route map is not available yet. Barangay personnel must accept/resolve the complaint with GPS data first."
+    );
     return;
   }
 
@@ -1500,7 +1504,9 @@ function renderResolvedComplaintRouteMap(record) {
     state.map.setView([issuePoint.lat, issuePoint.lng], 17);
     state.issueMarker.openPopup();
     setResolutionMapNote(
-      "Only the issue location is available. Barangay personnel GPS/start point is not included in this resolved complaint record yet."
+      isComplaintResolvedRecord(record)
+        ? "Only the issue location is available. Barangay personnel GPS/start point was not included in this resolved complaint record."
+        : "Only the issue location is available. Route will appear after barangay personnel accepts/resolves the complaint with GPS data."
     );
     return;
   }
@@ -1766,7 +1772,76 @@ function applyComplaintFilters() {
   renderComplaintsTable(getFilteredComplaints());
 }
 
+
+function getComplaintTableAssignedDisplay(complaint = {}) {
+  const status = String(complaint.status || "").trim().toLowerCase();
+
+  /*
+    Pending complaints are still waiting for WMO validation/forwarding.
+    Do not show the citizen-reported concern as final assigned barangay.
+  */
+  if (status === "pending") {
+    return "Awaiting Assignment";
+  }
+
+  const assigned = String(complaint.assigned_barangay || "").trim();
+
+  if (!assigned || assigned.toLowerCase() === "for verification") {
+    return "Awaiting Assignment";
+  }
+
+  return assigned;
+}
+
+function getComplaintTableAssignedClass(complaint = {}) {
+  const status = String(complaint.status || "").trim().toLowerCase();
+  const assigned = String(complaint.assigned_barangay || "").trim();
+
+  if (
+    status === "pending" ||
+    !assigned ||
+    assigned.toLowerCase() === "for verification"
+  ) {
+    return "complaint-assignment-waiting";
+  }
+
+  return "complaint-assignment-ready";
+}
+
+function ensureComplaintTableAssignmentStyles() {
+  if (document.getElementById("complaintTableAssignmentRuntimeStyles")) return;
+
+  const style = document.createElement("style");
+  style.id = "complaintTableAssignmentRuntimeStyles";
+  style.textContent = `
+    #complaintsTableBody .complaint-assignment-waiting {
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      min-height: 30px !important;
+      padding: 6px 12px !important;
+      border-radius: 999px !important;
+      background: #f8fafc !important;
+      border: 1px solid #dbe3ea !important;
+      color: #64748b !important;
+      font-size: 12px !important;
+      font-weight: 850 !important;
+      white-space: nowrap !important;
+    }
+
+    #complaintsTableBody .complaint-assignment-ready {
+      color: #102a1d !important;
+      font-weight: 850 !important;
+      white-space: nowrap !important;
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+
 function renderComplaintsTable(complaints) {
+  ensureComplaintTableAssignmentStyles();
   const tableBody = document.getElementById("complaintsTableBody");
   if (!tableBody) return;
 
@@ -1797,7 +1872,11 @@ function renderComplaintsTable(complaints) {
     const descriptionRaw = item.description || "";
     const description = escapeHtml(truncateText(descriptionRaw, 60));
     const citizen = escapeHtml(item.citizen_name || item.username || "-");
-    const barangay = escapeHtml(item.assigned_barangay || "For Verification");
+    const barangay = `
+      <span class="${getComplaintTableAssignedClass(item)}">
+        ${escapeHtml(getComplaintTableAssignedDisplay(item))}
+      </span>
+    `;
     const status = String(item.status || "").toLowerCase();
 
     return `
@@ -3602,6 +3681,201 @@ function normalizeComplaintHistoryFilterValue(value) {
     .trim();
 }
 
+
+function splitComplaintForwardedBarangays(value) {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => String(item || "").trim())
+      .filter(Boolean);
+  }
+
+  return String(value || "")
+    .split(/\s*&\s*|\s*,\s*|\s*\|\s*/g)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function getComplaintHistoryForwardedBarangays(item = {}) {
+  const values = [
+    item.forwarded_to_barangays,
+    item.forwarded_barangays,
+    item.forwarding_barangays,
+    item.forwarded_to,
+    item.target_barangays
+  ];
+
+  for (const value of values) {
+    const barangays = splitComplaintForwardedBarangays(value);
+
+    if (barangays.length) {
+      return barangays;
+    }
+  }
+
+  return [];
+}
+
+function getComplaintHistoryForwardedText(item = {}) {
+  const barangays = getComplaintHistoryForwardedBarangays(item);
+
+  if (!barangays.length) {
+    return "Not Forwarded";
+  }
+
+  return barangays.join(" & ");
+}
+
+function ensureComplaintHistoryForwardedColumnHeader() {
+  const tbody = document.getElementById("complaintHistoryTableBody");
+  if (!tbody) return;
+
+  const table = tbody.closest("table");
+  const headerRow = table?.querySelector("thead tr");
+
+  if (!headerRow) return;
+
+  const headers = Array.from(headerRow.children);
+  const hasForwardedHeader = headers.some((th) =>
+    String(th.textContent || "").trim().toLowerCase() === "forwarded barangays"
+  );
+
+  if (hasForwardedHeader) return;
+
+  const assignedHeaderIndex = headers.findIndex((th) =>
+    String(th.textContent || "").trim().toLowerCase() === "assigned barangay"
+  );
+
+  const forwardedHeader = document.createElement("th");
+  forwardedHeader.textContent = "Forwarded Barangays";
+
+  if (assignedHeaderIndex >= 0 && headers[assignedHeaderIndex]) {
+    headers[assignedHeaderIndex].insertAdjacentElement("afterend", forwardedHeader);
+  } else if (headers[2]) {
+    headers[2].insertAdjacentElement("afterend", forwardedHeader);
+  } else {
+    headerRow.appendChild(forwardedHeader);
+  }
+}
+
+function renderComplaintHistoryForwardedBarangays(item = {}) {
+  const barangays = getComplaintHistoryForwardedBarangays(item);
+
+  if (!barangays.length) {
+    return `<span class="complaint-history-forwarded-empty">Not Forwarded</span>`;
+  }
+
+  return `
+    <span class="complaint-history-forwarded-list">
+      ${barangays.map((barangay) => `
+        <strong>${escapeHtml(barangay)}</strong>
+      `).join(`<span class="complaint-history-forwarded-separator">&amp;</span>`)}
+    </span>
+  `;
+}
+
+function ensureComplaintHistoryForwardedColumnStyles() {
+  if (document.getElementById("complaintHistoryForwardedColumnRuntimeStyles")) return;
+
+  const style = document.createElement("style");
+  style.id = "complaintHistoryForwardedColumnRuntimeStyles";
+  style.textContent = `
+    #complaintHistoryModal .complaint-history-table th,
+    #complaintHistoryModal .complaint-history-table td {
+      vertical-align: middle !important;
+    }
+
+    #complaintHistoryModal .complaint-history-forwarded-list {
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: flex-start !important;
+      gap: 5px !important;
+      flex-wrap: nowrap !important;
+      white-space: nowrap !important;
+      max-width: 100% !important;
+    }
+
+    #complaintHistoryModal .complaint-history-forwarded-list strong {
+      color: #102a1d !important;
+      font-size: 12.5px !important;
+      font-weight: 950 !important;
+      line-height: 1.2 !important;
+      white-space: nowrap !important;
+    }
+
+    #complaintHistoryModal .complaint-history-forwarded-separator {
+      color: #64748b !important;
+      font-size: 12px !important;
+      font-weight: 900 !important;
+      line-height: 1.2 !important;
+    }
+
+    #complaintHistoryModal .complaint-history-forwarded-empty {
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      min-height: 28px !important;
+      padding: 5px 10px !important;
+      border-radius: 999px !important;
+      background: #f8fafc !important;
+      border: 1px solid #dbe3ea !important;
+      color: #64748b !important;
+      font-size: 11.5px !important;
+      font-weight: 850 !important;
+      white-space: nowrap !important;
+    }
+
+    #complaintHistoryModal .complaint-history-table {
+      min-width: 1120px !important;
+    }
+
+    @media (min-width: 1280px) {
+      #complaintHistoryModal .complaint-history-table {
+        min-width: 0 !important;
+        width: 100% !important;
+        table-layout: fixed !important;
+      }
+
+      #complaintHistoryModal .complaint-history-table th:nth-child(1),
+      #complaintHistoryModal .complaint-history-table td:nth-child(1) {
+        width: 18% !important;
+      }
+
+      #complaintHistoryModal .complaint-history-table th:nth-child(2),
+      #complaintHistoryModal .complaint-history-table td:nth-child(2) {
+        width: 16% !important;
+      }
+
+      #complaintHistoryModal .complaint-history-table th:nth-child(3),
+      #complaintHistoryModal .complaint-history-table td:nth-child(3) {
+        width: 15% !important;
+      }
+
+      #complaintHistoryModal .complaint-history-table th:nth-child(4),
+      #complaintHistoryModal .complaint-history-table td:nth-child(4) {
+        width: 17% !important;
+      }
+
+      #complaintHistoryModal .complaint-history-table th:nth-child(5),
+      #complaintHistoryModal .complaint-history-table td:nth-child(5) {
+        width: 12% !important;
+      }
+
+      #complaintHistoryModal .complaint-history-table th:nth-child(6),
+      #complaintHistoryModal .complaint-history-table td:nth-child(6) {
+        width: 15% !important;
+      }
+
+      #complaintHistoryModal .complaint-history-table th:nth-child(7),
+      #complaintHistoryModal .complaint-history-table td:nth-child(7) {
+        width: 7% !important;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+
 function getComplaintHistoryBarangayValue(item = {}) {
   return (
     item.assigned_barangay ||
@@ -3621,6 +3895,7 @@ function getComplaintHistorySearchText(item = {}) {
     item.citizen_name,
     item.username,
     getComplaintHistoryBarangayValue(item),
+    getComplaintHistoryForwardedText(item),
     item.status,
     statusLabel,
     dateLabel,
@@ -3834,7 +4109,9 @@ async function loadComplaintHistory() {
 function renderComplaintHistoryTable(records) {
   ensureComplaintHistoryStatusStyles();
   ensureComplaintHistoryToolbar();
+  ensureComplaintHistoryForwardedColumnStyles();
   prepareComplaintHistoryTableScroll();
+  ensureComplaintHistoryForwardedColumnHeader();
 
   const tbody = document.getElementById("complaintHistoryTableBody");
   if (!tbody) return;
@@ -3848,7 +4125,7 @@ function renderComplaintHistoryTable(records) {
   if (!safeRecords.length) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="6" class="empty-state-cell">No complaint history found.</td>
+        <td colspan="7" class="empty-state-cell">No complaint history found.</td>
       </tr>
     `;
     return;
@@ -3857,7 +4134,7 @@ function renderComplaintHistoryTable(records) {
   if (!filteredRecords.length) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="6" class="empty-state-cell">No complaint history matches your search or barangay filter.</td>
+        <td colspan="7" class="empty-state-cell">No complaint history matches your search or barangay filter.</td>
       </tr>
     `;
     return;
@@ -3868,6 +4145,7 @@ function renderComplaintHistoryTable(records) {
       <td>${escapeHtml(item.subject || "-")}</td>
       <td>${escapeHtml(item.citizen_name || item.username || "-")}</td>
       <td>${escapeHtml(getComplaintHistoryBarangayValue(item))}</td>
+      <td>${renderComplaintHistoryForwardedBarangays(item)}</td>
       <td>
         <span class="complaint-history-status ${escapeHtml(getComplaintHistoryStatusClass(item.status))}">
           ${escapeHtml(formatComplaintHistoryStatus(item.status))}
@@ -4136,7 +4414,7 @@ function renderResolutionEvidenceImage(record) {
     if (evidenceFrame) evidenceFrame.style.display = "none";
 
     if (noEvidence) {
-      noEvidence.textContent = "Image failed to load.";
+      noEvidence.textContent = "Evidence file is missing from server storage or was not uploaded yet.";
       noEvidence.classList.remove("hidden");
     }
   };
@@ -4218,6 +4496,215 @@ function renderResolutionEvidenceImage(record) {
 }
 
 
+
+function getComplaintReadableStatus(status) {
+  const value = String(status || "").trim().toLowerCase();
+
+  const labels = {
+    pending: "Pending",
+    validated: "Validated",
+    forwarded: "Forwarded",
+    accepted_by_barangay: "Accepted",
+    in_progress: "In Progress",
+    resolved: "Resolved",
+    rejected: "Rejected"
+  };
+
+  return labels[value] || cleanText(status, "Status");
+}
+
+function isComplaintResolvedRecord(record = {}) {
+  return String(record.status || "").trim().toLowerCase() === "resolved";
+}
+
+function getComplaintResolutionHeaderMeta(record = {}) {
+  const status = String(record.status || "").trim().toLowerCase();
+
+  if (status === "resolved") {
+    return {
+      kicker: "Resolved Complaint",
+      subtitle: "Barangay personnel submitted resolution details and evidence.",
+      evidenceTitle: "Resolution Evidence",
+      evidenceSubtitle: "Submitted proof for the resolved complaint.",
+      reportTitle: "Resolution Report",
+      reportFallback: "No resolution report provided.",
+      dateLabel: "Resolved At",
+      dateValue: formatDateTimeDisplay(record.resolved_at)
+    };
+  }
+
+  if (status === "rejected") {
+    return {
+      kicker: "Rejected Complaint",
+      subtitle: "This complaint was rejected by WMO after review.",
+      evidenceTitle: "Complaint Evidence",
+      evidenceSubtitle: "Original proof submitted by the citizen.",
+      reportTitle: "Rejection Reason",
+      reportFallback: "No rejection reason provided.",
+      dateLabel: "Rejected At",
+      dateValue: formatDateTimeDisplay(record.rejected_at || record.updated_at || record.created_at)
+    };
+  }
+
+  if (status === "in_progress") {
+    return {
+      kicker: "In Progress Complaint",
+      subtitle: "Barangay personnel accepted this complaint and it is currently being handled.",
+      evidenceTitle: "Complaint Evidence",
+      evidenceSubtitle: "Original proof submitted by the citizen.",
+      reportTitle: "Progress Note",
+      reportFallback: "No resolution report submitted yet.",
+      dateLabel: "Updated At",
+      dateValue: formatDateTimeDisplay(record.in_progress_at || record.accepted_at || record.validated_at || record.created_at)
+    };
+  }
+
+  if (status === "accepted_by_barangay") {
+    return {
+      kicker: "Accepted Complaint",
+      subtitle: "A barangay accepted this complaint and is ready to handle it.",
+      evidenceTitle: "Complaint Evidence",
+      evidenceSubtitle: "Original proof submitted by the citizen.",
+      reportTitle: "Progress Note",
+      reportFallback: "No resolution report submitted yet.",
+      dateLabel: "Accepted At",
+      dateValue: formatDateTimeDisplay(record.accepted_at || record.validated_at || record.created_at)
+    };
+  }
+
+  if (status === "forwarded") {
+    return {
+      kicker: "Forwarded Complaint",
+      subtitle: "This complaint was forwarded to barangay offices and is waiting for acceptance.",
+      evidenceTitle: "Complaint Evidence",
+      evidenceSubtitle: "Original proof submitted by the citizen.",
+      reportTitle: "Forwarding Note",
+      reportFallback: "No barangay resolution report submitted yet.",
+      dateLabel: "Forwarded At",
+      dateValue: formatDateTimeDisplay(record.validated_at || record.created_at)
+    };
+  }
+
+  return {
+    kicker: "Complaint Record",
+    subtitle: "Review complaint details and available evidence.",
+    evidenceTitle: "Complaint Evidence",
+    evidenceSubtitle: "Available proof submitted for this complaint.",
+    reportTitle: "Report",
+    reportFallback: "No report provided.",
+    dateLabel: "Updated At",
+    dateValue: formatDateTimeDisplay(record.updated_at || record.created_at)
+  };
+}
+
+function getComplaintResolutionHandledBy(record = {}) {
+  return (
+    record.handled_by_barangay_name ||
+    record.resolved_by_name ||
+    record.accepted_by_name ||
+    record.validated_by_name ||
+    record.handled_by ||
+    record.resolved_by ||
+    record.accepted_by ||
+    "-"
+  );
+}
+
+function updateComplaintResolutionModalCopy(record = {}) {
+  const modal = document.getElementById("complaintResolutionModal");
+  if (!modal) return getComplaintResolutionHeaderMeta(record);
+
+  const meta = getComplaintResolutionHeaderMeta(record);
+
+  const kickerEl = modal.querySelector(".resolution-kicker");
+  const subtitleEl = modal.querySelector(".resolution-pro-header p");
+  const dateLabelEl = document.getElementById("resolutionModalResolvedAt")
+    ?.closest(".resolution-summary-card")
+    ?.querySelector("span");
+  const evidenceTitleEl = modal.querySelector(".resolution-evidence-heading h4");
+  const evidenceSubtitleEl = modal.querySelector(".resolution-evidence-heading p");
+
+  const reportTitleEl = Array.from(modal.querySelectorAll(".resolution-detail-card h4"))
+    .find((el) => String(el.textContent || "").toLowerCase().includes("resolution") ||
+      String(el.textContent || "").toLowerCase().includes("progress") ||
+      String(el.textContent || "").toLowerCase().includes("rejection") ||
+      String(el.textContent || "").toLowerCase() === "report");
+
+  if (kickerEl) kickerEl.textContent = meta.kicker;
+  if (subtitleEl) subtitleEl.textContent = meta.subtitle;
+  if (dateLabelEl) dateLabelEl.textContent = meta.dateLabel;
+  if (evidenceTitleEl) evidenceTitleEl.textContent = meta.evidenceTitle;
+  if (evidenceSubtitleEl) evidenceSubtitleEl.textContent = meta.evidenceSubtitle;
+  if (reportTitleEl) reportTitleEl.textContent = meta.reportTitle;
+
+  return meta;
+}
+
+function setComplaintResolutionStatusPill(status) {
+  const pill = document.getElementById("resolutionModalStatus");
+  if (!pill) return;
+
+  const normalized = String(status || "").trim().toLowerCase();
+
+  pill.classList.remove(
+    "resolved",
+    "rejected",
+    "forwarded",
+    "in-progress",
+    "accepted",
+    "pending"
+  );
+
+  if (normalized === "resolved") pill.classList.add("resolved");
+  else if (normalized === "rejected") pill.classList.add("rejected");
+  else if (normalized === "forwarded") pill.classList.add("forwarded");
+  else if (normalized === "in_progress") pill.classList.add("in-progress");
+  else if (normalized === "accepted_by_barangay") pill.classList.add("accepted");
+  else pill.classList.add("pending");
+}
+
+function ensureComplaintResolutionStateStyles() {
+  if (document.getElementById("complaintResolutionStateRuntimeStyles")) return;
+
+  const style = document.createElement("style");
+  style.id = "complaintResolutionStateRuntimeStyles";
+  style.textContent = `
+    #complaintResolutionModal .resolution-status-pill.resolved {
+      background: #dcfce7 !important;
+      color: #047857 !important;
+      border: 1px solid #86efac !important;
+    }
+
+    #complaintResolutionModal .resolution-status-pill.rejected {
+      background: #fee2e2 !important;
+      color: #b91c1c !important;
+      border: 1px solid #fca5a5 !important;
+    }
+
+    #complaintResolutionModal .resolution-status-pill.forwarded,
+    #complaintResolutionModal .resolution-status-pill.accepted,
+    #complaintResolutionModal .resolution-status-pill.in-progress {
+      background: #eef2ff !important;
+      color: #4338ca !important;
+      border: 1px solid #c7d2fe !important;
+    }
+
+    #complaintResolutionModal .resolution-status-pill.pending {
+      background: #fef3c7 !important;
+      color: #92400e !important;
+      border: 1px solid #fde68a !important;
+    }
+
+    #complaintResolutionModal .resolution-unavailable-note {
+      color: #64748b !important;
+      font-weight: 750 !important;
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+
 function openComplaintResolutionModal(complaintId) {
   mountComplaintModalsToBody();
 
@@ -4240,14 +4727,33 @@ function openComplaintResolutionModal(complaintId) {
     if (el) el.textContent = cleanText(value, fallback);
   };
 
+  ensureComplaintResolutionStateStyles();
+
+  const resolutionMeta = updateComplaintResolutionModalCopy(currentComplaintResolution);
+  const readableStatus = getComplaintReadableStatus(currentComplaintResolution.status);
+
   setText("resolutionModalSubject", currentComplaintResolution.subject);
   setText("resolutionModalAssignedBarangay", currentComplaintResolution.assigned_barangay);
   setText("resolutionModalReporterBarangay", currentComplaintResolution.reporter_barangay);
-  setText("resolutionModalHandledBy", currentComplaintResolution.handled_by_barangay_name);
-  setText("resolutionModalStatus", "Resolved");
-  setText("resolutionModalResolvedAt", formatDateTimeDisplay(currentComplaintResolution.resolved_at));
+  setText("resolutionModalHandledBy", getComplaintResolutionHandledBy(currentComplaintResolution));
+  setText("resolutionModalStatus", readableStatus);
+  setComplaintResolutionStatusPill(currentComplaintResolution.status);
+  setText("resolutionModalResolvedAt", resolutionMeta.dateValue);
   setText("resolutionModalDescription", currentComplaintResolution.description, "No description provided.");
-  setText("resolutionModalReport", currentComplaintResolution.resolution_report, "No resolution report provided.");
+
+  if (String(currentComplaintResolution.status || "").toLowerCase() === "rejected") {
+    setText(
+      "resolutionModalReport",
+      currentComplaintResolution.rejection_reason,
+      resolutionMeta.reportFallback
+    );
+  } else {
+    setText(
+      "resolutionModalReport",
+      currentComplaintResolution.resolution_report,
+      resolutionMeta.reportFallback
+    );
+  }
 
   setText(
     "resolutionModalCoordinates",
