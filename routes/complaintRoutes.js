@@ -194,6 +194,84 @@ function parseOptionalInt(value) {
   return num;
 }
 
+
+function resolveNearestBarangayByReferencePoint(point, callback) {
+  const lat = Number(point && point.lat);
+  const lng = Number(point && point.lng);
+
+  if (
+    Number.isNaN(lat) ||
+    Number.isNaN(lng) ||
+    lat === 0 ||
+    lng === 0
+  ) {
+    return callback(null, null);
+  }
+
+  /*
+    Main auto-assignment source:
+    barangay_reference_points
+
+    Why:
+    - The complaint is expected to be assigned to the nearest barangay/location.
+    - Some polygon boundary records can be too broad or inaccurate.
+    - Reference points are easier to maintain in MySQL and match what WMO sees on the map.
+  */
+  const sql = `
+    SELECT
+      id,
+      barangay_name,
+      reference_name,
+      latitude,
+      longitude
+    FROM barangay_reference_points
+    WHERE status = 'active'
+  `;
+
+  db.query(sql, (err, rows) => {
+    if (err) {
+      console.error("Failed to load barangay reference points for assignment:", err);
+      return callback(err, null);
+    }
+
+    let nearest = null;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+
+    (rows || []).forEach((row) => {
+      const refLat = Number(row.latitude);
+      const refLng = Number(row.longitude);
+
+      if (
+        Number.isNaN(refLat) ||
+        Number.isNaN(refLng) ||
+        refLat === 0 ||
+        refLng === 0
+      ) {
+        return;
+      }
+
+      const distanceMeters = calculateDistanceMeters(
+        { lat, lng },
+        { lat: refLat, lng: refLng }
+      );
+
+      if (distanceMeters < nearestDistance) {
+        nearestDistance = distanceMeters;
+        nearest = {
+          barangay_name: row.barangay_name,
+          reference_name: row.reference_name,
+          latitude: refLat,
+          longitude: refLng,
+          distance_meters: Math.round(distanceMeters)
+        };
+      }
+    });
+
+    return callback(null, nearest);
+  });
+}
+
+
 function getComplaintColumnSet(callback) {
   const sql = `SHOW COLUMNS FROM complaints`;
 
@@ -427,188 +505,240 @@ router.post("/", upload.single("image"), (req, res) => {
       const canSaveClientRequestId = hasColumn(columnSet, "client_request_id");
 
       const continueComplaintCreation = () => {
-        const boundarySql = `
-          SELECT barangay_name, polygon_json
-          FROM barangay_boundaries
-          WHERE status = 'active'
-        `;
+        const finishComplaintCreation = (
+          finalBarangay,
+          assignmentMethod,
+          assignmentDebug = {}
+        ) => {
+          const status = "pending";
 
-        db.query(boundarySql, (boundaryErr, boundaryRows) => {
-          if (boundaryErr) {
+          if (!finalBarangay || finalBarangay === "undefined") {
+            finalBarangay = "For Verification";
+            assignmentMethod = "manual_review";
+          }
+
+          saveUploadedComplaintImage(req.file, "complaints")
+            .then((imageUrl) => {
+              const insertColumns = [
+                "citizen_id",
+                "citizen_name",
+                "username",
+                "reporter_barangay",
+                "subject",
+                "description",
+                "image_url",
+                "latitude",
+                "longitude",
+                "assigned_barangay",
+                "assignment_method",
+                "status"
+              ];
+
+              const insertValues = [
+                citizen_id,
+                citizen_name || null,
+                username || null,
+                reporter_barangay || null,
+                subject,
+                description || null,
+                imageUrl,
+                lat,
+                lng,
+                finalBarangay || "For Verification",
+                assignmentMethod || "manual_review",
+                status
+              ];
+
+              if (canSaveClientRequestId) {
+                insertColumns.push("client_request_id");
+                insertValues.push(clientRequestId || null);
+              }
+
+              const placeholders = insertColumns.map(() => "?").join(", ");
+
+              const insertSql = `
+                INSERT INTO complaints (
+                  ${insertColumns.join(",\n                  ")}
+                )
+                VALUES (${placeholders})
+              `;
+
+              db.query(insertSql, insertValues, (insertErr, insertResult) => {
+                if (insertErr) {
+                  console.error("Complaint insert error:", insertErr);
+
+                  if (
+                    canSaveClientRequestId &&
+                    clientRequestId &&
+                    insertErr.code === "ER_DUP_ENTRY"
+                  ) {
+                    return respondWithExistingComplaintByClientRequestId(
+                      res,
+                      clientRequestId,
+                      req.file
+                    );
+                  }
+
+                  deleteUploadedFileIfExists(req.file);
+
+                  return res.status(500).json({
+                    success: false,
+                    message: "Failed to save complaint.",
+                    sqlError: insertErr.message,
+                    sqlCode: insertErr.code
+                  });
+                }
+
+                const complaintId = insertResult.insertId;
+
+                const notifSql = `
+                  INSERT INTO complaint_notifications (
+                    complaint_id,
+                    target_type,
+                    target_name
+                  )
+                  VALUES (?, 'wmo', 'WMO')
+                `;
+
+                db.query(notifSql, [complaintId], (notifErr) => {
+                  if (notifErr) {
+                    console.error("WMO notification insert error:", notifErr);
+                  }
+
+                  logUploadedFile("=== CREATE COMPLAINT UPLOAD DEBUG ===", req.file);
+
+                  return res.json({
+                    success: true,
+                    duplicate: false,
+                    message:
+                      assignmentMethod === "nearest_reference_point"
+                        ? "Complaint submitted successfully and auto-assigned to the nearest barangay."
+                        : assignmentMethod === "polygon"
+                        ? "Complaint submitted successfully."
+                        : assignmentMethod === "nearest_fallback"
+                        ? "Complaint submitted successfully and auto-assigned to the nearest barangay."
+                        : "Complaint submitted successfully and marked for manual verification.",
+                    complaintId,
+                    reporter_barangay: reporter_barangay || null,
+                    assigned_barangay: finalBarangay,
+                    assignment_method: assignmentMethod,
+                    assignment_debug: assignmentDebug,
+                    image_url: imageUrl,
+                    storage: isCloudinaryConfigured ? "cloudinary" : "local",
+                    client_request_id_saved: canSaveClientRequestId && Boolean(clientRequestId),
+                    missing_columns: !canSaveClientRequestId
+                      ? {
+                          client_request_id: true
+                        }
+                      : null
+                  });
+                });
+              });
+            })
+            .catch((uploadErr) => {
+              console.error("Complaint image upload error:", uploadErr);
+
+              return res.status(500).json({
+                success: false,
+                message: "Failed to upload complaint image.",
+                error: uploadErr.message,
+                storage: isCloudinaryConfigured ? "cloudinary" : "local"
+              });
+            });
+        };
+
+        /*
+          IMPORTANT FIX:
+          Use the nearest active barangay_reference_points record first.
+          This prevents wrong assignment from inaccurate/oversized polygon data
+          such as a Mabuhay/San Isidro pin being saved as Lagao.
+        */
+        resolveNearestBarangayByReferencePoint({ lat, lng }, (referenceErr, nearestReference) => {
+          if (referenceErr) {
             deleteUploadedFileIfExists(req.file);
 
-            console.error("Boundary query error:", boundaryErr);
             return res.status(500).json({
               success: false,
-              message: "Failed to load barangay boundaries."
+              message: "Failed to auto-detect nearest barangay reference point.",
+              error: referenceErr.message,
+              code: referenceErr.code
             });
           }
 
-          try {
-            const polygonMatchedBarangay = resolveBarangayByPolygon(
-              { lat, lng },
-              boundaryRows || []
+          if (nearestReference && nearestReference.barangay_name) {
+            return finishComplaintCreation(
+              nearestReference.barangay_name,
+              "nearest_reference_point",
+              {
+                source: "barangay_reference_points",
+                reference_name: nearestReference.reference_name || null,
+                distance_meters: nearestReference.distance_meters,
+                reference_latitude: nearestReference.latitude,
+                reference_longitude: nearestReference.longitude
+              }
             );
+          }
 
-            let finalBarangay = polygonMatchedBarangay || null;
-            let assignmentMethod = "polygon";
-            let status = "pending";
+          const boundarySql = `
+            SELECT barangay_name, polygon_json
+            FROM barangay_boundaries
+            WHERE status = 'active'
+          `;
 
-            if (!finalBarangay) {
-              const nearestBarangay = resolveNearestBarangay(
+          db.query(boundarySql, (boundaryErr, boundaryRows) => {
+            if (boundaryErr) {
+              deleteUploadedFileIfExists(req.file);
+
+              console.error("Boundary query error:", boundaryErr);
+              return res.status(500).json({
+                success: false,
+                message: "Failed to load barangay boundaries."
+              });
+            }
+
+            try {
+              const polygonMatchedBarangay = resolveBarangayByPolygon(
                 { lat, lng },
                 boundaryRows || []
               );
 
-              if (nearestBarangay && typeof nearestBarangay === "string") {
-                finalBarangay = nearestBarangay;
-                assignmentMethod = "nearest_fallback";
-              } else {
-                finalBarangay = "For Verification";
-                assignmentMethod = "manual_review";
-              }
-            }
+              let finalBarangay = polygonMatchedBarangay || null;
+              let assignmentMethod = polygonMatchedBarangay ? "polygon" : "";
 
-            if (!finalBarangay || finalBarangay === "undefined") {
-              finalBarangay = "For Verification";
-              assignmentMethod = "manual_review";
-            }
+              if (!finalBarangay) {
+                const nearestBarangay = resolveNearestBarangay(
+                  { lat, lng },
+                  boundaryRows || []
+                );
 
-            saveUploadedComplaintImage(req.file, "complaints")
-              .then((imageUrl) => {
-                const insertColumns = [
-                  "citizen_id",
-                  "citizen_name",
-                  "username",
-                  "reporter_barangay",
-                  "subject",
-                  "description",
-                  "image_url",
-                  "latitude",
-                  "longitude",
-                  "assigned_barangay",
-                  "assignment_method",
-                  "status"
-                ];
-
-                const insertValues = [
-                  citizen_id,
-                  citizen_name || null,
-                  username || null,
-                  reporter_barangay || null,
-                  subject,
-                  description || null,
-                  imageUrl,
-                  lat,
-                  lng,
-                  finalBarangay || "For Verification",
-                  assignmentMethod || "manual_review",
-                  status || "pending"
-                ];
-
-                if (canSaveClientRequestId) {
-                  insertColumns.push("client_request_id");
-                  insertValues.push(clientRequestId || null);
+                if (nearestBarangay && typeof nearestBarangay === "string") {
+                  finalBarangay = nearestBarangay;
+                  assignmentMethod = "nearest_fallback";
+                } else {
+                  finalBarangay = "For Verification";
+                  assignmentMethod = "manual_review";
                 }
+              }
 
-                const placeholders = insertColumns.map(() => "?").join(", ");
+              return finishComplaintCreation(
+                finalBarangay,
+                assignmentMethod,
+                {
+                  source: assignmentMethod,
+                  note: "barangay_reference_points had no active usable records, so boundary fallback was used."
+                }
+              );
+            } catch (resolutionError) {
+              deleteUploadedFileIfExists(req.file);
 
-                const insertSql = `
-                  INSERT INTO complaints (
-                    ${insertColumns.join(",\n                    ")}
-                  )
-                  VALUES (${placeholders})
-                `;
-
-                db.query(insertSql, insertValues, (insertErr, insertResult) => {
-                  if (insertErr) {
-                    console.error("Complaint insert error:", insertErr);
-
-                    if (
-                      canSaveClientRequestId &&
-                      clientRequestId &&
-                      insertErr.code === "ER_DUP_ENTRY"
-                    ) {
-                      return respondWithExistingComplaintByClientRequestId(
-                        res,
-                        clientRequestId,
-                        req.file
-                      );
-                    }
-
-                    deleteUploadedFileIfExists(req.file);
-
-                    return res.status(500).json({
-                      success: false,
-                      message: "Failed to save complaint.",
-                      sqlError: insertErr.message,
-                      sqlCode: insertErr.code
-                    });
-                  }
-
-                  const complaintId = insertResult.insertId;
-
-                  const notifSql = `
-                    INSERT INTO complaint_notifications (
-                      complaint_id,
-                      target_type,
-                      target_name
-                    )
-                    VALUES (?, 'wmo', 'WMO')
-                  `;
-
-                  db.query(notifSql, [complaintId], (notifErr) => {
-                    if (notifErr) {
-                      console.error("WMO notification insert error:", notifErr);
-                    }
-
-                    logUploadedFile("=== CREATE COMPLAINT UPLOAD DEBUG ===", req.file);
-
-                    return res.json({
-                      success: true,
-                      duplicate: false,
-                      message:
-                        assignmentMethod === "polygon"
-                          ? "Complaint submitted successfully."
-                          : assignmentMethod === "nearest_fallback"
-                          ? "Complaint submitted successfully and auto-assigned to the nearest barangay."
-                          : "Complaint submitted successfully and marked for manual verification.",
-                      complaintId,
-                      reporter_barangay: reporter_barangay || null,
-                      assigned_barangay: finalBarangay,
-                      assignment_method: assignmentMethod,
-                      image_url: imageUrl,
-                      storage: isCloudinaryConfigured ? "cloudinary" : "local",
-                      client_request_id_saved: canSaveClientRequestId && Boolean(clientRequestId),
-                      missing_columns: !canSaveClientRequestId
-                        ? {
-                            client_request_id: true
-                          }
-                        : null
-                    });
-                  });
-                });
-              })
-              .catch((uploadErr) => {
-                console.error("Complaint image upload error:", uploadErr);
-
-                return res.status(500).json({
-                  success: false,
-                  message: "Failed to upload complaint image.",
-                  error: uploadErr.message,
-                  storage: isCloudinaryConfigured ? "cloudinary" : "local"
-                });
+              console.error("Complaint barangay resolution error:", resolutionError);
+              return res.status(500).json({
+                success: false,
+                message: "Barangay resolution failed.",
+                error: resolutionError.message
               });
-          } catch (resolutionError) {
-            deleteUploadedFileIfExists(req.file);
-
-            console.error("Complaint barangay resolution error:", resolutionError);
-            return res.status(500).json({
-              success: false,
-              message: "Barangay resolution failed.",
-              error: resolutionError.message
-            });
-          }
+            }
+          });
         });
       };
 
