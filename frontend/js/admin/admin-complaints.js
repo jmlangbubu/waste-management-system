@@ -4316,8 +4316,52 @@ function getResolutionImageCandidates(record = {}) {
   return candidates;
 }
 
+function getBarangayResolutionImageCandidates(record = {}) {
+  /*
+    Barangay resolution evidence only.
+    Do NOT include the original citizen image here because WMO needs to compare
+    the citizen evidence and the resolution evidence separately.
+  */
+  const candidates = [];
+
+  [
+    record?.resolution_evidence_url,
+    record?.resolution_image_url,
+    record?.resolution_photo_url,
+    record?.resolved_evidence_url,
+    record?.resolved_image_url,
+    record?.resolved_photo_url
+  ].forEach((path) => {
+    addUniqueResolutionImageCandidate(candidates, path);
+  });
+
+  return candidates;
+}
+
+function getCitizenComplaintImageCandidates(record = {}) {
+  /*
+    Original complaint/citizen evidence only.
+    This is the image submitted by the citizen when the complaint was created.
+  */
+  const candidates = [];
+
+  [
+    record?.image_url,
+    record?.complaint_image_url,
+    record?.complaint_evidence_url,
+    record?.citizen_evidence_url,
+    record?.citizen_image_url,
+    record?.evidence_url,
+    record?.photo_url
+  ].forEach((path) => {
+    addUniqueResolutionImageCandidate(candidates, path);
+  });
+
+  return candidates;
+}
+
 function getValidResolutionImagePath(record) {
-  const candidates = getResolutionImageCandidates(record);
+  const candidates = getBarangayResolutionImageCandidates(record);
   return candidates[0] || "";
 }
 
@@ -4416,19 +4460,35 @@ function getResolutionImageUrlCandidates(rawCandidates = []) {
   return urlCandidates;
 }
 
-function renderResolutionEvidenceImage(record) {
-  const evidenceImg = document.getElementById("resolutionModalEvidenceImage");
-  const noEvidence = document.getElementById("resolutionModalNoEvidence");
-  const evidenceFrame = document.getElementById("resolutionEvidenceFrame");
+function renderEvidenceImageSlot(options = {}) {
+  const {
+    record = {},
+    imageId,
+    emptyId,
+    frameId,
+    rawCandidateBuilder,
+    loadingText = "Loading evidence image...",
+    noImageText = "No evidence image submitted.",
+    failedText = "Evidence file is missing from server storage or was not uploaded yet.",
+    logLabel = "Evidence"
+  } = options;
+
+  const evidenceImg = document.getElementById(imageId);
+  const noEvidence = document.getElementById(emptyId);
+  const evidenceFrame = document.getElementById(frameId);
 
   if (!evidenceImg) return;
 
-  const rawCandidates = getResolutionImageCandidates(record);
+  const rawCandidates =
+    typeof rawCandidateBuilder === "function"
+      ? rawCandidateBuilder(record)
+      : [];
+
   const imageCandidates = getResolutionImageUrlCandidates(rawCandidates);
 
-  console.log("CURRENT RESOLUTION DATA:", record);
-  console.log("RAW IMAGE CANDIDATES:", rawCandidates);
-  console.log("FINAL IMAGE URL CANDIDATES:", imageCandidates.map(item => item.imageUrl));
+  console.log(`${logLabel} DATA:`, record);
+  console.log(`${logLabel} RAW IMAGE CANDIDATES:`, rawCandidates);
+  console.log(`${logLabel} FINAL IMAGE URL CANDIDATES:`, imageCandidates.map(item => item.imageUrl));
 
   evidenceImg.onload = null;
   evidenceImg.onerror = null;
@@ -4440,12 +4500,12 @@ function renderResolutionEvidenceImage(record) {
   if (evidenceFrame) evidenceFrame.style.display = "none";
 
   if (noEvidence) {
-    noEvidence.textContent = "Loading evidence image...";
+    noEvidence.textContent = loadingText;
     noEvidence.classList.remove("hidden");
   }
 
   if (!imageCandidates.length) {
-    if (noEvidence) noEvidence.textContent = "No evidence image submitted.";
+    if (noEvidence) noEvidence.textContent = noImageText;
     return;
   }
 
@@ -4472,7 +4532,7 @@ function renderResolutionEvidenceImage(record) {
     if (evidenceFrame) evidenceFrame.style.display = "none";
 
     if (noEvidence) {
-      noEvidence.textContent = "Evidence file is missing from server storage or was not uploaded yet.";
+      noEvidence.textContent = failedText;
       noEvidence.classList.remove("hidden");
     }
   };
@@ -4492,8 +4552,8 @@ function renderResolutionEvidenceImage(record) {
     if (noEvidence) {
       noEvidence.textContent =
         imageCandidates.length > 1
-          ? `Loading evidence image ${currentIndex + 1} of ${imageCandidates.length}...`
-          : "Loading evidence image...";
+          ? `${loadingText.replace("...", "")} ${currentIndex + 1} of ${imageCandidates.length}...`
+          : loadingText;
       noEvidence.classList.remove("hidden");
     }
 
@@ -4505,7 +4565,7 @@ function renderResolutionEvidenceImage(record) {
       finished = true;
       clearImageLoadTimeout();
 
-      console.log("Resolution image loaded:", current.imageUrl);
+      console.log(`${logLabel} image loaded:`, current.imageUrl);
 
       evidenceImg.classList.remove("hidden");
       evidenceImg.style.display = "block";
@@ -4522,22 +4582,16 @@ function renderResolutionEvidenceImage(record) {
       if (finished) return;
 
       clearImageLoadTimeout();
-      console.warn("Resolution image failed, trying next if available:", current.imageUrl);
+      console.warn(`${logLabel} image failed, trying next if available:`, current.imageUrl);
 
       currentIndex += 1;
       tryLoadImage();
     };
 
-    /*
-      Important:
-      Some hosted image requests can hang instead of immediately firing error.
-      This timeout forces the modal to try the next candidate, such as image_url,
-      or the alternate /uploads/cplaints/ path.
-    */
     loadTimeout = setTimeout(() => {
       if (finished) return;
 
-      console.warn("Resolution image timed out, trying next if available:", current.imageUrl);
+      console.warn(`${logLabel} image timed out, trying next if available:`, current.imageUrl);
 
       evidenceImg.onload = null;
       evidenceImg.onerror = null;
@@ -4553,6 +4607,33 @@ function renderResolutionEvidenceImage(record) {
   tryLoadImage();
 }
 
+function renderCitizenEvidenceImage(record) {
+  renderEvidenceImageSlot({
+    record,
+    imageId: "resolutionModalCitizenEvidenceImage",
+    emptyId: "resolutionModalNoCitizenEvidence",
+    frameId: "resolutionCitizenEvidenceFrame",
+    rawCandidateBuilder: getCitizenComplaintImageCandidates,
+    loadingText: "Loading citizen evidence image...",
+    noImageText: "No citizen evidence submitted.",
+    failedText: "Citizen evidence file is missing from server storage or was not uploaded yet.",
+    logLabel: "Citizen evidence"
+  });
+}
+
+function renderResolutionEvidenceImage(record) {
+  renderEvidenceImageSlot({
+    record,
+    imageId: "resolutionModalEvidenceImage",
+    emptyId: "resolutionModalNoEvidence",
+    frameId: "resolutionEvidenceFrame",
+    rawCandidateBuilder: getBarangayResolutionImageCandidates,
+    loadingText: "Loading resolution evidence image...",
+    noImageText: "No resolution evidence submitted.",
+    failedText: "Resolution evidence file is missing from server storage or was not uploaded yet.",
+    logLabel: "Resolution evidence"
+  });
+}
 
 
 function getComplaintReadableStatus(status) {
@@ -4582,8 +4663,8 @@ function getComplaintResolutionHeaderMeta(record = {}) {
     return {
       kicker: "Resolved Complaint",
       subtitle: "Barangay personnel submitted resolution details and evidence.",
-      evidenceTitle: "Resolution Evidence",
-      evidenceSubtitle: "Submitted proof for the resolved complaint.",
+      evidenceTitle: "Evidence Comparison",
+      evidenceSubtitle: "Compare the citizen report proof with the barangay resolution proof.",
       reportTitle: "Resolution Report",
       reportFallback: "No resolution report provided.",
       dateLabel: "Resolved At",
@@ -4757,6 +4838,68 @@ function ensureComplaintResolutionStateStyles() {
       color: #64748b !important;
       font-weight: 750 !important;
     }
+
+    #complaintResolutionModal .resolution-evidence-comparison-grid {
+      display: grid !important;
+      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+      gap: 14px !important;
+      width: 100% !important;
+    }
+
+    #complaintResolutionModal .resolution-evidence-compare-card {
+      min-width: 0 !important;
+      padding: 12px !important;
+      border: 1px solid #e5edf4 !important;
+      border-radius: 16px !important;
+      background: #ffffff !important;
+    }
+
+    #complaintResolutionModal .resolution-evidence-subheading {
+      margin-bottom: 10px !important;
+    }
+
+    #complaintResolutionModal .resolution-evidence-subheading p {
+      margin: 6px 0 0 !important;
+      color: #64748b !important;
+      font-size: 12px !important;
+      line-height: 1.35 !important;
+    }
+
+    #complaintResolutionModal .evidence-compare-label {
+      display: inline-flex !important;
+      align-items: center !important;
+      width: fit-content !important;
+      min-height: 26px !important;
+      padding: 0 10px !important;
+      border-radius: 999px !important;
+      font-size: 12px !important;
+      font-weight: 900 !important;
+      letter-spacing: .02em !important;
+    }
+
+    #complaintResolutionModal .evidence-compare-label.citizen {
+      background: #fff7ed !important;
+      color: #c2410c !important;
+      border: 1px solid #fed7aa !important;
+    }
+
+    #complaintResolutionModal .evidence-compare-label.resolution {
+      background: #ecfdf5 !important;
+      color: #047857 !important;
+      border: 1px solid #a7f3d0 !important;
+    }
+
+    #complaintResolutionModal .resolution-evidence-compare-card .resolved-evidence-frame {
+      height: 225px !important;
+      min-height: 225px !important;
+      max-height: 225px !important;
+    }
+
+    @media (max-width: 980px) {
+      #complaintResolutionModal .resolution-evidence-comparison-grid {
+        grid-template-columns: 1fr !important;
+      }
+    }
   `;
 
   document.head.appendChild(style);
@@ -4818,6 +4961,7 @@ function openComplaintResolutionModal(complaintId) {
     `${cleanText(currentComplaintResolution.latitude, "-")}, ${cleanText(currentComplaintResolution.longitude, "-")}`
   );
 
+  renderCitizenEvidenceImage(currentComplaintResolution);
   renderResolutionEvidenceImage(currentComplaintResolution);
 
   openComplaintModalWithPosition("complaintResolutionModal");
