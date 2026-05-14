@@ -2957,12 +2957,278 @@ function closeComplaintMapModal() {
   resetComplaintModalDisplay("complaintMapModal");
 }
 
+
+function ensureComplaintFullMapOnlyStyles() {
+  if (document.getElementById("complaintFullMapOnlyRuntimeStyles")) return;
+
+  const style = document.createElement("style");
+  style.id = "complaintFullMapOnlyRuntimeStyles";
+  style.textContent = `
+    #complaintMapModal .complaint-map-summary,
+    #complaintMapModal .complaint-side-panel {
+      display: none !important;
+    }
+
+    #complaintMapModal .complaint-map-modal-body {
+      padding: 18px 20px 22px !important;
+      overflow: hidden !important;
+    }
+
+    #complaintMapModal .complaint-map-layout {
+      display: block !important;
+      width: 100% !important;
+      height: min(68vh, 680px) !important;
+      min-height: 520px !important;
+      margin: 0 !important;
+    }
+
+    #complaintMapModal .complaint-map-panel {
+      width: 100% !important;
+      height: 100% !important;
+      min-height: 520px !important;
+      border-radius: 18px !important;
+      overflow: hidden !important;
+      border: 1px solid #d8e5dc !important;
+      box-shadow: 0 18px 38px rgba(15, 23, 42, 0.12) !important;
+    }
+
+    #complaintMapModal #complaintLeafletMap,
+    #complaintMapModal .complaint-leaflet-map {
+      width: 100% !important;
+      height: 100% !important;
+      min-height: 520px !important;
+      border-radius: 18px !important;
+    }
+
+    #complaintMapModal .leaflet-routing-container {
+      display: none !important;
+    }
+
+    #complaintMapModal .complaint-full-map-legend {
+      position: absolute !important;
+      left: 18px !important;
+      bottom: 18px !important;
+      z-index: 650 !important;
+
+      padding: 9px 12px !important;
+      border-radius: 14px !important;
+
+      background: rgba(255, 255, 255, 0.94) !important;
+      border: 1px solid rgba(22, 101, 52, 0.14) !important;
+      box-shadow: 0 14px 30px rgba(15, 23, 42, 0.16) !important;
+
+      color: #163d2d !important;
+      font-size: 12px !important;
+      font-weight: 850 !important;
+
+      display: flex !important;
+      align-items: center !important;
+      gap: 10px !important;
+      flex-wrap: wrap !important;
+      pointer-events: none !important;
+    }
+
+    #complaintMapModal .complaint-full-map-legend span {
+      display: inline-flex !important;
+      align-items: center !important;
+      gap: 5px !important;
+      white-space: nowrap !important;
+    }
+
+    #complaintMapModal .complaint-full-map-dot {
+      width: 10px !important;
+      height: 10px !important;
+      border-radius: 999px !important;
+      display: inline-block !important;
+      background: #ef4444 !important;
+    }
+
+    #complaintMapModal .complaint-full-map-dot.blue {
+      background: #2563eb !important;
+    }
+
+    @media (max-width: 900px) {
+      #complaintMapModal .complaint-map-modal-body {
+        padding: 12px !important;
+      }
+
+      #complaintMapModal .complaint-map-layout,
+      #complaintMapModal .complaint-map-panel,
+      #complaintMapModal #complaintLeafletMap,
+      #complaintMapModal .complaint-leaflet-map {
+        height: 70vh !important;
+        min-height: 430px !important;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+function ensureComplaintFullMapLegend() {
+  const mapEl = document.getElementById("complaintLeafletMap");
+  if (!mapEl) return;
+
+  const mapPanel = mapEl.closest(".complaint-map-panel") || mapEl.parentElement;
+  if (!mapPanel) return;
+
+  if (getComputedStyle(mapPanel).position === "static") {
+    mapPanel.style.position = "relative";
+  }
+
+  let legend = document.getElementById("complaintFullMapLegend");
+
+  if (!legend) {
+    legend = document.createElement("div");
+    legend.id = "complaintFullMapLegend";
+    legend.className = "complaint-full-map-legend";
+    legend.innerHTML = `
+      <span><i class="complaint-full-map-dot"></i> Issue location</span>
+      <span><i class="complaint-full-map-dot blue"></i> Forwarding barangays</span>
+    `;
+
+    mapPanel.appendChild(legend);
+  }
+}
+
+function clearComplaintFullMapRoutes() {
+  if (Array.isArray(window.complaintFullMapRouteControls)) {
+    window.complaintFullMapRouteControls.forEach((control) => {
+      try {
+        if (complaintMapInstance && control) {
+          complaintMapInstance.removeControl(control);
+        }
+      } catch (error) {
+        console.warn("Failed removing full map route control:", error);
+      }
+    });
+  }
+
+  window.complaintFullMapRouteControls = [];
+
+  if (Array.isArray(window.complaintFullMapRouteLines)) {
+    window.complaintFullMapRouteLines.forEach((line) => {
+      try {
+        if (complaintMapInstance && line) {
+          complaintMapInstance.removeLayer(line);
+        }
+      } catch (error) {
+        console.warn("Failed removing full map route line:", error);
+      }
+    });
+  }
+
+  window.complaintFullMapRouteLines = [];
+}
+
+function getComplaintForwardingTargets(candidates = []) {
+  return getTopUniqueBarangayCandidates(candidates, 2);
+}
+
+function drawComplaintRouteLineToCandidate(issueLat, issueLng, candidate, index = 0) {
+  if (!complaintMapInstance || !window.L || !candidate) return;
+
+  const destLat = parseFloat(candidate.latitude);
+  const destLng = parseFloat(candidate.longitude);
+
+  if (
+    Number.isNaN(issueLat) ||
+    Number.isNaN(issueLng) ||
+    Number.isNaN(destLat) ||
+    Number.isNaN(destLng)
+  ) {
+    return;
+  }
+
+  const routeColor = index === 0 ? "#2563eb" : "#16a34a";
+
+  if (window.L.Routing) {
+    const routeControl = L.Routing.control({
+      waypoints: [
+        L.latLng(issueLat, issueLng),
+        L.latLng(destLat, destLng)
+      ],
+      router: L.Routing.osrmv1({
+        serviceUrl: "https://router.project-osrm.org/route/v1"
+      }),
+      routeWhileDragging: false,
+      addWaypoints: false,
+      draggableWaypoints: false,
+      fitSelectedRoutes: false,
+      showAlternatives: false,
+      show: false,
+      createMarker: function () {
+        return null;
+      },
+      lineOptions: {
+        addWaypoints: false,
+        extendToWaypoints: true,
+        missingRouteTolerance: 0,
+        styles: [
+          {
+            color: routeColor,
+            opacity: 0.88,
+            weight: 5
+          }
+        ]
+      }
+    }).addTo(complaintMapInstance);
+
+    routeControl.on("routingerror", () => {
+      const fallbackLine = L.polyline(
+        [
+          [issueLat, issueLng],
+          [destLat, destLng]
+        ],
+        {
+          color: routeColor,
+          weight: 4,
+          opacity: 0.75,
+          dashArray: "8 8"
+        }
+      ).addTo(complaintMapInstance);
+
+      window.complaintFullMapRouteLines.push(fallbackLine);
+    });
+
+    window.complaintFullMapRouteControls.push(routeControl);
+    return;
+  }
+
+  const fallbackLine = L.polyline(
+    [
+      [issueLat, issueLng],
+      [destLat, destLng]
+    ],
+    {
+      color: routeColor,
+      weight: 4,
+      opacity: 0.75,
+      dashArray: "8 8"
+    }
+  ).addTo(complaintMapInstance);
+
+  window.complaintFullMapRouteLines.push(fallbackLine);
+}
+
+function renderComplaintFullMapRoutes(issueLat, issueLng, candidates = []) {
+  clearComplaintFullMapRoutes();
+
+  const targets = getComplaintForwardingTargets(candidates);
+
+  targets.forEach((candidate, index) => {
+    drawComplaintRouteLineToCandidate(issueLat, issueLng, candidate, index);
+  });
+}
+
+
 // =========================
 // COMPLAINT MAP MODAL
 // =========================
 
 async function openComplaintMapModal() {
   mountComplaintModalsToBody();
+  ensureComplaintFullMapOnlyStyles();
 
   if (!currentComplaint) {
     alert("No complaint selected.");
@@ -2977,29 +3243,26 @@ async function openComplaintMapModal() {
     return;
   }
 
-  selectedBarangayCandidate = null;
-  updateChosenBarangayUI();
-
-  const setText = (id, value) => {
-    const el = document.getElementById(id);
-    if (el) el.textContent = value;
-  };
-
-  setText("complaintMapSubject", currentComplaint.subject || "-");
-  setText("complaintMapBarangay", currentComplaint.assigned_barangay || "-");
-  setText("complaintMapCoordinates", `${lat}, ${lng}`);
-
-  const nearbyListEl = document.getElementById("nearbyBarangayList");
-  if (nearbyListEl) {
-    nearbyListEl.innerHTML = `<div class="nearby-empty">Loading nearby barangays...</div>`;
-  }
-
+  /*
+    Full map modal rule:
+    - no top subject/barangay/coordinates summary
+    - no side chosen barangay/candidate panel
+    - map only
+    - two route lines going to the two forwarding/assigned barangay targets
+  */
   openComplaintModalWithPosition("complaintMapModal");
 
   setTimeout(async () => {
     try {
+      if (!window.L) {
+        throw new Error("Leaflet map library is not loaded.");
+      }
+
       if (!complaintMapInstance) {
-        complaintMapInstance = L.map("complaintLeafletMap").setView([lat, lng], 15);
+        complaintMapInstance = L.map("complaintLeafletMap", {
+          zoomControl: true,
+          attributionControl: true
+        }).setView([lat, lng], 15);
 
         L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
           attribution: "&copy; OpenStreetMap contributors"
@@ -3009,7 +3272,9 @@ async function openComplaintMapModal() {
         complaintMapInstance.setView([lat, lng], 15);
       }
 
+      ensureComplaintFullMapLegend();
       clearComplaintMapLayers();
+      clearComplaintFullMapRoutes();
 
       complaintMapMarker = L.marker([lat, lng], { icon: issueRedIcon })
         .addTo(complaintMapInstance);
@@ -3017,22 +3282,15 @@ async function openComplaintMapModal() {
       complaintMapMarker.bindPopup(`
         <div>
           <strong>${escapeHtml(currentComplaint.subject || "Complaint Issue")}</strong><br>
-          Citizen: ${escapeHtml(currentComplaint.citizen_name || currentComplaint.username || "-")}<br>
-          Barangay: ${escapeHtml(currentComplaint.assigned_barangay || "-")}<br>
-          Coordinates: ${escapeHtml(String(lat))}, ${escapeHtml(String(lng))}
+          Issue location<br>
+          ${escapeHtml(String(lat))}, ${escapeHtml(String(lng))}
         </div>
       `).openPopup();
 
       const candidates = await loadNearbyBarangaysForComplaint(lat, lng);
+      const forwardingTargets = getComplaintForwardingTargets(candidates);
 
-      if (!Array.isArray(candidates) || candidates.length === 0) {
-        if (nearbyListEl) {
-          nearbyListEl.innerHTML = `<div class="nearby-empty">No nearby barangays found.</div>`;
-        }
-        return;
-      }
-
-      complaintNearbyMarkers = candidates.map((candidate) => {
+      complaintNearbyMarkers = forwardingTargets.map((candidate) => {
         const markerLat = parseFloat(candidate.latitude);
         const markerLng = parseFloat(candidate.longitude);
 
@@ -3040,49 +3298,29 @@ async function openComplaintMapModal() {
           return null;
         }
 
+        const distanceText = formatDistanceText(candidate.distance_meters);
+
         const marker = L.marker(
           [markerLat, markerLng],
           { icon: barangayBlueIcon }
         ).addTo(complaintMapInstance);
 
-        const popupDistance =
-          Number(candidate.distance_meters) > 0
-            ? `${candidate.distance_meters} meters away`
-            : "Distance unavailable";
-
         marker.bindPopup(`
           <div>
             <strong>${escapeHtml(candidate.barangay_name || "-")}</strong><br>
             ${escapeHtml(candidate.reference_name || "-")}<br>
-            ${escapeHtml(popupDistance)}
+            ${escapeHtml(distanceText)}
           </div>
         `);
-
-        marker.on("click", () => {
-          complaintMapInstance.flyTo([markerLat, markerLng], 16, {
-            duration: 0.8
-          });
-
-          selectBarangayCandidate(candidate, candidates);
-          marker.openPopup();
-        });
 
         return marker;
       }).filter(Boolean);
 
-      renderNearbyBarangayList(candidates);
-
-      const nearestCandidate = candidates[0];
-
-      if (nearestCandidate) {
-        selectBarangayCandidate(nearestCandidate, candidates);
-      } else {
-        updateChosenBarangayUI();
-      }
+      renderComplaintFullMapRoutes(lat, lng, forwardingTargets);
 
       const boundsPoints = [
         [lat, lng],
-        ...candidates
+        ...forwardingTargets
           .map((candidate) => [
             parseFloat(candidate.latitude),
             parseFloat(candidate.longitude)
@@ -3092,20 +3330,19 @@ async function openComplaintMapModal() {
 
       if (boundsPoints.length > 1) {
         const bounds = L.latLngBounds(boundsPoints);
-        complaintMapInstance.fitBounds(bounds, { padding: [40, 40] });
+        complaintMapInstance.fitBounds(bounds, { padding: [70, 70], maxZoom: 16 });
       } else {
-        complaintMapInstance.setView([lat, lng], 15);
+        complaintMapInstance.setView([lat, lng], 16);
       }
-    } catch (error) {
-      console.error("Error opening complaint map modal:", error);
 
-      if (nearbyListEl) {
-        nearbyListEl.innerHTML = `
-          <div class="nearby-empty">${escapeHtml(error.message || "Failed to load nearby barangays.")}</div>
-        `;
-      }
+      setTimeout(() => {
+        if (complaintMapInstance) complaintMapInstance.invalidateSize();
+      }, 180);
+    } catch (error) {
+      console.error("Error opening complaint full map modal:", error);
+      alert(error.message || "Failed to load full map.");
     }
-  }, 150);
+  }, 180);
 }
 
 async function loadNearbyBarangaysForComplaint(lat, lng) {
