@@ -389,6 +389,74 @@ function resolveBarangayFromLearnedComplaints(point, callback) {
   });
 }
 
+function normalizeBarangayList(value) {
+  const rawValues = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+    ? value.split(",")
+    : [];
+
+  const seen = new Set();
+  const list = [];
+
+  rawValues.forEach((item) => {
+    const barangay = normalizeBarangayName(item);
+    if (!barangay) return;
+
+    const key = barangay.toLowerCase();
+    if (seen.has(key)) return;
+
+    seen.add(key);
+    list.push(barangay);
+  });
+
+  return list;
+}
+
+function buildBarangayNotificationInsertSql(count) {
+  const safeCount = Math.max(0, Number(count) || 0);
+
+  if (safeCount <= 0) return "";
+
+  const placeholders = Array.from({ length: safeCount }, () => "(?, 'barangay', ?)").join(", ");
+
+  return `
+    INSERT INTO complaint_notifications (
+      complaint_id,
+      target_type,
+      target_name
+    )
+    VALUES ${placeholders}
+  `;
+}
+
+function markOtherBarangayNotificationsCleared(complaintId, acceptedBarangay, callback) {
+  ensureComplaintNotificationClearColumns((ensureErr) => {
+    if (ensureErr) {
+      console.error("Failed preparing notification cleanup after accept:", ensureErr);
+      return callback && callback(ensureErr);
+    }
+
+    const sql = `
+      UPDATE complaint_notifications
+      SET cleared_at = NOW(),
+          cleared_by = ?
+      WHERE complaint_id = ?
+        AND target_type = 'barangay'
+        AND TRIM(LOWER(target_name)) <> TRIM(LOWER(?))
+        AND cleared_at IS NULL
+    `;
+
+    db.query(sql, [acceptedBarangay, complaintId, acceptedBarangay], (err) => {
+      if (err) {
+        console.error("Failed clearing other barangay notifications:", err);
+      }
+
+      if (callback) callback(err || null);
+    });
+  });
+}
+
 
 function getComplaintColumnSet(callback) {
   const sql = `SHOW COLUMNS FROM complaints`;
@@ -1016,7 +1084,17 @@ router.get("/nearby-barangays", (req, res) => {
 ========================= */
 router.post("/:id/validate-forward", (req, res) => {
   const complaintId = req.params.id;
-  const { validated_by, selected_barangay } = req.body;
+  const {
+    validated_by,
+    selected_barangay,
+    selected_barangays,
+    target_barangays,
+    forwarding_barangays
+  } = req.body || {};
+
+  const requestedTargets = normalizeBarangayList(
+    target_barangays || selected_barangays || forwarding_barangays || selected_barangay
+  ).slice(0, 2);
 
   const findSql = `
     SELECT *
@@ -1042,96 +1120,132 @@ router.post("/:id/validate-forward", (req, res) => {
     }
 
     const complaint = rows[0];
-    let finalBarangay = complaint.assigned_barangay;
 
-    const continueForward = (resolvedBarangay) => {
+    if (String(complaint.status || "").toLowerCase() !== "pending") {
+      return res.status(400).json({
+        success: false,
+        message: "Only pending complaints can be forwarded to barangays."
+      });
+    }
+
+    const continueForwardToTargets = (targets) => {
+      const finalTargets = normalizeBarangayList(targets).slice(0, 2);
+
+      if (!finalTargets.length) {
+        return res.status(400).json({
+          success: false,
+          message: "Please choose at least one barangay to forward this complaint."
+        });
+      }
+
       const updateSql = `
         UPDATE complaints
-        SET assigned_barangay = ?,
-            status = 'forwarded',
+        SET status = 'forwarded',
+            assignment_method = 'multi_forwarded',
             validated_at = NOW(),
             validated_by = ?
         WHERE id = ?
+          AND status = 'pending'
       `;
 
-      db.query(
-        updateSql,
-        [resolvedBarangay, validated_by || null, complaintId],
-        (updateErr) => {
-          if (updateErr) {
-            console.error("Validate+Forward error:", updateErr);
+      db.query(updateSql, [validated_by || null, complaintId], (updateErr, updateResult) => {
+        if (updateErr) {
+          console.error("Validate+multi-forward update error:", updateErr);
+          return res.status(500).json({
+            success: false,
+            message: "Failed to forward complaint."
+          });
+        }
+
+        if (!updateResult || updateResult.affectedRows === 0) {
+          return res.status(400).json({
+            success: false,
+            message: "Complaint could not be forwarded. It may have already been processed."
+          });
+        }
+
+        const notifSql = buildBarangayNotificationInsertSql(finalTargets.length);
+        const notifValues = [];
+
+        finalTargets.forEach((barangay) => {
+          notifValues.push(complaintId, barangay);
+        });
+
+        db.query(notifSql, notifValues, (notifErr) => {
+          if (notifErr) {
+            console.error("Multi barangay notification insert error:", notifErr);
             return res.status(500).json({
               success: false,
-              message: "Failed to forward complaint."
+              message: "Complaint was forwarded, but barangay notifications could not be created.",
+              error: notifErr.message,
+              code: notifErr.code
             });
           }
 
-          const notifSql = `
-            INSERT INTO complaint_notifications (
-              complaint_id,
-              target_type,
-              target_name
-            )
-            VALUES (?, 'barangay', ?)
-          `;
-
-          db.query(notifSql, [complaintId, resolvedBarangay], (notifErr) => {
-            if (notifErr) {
-              console.error("Barangay notification insert error:", notifErr);
-            }
-
-            return res.json({
-              success: true,
-              message: "Complaint forwarded to barangay successfully.",
-              assigned_barangay: resolvedBarangay
-            });
+          return res.json({
+            success: true,
+            message:
+              finalTargets.length > 1
+                ? `Complaint forwarded to ${finalTargets.join(" and ")}. The first barangay that accepts will become the assigned barangay.`
+                : `Complaint forwarded to ${finalTargets[0]}.`,
+            complaint_id: complaintId,
+            concern_barangay: complaint.assigned_barangay || null,
+            forwarded_to_barangays: finalTargets,
+            assignment_method: "multi_forwarded"
           });
-        }
-      );
+        });
+      });
     };
 
-    if (selected_barangay && String(selected_barangay).trim() !== "") {
-      return continueForward(String(selected_barangay).trim());
+    if (requestedTargets.length) {
+      return continueForwardToTargets(requestedTargets);
     }
 
-    if (finalBarangay && finalBarangay !== "For Verification") {
-      return continueForward(finalBarangay);
+    const lat = parseFloat(complaint.latitude);
+    const lng = parseFloat(complaint.longitude);
+
+    if (Number.isNaN(lat) || Number.isNaN(lng)) {
+      return res.status(400).json({
+        success: false,
+        message: "Complaint has invalid coordinates. Please choose barangays manually."
+      });
     }
 
-    const boundarySql = `
-      SELECT barangay_name, polygon_json
-      FROM barangay_boundaries
+    const referenceSql = `
+      SELECT barangay_name, reference_name, latitude, longitude
+      FROM barangay_reference_points
       WHERE status = 'active'
     `;
 
-    db.query(boundarySql, (boundaryErr, boundaryRows) => {
-      if (boundaryErr) {
-        console.error("Boundary query error during validate:", boundaryErr);
+    db.query(referenceSql, (refErr, refRows) => {
+      if (refErr) {
+        console.error("Failed loading reference points for multi-forward:", refErr);
         return res.status(500).json({
           success: false,
-          message: "Failed to load barangay boundaries."
+          message: "Failed to load nearby barangay options."
         });
       }
 
-      const point = {
-        lat: parseFloat(complaint.latitude),
-        lng: parseFloat(complaint.longitude)
-      };
+      const autoTargets = (refRows || [])
+        .map((row) => {
+          const refLat = Number(row.latitude);
+          const refLng = Number(row.longitude);
 
-      let resolvedBarangay = resolveBarangayByPolygon(point, boundaryRows || []);
+          if (Number.isNaN(refLat) || Number.isNaN(refLng)) return null;
 
-      if (!resolvedBarangay) {
-        resolvedBarangay = resolveNearestBarangay(point, boundaryRows || []);
-      }
+          return {
+            barangay_name: row.barangay_name,
+            distance_meters: calculateDistanceMeters(
+              { lat, lng },
+              { lat: refLat, lng: refLng }
+            )
+          };
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.distance_meters - b.distance_meters)
+        .map((item) => item.barangay_name);
 
-      if (!resolvedBarangay) {
-        return res.status(400).json({
-          success: false,
-          message: "Unable to auto-detect barangay for this complaint. Please choose a barangay from the map first."
-        });
-      }
-
-      return continueForward(resolvedBarangay);
+      return continueForwardToTargets(autoTargets);
     });
   });
 });
@@ -1276,32 +1390,158 @@ router.put("/:id/reject", (req, res, next) => {
 ========================= */
 router.put("/:id/accept", (req, res) => {
   const complaintId = req.params.id;
-  const { accepted_by } = req.body;
+  const {
+    accepted_by,
+    accepted_barangay,
+    barangay,
+    target_barangay,
+    handled_by_barangay_name
+  } = req.body || {};
 
   const acceptedBy = parseOptionalInt(accepted_by);
+  const acceptingBarangay = normalizeBarangayName(
+    accepted_barangay || barangay || target_barangay || handled_by_barangay_name
+  );
 
-  const sql = `
-    UPDATE complaints
-    SET status = 'accepted_by_barangay',
-        accepted_by = ?,
-        accepted_at = NOW()
+  const findSql = `
+    SELECT *
+    FROM complaints
     WHERE id = ?
+    LIMIT 1
   `;
 
-  db.query(sql, [acceptedBy, complaintId], (err) => {
-    if (err) {
-      console.error("Accept complaint error:", err);
+  db.query(findSql, [complaintId], (findErr, rows) => {
+    if (findErr) {
+      console.error("Find complaint before accept error:", findErr);
       return res.status(500).json({
         success: false,
-        message: "Failed to accept complaint.",
-        error: err.message,
-        code: err.code
+        message: "Failed to find complaint before accepting.",
+        error: findErr.message,
+        code: findErr.code
       });
     }
 
-    return res.json({
-      success: true,
-      message: "Complaint accepted successfully."
+    if (!rows || !rows.length) {
+      return res.status(404).json({
+        success: false,
+        message: "Complaint not found."
+      });
+    }
+
+    const complaint = rows[0];
+    const currentStatus = String(complaint.status || "").toLowerCase();
+
+    if (!["forwarded", "in_progress"].includes(currentStatus)) {
+      return res.status(400).json({
+        success: false,
+        message: "Only forwarded complaints can be accepted by a barangay."
+      });
+    }
+
+    const continueAccept = (finalBarangay) => {
+      const cleanBarangay = normalizeBarangayName(finalBarangay);
+
+      if (!cleanBarangay) {
+        return res.status(400).json({
+          success: false,
+          message: "Accepting barangay is required."
+        });
+      }
+
+      const verifySql = `
+        SELECT id
+        FROM complaint_notifications
+        WHERE complaint_id = ?
+          AND target_type = 'barangay'
+          AND TRIM(LOWER(target_name)) = TRIM(LOWER(?))
+        LIMIT 1
+      `;
+
+      db.query(verifySql, [complaintId, cleanBarangay], (verifyErr, verifyRows) => {
+        if (verifyErr) {
+          console.error("Accept verify notification error:", verifyErr);
+          return res.status(500).json({
+            success: false,
+            message: "Failed to verify forwarded barangay.",
+            error: verifyErr.message,
+            code: verifyErr.code
+          });
+        }
+
+        if (!verifyRows || !verifyRows.length) {
+          return res.status(400).json({
+            success: false,
+            message: "This complaint was not forwarded to the selected barangay."
+          });
+        }
+
+        const updateSql = `
+          UPDATE complaints
+          SET status = 'accepted_by_barangay',
+              assigned_barangay = ?,
+              assignment_method = 'accepted_by_barangay',
+              accepted_by = ?,
+              accepted_at = NOW()
+          WHERE id = ?
+            AND status IN ('forwarded', 'in_progress')
+        `;
+
+        db.query(updateSql, [cleanBarangay, acceptedBy, complaintId], (updateErr, updateResult) => {
+          if (updateErr) {
+            console.error("Accept complaint error:", updateErr);
+            return res.status(500).json({
+              success: false,
+              message: "Failed to accept complaint.",
+              error: updateErr.message,
+              code: updateErr.code
+            });
+          }
+
+          if (!updateResult || updateResult.affectedRows === 0) {
+            return res.status(400).json({
+              success: false,
+              message: "Complaint could not be accepted. Another barangay may have already accepted it."
+            });
+          }
+
+          markOtherBarangayNotificationsCleared(complaintId, cleanBarangay, () => {
+            return res.json({
+              success: true,
+              message: `Complaint accepted by ${cleanBarangay}.`,
+              complaint_id: complaintId,
+              assigned_barangay: cleanBarangay,
+              status: "accepted_by_barangay"
+            });
+          });
+        });
+      });
+    };
+
+    if (acceptingBarangay) {
+      return continueAccept(acceptingBarangay);
+    }
+
+    const fallbackSql = `
+      SELECT target_name
+      FROM complaint_notifications
+      WHERE complaint_id = ?
+        AND target_type = 'barangay'
+      ORDER BY created_at ASC
+      LIMIT 1
+    `;
+
+    db.query(fallbackSql, [complaintId], (fallbackErr, fallbackRows) => {
+      if (fallbackErr) {
+        console.error("Accept fallback lookup error:", fallbackErr);
+        return res.status(500).json({
+          success: false,
+          message: "Failed to determine accepting barangay.",
+          error: fallbackErr.message,
+          code: fallbackErr.code
+        });
+      }
+
+      return continueAccept(fallbackRows && fallbackRows[0] ? fallbackRows[0].target_name : "");
     });
   });
 });
@@ -1551,22 +1791,36 @@ router.get("/barangay/:barangayName", (req, res) => {
   const barangayName = decodeURIComponent(req.params.barangayName || "").trim();
 
   const sql = `
-    SELECT
+    SELECT DISTINCT
       c.*,
-      brp.reference_name AS assigned_reference_name,
-      brp.latitude AS assigned_barangay_lat,
-      brp.longitude AS assigned_barangay_lng,
-      brp.image_url AS assigned_barangay_image_url
+      COALESCE(brp.reference_name, notif_brp.reference_name) AS assigned_reference_name,
+      COALESCE(brp.latitude, notif_brp.latitude) AS assigned_barangay_lat,
+      COALESCE(brp.longitude, notif_brp.longitude) AS assigned_barangay_lng,
+      COALESCE(brp.image_url, notif_brp.image_url) AS assigned_barangay_image_url,
+      cn.target_name AS forwarded_to_barangay
     FROM complaints c
+    LEFT JOIN complaint_notifications cn
+      ON cn.complaint_id = c.id
+      AND cn.target_type = 'barangay'
+      AND TRIM(LOWER(cn.target_name)) = TRIM(LOWER(?))
     LEFT JOIN barangay_reference_points brp
       ON TRIM(LOWER(brp.barangay_name)) = TRIM(LOWER(c.assigned_barangay))
       AND brp.status = 'active'
-    WHERE TRIM(LOWER(c.assigned_barangay)) = TRIM(LOWER(?))
-      AND c.status IN ('forwarded', 'in_progress', 'accepted_by_barangay')
+    LEFT JOIN barangay_reference_points notif_brp
+      ON TRIM(LOWER(notif_brp.barangay_name)) = TRIM(LOWER(cn.target_name))
+      AND notif_brp.status = 'active'
+    WHERE (
+        c.status = 'forwarded'
+        AND cn.id IS NOT NULL
+      )
+      OR (
+        c.status IN ('in_progress', 'accepted_by_barangay')
+        AND TRIM(LOWER(c.assigned_barangay)) = TRIM(LOWER(?))
+      )
     ORDER BY c.created_at DESC
   `;
 
-  db.query(sql, [barangayName], (err, rows) => {
+  db.query(sql, [barangayName, barangayName], (err, rows) => {
     if (err) {
       console.error("Barangay complaint list error:", err);
       return res.status(500).json({
@@ -1575,9 +1829,21 @@ router.get("/barangay/:barangayName", (req, res) => {
       });
     }
 
+    const normalizedRows = (rows || []).map((row) => {
+      if (String(row.status || "").toLowerCase() === "forwarded") {
+        return {
+          ...row,
+          forwarded_to_barangay: row.forwarded_to_barangay || barangayName,
+          assigned_barangay: row.forwarded_to_barangay || barangayName
+        };
+      }
+
+      return row;
+    });
+
     return res.json({
       success: true,
-      complaints: rows || []
+      complaints: normalizedRows
     });
   });
 });
@@ -1823,32 +2089,79 @@ router.patch("/notifications/barangay/:barangayName/clear", (req, res, next) => 
 ========================= */
 router.put("/:id/in-progress", (req, res) => {
   const complaintId = req.params.id;
-  const { viewed_by } = req.body || {};
+  const {
+    viewed_by,
+    viewed_by_barangay,
+    barangay,
+    target_barangay,
+    assigned_barangay
+  } = req.body || {};
 
-  const sql = `
-    UPDATE complaints
-    SET status = 'in_progress',
-        in_progress_at = NOW()
-    WHERE id = ?
-      AND status = 'forwarded'
-  `;
+  const actingBarangay = normalizeBarangayName(
+    viewed_by_barangay || barangay || target_barangay || assigned_barangay
+  );
 
-  db.query(sql, [complaintId], (err) => {
-    if (err) {
-      console.error("Mark in progress error:", err);
-      return res.status(500).json({
-        success: false,
-        message: "Failed to update complaint status."
-      });
+  const continueMarkInProgress = (finalBarangay) => {
+    const cleanBarangay = normalizeBarangayName(finalBarangay);
+
+    const setClauses = [
+      "status = 'in_progress'",
+      "in_progress_at = NOW()"
+    ];
+
+    const values = [];
+
+    if (cleanBarangay) {
+      setClauses.push("assigned_barangay = ?");
+      setClauses.push("assignment_method = 'accepted_by_barangay'");
+      values.push(cleanBarangay);
     }
 
-    return res.json({
-      success: true,
-      message: "Complaint marked as in progress.",
-      complaint_id: complaintId,
-      viewed_by: viewed_by || null
+    values.push(complaintId);
+
+    const sql = `
+      UPDATE complaints
+      SET ${setClauses.join(",\n          ")}
+      WHERE id = ?
+        AND status = 'forwarded'
+    `;
+
+    db.query(sql, values, (err, result) => {
+      if (err) {
+        console.error("Mark in progress error:", err);
+        return res.status(500).json({
+          success: false,
+          message: "Failed to update complaint status."
+        });
+      }
+
+      if (result && result.affectedRows > 0 && cleanBarangay) {
+        return markOtherBarangayNotificationsCleared(complaintId, cleanBarangay, () => {
+          return res.json({
+            success: true,
+            message: "Complaint marked as in progress.",
+            complaint_id: complaintId,
+            viewed_by: viewed_by || null,
+            assigned_barangay: cleanBarangay
+          });
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: "Complaint marked as in progress.",
+        complaint_id: complaintId,
+        viewed_by: viewed_by || null,
+        assigned_barangay: cleanBarangay || null
+      });
     });
-  });
+  };
+
+  if (actingBarangay) {
+    return continueMarkInProgress(actingBarangay);
+  }
+
+  return continueMarkInProgress("");
 });
 
 
