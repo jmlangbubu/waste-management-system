@@ -11884,4 +11884,119 @@ body #sidebarOtherMenu.sidebar-other-menu-portal.open:not(.hidden) {
     padding: 18px !important;
   }
 }
+/* =========================================================
+   SIDEBAR LARGE DESKTOP RESPONSIVE WIDTH FIX
+   File: css/admin/admin-overrides.css
 
+   Purpose:
+   - Fix expanded desktop sidebar label clipping on large screens.
+   - Keep collapsed sidebar icons-only behavior unchanged.
+   - Keep tablet/mobile drawer behavior unchanged.
+   - Keep existing JS/backend logic unchanged.
+========================================================= */
+
+@media (min-width: 1181px) {
+  :root {
+    --sidebar-expanded-width: 320px;
+    --safe-sidebar-width: 320px;
+  }
+
+  body .admin-layout:not(.sidebar-collapsed) .dashboard-sidebar {
+    width: var(--sidebar-expanded-width) !important;
+    min-width: var(--sidebar-expanded-width) !important;
+    max-width: var(--sidebar-expanded-width) !important;
+    padding-left: 22px !important;
+    padding-right: 22px !important;
+    overflow-x: hidden !important;
+  }
+
+  body .admin-layout:not(.sidebar-collapsed) .main-content {
+    width: calc(100% - var(--sidebar-expanded-width)) !important;
+    margin-left: var(--sidebar-expanded-width) !important;
+  }
+
+  body .admin-layout:not(.sidebar-collapsed) .sidebar-brand {
+    width: 100% !important;
+    grid-template-columns: 64px minmax(0, 1fr) !important;
+  }
+
+  body .admin-layout:not(.sidebar-collapsed) .brand-text,
+  body .admin-layout:not(.sidebar-collapsed) .brand-text h2,
+  body .admin-layout:not(.sidebar-collapsed) .brand-text p {
+    max-width: none !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    white-space: nowrap !important;
+  }
+
+  body .admin-layout:not(.sidebar-collapsed) .sidebar-nav {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  body .admin-layout:not(.sidebar-collapsed) .nav-btn {
+    width: 100% !important;
+    grid-template-columns: 26px minmax(0, 1fr) !important;
+    gap: 14px !important;
+    padding-left: 18px !important;
+    padding-right: 18px !important;
+    overflow: hidden !important;
+  }
+
+  body .admin-layout:not(.sidebar-collapsed) .nav-btn span {
+    width: auto !important;
+    max-width: none !important;
+    min-width: 0 !important;
+    display: block !important;
+    white-space: nowrap !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    word-break: normal !important;
+  }
+
+  body .admin-layout:not(.sidebar-collapsed) .sidebar-other-trigger-left span,
+  body .admin-layout:not(.sidebar-collapsed) .sidebar-other-arrow {
+    overflow: visible !important;
+    text-overflow: clip !important;
+    white-space: nowrap !important;
+  }
+
+  body .admin-layout:not(.sidebar-collapsed) .sidebar-user-name,
+  body .admin-layout:not(.sidebar-collapsed) .sidebar-user-role {
+    max-width: 100% !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  body .admin-layout:not(.sidebar-collapsed) #sidebarOtherMenu.sidebar-other-menu {
+    left: var(--other-menu-left, calc(var(--sidebar-expanded-width) + 14px)) !important;
+  }
+}
+
+@media (min-width: 1181px) and (max-width: 1365px) {
+  :root {
+    --sidebar-expanded-width: 300px;
+    --safe-sidebar-width: 300px;
+  }
+
+  body .admin-layout:not(.sidebar-collapsed) .dashboard-sidebar {
+    padding-left: 20px !important;
+    padding-right: 20px !important;
+  }
+
+  body .admin-layout:not(.sidebar-collapsed) .nav-btn {
+    grid-template-columns: 24px minmax(0, 1fr) !important;
+    gap: 13px !important;
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+    font-size: 14.5px !important;
+  }
+}
+
+@media (min-width: 1181px) and (max-height: 820px) {
+  body .admin-layout:not(.sidebar-collapsed) .nav-btn span {
+    overflow: visible !important;
+    text-overflow: clip !important;
+  }
+}
