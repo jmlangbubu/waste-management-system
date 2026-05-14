@@ -4316,6 +4316,78 @@ function getResolutionImageCandidates(record = {}) {
   return candidates;
 }
 
+function ensureResolutionEvidenceComparisonDom() {
+  /*
+    Safety fix:
+    Some copies of admin-dashboard.html still have the old one-image evidence panel.
+    This function upgrades the modal at runtime so WMO always sees two separate slots:
+    1. Citizen Evidence  = original complaint image_url
+    2. Resolution Evidence = barangay resolution_evidence_url
+
+    This is frontend-only. It does NOT touch complaintRoutes.js.
+  */
+  const existingCitizenImg = document.getElementById("resolutionModalCitizenEvidenceImage");
+  const existingResolutionImg = document.getElementById("resolutionModalEvidenceImage");
+
+  if (existingCitizenImg && existingResolutionImg) {
+    return;
+  }
+
+  const panel = document.querySelector("#complaintResolutionModal .resolution-evidence-panel");
+
+  if (!panel) {
+    console.warn("Resolution evidence panel not found.");
+    return;
+  }
+
+  panel.innerHTML = `
+    <div class="resolution-evidence-heading">
+      <div>
+        <h4>Evidence Comparison</h4>
+        <p>Compare the original citizen report proof with the barangay resolution proof.</p>
+      </div>
+    </div>
+
+    <div class="resolution-evidence-comparison-grid">
+      <div class="resolution-evidence-compare-card citizen-evidence-card">
+        <div class="resolution-evidence-subheading">
+          <span class="evidence-compare-label citizen">Citizen Evidence</span>
+          <p>Original proof submitted by the citizen when reporting the complaint.</p>
+        </div>
+
+        <div class="resolved-evidence-wrap">
+          <div class="resolved-evidence-frame" id="resolutionCitizenEvidenceFrame">
+            <img
+              id="resolutionModalCitizenEvidenceImage"
+              class="resolved-evidence-image hidden"
+              alt="Citizen complaint evidence" />
+          </div>
+
+          <p id="resolutionModalNoCitizenEvidence" class="muted-text">No citizen evidence submitted.</p>
+        </div>
+      </div>
+
+      <div class="resolution-evidence-compare-card resolution-evidence-card">
+        <div class="resolution-evidence-subheading">
+          <span class="evidence-compare-label resolution">Resolution Evidence</span>
+          <p>Proof submitted by barangay personnel after resolving the complaint.</p>
+        </div>
+
+        <div class="resolved-evidence-wrap">
+          <div class="resolved-evidence-frame" id="resolutionEvidenceFrame">
+            <img
+              id="resolutionModalEvidenceImage"
+              class="resolved-evidence-image hidden"
+              alt="Resolution evidence" />
+          </div>
+
+          <p id="resolutionModalNoEvidence" class="muted-text">No resolution evidence submitted.</p>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 function getBarangayResolutionImageCandidates(record = {}) {
   /*
     Barangay resolution evidence only.
@@ -4900,7 +4972,72 @@ function ensureComplaintResolutionStateStyles() {
         grid-template-columns: 1fr !important;
       }
     }
-  `;
+  
+    #complaintResolutionModal .resolution-evidence-comparison-grid {
+      display: grid !important;
+      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+      gap: 14px !important;
+      width: 100% !important;
+      align-items: stretch !important;
+    }
+
+    #complaintResolutionModal .resolution-evidence-compare-card {
+      display: flex !important;
+      flex-direction: column !important;
+      min-width: 0 !important;
+      padding: 12px !important;
+      border: 1px solid #e5edf4 !important;
+      border-radius: 16px !important;
+      background: #ffffff !important;
+    }
+
+    #complaintResolutionModal .resolution-evidence-subheading {
+      margin-bottom: 10px !important;
+    }
+
+    #complaintResolutionModal .resolution-evidence-subheading p {
+      margin: 6px 0 0 !important;
+      color: #64748b !important;
+      font-size: 12px !important;
+      line-height: 1.35 !important;
+    }
+
+    #complaintResolutionModal .evidence-compare-label {
+      display: inline-flex !important;
+      align-items: center !important;
+      width: fit-content !important;
+      min-height: 26px !important;
+      padding: 0 10px !important;
+      border-radius: 999px !important;
+      font-size: 12px !important;
+      font-weight: 900 !important;
+      letter-spacing: .02em !important;
+    }
+
+    #complaintResolutionModal .evidence-compare-label.citizen {
+      background: #fff7ed !important;
+      color: #c2410c !important;
+      border: 1px solid #fed7aa !important;
+    }
+
+    #complaintResolutionModal .evidence-compare-label.resolution {
+      background: #ecfdf5 !important;
+      color: #047857 !important;
+      border: 1px solid #a7f3d0 !important;
+    }
+
+    #complaintResolutionModal .resolution-evidence-compare-card .resolved-evidence-frame {
+      height: 235px !important;
+      min-height: 235px !important;
+      max-height: 235px !important;
+    }
+
+    @media (max-width: 980px) {
+      #complaintResolutionModal .resolution-evidence-comparison-grid {
+        grid-template-columns: 1fr !important;
+      }
+    }
+`;
 
   document.head.appendChild(style);
 }
@@ -4961,6 +5098,7 @@ function openComplaintResolutionModal(complaintId) {
     `${cleanText(currentComplaintResolution.latitude, "-")}, ${cleanText(currentComplaintResolution.longitude, "-")}`
   );
 
+  ensureResolutionEvidenceComparisonDom();
   renderCitizenEvidenceImage(currentComplaintResolution);
   renderResolutionEvidenceImage(currentComplaintResolution);
 
