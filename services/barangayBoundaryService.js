@@ -167,8 +167,44 @@ function calculateDistanceMeters(pointA, pointB) {
   return earthRadius * c;
 }
 
+
+function calculatePolygonAreaScore(polygon) {
+  /*
+    Area score is used only for tie-breaking overlapping barangay polygons.
+    Smaller polygon wins because it is usually the more specific/accurate boundary.
+  */
+  if (!Array.isArray(polygon) || polygon.length < 3) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  let area = 0;
+
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = Number(polygon[i].lng);
+    const yi = Number(polygon[i].lat);
+    const xj = Number(polygon[j].lng);
+    const yj = Number(polygon[j].lat);
+
+    if (
+      Number.isNaN(xi) ||
+      Number.isNaN(yi) ||
+      Number.isNaN(xj) ||
+      Number.isNaN(yj)
+    ) {
+      continue;
+    }
+
+    area += (xj * yi) - (xi * yj);
+  }
+
+  return Math.abs(area / 2);
+}
+
+
 function resolveBarangayByPolygon(point, boundaries) {
   if (!Array.isArray(boundaries)) return null;
+
+  const matches = [];
 
   for (const boundary of boundaries) {
     let polygon = boundary.polygon_json;
@@ -189,98 +225,39 @@ function resolveBarangayByPolygon(point, boundaries) {
     }
 
     if (isPointInPolygon(point, normalizedPolygon)) {
-      return boundary.barangay_name;
+      const centroid = getPolygonCentroid(normalizedPolygon);
+      const centroidDistance = centroid
+        ? calculateDistanceMeters(point, centroid)
+        : Number.POSITIVE_INFINITY;
+
+      matches.push({
+        barangay_name: boundary.barangay_name,
+        area_score: calculatePolygonAreaScore(normalizedPolygon),
+        centroid_distance: centroidDistance
+      });
     }
   }
 
-  return null;
-}
-
-
-function toProjectedPoint(point, referenceLat) {
-  const lat = Number(point.lat);
-  const lng = Number(point.lng);
-
-  if (Number.isNaN(lat) || Number.isNaN(lng)) {
+  if (!matches.length) {
     return null;
   }
 
-  const earthRadius = 6371000;
-  const latRad = toRadians(lat);
-  const lngRad = toRadians(lng);
-  const referenceLatRad = toRadians(Number(referenceLat) || 0);
-
-  return {
-    x: earthRadius * lngRad * Math.cos(referenceLatRad),
-    y: earthRadius * latRad
-  };
-}
-
-function calculatePointToSegmentDistanceMeters(point, segmentStart, segmentEnd) {
-  const referenceLat = Number(point.lat);
-
-  const p = toProjectedPoint(point, referenceLat);
-  const a = toProjectedPoint(segmentStart, referenceLat);
-  const b = toProjectedPoint(segmentEnd, referenceLat);
-
-  if (!p || !a || !b) {
-    return Number.POSITIVE_INFINITY;
-  }
-
-  const abX = b.x - a.x;
-  const abY = b.y - a.y;
-  const apX = p.x - a.x;
-  const apY = p.y - a.y;
-
-  const abLengthSquared = abX * abX + abY * abY;
-
-  if (abLengthSquared === 0) {
-    return Math.sqrt(apX * apX + apY * apY);
-  }
-
-  const t = Math.max(
-    0,
-    Math.min(1, (apX * abX + apY * abY) / abLengthSquared)
-  );
-
-  const closestX = a.x + t * abX;
-  const closestY = a.y + t * abY;
-
-  const dx = p.x - closestX;
-  const dy = p.y - closestY;
-
-  return Math.sqrt(dx * dx + dy * dy);
-}
-
-function getDistanceToPolygonMeters(point, polygon) {
-  if (!Array.isArray(polygon) || polygon.length < 3) {
-    return Number.POSITIVE_INFINITY;
-  }
-
   /*
-    If the point is inside the polygon, distance is zero.
-    This protects exact boundary assignments.
+    IMPORTANT:
+    If polygons overlap, do not return the first row from MySQL.
+    Example: a broad Lagao polygon can overlap Mabuhay/San Isidro.
+    The smaller polygon is usually the correct barangay coverage.
   */
-  if (isPointInPolygon(point, polygon)) {
-    return 0;
-  }
-
-  let nearestDistance = Number.POSITIVE_INFINITY;
-
-  for (let i = 0; i < polygon.length; i++) {
-    const current = polygon[i];
-    const next = polygon[(i + 1) % polygon.length];
-
-    const distance = calculatePointToSegmentDistanceMeters(point, current, next);
-
-    if (distance < nearestDistance) {
-      nearestDistance = distance;
+  matches.sort((a, b) => {
+    if (a.area_score !== b.area_score) {
+      return a.area_score - b.area_score;
     }
-  }
 
-  return nearestDistance;
+    return a.centroid_distance - b.centroid_distance;
+  });
+
+  return matches[0].barangay_name || null;
 }
-
 
 function resolveNearestBarangay(point, boundaries) {
   if (!Array.isArray(boundaries) || boundaries.length === 0) {
@@ -344,6 +321,7 @@ module.exports = {
   resolveBarangayByPolygon,
   getPolygonCentroid,
   calculateDistanceMeters,
+  calculatePolygonAreaScore,
   getDistanceToPolygonMeters,
   resolveNearestBarangay
 };
