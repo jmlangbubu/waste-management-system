@@ -165,6 +165,71 @@ function cleanText(value) {
   return text;
 }
 
+const GENSAN_BARANGAY_CANONICAL_NAMES = [
+  "Apopong",
+  "Baluan",
+  "Batomelong",
+  "Buayan",
+  "Bula",
+  "Calumpang",
+  "City Heights",
+  "Conel",
+  "Dadiangas East",
+  "Dadiangas North",
+  "Dadiangas South",
+  "Dadiangas West",
+  "Fatima",
+  "Katangawan",
+  "Labangal",
+  "Lagao",
+  "Ligaya",
+  "Mabuhay",
+  "Olympog",
+  "San Isidro",
+  "San Jose",
+  "Siguel",
+  "Sinawal",
+  "Tambler",
+  "Tinagacan",
+  "Upper Labay"
+];
+
+function normalizeBarangayKey(value) {
+  return cleanText(value)
+    .toLowerCase()
+    .replace(/barangay/g, "")
+    .replace(/brgy\.?/g, "")
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function canonicalizeBarangayName(value) {
+  const cleaned = cleanText(value);
+
+  if (!cleaned) return "";
+
+  if (
+    cleaned.toLowerCase() === "for verification" ||
+    cleaned.toLowerCase() === "select concern barangay"
+  ) {
+    return "";
+  }
+
+  const inputKey = normalizeBarangayKey(cleaned);
+
+  if (!inputKey) return "";
+
+  const match = GENSAN_BARANGAY_CANONICAL_NAMES.find((barangay) =>
+    normalizeBarangayKey(barangay) === inputKey
+  );
+
+  return match || cleaned;
+}
+
+function normalizeSqlBarangayExpression(columnName) {
+  return `LOWER(REPLACE(REPLACE(REPLACE(TRIM(${columnName}), ' ', ''), '-', ''), '.', ''))`;
+}
+
+
 function parseOptionalCoordinate(value) {
   const cleaned = cleanText(value);
   if (!cleaned) return null;
@@ -197,18 +262,7 @@ function parseOptionalInt(value) {
 
 
 function normalizeBarangayName(value) {
-  const cleaned = cleanText(value);
-
-  if (!cleaned) return "";
-
-  if (
-    cleaned.toLowerCase() === "for verification" ||
-    cleaned.toLowerCase() === "select concern barangay"
-  ) {
-    return "";
-  }
-
-  return cleaned;
+  return canonicalizeBarangayName(value);
 }
 
 
@@ -390,11 +444,33 @@ function resolveBarangayFromLearnedComplaints(point, callback) {
 }
 
 function normalizeBarangayList(value) {
-  const rawValues = Array.isArray(value)
-    ? value
-    : typeof value === "string"
-    ? value.split(",")
-    : [];
+  let rawValues = [];
+
+  if (Array.isArray(value)) {
+    rawValues = value;
+  } else if (typeof value === "string") {
+    const trimmed = value.trim();
+
+    /*
+      Accept these frontend payload formats:
+      - ["San Isidro", "Mabuhay"]
+      - "San Isidro,Mabuhay"
+      - "San Isidro & Mabuhay"
+      - "San Isidro | Mabuhay"
+      - "San Isidro and Mabuhay"
+    */
+    try {
+      const parsed = JSON.parse(trimmed);
+
+      if (Array.isArray(parsed)) {
+        rawValues = parsed;
+      } else {
+        rawValues = trimmed.split(/\s*(?:,|\||&|\band\b)\s*/i);
+      }
+    } catch (_) {
+      rawValues = trimmed.split(/\s*(?:,|\||&|\band\b)\s*/i);
+    }
+  }
 
   const seen = new Set();
   const list = [];
@@ -403,8 +479,8 @@ function normalizeBarangayList(value) {
     const barangay = normalizeBarangayName(item);
     if (!barangay) return;
 
-    const key = barangay.toLowerCase();
-    if (seen.has(key)) return;
+    const key = normalizeBarangayKey(barangay);
+    if (!key || seen.has(key)) return;
 
     seen.add(key);
     list.push(barangay);
@@ -430,6 +506,19 @@ function buildBarangayNotificationInsertSql(count) {
   `;
 }
 
+function getBarangayMatchWhereSql(columnName) {
+  /*
+    Match "San Isidro", "San isidro", "Sanisidro", "San-Isidro"
+    and other spacing/capitalization differences.
+  */
+  return `${normalizeSqlBarangayExpression(columnName)} = ?`;
+}
+
+function getBarangayMatchParam(barangayName) {
+  return normalizeBarangayKey(barangayName);
+}
+
+
 function markOtherBarangayNotificationsCleared(complaintId, acceptedBarangay, callback) {
   ensureComplaintNotificationClearColumns((ensureErr) => {
     if (ensureErr) {
@@ -443,11 +532,11 @@ function markOtherBarangayNotificationsCleared(complaintId, acceptedBarangay, ca
           cleared_by = ?
       WHERE complaint_id = ?
         AND target_type = 'barangay'
-        AND TRIM(LOWER(target_name)) <> TRIM(LOWER(?))
+        AND LOWER(REPLACE(REPLACE(REPLACE(TRIM(target_name), ' ', ''), '-', ''), '.', '')) <> ?
         AND cleared_at IS NULL
     `;
 
-    db.query(sql, [acceptedBarangay, complaintId, acceptedBarangay], (err) => {
+    db.query(sql, [acceptedBarangay, complaintId, getBarangayMatchParam(acceptedBarangay)], (err) => {
       if (err) {
         console.error("Failed clearing other barangay notifications:", err);
       }
@@ -1171,14 +1260,31 @@ router.post("/:id/validate-forward", (req, res) => {
           });
         }
 
-        const notifSql = buildBarangayNotificationInsertSql(finalTargets.length);
-        const notifValues = [];
+        const deleteOldBarangayNotifSql = `
+          DELETE FROM complaint_notifications
+          WHERE complaint_id = ?
+            AND target_type = 'barangay'
+        `;
 
-        finalTargets.forEach((barangay) => {
-          notifValues.push(complaintId, barangay);
-        });
+        db.query(deleteOldBarangayNotifSql, [complaintId], (deleteNotifErr) => {
+          if (deleteNotifErr) {
+            console.error("Failed clearing old barangay notifications before multi-forward:", deleteNotifErr);
+            return res.status(500).json({
+              success: false,
+              message: "Complaint was forwarded, but old barangay notifications could not be cleared.",
+              error: deleteNotifErr.message,
+              code: deleteNotifErr.code
+            });
+          }
 
-        db.query(notifSql, notifValues, (notifErr) => {
+          const notifSql = buildBarangayNotificationInsertSql(finalTargets.length);
+          const notifValues = [];
+
+          finalTargets.forEach((barangay) => {
+            notifValues.push(complaintId, barangay);
+          });
+
+          db.query(notifSql, notifValues, (notifErr) => {
           if (notifErr) {
             console.error("Multi barangay notification insert error:", notifErr);
             return res.status(500).json({
@@ -1189,16 +1295,18 @@ router.post("/:id/validate-forward", (req, res) => {
             });
           }
 
-          return res.json({
-            success: true,
-            message:
-              finalTargets.length > 1
-                ? `Complaint forwarded to ${finalTargets.join(" and ")}. The first barangay that accepts will become the assigned barangay.`
-                : `Complaint forwarded to ${finalTargets[0]}.`,
-            complaint_id: complaintId,
-            concern_barangay: complaint.assigned_barangay || null,
-            forwarded_to_barangays: finalTargets,
-            assignment_method: "multi_forwarded"
+            return res.json({
+              success: true,
+              message:
+                finalTargets.length > 1
+                  ? `Complaint forwarded to ${finalTargets.join(" and ")}. The first barangay that accepts will become the assigned barangay.`
+                  : `Complaint forwarded to ${finalTargets[0]}.`,
+              complaint_id: complaintId,
+              concern_barangay: complaint.assigned_barangay || null,
+              forwarded_to_barangays: finalTargets,
+              notification_targets_created: finalTargets.length,
+              assignment_method: "multi_forwarded"
+            });
           });
         });
       });
@@ -1460,11 +1568,11 @@ router.put("/:id/accept", (req, res) => {
         FROM complaint_notifications
         WHERE complaint_id = ?
           AND target_type = 'barangay'
-          AND TRIM(LOWER(target_name)) = TRIM(LOWER(?))
+          AND LOWER(REPLACE(REPLACE(REPLACE(TRIM(target_name), ' ', ''), '-', ''), '.', '')) = ?
         LIMIT 1
       `;
 
-      db.query(verifySql, [complaintId, cleanBarangay], (verifyErr, verifyRows) => {
+      db.query(verifySql, [complaintId, getBarangayMatchParam(cleanBarangay)], (verifyErr, verifyRows) => {
         if (verifyErr) {
           console.error("Accept verify notification error:", verifyErr);
           return res.status(500).json({
@@ -1761,13 +1869,13 @@ router.get("/barangay-analytics/:barangay", (req, res) => {
       SELECT
         COUNT(*) AS resolved_this_month
       FROM complaints
-      WHERE LOWER(TRIM(assigned_barangay)) = LOWER(TRIM(?))
+      WHERE LOWER(REPLACE(REPLACE(REPLACE(TRIM(assigned_barangay), ' ', ''), '-', ''), '.', '')) = ?
         AND LOWER(TRIM(status)) = 'resolved'
         AND resolved_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
         AND resolved_at < DATE_ADD(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 1 MONTH)
     `;
 
-    db.query(sql, [barangay], (err, rows) => {
+    db.query(sql, [getBarangayMatchParam(barangay)], (err, rows) => {
       if (err) {
         console.error("Barangay complaint analytics error:", err);
         return res.status(500).json({
@@ -1824,7 +1932,7 @@ router.get("/barangay/:barangayName", (req, res) => {
     LEFT JOIN complaint_notifications cn
       ON cn.complaint_id = c.id
       AND cn.target_type = 'barangay'
-      AND TRIM(LOWER(cn.target_name)) = TRIM(LOWER(?))
+      AND LOWER(REPLACE(REPLACE(REPLACE(TRIM(cn.target_name), ' ', ''), '-', ''), '.', '')) = ?
     LEFT JOIN barangay_reference_points brp
       ON TRIM(LOWER(brp.barangay_name)) = TRIM(LOWER(c.assigned_barangay))
       AND brp.status = 'active'
@@ -1837,12 +1945,12 @@ router.get("/barangay/:barangayName", (req, res) => {
       )
       OR (
         c.status IN ('in_progress', 'accepted_by_barangay')
-        AND TRIM(LOWER(c.assigned_barangay)) = TRIM(LOWER(?))
+        AND LOWER(REPLACE(REPLACE(REPLACE(TRIM(c.assigned_barangay), ' ', ''), '-', ''), '.', '')) = ?
       )
     ORDER BY c.created_at DESC
   `;
 
-  db.query(sql, [barangayName, barangayName], (err, rows) => {
+  db.query(sql, [getBarangayMatchParam(barangayName), getBarangayMatchParam(barangayName)], (err, rows) => {
     if (err) {
       console.error("Barangay complaint list error:", err);
       return res.status(500).json({
@@ -1937,13 +2045,13 @@ router.get("/notifications/barangay/:barangayName", (req, res) => {
       FROM complaint_notifications cn
       INNER JOIN complaints c ON c.id = cn.complaint_id
       WHERE cn.target_type = 'barangay'
-        AND TRIM(LOWER(cn.target_name)) = TRIM(LOWER(?))
+        AND LOWER(REPLACE(REPLACE(REPLACE(TRIM(cn.target_name), ' ', ''), '-', ''), '.', '')) = ?
         AND cn.cleared_at IS NULL
         AND c.status IN ('forwarded', 'in_progress', 'accepted_by_barangay')
       ORDER BY cn.created_at DESC
     `;
 
-    db.query(sql, [barangayName], (err, rows) => {
+    db.query(sql, [getBarangayMatchParam(barangayName)], (err, rows) => {
       if (err) {
         console.error("Barangay complaint notification error:", err);
         return res.status(500).json({
@@ -2004,12 +2112,12 @@ router.post("/notifications/barangay/:barangayName/:notificationId/clear", (req,
           cn.cleared_by = ?
       WHERE cn.id = ?
         AND cn.target_type = 'barangay'
-        AND TRIM(LOWER(cn.target_name)) = TRIM(LOWER(?))
+        AND LOWER(REPLACE(REPLACE(REPLACE(TRIM(cn.target_name), ' ', ''), '-', ''), '.', '')) = ?
         AND cn.cleared_at IS NULL
         AND c.status IN ('forwarded', 'in_progress', 'accepted_by_barangay')
     `;
 
-    db.query(sql, [clearedBy, notificationId, barangayName], (err, result) => {
+    db.query(sql, [clearedBy, notificationId, getBarangayMatchParam(barangayName)], (err, result) => {
       if (err) {
         console.error("Clear single barangay notification error:", err);
         return res.status(500).json({
@@ -2075,12 +2183,12 @@ router.post("/notifications/barangay/:barangayName/clear", (req, res) => {
       SET cn.cleared_at = NOW(),
           cn.cleared_by = ?
       WHERE cn.target_type = 'barangay'
-        AND TRIM(LOWER(cn.target_name)) = TRIM(LOWER(?))
+        AND LOWER(REPLACE(REPLACE(REPLACE(TRIM(cn.target_name), ' ', ''), '-', ''), '.', '')) = ?
         AND cn.cleared_at IS NULL
         AND c.status IN ('forwarded', 'in_progress', 'accepted_by_barangay')
     `;
 
-    db.query(sql, [clearedBy, barangayName], (err, result) => {
+    db.query(sql, [clearedBy, getBarangayMatchParam(barangayName)], (err, result) => {
       if (err) {
         console.error("Clear barangay notifications error:", err);
         return res.status(500).json({
@@ -2296,6 +2404,49 @@ router.get("/detect-barangay", (req, res) => {
         error: error.message
       });
     }
+  });
+});
+
+
+/* =========================
+   DEBUG COMPLAINT NOTIFICATION TARGETS
+   Use this to verify if both barangays received notification rows.
+========================= */
+router.get("/:id/notification-targets", (req, res) => {
+  const complaintId = req.params.id;
+
+  const sql = `
+    SELECT
+      cn.id,
+      cn.complaint_id,
+      cn.target_type,
+      cn.target_name,
+      cn.created_at,
+      cn.cleared_at,
+      c.status,
+      c.assigned_barangay
+    FROM complaint_notifications cn
+    INNER JOIN complaints c ON c.id = cn.complaint_id
+    WHERE cn.complaint_id = ?
+    ORDER BY cn.id ASC
+  `;
+
+  db.query(sql, [complaintId], (err, rows) => {
+    if (err) {
+      console.error("Notification targets debug error:", err);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to load complaint notification targets.",
+        error: err.message,
+        code: err.code
+      });
+    }
+
+    return res.json({
+      success: true,
+      complaint_id: complaintId,
+      targets: rows || []
+    });
   });
 });
 
