@@ -1052,7 +1052,10 @@ router.get("/nearby-barangays", (req, res) => {
           return null;
         }
 
-        const distanceMeters = calculateDistanceMeters(lat, lng, refLat, refLng);
+        const distanceMeters = calculateDistanceMeters(
+          { lat, lng },
+          { lat: refLat, lng: refLng }
+        );
 
         return {
           id: row.id,
@@ -1064,7 +1067,10 @@ router.get("/nearby-barangays", (req, res) => {
           distance_meters: Math.round(distanceMeters)
         };
       })
-      .filter(Boolean)
+      .filter((candidate) =>
+        candidate &&
+        Number.isFinite(candidate.distance_meters)
+      )
       .sort((a, b) => a.distance_meters - b.distance_meters)
       .slice(0, 10);
 
@@ -1074,6 +1080,7 @@ router.get("/nearby-barangays", (req, res) => {
         latitude: lat,
         longitude: lng
       },
+      sorting_basis: "distance_from_issue_location_to_barangay_reference_point",
       candidates
     });
   });
