@@ -21,7 +21,8 @@
     "mysql2": "^3.11.3",
     "nodemailer": "^6.9.16",
     "qrcode": "^1.5.4",
-    "resend": "^4.0.1"
+    "resend": "^4.0.1",
+    "socket.io": "^4.8.1"
   },
   "devDependencies": {
     "nodemon": "^3.1.4"
