@@ -1685,6 +1685,92 @@ router.put("/:id/in-progress", (req, res) => {
   });
 });
 
+
+/* =========================
+   DETECT BARANGAY BY COORDINATES
+   Used by Android after the citizen pins their location.
+   IMPORTANT:
+   This preview uses barangay boundary/jurisdiction only.
+   It does NOT use nearest barangay reference point as the basis.
+========================= */
+router.get("/detect-barangay", (req, res) => {
+  const lat = parseFloat(req.query.latitude);
+  const lng = parseFloat(req.query.longitude);
+
+  if (Number.isNaN(lat) || Number.isNaN(lng) || lat === 0 || lng === 0) {
+    return res.status(400).json({
+      success: false,
+      message: "Valid latitude and longitude are required.",
+      assigned_barangay: "For Verification",
+      assignment_method: "invalid_coordinates"
+    });
+  }
+
+  const boundarySql = `
+    SELECT barangay_name, polygon_json
+    FROM barangay_boundaries
+    WHERE status = 'active'
+  `;
+
+  db.query(boundarySql, (boundaryErr, boundaryRows) => {
+    if (boundaryErr) {
+      console.error("Detect barangay boundary query error:", boundaryErr);
+
+      return res.status(500).json({
+        success: false,
+        message: "Failed to detect barangay boundary.",
+        assigned_barangay: "For Verification",
+        assignment_method: "boundary_error",
+        error: boundaryErr.message,
+        code: boundaryErr.code
+      });
+    }
+
+    try {
+      const matchedBarangay = resolveBarangayByPolygon(
+        { lat, lng },
+        boundaryRows || []
+      );
+
+      if (matchedBarangay) {
+        return res.json({
+          success: true,
+          assigned_barangay: matchedBarangay,
+          concern_barangay: matchedBarangay,
+          assignment_method: "polygon",
+          coordinates: {
+            latitude: lat,
+            longitude: lng
+          }
+        });
+      }
+
+      return res.json({
+        success: true,
+        assigned_barangay: "For Verification",
+        concern_barangay: "For Verification",
+        assignment_method: "manual_review",
+        message: "No barangay boundary covered this coordinate.",
+        coordinates: {
+          latitude: lat,
+          longitude: lng
+        }
+      });
+    } catch (error) {
+      console.error("Detect barangay resolution error:", error);
+
+      return res.status(500).json({
+        success: false,
+        message: "Barangay detection failed.",
+        assigned_barangay: "For Verification",
+        assignment_method: "detect_error",
+        error: error.message
+      });
+    }
+  });
+});
+
+
 /* =========================
    GET SINGLE COMPLAINT
    KEEP THIS LAST
