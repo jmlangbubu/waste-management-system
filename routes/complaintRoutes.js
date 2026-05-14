@@ -7,6 +7,9 @@ const cloudinary = require("cloudinary").v2;
 
 const db = require("../config/db");
 const {
+  createCitizenNotificationRecord
+} = require("../controllers/notificationController");
+const {
   resolveBarangayByPolygon,
   resolveNearestBarangay,
   calculateDistanceMeters
@@ -257,6 +260,83 @@ function parseOptionalInt(value) {
   if (!Number.isInteger(num)) return null;
 
   return num;
+}
+
+function createCitizenNotificationSafe(payload = {}, contextLabel = "citizen notification") {
+  if (typeof createCitizenNotificationRecord !== "function") {
+    console.warn("createCitizenNotificationRecord is not available for", contextLabel);
+    return;
+  }
+
+  createCitizenNotificationRecord(payload).catch((error) => {
+    console.error(`Failed to create ${contextLabel}:`, error);
+  });
+}
+
+function createComplaintSubmittedCitizenNotification(complaintId, source = {}) {
+  const citizenId = parseOptionalInt(source.citizen_id || source.citizenId);
+  const barangay = normalizeBarangayName(source.reporter_barangay || source.barangay || "");
+  const subject = truncateNotificationText(source.subject || "your complaint", 80);
+
+  if (!citizenId && !barangay) return;
+
+  createCitizenNotificationSafe(
+    {
+      user_id: citizenId || null,
+      barangay: barangay || null,
+      type: "complaint_submitted_to_wmo",
+      title: "Complaint submitted to WMO",
+      message: subject
+        ? `Your complaint "${subject}" was submitted to WMO for review. We will notify you when action is taken.`
+        : "Your complaint was submitted to WMO for review. We will notify you when action is taken.",
+      reference_id: `complaint:${complaintId}:submitted`
+    },
+    "citizen complaint submitted notification"
+  );
+}
+
+function createComplaintResolvedCitizenNotifications(complaintId, complaint = {}) {
+  const citizenId = parseOptionalInt(complaint.citizen_id || complaint.citizenId);
+  const reporterBarangay = normalizeBarangayName(complaint.reporter_barangay || "");
+  const actedBarangay = normalizeBarangayName(
+    complaint.handled_by_barangay_name || complaint.assigned_barangay || complaint.barangay || ""
+  );
+  const subject = truncateNotificationText(complaint.subject || "a reported issue", 80);
+
+  if (actedBarangay) {
+    createCitizenNotificationSafe(
+      {
+        barangay: actedBarangay,
+        type: "barangay_resolution_feedback",
+        title: "Barangay action update",
+        message: `${actedBarangay} resolved a WMO-forwarded complaint${subject ? ` about "${subject}"` : ""}. Thank you for helping keep your barangay responsive and clean.`,
+        reference_id: `complaint:${complaintId}:barangay-resolved`
+      },
+      "barangay resolution feedback notification"
+    );
+  }
+
+  /*
+    If the reporting citizen belongs to a different barangay than the acting
+    barangay, notify that citizen directly too. If same barangay, the citizen
+    already receives the barangay-wide feedback notification above.
+  */
+  if (
+    citizenId &&
+    (!reporterBarangay || !actedBarangay || normalizeBarangayKey(reporterBarangay) !== normalizeBarangayKey(actedBarangay))
+  ) {
+    createCitizenNotificationSafe(
+      {
+        user_id: citizenId,
+        barangay: reporterBarangay || null,
+        type: "complaint_resolution_citizen",
+        title: "Your complaint was resolved",
+        message: `${actedBarangay || "The assigned barangay"} submitted a resolution report to WMO${subject ? ` for "${subject}"` : ""}.`,
+        reference_id: `complaint:${complaintId}:citizen-resolved`
+      },
+      "citizen complaint resolved notification"
+    );
+  }
 }
 
 
@@ -619,6 +699,45 @@ function insertBarangayInfoNotifications(complaintId, targetBarangays, notificat
   });
 }
 
+function insertWmoComplaintNotification(complaintId, notificationType, title, message, callback) {
+  ensureComplaintNotificationClearColumns((ensureErr) => {
+    if (ensureErr) {
+      console.error("Failed preparing WMO complaint notification:", ensureErr);
+      return callback && callback(ensureErr);
+    }
+
+    const sql = `
+      INSERT INTO complaint_notifications (
+        complaint_id,
+        target_type,
+        target_name,
+        notification_type,
+        title,
+        message,
+        is_read
+      )
+      VALUES (?, 'wmo', 'WMO', ?, ?, ?, 0)
+    `;
+
+    db.query(
+      sql,
+      [
+        complaintId,
+        cleanText(notificationType),
+        cleanText(title),
+        cleanText(message)
+      ],
+      (err) => {
+        if (err) {
+          console.error("Failed inserting WMO complaint notification:", err);
+        }
+
+        return callback && callback(err || null);
+      }
+    );
+  });
+}
+
 function truncateNotificationText(value, maxLength = 180) {
   const clean = cleanText(value);
 
@@ -978,23 +1097,22 @@ router.post("/", upload.single("image"), (req, res) => {
 
                 const complaintId = insertResult.insertId;
 
-                const notifSql = `
-                  INSERT INTO complaint_notifications (
-                    complaint_id,
-                    target_type,
-                    target_name
-                  )
-                  VALUES (?, 'wmo', 'WMO')
-                `;
+                const notificationTitle = "New complaint received";
+                const notificationMessage = `${cleanText(citizen_name) || cleanText(username) || "A citizen"} submitted a complaint${cleanText(subject) ? `: ${truncateNotificationText(subject, 90)}` : ""}.`;
 
-                db.query(notifSql, [complaintId], (notifErr) => {
-                  if (notifErr) {
-                    console.error("WMO notification insert error:", notifErr);
-                  }
+                insertWmoComplaintNotification(
+                  complaintId,
+                  "citizen_complaint_received",
+                  notificationTitle,
+                  notificationMessage,
+                  (notifErr) => {
+                    if (notifErr) {
+                      console.error("WMO complaint received notification insert error:", notifErr);
+                    }
 
-                  logUploadedFile("=== CREATE COMPLAINT UPLOAD DEBUG ===", req.file);
+                    logUploadedFile("=== CREATE COMPLAINT UPLOAD DEBUG ===", req.file);
 
-                  return res.json({
+                    return res.json({
                     success: true,
                     duplicate: false,
                     message:
@@ -1896,7 +2014,14 @@ router.put("/:id/resolve", upload.single("evidence"), (req, res) => {
           logUploadedFile("=== RESOLUTION UPLOAD DEBUG ===", req.file);
 
           const notifySql = `
-            SELECT subject, assigned_barangay, handled_by_barangay_name
+            SELECT
+              id,
+              citizen_id,
+              citizen_name,
+              reporter_barangay,
+              subject,
+              assigned_barangay,
+              handled_by_barangay_name
             FROM complaints
             WHERE id = ?
             LIMIT 1
@@ -1915,6 +2040,8 @@ router.put("/:id/resolve", upload.single("evidence"), (req, res) => {
               console.error("Resolution notification lookup error:", notifyLookupErr);
             }
 
+            createComplaintResolvedCitizenNotifications(complaintId, notifyComplaint);
+
             insertBarangayInfoNotifications(
               complaintId,
               notifyBarangay ? [notifyBarangay] : [],
@@ -1922,7 +2049,16 @@ router.put("/:id/resolve", upload.single("evidence"), (req, res) => {
               notificationTitle,
               notificationMessage,
               () => {
-                return res.json({
+                const wmoResolutionTitle = "Resolved complaint submitted";
+                const wmoResolutionMessage = `${notifyBarangay || handledBy || "A barangay"} submitted a resolution report${subject ? ` for: ${subject}` : ""}. Review the resolved complaint report.`;
+
+                return insertWmoComplaintNotification(
+                  complaintId,
+                  "barangay_resolution_submitted",
+                  wmoResolutionTitle,
+                  wmoResolutionMessage,
+                  () => {
+                    return res.json({
                   success: true,
                   message: "Complaint resolved successfully.",
                   complaint_id: complaintId,
@@ -1943,7 +2079,9 @@ router.put("/:id/resolve", upload.single("evidence"), (req, res) => {
                           resolver_longitude: !canSaveResolverLongitude
                         }
                       : null
-                });
+                    });
+                  }
+                );
               }
             );
           });
@@ -2148,36 +2286,74 @@ router.get("/barangay/:barangayName", (req, res) => {
 
 /* =========================
    WMO NOTIFICATIONS
+   Source for web admin notification bell complaint feed.
 ========================= */
 router.get("/notifications/wmo", (req, res) => {
-  const sql = `
-    SELECT
-      cn.*,
-      c.subject,
-      c.assigned_barangay,
-      c.status,
-      c.image_url,
-      c.latitude,
-      c.longitude,
-      c.created_at AS complaint_created_at
-    FROM complaint_notifications cn
-    INNER JOIN complaints c ON c.id = cn.complaint_id
-    WHERE cn.target_type = 'wmo'
-    ORDER BY cn.created_at DESC
-  `;
-
-  db.query(sql, (err, rows) => {
-    if (err) {
-      console.error("WMO complaint notification error:", err);
+  ensureComplaintNotificationClearColumns((ensureErr) => {
+    if (ensureErr) {
       return res.status(500).json({
         success: false,
-        message: "Failed to load WMO complaint notifications."
+        message: "Failed to prepare WMO complaint notifications.",
+        error: ensureErr.message,
+        code: ensureErr.code
       });
     }
 
-    return res.json({
-      success: true,
-      notifications: rows || []
+    const sql = `
+      SELECT
+        cn.*,
+        COALESCE(
+          NULLIF(TRIM(cn.title), ''),
+          CASE
+            WHEN c.status = 'resolved' THEN 'Resolved complaint submitted'
+            ELSE 'New complaint received'
+          END
+        ) AS title,
+        COALESCE(
+          NULLIF(TRIM(cn.message), ''),
+          CASE
+            WHEN c.status = 'resolved' THEN CONCAT(COALESCE(c.handled_by_barangay_name, c.assigned_barangay, 'A barangay'), ' submitted a resolution report for: ', COALESCE(c.subject, 'Complaint'))
+            ELSE CONCAT('Citizen complaint received: ', COALESCE(c.subject, 'No subject'))
+          END
+        ) AS message,
+        COALESCE(NULLIF(TRIM(cn.notification_type), ''),
+          CASE
+            WHEN c.status = 'resolved' THEN 'barangay_resolution_submitted'
+            ELSE 'citizen_complaint_received'
+          END
+        ) AS notification_type,
+        c.subject,
+        c.assigned_barangay,
+        c.handled_by_barangay_name,
+        c.status,
+        c.image_url,
+        c.latitude,
+        c.longitude,
+        c.created_at AS complaint_created_at,
+        c.resolved_at
+      FROM complaint_notifications cn
+      INNER JOIN complaints c ON c.id = cn.complaint_id
+      WHERE cn.target_type = 'wmo'
+        AND cn.cleared_at IS NULL
+      ORDER BY cn.created_at DESC, cn.id DESC
+      LIMIT 50
+    `;
+
+    db.query(sql, (err, rows) => {
+      if (err) {
+        console.error("WMO complaint notification error:", err);
+        return res.status(500).json({
+          success: false,
+          message: "Failed to load WMO complaint notifications.",
+          error: err.message,
+          code: err.code
+        });
+      }
+
+      return res.json({
+        success: true,
+        notifications: rows || []
+      });
     });
   });
 });
