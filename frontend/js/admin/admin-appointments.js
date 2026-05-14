@@ -2,6 +2,72 @@
    APPOINTMENTS MODULE
 ========================= */
 
+function normalizeAppointmentLifecycleValue(value) {
+  return String(value || "")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, "_");
+}
+
+function isSwmOrientationAppointmentRecord(app = {}) {
+  return String(app.purpose || app.waste_type || "")
+    .trim()
+    .toLowerCase() === "swm orientation & clearance";
+}
+
+function isOrientationCompletedForAppointmentModule(app = {}) {
+  if (!isSwmOrientationAppointmentRecord(app)) return false;
+
+  const appointmentStatus = normalizeAppointmentLifecycleValue(app.status);
+  const orientationStatus = normalizeAppointmentLifecycleValue(
+    app.orientation_status || app.orientation_qr_status || ""
+  );
+
+  return Boolean(
+    appointmentStatus === "completed" ||
+    orientationStatus === "completed_orientation" ||
+    orientationStatus === "completed" ||
+    orientationStatus === "no_show" ||
+    orientationStatus === "no-show" ||
+    orientationStatus === "noshow" ||
+    orientationStatus === "incomplete_orientation" ||
+    orientationStatus === "incomplete" ||
+    Number(app.orientation_completed || 0) === 1 ||
+    app.orientation_completed_at
+  );
+}
+
+function getVisibleActiveAppointments(records = []) {
+  return (Array.isArray(records) ? records : []).filter((app) => {
+    return !isOrientationCompletedForAppointmentModule(app);
+  });
+}
+
+function getAppointmentHistoryWithCompletedOrientation(activeRecords = [], historyRecords = []) {
+  const completedFromActive = (Array.isArray(activeRecords) ? activeRecords : [])
+    .filter((app) => isOrientationCompletedForAppointmentModule(app))
+    .map((app) => ({
+      ...app,
+      status: "completed"
+    }));
+
+  const combined = [
+    ...(Array.isArray(historyRecords) ? historyRecords : []),
+    ...completedFromActive
+  ];
+
+  const seen = new Set();
+
+  return combined.filter((app) => {
+    const key = `${app.appointment_code || ""}:${app.id || ""}`;
+
+    if (seen.has(key)) return false;
+
+    seen.add(key);
+    return true;
+  });
+}
+
 async function loadAppointments() {
   try {
     const [activeRes, historyRes] = await Promise.all([
@@ -57,8 +123,19 @@ async function loadAppointments() {
       ? historyData
       : (historyData.history || historyData.data || []);
 
-    const sortedActiveAppointments = sortAppointmentRecordsByReference(activeAppointments);
-    const sortedHistoryAppointments = sortAppointmentRecordsByReference(historyAppointments);
+    /*
+      Safety filter:
+      If an orientation is already completed but the backend still returns it
+      in active appointments, remove it from Active and push it to History.
+    */
+    const visibleActiveAppointments = getVisibleActiveAppointments(activeAppointments);
+    const mergedHistoryAppointments = getAppointmentHistoryWithCompletedOrientation(
+      activeAppointments,
+      historyAppointments
+    );
+
+    const sortedActiveAppointments = sortAppointmentRecordsByReference(visibleActiveAppointments);
+    const sortedHistoryAppointments = sortAppointmentRecordsByReference(mergedHistoryAppointments);
 
     allAppointments = sortAppointmentRecordsByReference([
       ...sortedActiveAppointments,
@@ -223,7 +300,18 @@ function renderAppointmentsTable(appointments) {
     return;
   }
 
-  const sortedAppointments = sortAppointmentRecordsByReference(appointments);
+  const sortedAppointments = sortAppointmentRecordsByReference(
+    getVisibleActiveAppointments(appointments)
+  );
+
+  if (!sortedAppointments.length) {
+    tableBody.innerHTML = `
+      <tr>
+        <td colspan="10" class="empty-state">No active appointments found.</td>
+      </tr>
+    `;
+    return;
+  }
 
   tableBody.innerHTML = sortedAppointments.map((app) => {
     const displayName = app.name || app.full_name || "-";
@@ -666,7 +754,7 @@ function renderAppointmentHistory(history = [], preserveSearch = false) {
         <td>${escapeHtml(displayEmail)}</td>
         <td>${escapeHtml(displayPurpose)}</td>
         <td>${formatDateTimeDisplay(displayDate)}</td>
-        <td>${renderStatusBadge(app.status)}</td>
+        <td>${renderStatusBadge(isOrientationCompletedForAppointmentModule(app) ? "completed" : app.status)}</td>
         <td>${escapeHtml(displayAssigned)}</td>
         <td>${formatDate(app.updated_at || app.created_at)}</td>
       </tr>
