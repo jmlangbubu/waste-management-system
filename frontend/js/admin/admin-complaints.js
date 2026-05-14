@@ -47,6 +47,13 @@ const complaintResolutionRouteState = {
   lastRecord: null
 };
 
+const complaintDetailsPreviewMapState = {
+  map: null,
+  issueMarker: null,
+  barangayMarkers: [],
+  tileLayer: null
+};
+
 function formatComplaintStatus(status) {
   if (!status) return "pending";
   return String(status).toLowerCase();
@@ -179,6 +186,116 @@ function updateChosenBarangayUI() {
   chosenMeta.textContent =
     `${selectedBarangayCandidate.reference_name || "-"} • ${distanceText}`;
 }
+
+
+function getComplaintConcernBarangayLabel(data = {}) {
+  return (
+    data.concern_barangay ||
+    data.selected_concern_barangay ||
+    data.problem_barangay ||
+    data.detected_barangay ||
+    data.issue_barangay ||
+    data.assigned_barangay ||
+    "For Verification"
+  );
+}
+
+function updateComplaintModalBarangayLabel(data = {}) {
+  const valueEl = document.getElementById("complaintModalBarangay");
+  if (!valueEl) return;
+
+  const labelEl = valueEl.closest(".complaint-pro-field")?.querySelector("label");
+
+  if (!labelEl) return;
+
+  const status = String(data.status || "").toLowerCase();
+
+  /*
+    For pending complaints, assigned_barangay is only the reported/concern barangay.
+    The real forwarding/assigned barangay should be selected by WMO from nearby options.
+  */
+  if (status === "pending") {
+    labelEl.textContent = "Reported Concern";
+  } else {
+    labelEl.textContent = "Assigned Barangay";
+  }
+}
+
+function setComplaintDetailsNearbyLoading(message = "Loading nearby options...") {
+  const wrap = document.getElementById("complaintModalNearbyOptions");
+  if (!wrap) return;
+
+  wrap.innerHTML = `
+    <div class="complaint-nearby-status">
+      ${escapeHtml(message)}
+    </div>
+  `;
+}
+
+function renderComplaintDetailsNearbyOptions(candidates = []) {
+  const wrap = document.getElementById("complaintModalNearbyOptions");
+  if (!wrap) return;
+
+  forwardingBarangayTargets = [];
+
+  const seen = new Set();
+  const topCandidates = (Array.isArray(candidates) ? candidates : [])
+    .filter((candidate) => {
+      const barangay = String(candidate?.barangay_name || "").trim();
+      if (!barangay) return false;
+
+      const key = barangay.toLowerCase();
+      if (seen.has(key)) return false;
+
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 2);
+
+  forwardingBarangayTargets = topCandidates;
+
+  if (!topCandidates.length) {
+    wrap.innerHTML = `
+      <div class="complaint-nearby-status">
+        No nearby barangay options found. Open the map to verify manually.
+      </div>
+    `;
+    return;
+  }
+
+  wrap.innerHTML = `
+    <div class="complaint-forwarding-inline">
+      ${topCandidates.map((candidate, index) => {
+        return `
+          <span class="complaint-forwarding-chip">
+            ${escapeHtml(candidate.barangay_name || "-")}
+          </span>
+          ${index < topCandidates.length - 1 ? `<span class="complaint-forwarding-separator">&amp;</span>` : ""}
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+async function loadComplaintDetailsNearbyOptions(data = {}) {
+  const lat = parseFloat(data.latitude);
+  const lng = parseFloat(data.longitude);
+
+  if (Number.isNaN(lat) || Number.isNaN(lng)) {
+    setComplaintDetailsNearbyLoading("Invalid coordinates. Open the map to verify manually.");
+    renderComplaintDetailsMapPreview(data, []);
+    return;
+  }
+
+  setComplaintDetailsNearbyLoading();
+
+  const candidates = await loadNearbyBarangaysForComplaint(lat, lng);
+
+  renderComplaintDetailsNearbyOptions(candidates);
+  renderComplaintDetailsMapPreview(data, candidates);
+}
+
+
 
 function selectBarangayCandidate(candidate, candidates = []) {
   if (!currentComplaint || !complaintMapInstance) return;
@@ -1884,6 +2001,249 @@ window.addEventListener("resize", () => {
   });
 });
 
+
+function ensureComplaintDetailsMapPreviewStyles() {
+  if (document.getElementById("complaintDetailsMapPreviewRuntimeStyles")) return;
+
+  const style = document.createElement("style");
+  style.id = "complaintDetailsMapPreviewRuntimeStyles";
+  style.textContent = `
+    #complaintDetailsModal .complaint-map-preview-box {
+      position: relative !important;
+      height: 162px !important;
+      min-height: 162px !important;
+      padding: 0 !important;
+      overflow: hidden !important;
+      border-radius: 16px !important;
+      border: 1px solid #dce9df !important;
+      background: #eef6ef !important;
+    }
+
+    #complaintDetailsLeafletPreviewMap {
+      width: 100% !important;
+      height: 100% !important;
+      min-height: 162px !important;
+      border-radius: 16px !important;
+      overflow: hidden !important;
+      z-index: 1 !important;
+    }
+
+    #complaintDetailsModal .complaint-preview-map-loading {
+      position: absolute !important;
+      inset: 0 !important;
+      z-index: 2 !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      text-align: center !important;
+      padding: 12px !important;
+      background: linear-gradient(135deg, #f8fafc, #eef8f0) !important;
+      color: #486155 !important;
+      font-size: 12px !important;
+      font-weight: 800 !important;
+      pointer-events: none !important;
+    }
+
+    #complaintDetailsModal .complaint-preview-map-loading.hidden {
+      display: none !important;
+    }
+
+    #complaintDetailsModal .complaint-preview-map-badge {
+      position: absolute !important;
+      left: 10px !important;
+      bottom: 10px !important;
+      z-index: 450 !important;
+      padding: 6px 9px !important;
+      border-radius: 999px !important;
+      background: rgba(255, 255, 255, 0.92) !important;
+      border: 1px solid rgba(22, 101, 52, 0.16) !important;
+      color: #166534 !important;
+      font-size: 10.5px !important;
+      font-weight: 900 !important;
+      box-shadow: 0 8px 20px rgba(15, 23, 42, 0.10) !important;
+      pointer-events: none !important;
+    }
+
+    #complaintDetailsModal .complaint-map-preview-box .leaflet-control-attribution {
+      display: none !important;
+    }
+
+    @media (max-width: 900px) {
+      #complaintDetailsModal .complaint-map-preview-box,
+      #complaintDetailsLeafletPreviewMap {
+        min-height: 145px !important;
+        height: 145px !important;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+function clearComplaintDetailsPreviewMapLayers() {
+  const state = complaintDetailsPreviewMapState;
+
+  if (!state.map) return;
+
+  if (state.issueMarker) {
+    state.map.removeLayer(state.issueMarker);
+    state.issueMarker = null;
+  }
+
+  state.barangayMarkers.forEach((marker) => {
+    if (marker) state.map.removeLayer(marker);
+  });
+
+  state.barangayMarkers = [];
+}
+
+function ensureComplaintDetailsMapPreviewContainer() {
+  const box = document.querySelector("#complaintDetailsModal .complaint-map-preview-box");
+  if (!box) return null;
+
+  let mapEl = document.getElementById("complaintDetailsLeafletPreviewMap");
+
+  if (!mapEl) {
+    box.innerHTML = `
+      <div id="complaintDetailsLeafletPreviewMap"></div>
+      <div id="complaintDetailsMapPreviewLoading" class="complaint-preview-map-loading">
+        Loading map preview...
+      </div>
+      <div class="complaint-preview-map-badge">Issue location</div>
+    `;
+
+    mapEl = document.getElementById("complaintDetailsLeafletPreviewMap");
+  }
+
+  return mapEl;
+}
+
+function setComplaintDetailsMapPreviewLoading(isVisible, message = "Loading map preview...") {
+  const loadingEl = document.getElementById("complaintDetailsMapPreviewLoading");
+
+  if (!loadingEl) return;
+
+  loadingEl.textContent = message;
+  loadingEl.classList.toggle("hidden", !isVisible);
+}
+
+function getTopUniqueBarangayCandidates(candidates = [], maxItems = 2) {
+  const seen = new Set();
+
+  return (Array.isArray(candidates) ? candidates : [])
+    .filter((candidate) => {
+      const barangay = String(candidate?.barangay_name || "").trim();
+      if (!barangay) return false;
+
+      const key = barangay.toLowerCase();
+      if (seen.has(key)) return false;
+
+      seen.add(key);
+      return true;
+    })
+    .slice(0, maxItems);
+}
+
+function renderComplaintDetailsMapPreview(data = {}, candidates = []) {
+  if (!window.L) {
+    console.warn("Leaflet is not available for complaint preview map.");
+    return;
+  }
+
+  const lat = parseFloat(data.latitude);
+  const lng = parseFloat(data.longitude);
+
+  ensureComplaintDetailsMapPreviewStyles();
+
+  const mapEl = ensureComplaintDetailsMapPreviewContainer();
+  if (!mapEl) return;
+
+  if (Number.isNaN(lat) || Number.isNaN(lng)) {
+    setComplaintDetailsMapPreviewLoading(true, "Invalid complaint coordinates.");
+    return;
+  }
+
+  setComplaintDetailsMapPreviewLoading(true);
+
+  setTimeout(() => {
+    try {
+      const state = complaintDetailsPreviewMapState;
+
+      if (!state.map) {
+        state.map = L.map("complaintDetailsLeafletPreviewMap", {
+          zoomControl: false,
+          attributionControl: false,
+          dragging: false,
+          scrollWheelZoom: false,
+          doubleClickZoom: false,
+          boxZoom: false,
+          keyboard: false,
+          tap: false,
+          touchZoom: false
+        }).setView([lat, lng], 16);
+
+        state.tileLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          attribution: "&copy; OpenStreetMap contributors"
+        }).addTo(state.map);
+      } else {
+        state.map.invalidateSize();
+        state.map.setView([lat, lng], 16);
+      }
+
+      clearComplaintDetailsPreviewMapLayers();
+
+      state.issueMarker = L.marker([lat, lng], { icon: issueRedIcon })
+        .addTo(state.map)
+        .bindPopup(`
+          <div>
+            <strong>${escapeHtml(data.subject || "Complaint Issue")}</strong><br>
+            ${escapeHtml(String(lat))}, ${escapeHtml(String(lng))}
+          </div>
+        `);
+
+      const topCandidates = getTopUniqueBarangayCandidates(candidates, 2);
+      const boundsPoints = [[lat, lng]];
+
+      topCandidates.forEach((candidate) => {
+        const cLat = parseFloat(candidate.latitude);
+        const cLng = parseFloat(candidate.longitude);
+
+        if (Number.isNaN(cLat) || Number.isNaN(cLng)) return;
+
+        boundsPoints.push([cLat, cLng]);
+
+        const marker = L.marker([cLat, cLng], { icon: barangayBlueIcon })
+          .addTo(state.map)
+          .bindPopup(`
+            <div>
+              <strong>${escapeHtml(candidate.barangay_name || "-")}</strong><br>
+              ${escapeHtml(candidate.reference_name || "-")}
+            </div>
+          `);
+
+        state.barangayMarkers.push(marker);
+      });
+
+      if (boundsPoints.length > 1) {
+        const bounds = L.latLngBounds(boundsPoints);
+        state.map.fitBounds(bounds, { padding: [26, 26], maxZoom: 16 });
+      } else {
+        state.map.setView([lat, lng], 16);
+      }
+
+      setTimeout(() => {
+        if (state.map) state.map.invalidateSize();
+      }, 120);
+
+      setComplaintDetailsMapPreviewLoading(false);
+    } catch (error) {
+      console.error("Complaint details map preview error:", error);
+      setComplaintDetailsMapPreviewLoading(true, "Map preview failed to load.");
+    }
+  }, 180);
+}
+
+
 // =========================
 // COMPLAINT DETAILS MODAL
 // =========================
@@ -2250,13 +2610,9 @@ async function validateComplaintFromDetails() {
     return;
   }
 
-  const assignedBarangay = String(currentComplaint.assigned_barangay || "").trim();
-  const needsManualSelection =
-    !assignedBarangay || assignedBarangay.toLowerCase() === "for verification";
-
-  if (needsManualSelection && !selectedBarangayCandidate) {
+  if (!Array.isArray(forwardingBarangayTargets) || !forwardingBarangayTargets.length) {
     const proceedToMap = confirm(
-      "This complaint needs barangay verification before validation. Open the map now?"
+      "No nearby barangay targets are loaded yet. Open the map to verify barangay options?"
     );
 
     if (proceedToMap) {
@@ -2268,6 +2624,7 @@ async function validateComplaintFromDetails() {
 
   await validateAndForwardComplaint();
 }
+
 
 
 
@@ -2284,10 +2641,178 @@ function ensureComplaintDetailsProblemBarangayStyles() {
 
     #complaintDetailsModal .complaint-pro-submitted-grid .complaint-pro-field {
       min-height: 64px !important;
-      padding: 13px 14px !important;
+      padding: 12px 14px !important;
       border: 1px solid #e5e7eb !important;
       border-radius: 14px !important;
       background: #ffffff !important;
+    }
+
+    #complaintDetailsModal .complaint-forward-options-field {
+      align-items: flex-start !important;
+    }
+
+    #complaintDetailsModal .complaint-nearby-options {
+      width: 100% !important;
+      display: grid !important;
+      grid-template-columns: 1fr 1fr !important;
+      gap: 8px !important;
+      margin-top: 7px !important;
+    }
+
+    #complaintDetailsModal .complaint-nearby-option {
+      width: 100% !important;
+      min-height: 62px !important;
+      padding: 9px 10px !important;
+
+      border: 1px solid #d9e8dd !important;
+      border-radius: 13px !important;
+
+      background: #f8fbf8 !important;
+      color: #123826 !important;
+
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: flex-start !important;
+      justify-content: flex-start !important;
+      gap: 2px !important;
+
+      cursor: pointer !important;
+      text-align: left !important;
+      font-family: inherit !important;
+
+      transition:
+        border-color 0.18s ease,
+        background 0.18s ease,
+        transform 0.18s ease,
+        box-shadow 0.18s ease !important;
+    }
+
+    #complaintDetailsModal .complaint-nearby-option:hover {
+      transform: translateY(-1px) !important;
+      background: #f0faf2 !important;
+      border-color: #8bd69b !important;
+      box-shadow: 0 10px 22px rgba(22, 101, 52, 0.10) !important;
+    }
+
+    #complaintDetailsModal .complaint-nearby-option.selected {
+      background: #e9f9ee !important;
+      border-color: #22c55e !important;
+      box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.14) !important;
+    }
+
+    #complaintDetailsModal .complaint-nearby-rank {
+      color: #15803d !important;
+      font-size: 9.5px !important;
+      font-weight: 900 !important;
+      letter-spacing: 0.08em !important;
+      text-transform: uppercase !important;
+    }
+
+    #complaintDetailsModal .complaint-nearby-option strong {
+      color: #0f2d1f !important;
+      font-size: 12.5px !important;
+      font-weight: 900 !important;
+      line-height: 1.2 !important;
+    }
+
+    #complaintDetailsModal .complaint-nearby-option small {
+      color: #64748b !important;
+      font-size: 10.5px !important;
+      font-weight: 700 !important;
+      line-height: 1.25 !important;
+    }
+
+    #complaintDetailsModal .complaint-nearby-status {
+      grid-column: 1 / -1 !important;
+      min-height: 46px !important;
+      padding: 10px 12px !important;
+      border-radius: 13px !important;
+      border: 1px dashed #bdd7c5 !important;
+      background: #f8fafc !important;
+      color: #64748b !important;
+      font-size: 12px !important;
+      font-weight: 750 !important;
+      display: flex !important;
+      align-items: center !important;
+    }
+
+    #complaintDetailsModal .complaint-nearby-status.send-note {
+      background: #f0fdf4 !important;
+      border-style: solid !important;
+      border-color: #bbf7d0 !important;
+      color: #166534 !important;
+      font-size: 11px !important;
+      line-height: 1.35 !important;
+    }
+
+    #complaintDetailsModal .complaint-nearby-option.send-target {
+      cursor: default !important;
+    }
+
+    #complaintDetailsModal .complaint-nearby-option.send-target:hover {
+      transform: none !important;
+    }
+
+    /* Compact one-line forwarding barangay display */
+    #complaintDetailsModal .complaint-forwarding-inline {
+      overflow: hidden !important;
+      white-space: nowrap !important;
+    }
+
+    #complaintDetailsModal .complaint-forwarding-chip,
+    #complaintDetailsModal .complaint-forwarding-separator {
+      flex: 0 0 auto !important;
+      white-space: nowrap !important;
+    }
+
+    /* FINAL tight-fit forwarding barangay display */
+    #complaintDetailsModal .complaint-forwarding-inline {
+      width: 100% !important;
+      min-width: 0 !important;
+      max-width: 100% !important;
+      min-height: 34px !important;
+      padding: 5px 6px !important;
+      gap: 3px !important;
+      justify-content: flex-start !important;
+      flex-wrap: nowrap !important;
+      overflow: visible !important;
+      white-space: nowrap !important;
+      box-sizing: border-box !important;
+    }
+
+    #complaintDetailsModal .complaint-forwarding-chip,
+    #complaintDetailsModal .complaint-forwarding-separator {
+      flex: 0 1 auto !important;
+      min-width: 0 !important;
+      max-width: none !important;
+      white-space: nowrap !important;
+      overflow: visible !important;
+      text-overflow: clip !important;
+      font-size: 11.25px !important;
+      line-height: 1.15 !important;
+      letter-spacing: -0.02em !important;
+    }
+
+    #complaintDetailsModal .complaint-forwarding-separator {
+      padding: 0 1px !important;
+    }
+
+    /* FINAL assigned barangay ampersand display */
+    #complaintDetailsModal .complaint-forwarding-chip {
+      font-weight: 950 !important;
+      color: #0f2d1f !important;
+    }
+
+    #complaintDetailsModal .complaint-forwarding-separator {
+      color: #64748b !important;
+      font-weight: 900 !important;
+      padding: 0 2px !important;
+    }
+
+    @media (max-width: 900px) {
+      #complaintDetailsModal .complaint-nearby-options {
+        grid-template-columns: 1fr !important;
+      }
     }
 
     @media (max-width: 680px) {
@@ -2300,7 +2825,6 @@ function ensureComplaintDetailsProblemBarangayStyles() {
   document.head.appendChild(style);
 }
 
-
 function ensureComplaintProblemBarangayField() {
   const createdAtEl = document.getElementById("complaintModalCreatedAt");
   if (!createdAtEl) return;
@@ -2308,12 +2832,12 @@ function ensureComplaintProblemBarangayField() {
   const submittedCard = createdAtEl.closest(".submitted-card");
   if (!submittedCard) return;
 
-  if (document.getElementById("complaintModalProblemBarangay")) return;
+  if (document.getElementById("complaintModalNearbyOptions")) return;
 
   /*
-    UI-only field:
-    Shows the detected/assigned concern barangay beside Submitted At.
-    This helps WMO verify quickly if the issue location was assigned to the correct barangay.
+    Pending complaint rule:
+    Concern Barangay is only the citizen-reported/selected area.
+    WMO should choose the forwarding/assigned barangay from nearby options.
   */
   submittedCard.innerHTML = `
     <div class="complaint-pro-two-grid complaint-pro-submitted-grid">
@@ -2325,11 +2849,13 @@ function ensureComplaintProblemBarangayField() {
         </div>
       </div>
 
-      <div class="complaint-pro-field with-icon">
+      <div class="complaint-pro-field with-icon complaint-forward-options-field">
         <span class="complaint-mini-icon">📍</span>
-        <div>
-          <label>Concern Barangay</label>
-          <div id="complaintModalProblemBarangay" class="complaint-field-value">-</div>
+        <div style="width:100%;">
+          <label>Assigned Barangay</label>
+          <div id="complaintModalNearbyOptions" class="complaint-nearby-options">
+            <div class="complaint-nearby-status">Loading nearby options...</div>
+          </div>
         </div>
       </div>
     </div>
@@ -2366,8 +2892,10 @@ function openComplaintModal(data) {
   setText("complaintModalDescription", data.description || "-");
   setText("complaintModalCitizenName", data.citizen_name || "-");
   setText("complaintModalUsername", data.username || "-");
-  setText("complaintModalBarangay", data.assigned_barangay || "-");
-  setText("complaintModalProblemBarangay", getComplaintProblemBarangayLabel(data));
+  setText("complaintModalBarangay", getComplaintConcernBarangayLabel(data));
+  updateComplaintModalBarangayLabel(data);
+  setComplaintDetailsNearbyLoading();
+  loadComplaintDetailsNearbyOptions(data);
   setComplaintDetailsStatusUI(data.status || "pending");
   syncComplaintDetailsActionButtons(data.status || "pending");
   setText("complaintModalCreatedAt", formatModalDateTime(data.created_at));
@@ -2418,6 +2946,7 @@ function openComplaintModal(data) {
   }
 
   openComplaintModalWithPosition("complaintDetailsModal");
+  renderComplaintDetailsMapPreview(data, forwardingBarangayTargets || []);
 }
 
 function closeComplaintModal() {
@@ -2671,14 +3200,25 @@ async function validateAndForwardComplaint() {
     return;
   }
 
-  const assignedBarangay = String(currentComplaint.assigned_barangay || "").trim();
-  const needsManualSelection =
-    !assignedBarangay || assignedBarangay === "For Verification";
+  const targets = (Array.isArray(forwardingBarangayTargets) ? forwardingBarangayTargets : [])
+    .map((candidate) => String(candidate?.barangay_name || "").trim())
+    .filter(Boolean)
+    .filter((value, index, array) =>
+      array.findIndex(item => item.toLowerCase() === value.toLowerCase()) === index
+    )
+    .slice(0, 2);
 
-  if (needsManualSelection && !selectedBarangayCandidate) {
-    alert("Please choose a barangay from the map first.");
+  if (!targets.length) {
+    alert("No forwarding barangay targets found. Please open the map or refresh nearby options.");
     return;
   }
+
+  const confirmMessage =
+    targets.length > 1
+      ? `Forward this complaint to ${targets[0]} and ${targets[1]}?\n\nThe first barangay that accepts will become the assigned barangay.`
+      : `Forward this complaint to ${targets[0]}?`;
+
+  if (!confirm(confirmMessage)) return;
 
   try {
     const response = await fetch(
@@ -2690,9 +3230,9 @@ async function validateAndForwardComplaint() {
           "Accept": "application/json"
         },
         body: JSON.stringify({
-          selected_barangay: selectedBarangayCandidate
-            ? selectedBarangayCandidate.barangay_name
-            : null
+          target_barangays: targets,
+          forwarding_barangays: targets,
+          validated_by: currentUser?.id || null
         })
       }
     );
@@ -2703,12 +3243,13 @@ async function validateAndForwardComplaint() {
       throw new Error(data.message || "Failed to validate complaint.");
     }
 
-    alert(data.message || "Complaint validated and forwarded.");
+    alert(data.message || "Complaint forwarded to nearby barangays.");
 
     resetComplaintModalDisplay("complaintMapModal");
     resetComplaintModalDisplay("complaintDetailsModal");
 
     selectedBarangayCandidate = null;
+    forwardingBarangayTargets = [];
 
     await loadComplaints();
   } catch (error) {
