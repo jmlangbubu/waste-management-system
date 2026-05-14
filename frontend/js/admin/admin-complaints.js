@@ -2269,12 +2269,93 @@ async function validateComplaintFromDetails() {
   await validateAndForwardComplaint();
 }
 
+
+
+function ensureComplaintDetailsProblemBarangayStyles() {
+  if (document.getElementById("complaintProblemBarangayRuntimeStyles")) return;
+
+  const style = document.createElement("style");
+  style.id = "complaintProblemBarangayRuntimeStyles";
+  style.textContent = `
+    #complaintDetailsModal .complaint-pro-submitted-grid {
+      align-items: stretch !important;
+      gap: 12px !important;
+    }
+
+    #complaintDetailsModal .complaint-pro-submitted-grid .complaint-pro-field {
+      min-height: 64px !important;
+      padding: 13px 14px !important;
+      border: 1px solid #e5e7eb !important;
+      border-radius: 14px !important;
+      background: #ffffff !important;
+    }
+
+    @media (max-width: 680px) {
+      #complaintDetailsModal .complaint-pro-submitted-grid {
+        grid-template-columns: 1fr !important;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+
+function ensureComplaintProblemBarangayField() {
+  const createdAtEl = document.getElementById("complaintModalCreatedAt");
+  if (!createdAtEl) return;
+
+  const submittedCard = createdAtEl.closest(".submitted-card");
+  if (!submittedCard) return;
+
+  if (document.getElementById("complaintModalProblemBarangay")) return;
+
+  /*
+    UI-only field:
+    Shows the detected/assigned concern barangay beside Submitted At.
+    This helps WMO verify quickly if the issue location was assigned to the correct barangay.
+  */
+  submittedCard.innerHTML = `
+    <div class="complaint-pro-two-grid complaint-pro-submitted-grid">
+      <div class="complaint-pro-field with-icon">
+        <span class="complaint-mini-icon purple">🗓</span>
+        <div>
+          <label>Submitted At</label>
+          <div id="complaintModalCreatedAt" class="complaint-field-value">-</div>
+        </div>
+      </div>
+
+      <div class="complaint-pro-field with-icon">
+        <span class="complaint-mini-icon">📍</span>
+        <div>
+          <label>Concern Barangay</label>
+          <div id="complaintModalProblemBarangay" class="complaint-field-value">-</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function getComplaintProblemBarangayLabel(data = {}) {
+  return (
+    data.problem_barangay ||
+    data.detected_barangay ||
+    data.issue_barangay ||
+    data.assigned_barangay ||
+    "For Verification"
+  );
+}
+
+
 function openComplaintModal(data) {
   mountComplaintModalsToBody();
   ensureComplaintRejectRuntimeStyles();
 
   currentComplaint = data;
   selectedBarangayCandidate = null;
+
+  ensureComplaintDetailsProblemBarangayStyles();
+  ensureComplaintProblemBarangayField();
 
   const setText = (id, value) => {
     const el = document.getElementById(id);
@@ -2286,6 +2367,7 @@ function openComplaintModal(data) {
   setText("complaintModalCitizenName", data.citizen_name || "-");
   setText("complaintModalUsername", data.username || "-");
   setText("complaintModalBarangay", data.assigned_barangay || "-");
+  setText("complaintModalProblemBarangay", getComplaintProblemBarangayLabel(data));
   setComplaintDetailsStatusUI(data.status || "pending");
   syncComplaintDetailsActionButtons(data.status || "pending");
   setText("complaintModalCreatedAt", formatModalDateTime(data.created_at));
@@ -3081,12 +3163,27 @@ function isValidResolutionImagePath(path) {
   return true;
 }
 
+function addUniqueResolutionImageCandidate(list, rawPath) {
+  if (!isValidResolutionImagePath(rawPath)) return;
+
+  const path = String(rawPath).trim();
+  const key = path.toLowerCase();
+
+  if (list.some(item => String(item || "").trim().toLowerCase() === key)) {
+    return;
+  }
+
+  list.push(path);
+}
+
 function getResolutionImageCandidates(record = {}) {
   /*
     Keep all possible fields. Some old records use image_url or typo folders,
     while newer resolved records use resolution_evidence_url.
   */
-  const rawCandidates = [
+  const candidates = [];
+
+  [
     record?.resolution_evidence_url,
     record?.resolution_image_url,
     record?.resolution_photo_url,
@@ -3098,20 +3195,11 @@ function getResolutionImageCandidates(record = {}) {
     record?.complaint_image_url,
     record?.evidence_url,
     record?.photo_url
-  ];
+  ].forEach((path) => {
+    addUniqueResolutionImageCandidate(candidates, path);
+  });
 
-  const seen = new Set();
-
-  return rawCandidates
-    .filter(isValidResolutionImagePath)
-    .map((path) => String(path).trim())
-    .filter((path) => {
-      const key = path.toLowerCase();
-      if (seen.has(key)) return false;
-
-      seen.add(key);
-      return true;
-    });
+  return candidates;
 }
 
 function getValidResolutionImagePath(record) {
@@ -3126,6 +3214,94 @@ function addCacheBusterToImageUrl(url) {
   return `${url}${separator}t=${Date.now()}`;
 }
 
+function addUniqueResolutionImageUrl(list, rawPath, imageUrl) {
+  if (!imageUrl) return;
+
+  const cleanUrl = String(imageUrl).trim();
+  const key = cleanUrl.toLowerCase();
+
+  if (list.some(item => String(item.imageUrl || "").toLowerCase() === key)) {
+    return;
+  }
+
+  list.push({
+    rawPath,
+    imageUrl: cleanUrl
+  });
+}
+
+function getResolutionImageUrlCandidates(rawCandidates = []) {
+  const urlCandidates = [];
+
+  rawCandidates.forEach((rawPath) => {
+    const imageUrl = getImageUrl(rawPath);
+
+    addUniqueResolutionImageUrl(urlCandidates, rawPath, imageUrl);
+
+    /*
+      IMPORTANT COMPAT FIX:
+      Some older files/records were stored under /uploads/cplaints/
+      while newer backend code saves under /uploads/complaints/.
+      If the first URL fails, the modal will try the alternate folder name
+      using the same filename.
+    */
+    if (imageUrl && imageUrl.includes("/uploads/complaints/")) {
+      addUniqueResolutionImageUrl(
+        urlCandidates,
+        rawPath,
+        imageUrl.replace("/uploads/complaints/", "/uploads/cplaints/")
+      );
+    }
+
+    if (imageUrl && imageUrl.includes("/uploads/cplaints/")) {
+      addUniqueResolutionImageUrl(
+        urlCandidates,
+        rawPath,
+        imageUrl.replace("/uploads/cplaints/", "/uploads/complaints/")
+      );
+    }
+
+    /*
+      If the config base URL is different from the page origin, also try
+      the same upload path on the current domain.
+    */
+    try {
+      const parsedUrl = new URL(imageUrl, window.location.origin);
+
+      if (
+        parsedUrl.pathname &&
+        parsedUrl.pathname.includes("/uploads/")
+      ) {
+        addUniqueResolutionImageUrl(
+          urlCandidates,
+          rawPath,
+          `${window.location.origin}${parsedUrl.pathname}`
+        );
+
+        if (parsedUrl.pathname.includes("/uploads/complaints/")) {
+          addUniqueResolutionImageUrl(
+            urlCandidates,
+            rawPath,
+            `${window.location.origin}${parsedUrl.pathname.replace("/uploads/complaints/", "/uploads/cplaints/")}`
+          );
+        }
+
+        if (parsedUrl.pathname.includes("/uploads/cplaints/")) {
+          addUniqueResolutionImageUrl(
+            urlCandidates,
+            rawPath,
+            `${window.location.origin}${parsedUrl.pathname.replace("/uploads/cplaints/", "/uploads/complaints/")}`
+          );
+        }
+      }
+    } catch (error) {
+      console.warn("Skipping current-origin image fallback:", error);
+    }
+  });
+
+  return urlCandidates;
+}
+
 function renderResolutionEvidenceImage(record) {
   const evidenceImg = document.getElementById("resolutionModalEvidenceImage");
   const noEvidence = document.getElementById("resolutionModalNoEvidence");
@@ -3134,12 +3310,7 @@ function renderResolutionEvidenceImage(record) {
   if (!evidenceImg) return;
 
   const rawCandidates = getResolutionImageCandidates(record);
-  const imageCandidates = rawCandidates
-    .map((rawPath) => ({
-      rawPath,
-      imageUrl: getImageUrl(rawPath)
-    }))
-    .filter((item) => item.imageUrl);
+  const imageCandidates = getResolutionImageUrlCandidates(rawCandidates);
 
   console.log("CURRENT RESOLUTION DATA:", record);
   console.log("RAW IMAGE CANDIDATES:", rawCandidates);
@@ -3247,7 +3418,7 @@ function renderResolutionEvidenceImage(record) {
       Important:
       Some hosted image requests can hang instead of immediately firing error.
       This timeout forces the modal to try the next candidate, such as image_url,
-      when resolution_evidence_url is missing/stale after deploy.
+      or the alternate /uploads/cplaints/ path.
     */
     loadTimeout = setTimeout(() => {
       if (finished) return;
