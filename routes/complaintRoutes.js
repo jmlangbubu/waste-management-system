@@ -294,7 +294,17 @@ function canonicalizeBarangayName(value) {
 }
 
 function normalizeSqlBarangayExpression(columnName) {
-  return `LOWER(REPLACE(REPLACE(REPLACE(TRIM(${columnName}), ' ', ''), '-', ''), '.', ''))`;
+  /*
+    Force one collation for barangay matching.
+
+    Fixes MySQL error:
+    ER_CANT_AGGREGATE_2COLLATIONS
+    Illegal mix of collations (utf8mb4_0900_ai_ci) and (utf8mb4_general_ci)
+
+    This happens when complaint_notifications, complaints, or
+    barangay_response_messages columns use different collations.
+  */
+  return `LOWER(REPLACE(REPLACE(REPLACE(TRIM(${columnName}), ' ', ''), '-', ''), '.', '')) COLLATE utf8mb4_general_ci`;
 }
 
 
@@ -2843,7 +2853,7 @@ router.get("/barangay/:barangayName", (req, res) => {
     LEFT JOIN complaint_notifications cn
       ON cn.complaint_id = c.id
       AND cn.target_type = 'barangay'
-      AND LOWER(REPLACE(REPLACE(REPLACE(TRIM(cn.target_name), ' ', ''), '-', ''), '.', '')) = ?
+      AND LOWER(REPLACE(REPLACE(REPLACE(TRIM(cn.target_name), ' ', ''), '-', ''), '.', '')) COLLATE utf8mb4_general_ci = ? COLLATE utf8mb4_general_ci
     LEFT JOIN barangay_reference_points brp
       ON TRIM(LOWER(brp.barangay_name)) = TRIM(LOWER(c.assigned_barangay))
       AND brp.status = 'active'
@@ -3011,10 +3021,10 @@ router.get("/notifications/barangay/:barangayName", (req, res) => {
       INNER JOIN complaints c ON c.id = cn.complaint_id
       LEFT JOIN barangay_response_messages brm
         ON brm.source_complaint_id = cn.complaint_id
-       AND brm.barangay_key = ${normalizeSqlBarangayExpression("cn.target_name")}
+       AND brm.barangay_key COLLATE utf8mb4_general_ci = ${normalizeSqlBarangayExpression("cn.target_name")}
        AND brm.trigger_month = DATE_FORMAT(COALESCE(cn.created_at, NOW()), '%Y-%m')
       WHERE cn.target_type = 'barangay'
-        AND LOWER(REPLACE(REPLACE(REPLACE(TRIM(cn.target_name), ' ', ''), '-', ''), '.', '')) = ?
+        AND LOWER(REPLACE(REPLACE(REPLACE(TRIM(cn.target_name), ' ', ''), '-', ''), '.', '')) COLLATE utf8mb4_general_ci = ? COLLATE utf8mb4_general_ci
         AND cn.cleared_at IS NULL
         AND c.status IN ('forwarded', 'in_progress', 'accepted_by_barangay', 'resolved')
       ORDER BY cn.created_at DESC
@@ -3083,7 +3093,7 @@ router.post("/notifications/barangay/:barangayName/:notificationId/clear", (req,
           cn.cleared_by = ?
       WHERE cn.id = ?
         AND cn.target_type = 'barangay'
-        AND LOWER(REPLACE(REPLACE(REPLACE(TRIM(cn.target_name), ' ', ''), '-', ''), '.', '')) = ?
+        AND LOWER(REPLACE(REPLACE(REPLACE(TRIM(cn.target_name), ' ', ''), '-', ''), '.', '')) COLLATE utf8mb4_general_ci = ? COLLATE utf8mb4_general_ci
         AND cn.cleared_at IS NULL
         AND c.status IN ('forwarded', 'in_progress', 'accepted_by_barangay', 'resolved')
     `;
@@ -3154,7 +3164,7 @@ router.post("/notifications/barangay/:barangayName/clear", (req, res) => {
       SET cn.cleared_at = NOW(),
           cn.cleared_by = ?
       WHERE cn.target_type = 'barangay'
-        AND LOWER(REPLACE(REPLACE(REPLACE(TRIM(cn.target_name), ' ', ''), '-', ''), '.', '')) = ?
+        AND LOWER(REPLACE(REPLACE(REPLACE(TRIM(cn.target_name), ' ', ''), '-', ''), '.', '')) COLLATE utf8mb4_general_ci = ? COLLATE utf8mb4_general_ci
         AND cn.cleared_at IS NULL
         AND c.status IN ('forwarded', 'in_progress', 'accepted_by_barangay', 'resolved')
     `;
