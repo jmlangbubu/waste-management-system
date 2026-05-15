@@ -857,23 +857,54 @@ function ensureBarangayResponseMessagesTable(callback) {
 function getBarangayNotAcceptedSummary(barangayName, callback) {
   const barangayKey = getBarangayMatchParam(barangayName);
 
+  /*
+    Robust not-accepted summary.
+
+    Why this uses two sources:
+    1. accepted_by_other_barangay notification rows
+       - best source when the info notification was successfully created
+    2. forwarded notification history + complaint final assignee
+       - fallback source when the info notification row is missing
+       - this still counts a complaint if it was forwarded to this barangay,
+         but another barangay became the assigned/accepted barangay
+  */
   const sql = `
     SELECT
-      COUNT(DISTINCT cn.complaint_id) AS not_accepted_count,
-      MAX(cn.complaint_id) AS source_complaint_id
-    FROM complaint_notifications cn
-    WHERE cn.target_type = 'barangay'
-      AND ${normalizeSqlBarangayExpression("cn.target_name")} = ?
-      AND (
-        LOWER(COALESCE(cn.notification_type, '')) = 'accepted_by_other_barangay'
-        OR LOWER(COALESCE(cn.message, '')) LIKE '%no action is needed from your barangay%'
-        OR LOWER(COALESCE(cn.message, '')) LIKE '%accepted the wmo-forwarded complaint%'
-      )
-      AND cn.created_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
-      AND cn.created_at < DATE_ADD(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 1 MONTH)
+      COUNT(DISTINCT x.complaint_id) AS not_accepted_count,
+      MAX(x.complaint_id) AS source_complaint_id
+    FROM (
+      SELECT
+        cn.complaint_id,
+        cn.created_at AS event_at
+      FROM complaint_notifications cn
+      WHERE cn.target_type = 'barangay'
+        AND ${normalizeSqlBarangayExpression("cn.target_name")} = ?
+        AND (
+          LOWER(COALESCE(cn.notification_type, '')) = 'accepted_by_other_barangay'
+          OR LOWER(COALESCE(cn.message, '')) LIKE '%no action is needed from your barangay%'
+          OR LOWER(COALESCE(cn.message, '')) LIKE '%accepted the wmo-forwarded complaint%'
+        )
+
+      UNION
+
+      SELECT
+        c.id AS complaint_id,
+        COALESCE(c.accepted_at, c.in_progress_at, c.resolved_at, c.created_at) AS event_at
+      FROM complaint_notifications cn_forwarded
+      INNER JOIN complaints c
+        ON c.id = cn_forwarded.complaint_id
+      WHERE cn_forwarded.target_type = 'barangay'
+        AND ${normalizeSqlBarangayExpression("cn_forwarded.target_name")} = ?
+        AND LOWER(TRIM(COALESCE(c.status, ''))) IN ('accepted_by_barangay', 'in_progress', 'resolved')
+        AND c.assigned_barangay IS NOT NULL
+        AND TRIM(c.assigned_barangay) <> ''
+        AND ${normalizeSqlBarangayExpression("c.assigned_barangay")} <> ?
+    ) x
+    WHERE x.event_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
+      AND x.event_at < DATE_ADD(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 1 MONTH)
   `;
 
-  db.query(sql, [barangayKey], (err, rows) => {
+  db.query(sql, [barangayKey, barangayKey, barangayKey], (err, rows) => {
     if (err) {
       console.error("Failed loading barangay not-accepted summary:", err);
       return callback(err, {
@@ -2652,8 +2683,12 @@ router.get("/barangay-analytics/:barangay", (req, res) => {
       not_accepted_forwarded_this_month:
       - complaints forwarded to this barangay
       - another barangay accepted first
-      - counted from notification history rows, even if viewed/cleared later
-      - this makes the dashboard count permanent and not dependent on the bell badge
+      - counted from two durable sources:
+        1) accepted_by_other_barangay notification rows
+        2) fallback from complaint_notifications + complaints.assigned_barangay mismatch
+      - this fixes the dashboard showing 0 when WMO history shows the forwarded
+        complaint was accepted by another barangay but the info notification row
+        was missing/cleared/not generated.
     */
     const sql = `
       SELECT
@@ -2667,67 +2702,117 @@ router.get("/barangay-analytics/:barangay", (req, res) => {
         ) AS resolved_this_month,
 
         (
-          SELECT COUNT(DISTINCT cn.complaint_id)
-          FROM complaint_notifications cn
-          WHERE cn.target_type = 'barangay'
-            AND ${normalizeSqlBarangayExpression("cn.target_name")} = ?
-            AND (
-              LOWER(COALESCE(cn.notification_type, '')) = 'accepted_by_other_barangay'
-              OR LOWER(COALESCE(cn.message, '')) LIKE '%no action is needed from your barangay%'
-              OR LOWER(COALESCE(cn.message, '')) LIKE '%accepted the wmo-forwarded complaint%'
-            )
-            AND cn.created_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
-            AND cn.created_at < DATE_ADD(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 1 MONTH)
+          SELECT COUNT(DISTINCT x.complaint_id)
+          FROM (
+            SELECT
+              cn.complaint_id,
+              cn.created_at AS event_at
+            FROM complaint_notifications cn
+            WHERE cn.target_type = 'barangay'
+              AND ${normalizeSqlBarangayExpression("cn.target_name")} = ?
+              AND (
+                LOWER(COALESCE(cn.notification_type, '')) = 'accepted_by_other_barangay'
+                OR LOWER(COALESCE(cn.message, '')) LIKE '%no action is needed from your barangay%'
+                OR LOWER(COALESCE(cn.message, '')) LIKE '%accepted the wmo-forwarded complaint%'
+              )
+
+            UNION
+
+            SELECT
+              c.id AS complaint_id,
+              COALESCE(c.accepted_at, c.in_progress_at, c.resolved_at, c.created_at) AS event_at
+            FROM complaint_notifications cn_forwarded
+            INNER JOIN complaints c
+              ON c.id = cn_forwarded.complaint_id
+            WHERE cn_forwarded.target_type = 'barangay'
+              AND ${normalizeSqlBarangayExpression("cn_forwarded.target_name")} = ?
+              AND LOWER(TRIM(COALESCE(c.status, ''))) IN ('accepted_by_barangay', 'in_progress', 'resolved')
+              AND c.assigned_barangay IS NOT NULL
+              AND TRIM(c.assigned_barangay) <> ''
+              AND ${normalizeSqlBarangayExpression("c.assigned_barangay")} <> ?
+          ) x
+          WHERE x.event_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
+            AND x.event_at < DATE_ADD(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 1 MONTH)
         ) AS not_accepted_forwarded_this_month,
 
         (
-          SELECT COUNT(DISTINCT cn_all.complaint_id)
-          FROM complaint_notifications cn_all
-          WHERE cn_all.target_type = 'barangay'
-            AND ${normalizeSqlBarangayExpression("cn_all.target_name")} = ?
-            AND (
-              LOWER(COALESCE(cn_all.notification_type, '')) = 'accepted_by_other_barangay'
-              OR LOWER(COALESCE(cn_all.message, '')) LIKE '%no action is needed from your barangay%'
-              OR LOWER(COALESCE(cn_all.message, '')) LIKE '%accepted the wmo-forwarded complaint%'
-            )
+          SELECT COUNT(DISTINCT x_all.complaint_id)
+          FROM (
+            SELECT
+              cn_all.complaint_id
+            FROM complaint_notifications cn_all
+            WHERE cn_all.target_type = 'barangay'
+              AND ${normalizeSqlBarangayExpression("cn_all.target_name")} = ?
+              AND (
+                LOWER(COALESCE(cn_all.notification_type, '')) = 'accepted_by_other_barangay'
+                OR LOWER(COALESCE(cn_all.message, '')) LIKE '%no action is needed from your barangay%'
+                OR LOWER(COALESCE(cn_all.message, '')) LIKE '%accepted the wmo-forwarded complaint%'
+              )
+
+            UNION
+
+            SELECT
+              c_all.id AS complaint_id
+            FROM complaint_notifications cn_forwarded_all
+            INNER JOIN complaints c_all
+              ON c_all.id = cn_forwarded_all.complaint_id
+            WHERE cn_forwarded_all.target_type = 'barangay'
+              AND ${normalizeSqlBarangayExpression("cn_forwarded_all.target_name")} = ?
+              AND LOWER(TRIM(COALESCE(c_all.status, ''))) IN ('accepted_by_barangay', 'in_progress', 'resolved')
+              AND c_all.assigned_barangay IS NOT NULL
+              AND TRIM(c_all.assigned_barangay) <> ''
+              AND ${normalizeSqlBarangayExpression("c_all.assigned_barangay")} <> ?
+          ) x_all
         ) AS not_accepted_forwarded_total
     `;
 
-    db.query(sql, [barangayKey, barangayKey, barangayKey], (err, rows) => {
-      if (err) {
-        console.error("Barangay complaint analytics error:", err);
-        return res.status(500).json({
-          success: false,
-          message: "Failed to load barangay complaint analytics.",
-          error: err.message,
-          code: err.code
+    db.query(
+      sql,
+      [
+        barangayKey,
+        barangayKey,
+        barangayKey,
+        barangayKey,
+        barangayKey,
+        barangayKey,
+        barangayKey
+      ],
+      (err, rows) => {
+        if (err) {
+          console.error("Barangay complaint analytics error:", err);
+          return res.status(500).json({
+            success: false,
+            message: "Failed to load barangay complaint analytics.",
+            error: err.message,
+            code: err.code
+          });
+        }
+
+        const summary = rows && rows.length ? rows[0] : {};
+
+        const resolvedThisMonth = Number(summary.resolved_this_month || 0);
+        const notAcceptedForwardedThisMonth = Number(summary.not_accepted_forwarded_this_month || 0);
+        const notAcceptedForwardedTotal = Number(summary.not_accepted_forwarded_total || 0);
+
+        return res.json({
+          success: true,
+          barangay,
+          summary: {
+            resolved_this_month: resolvedThisMonth,
+            resolved_issues: resolvedThisMonth,
+            resolved_count: resolvedThisMonth,
+            total_issues: resolvedThisMonth,
+
+            not_accepted_forwarded_this_month: notAcceptedForwardedThisMonth,
+            not_accepted_forwarded: notAcceptedForwardedThisMonth,
+            not_accepted_forwarded_count: notAcceptedForwardedThisMonth,
+            missed_forwarded_count: notAcceptedForwardedThisMonth,
+
+            not_accepted_forwarded_total: notAcceptedForwardedTotal
+          }
         });
       }
-
-      const summary = rows && rows.length ? rows[0] : {};
-
-      const resolvedThisMonth = Number(summary.resolved_this_month || 0);
-      const notAcceptedForwardedThisMonth = Number(summary.not_accepted_forwarded_this_month || 0);
-      const notAcceptedForwardedTotal = Number(summary.not_accepted_forwarded_total || 0);
-
-      return res.json({
-        success: true,
-        barangay,
-        summary: {
-          resolved_this_month: resolvedThisMonth,
-          resolved_issues: resolvedThisMonth,
-          resolved_count: resolvedThisMonth,
-          total_issues: resolvedThisMonth,
-
-          not_accepted_forwarded_this_month: notAcceptedForwardedThisMonth,
-          not_accepted_forwarded: notAcceptedForwardedThisMonth,
-          not_accepted_forwarded_count: notAcceptedForwardedThisMonth,
-          missed_forwarded_count: notAcceptedForwardedThisMonth,
-
-          not_accepted_forwarded_total: notAcceptedForwardedTotal
-        }
-      });
-    });
+    );
   } catch (err) {
     console.error("Barangay analytics route error:", err);
     return res.status(500).json({
