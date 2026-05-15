@@ -3519,6 +3519,304 @@ router.get("/detect-barangay", (req, res) => {
 });
 
 
+
+/* =========================
+   ACCEPTED COMPLAINT 24-HOUR AUTO REJECT - NOTIFICATION ONLY
+   Purpose:
+   - If a barangay accepts a WMO-forwarded complaint but does not submit a
+     resolution report within 24 hours, the complaint is automatically marked rejected.
+   - WMO gets an in-system notification.
+   - The accepting barangay gets an in-system notification.
+   - No email is sent.
+========================= */
+
+function dbQueryAsync(sql, values = []) {
+  return new Promise((resolve, reject) => {
+    db.query(sql, values, (err, rows) => {
+      if (err) return reject(err);
+      return resolve(rows);
+    });
+  });
+}
+
+function insertWmoComplaintNotificationAsync(complaintId, notificationType, title, message) {
+  return new Promise((resolve) => {
+    insertWmoComplaintNotification(
+      complaintId,
+      notificationType,
+      title,
+      message,
+      (err) => {
+        if (err) {
+          console.error("Auto-reject WMO notification error:", err);
+        }
+
+        resolve(!err);
+      }
+    );
+  });
+}
+
+function insertBarangayInfoNotificationsAsync(complaintId, targetBarangays, notificationType, title, message) {
+  return new Promise((resolve) => {
+    insertBarangayInfoNotifications(
+      complaintId,
+      targetBarangays,
+      notificationType,
+      title,
+      message,
+      (err) => {
+        if (err) {
+          console.error("Auto-reject barangay notification error:", err);
+        }
+
+        resolve(!err);
+      }
+    );
+  });
+}
+
+async function ensureAcceptedComplaintDeadlineColumns() {
+  const rows = await dbQueryAsync(`SHOW COLUMNS FROM complaints`);
+  const columnSet = new Set((rows || []).map((row) => String(row.Field || "").trim()));
+  const alterSql = [];
+
+  if (!columnSet.has("rejection_reason")) {
+    alterSql.push(`ADD COLUMN rejection_reason TEXT NULL`);
+  }
+
+  if (!columnSet.has("rejected_at")) {
+    alterSql.push(`ADD COLUMN rejected_at DATETIME NULL`);
+  }
+
+  if (!columnSet.has("auto_rejected_at")) {
+    alterSql.push(`ADD COLUMN auto_rejected_at DATETIME NULL`);
+  }
+
+  if (!alterSql.length) {
+    return;
+  }
+
+  try {
+    await dbQueryAsync(`
+      ALTER TABLE complaints
+      ${alterSql.join(",\n      ")}
+    `);
+  } catch (error) {
+    if (error && error.code === "ER_DUP_FIELDNAME") {
+      console.warn("Accepted complaint deadline columns already exist.");
+      return;
+    }
+
+    throw error;
+  }
+}
+
+async function processOverdueAcceptedComplaint(app, complaint) {
+  const complaintId = complaint.id;
+  const barangay = normalizeBarangayName(
+    complaint.assigned_barangay || complaint.handled_by_barangay_name || ""
+  );
+
+  if (!complaintId || !barangay) {
+    return {
+      complaint_id: complaintId || null,
+      updated: false,
+      reason: "Missing complaint ID or assigned barangay."
+    };
+  }
+
+  const reason =
+    `Auto-rejected: ${barangay} accepted this WMO-forwarded complaint but did not submit a resolution report within 24 hours.`;
+
+  const updateResult = await dbQueryAsync(
+    `
+    UPDATE complaints
+    SET status = 'rejected',
+        rejection_reason = ?,
+        rejected_at = NOW(),
+        auto_rejected_at = NOW()
+    WHERE id = ?
+      AND status IN ('accepted_by_barangay', 'in_progress')
+      AND accepted_at IS NOT NULL
+      AND accepted_at <= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+      AND (
+        auto_rejected_at IS NULL
+        OR auto_rejected_at = '0000-00-00 00:00:00'
+      )
+    `,
+    [
+      reason,
+      complaintId
+    ]
+  );
+
+  if (!updateResult || updateResult.affectedRows === 0) {
+    return {
+      complaint_id: complaintId,
+      updated: false,
+      reason: "Already processed or no longer overdue."
+    };
+  }
+
+  const subject = truncateNotificationText(complaint.subject || "Accepted complaint", 90);
+  const wmoTitle = "Accepted complaint overdue";
+  const wmoMessage =
+    `${barangay} accepted the WMO-forwarded complaint${subject ? `: ${subject}` : ""} but did not submit a resolution within 24 hours. The complaint was automatically marked as rejected.`;
+
+  const barangayTitle = "Accepted complaint overdue";
+  const barangayMessage =
+    `Your barangay accepted this WMO-forwarded complaint${subject ? `: ${subject}` : ""}, but no resolution report was submitted within 24 hours. Please coordinate with WMO.`;
+
+  await insertWmoComplaintNotificationAsync(
+    complaintId,
+    "accepted_complaint_overdue_auto_rejected",
+    wmoTitle,
+    wmoMessage
+  );
+
+  await insertBarangayInfoNotificationsAsync(
+    complaintId,
+    [barangay],
+    "accepted_complaint_overdue_auto_rejected",
+    barangayTitle,
+    barangayMessage
+  );
+
+  const fakeReq = app ? { app } : null;
+
+  if (fakeReq) {
+    emitWmoRealtime(fakeReq, "wmo:complaint-auto-rejected-overdue", {
+      complaint_id: complaintId,
+      title: wmoTitle,
+      message: wmoMessage,
+      assigned_barangay: barangay,
+      status: "rejected"
+    });
+
+    emitBarangayRealtime(fakeReq, barangay, "barangay:complaint-auto-rejected-overdue", {
+      complaint_id: complaintId,
+      title: barangayTitle,
+      message: barangayMessage,
+      assigned_barangay: barangay,
+      status: "rejected"
+    });
+  }
+
+  return {
+    complaint_id: complaintId,
+    updated: true,
+    assigned_barangay: barangay,
+    notification_only: true
+  };
+}
+
+async function autoRejectOverdueAcceptedComplaints(app = null) {
+  await ensureAcceptedComplaintDeadlineColumns();
+
+  const rows = await dbQueryAsync(
+    `
+    SELECT
+      id,
+      subject,
+      description,
+      citizen_name,
+      reporter_barangay,
+      assigned_barangay,
+      handled_by_barangay_name,
+      accepted_at,
+      status
+    FROM complaints
+    WHERE status IN ('accepted_by_barangay', 'in_progress')
+      AND accepted_at IS NOT NULL
+      AND accepted_at <= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+      AND (
+        auto_rejected_at IS NULL
+        OR auto_rejected_at = '0000-00-00 00:00:00'
+      )
+    ORDER BY accepted_at ASC
+    LIMIT 25
+    `
+  );
+
+  const results = [];
+
+  for (const complaint of rows || []) {
+    try {
+      const result = await processOverdueAcceptedComplaint(app, complaint);
+      results.push(result);
+    } catch (error) {
+      console.error("processOverdueAcceptedComplaint error:", error);
+      results.push({
+        complaint_id: complaint?.id || null,
+        updated: false,
+        error: error.message
+      });
+    }
+  }
+
+  return {
+    checked: true,
+    notification_only: true,
+    count: rows ? rows.length : 0,
+    processed: results.filter((item) => item.updated).length,
+    results
+  };
+}
+
+let overdueAcceptedComplaintSchedulerStarted = false;
+
+function startOverdueAcceptedComplaintScheduler(app) {
+  if (overdueAcceptedComplaintSchedulerStarted) {
+    return;
+  }
+
+  overdueAcceptedComplaintSchedulerStarted = true;
+
+  const runCheck = () => {
+    autoRejectOverdueAcceptedComplaints(app)
+      .then((result) => {
+        if (result.processed > 0) {
+          console.log(
+            `[Complaint Scheduler] Auto-rejected ${result.processed} overdue accepted complaint(s). Notifications only.`
+          );
+        }
+      })
+      .catch((error) => {
+        console.error("[Complaint Scheduler] Overdue accepted complaint check failed:", error);
+      });
+  };
+
+  /*
+    Run once after startup, then every 5 minutes.
+    This gives a maximum delay of around 5 minutes after the 24-hour deadline.
+  */
+  setTimeout(runCheck, 15000);
+  setInterval(runCheck, 5 * 60 * 1000);
+
+  console.log("[Complaint Scheduler] 24-hour accepted complaint notification-only checker started.");
+}
+
+router.post("/maintenance/check-overdue-accepted", async (req, res) => {
+  try {
+    const result = await autoRejectOverdueAcceptedComplaints(req.app);
+
+    return res.json({
+      success: true,
+      ...result
+    });
+  } catch (error) {
+    console.error("Manual overdue accepted complaint check error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to check overdue accepted complaints.",
+      error: error.message
+    });
+  }
+});
+
+
 /* =========================
    DEBUG COMPLAINT NOTIFICATION TARGETS
    Use this to verify if both barangays received notification rows.
@@ -3606,6 +3904,9 @@ router.get("/:id", (req, res) => {
     });
   });
 });
+
+router.autoRejectOverdueAcceptedComplaints = autoRejectOverdueAcceptedComplaints;
+router.startOverdueAcceptedComplaintScheduler = startOverdueAcceptedComplaintScheduler;
 
 module.exports = router;
  
