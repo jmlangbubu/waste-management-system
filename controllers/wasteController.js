@@ -126,6 +126,87 @@ function firstNonEmpty(...values) {
   return "";
 }
 
+function formatDateOnly(value) {
+  const cleaned = cleanText(value);
+
+  if (!cleaned) {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  /*
+    Accept:
+    - yyyy-MM-dd
+    - yyyy-MM-dd HH:mm:ss
+    - ISO datetime
+  */
+  if (/^\d{4}-\d{2}-\d{2}$/.test(cleaned)) {
+    return cleaned;
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}[ T]/.test(cleaned)) {
+    return cleaned.slice(0, 10);
+  }
+
+  const parsed = new Date(cleaned);
+
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toISOString().slice(0, 10);
+  }
+
+  return new Date().toISOString().slice(0, 10);
+}
+
+function formatDateTimeValue(value) {
+  const cleaned = cleanText(value);
+
+  if (!cleaned) {
+    return new Date();
+  }
+
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(cleaned)) {
+    return cleaned;
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}T/.test(cleaned)) {
+    return cleaned.replace("T", " ").replace(/\.\d{3}Z?$/, "").replace(/Z$/, "");
+  }
+
+  const parsed = new Date(cleaned);
+
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toISOString().slice(0, 19).replace("T", " ");
+  }
+
+  return new Date();
+}
+
+function getDateFallbackFromBody(body = {}) {
+  const rawPayloadObject = safeJsonParse(body.raw_payload);
+  const nestedRawPayload = rawPayloadObject && typeof rawPayloadObject === "object"
+    ? rawPayloadObject
+    : {};
+
+  return formatDateOnly(
+    firstNonEmpty(
+      body.collection_date,
+      body.collectionDate,
+      body.date,
+      body.record_date,
+      body.submitted_at,
+      body.validated_at,
+      body.period_from,
+      nestedRawPayload.collection_date,
+      nestedRawPayload.collectionDate,
+      nestedRawPayload.date,
+      nestedRawPayload.recordDate,
+      nestedRawPayload.submittedAt,
+      nestedRawPayload.validatedAt,
+      nestedRawPayload.periodFrom,
+      nestedRawPayload.period_from
+    )
+  );
+}
+
 async function getTableColumns(tableName) {
   const safeTableName = String(tableName || "").replace(/[^a-zA-Z0-9_]/g, "");
 
@@ -221,6 +302,10 @@ async function ensureValidatedWasteRecordColumns() {
   */
   if (!hasColumn(columnSet, "personnel_name")) {
     alters.push("ADD COLUMN personnel_name VARCHAR(255) NULL");
+  }
+
+  if (!hasColumn(columnSet, "collection_date")) {
+    alters.push("ADD COLUMN collection_date DATE NULL");
   }
 
   if (!hasColumn(columnSet, "period_from")) {
@@ -415,15 +500,26 @@ function getFallbackValueForRequiredColumn(columnName, body = {}) {
     case "establishment_name":
       return firstNonEmpty(body.establishment_name, nestedRawPayload.establishmentName, nestedRawPayload.establishment_name, "N/A");
 
+    case "collection_date":
+    case "date":
+    case "record_date":
+      return getDateFallbackFromBody(body);
+
     case "period_from":
+      return formatDateOnly(firstNonEmpty(body.period_from, nestedRawPayload.periodFrom, nestedRawPayload.period_from));
+
     case "period_to":
-      return null;
+      return formatDateOnly(firstNonEmpty(body.period_to, nestedRawPayload.periodTo, nestedRawPayload.period_to, body.period_from, nestedRawPayload.periodFrom, nestedRawPayload.period_from));
 
     case "remarks":
     case "validation_notes":
+      return "N/A";
+
     case "raw_payload":
+      return normalizeRawPayload(body.raw_payload) || "{}";
+
     case "enforcer_signature":
-      return "";
+      return "N/A";
 
     case "biodegradable_subtotal":
     case "recyclable_subtotal":
@@ -441,8 +537,31 @@ function getFallbackValueForRequiredColumn(columnName, body = {}) {
     case "validated_at":
       return new Date();
 
-    default:
-      return "";
+    default: {
+      const metaValue = cleanText(body[columnName]);
+
+      if (metaValue) {
+        return metaValue;
+      }
+
+      /*
+        Do not return an empty string for required DATE/DATETIME columns.
+        MySQL strict mode rejects '' for DATE fields, which caused:
+        ER_TRUNCATED_WRONG_VALUE: Incorrect date value: '' for column 'collection_date'
+      */
+      if (columnName.toLowerCase().includes("date")) {
+        return getDateFallbackFromBody(body);
+      }
+
+      if (
+        columnName.toLowerCase().includes("time") ||
+        columnName.toLowerCase().includes("_at")
+      ) {
+        return formatDateTimeValue(body.validated_at);
+      }
+
+      return "N/A";
+    }
   }
 }
 
@@ -537,6 +656,7 @@ const createValidatedWasteRecord = async (req, res) => {
     addColumn("establishment_address", cleanText(establishment_address) || null);
     addColumn("source_type", cleanText(source_type) || null);
     addColumn("personnel_name", personnelName);
+    addColumn("collection_date", getDateFallbackFromBody(body));
     addColumn("period_from", cleanText(period_from) || null);
     addColumn("period_to", cleanText(period_to) || null);
     addColumn("remarks", cleanText(remarks) || null);
@@ -608,6 +728,7 @@ const getValidatedWasteRecords = async (req, res) => {
       "establishment_address",
       "source_type",
       "personnel_name",
+      "collection_date",
       "period_from",
       "period_to",
       "remarks",
