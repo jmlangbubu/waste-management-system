@@ -83,6 +83,16 @@ function getNotificationType(notif = {}) {
   }
 
   if (
+    combined.includes("tracking") ||
+    combined.includes("gps") ||
+    combined.includes("truck") ||
+    combined.includes("route") ||
+    combined.includes("location sync")
+  ) {
+    return "tracking";
+  }
+
+  if (
     combined.includes("appointment") ||
     combined.includes("orientation") ||
     combined.includes("clearance")
@@ -208,6 +218,16 @@ function getNotificationStatusClass(notif = {}) {
   if (type.includes("waste")) {
     return "validated";
   }
+
+  if (
+    type.includes("tracking") ||
+    type.includes("gps") ||
+    type.includes("truck") ||
+    title.includes("gps")
+  ) {
+    return "validated";
+  }
+
 
   return "pending";
 }
@@ -373,6 +393,34 @@ function openNotificationTarget(notif = {}) {
       "appointmentSection",
       "orientationSection"
     ]);
+
+    return;
+  }
+
+  if (
+    combined.includes("tracking") ||
+    combined.includes("gps") ||
+    combined.includes("truck") ||
+    combined.includes("route")
+  ) {
+    tryOpenAdminSection([
+      "trackingSection",
+      "dashboardSection"
+    ]);
+
+    setTimeout(() => {
+      if (typeof initializeTruckMap === "function") {
+        initializeTruckMap();
+      }
+
+      if (typeof loadActiveTrucks === "function") {
+        loadActiveTrucks();
+      }
+
+      if (typeof startTrackingAutoRefresh === "function") {
+        startTrackingAutoRefresh();
+      }
+    }, 150);
 
     return;
   }
