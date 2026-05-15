@@ -14,6 +14,9 @@ router.post("/:sessionId/location", trackingController.addLocationLog);
 // Receive offline/mobile queued GPS locations in one request
 router.post("/:sessionId/locations/batch", trackingController.addLocationLogsBatch);
 
+// Receive mobile GPS/device status such as active, sync_pending, or gps_off
+router.post("/:sessionId/status", trackingController.updateTrackingDeviceStatus);
+
 // Dashboard: get all active trucks
 router.get("/active", trackingController.getActiveTrucks);
 
