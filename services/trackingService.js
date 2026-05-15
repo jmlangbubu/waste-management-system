@@ -837,6 +837,95 @@ class TrackingService {
         ]);
     }
 
+    normalizeTrackingDeviceStatus(value) {
+        const cleaned = this.cleanText(value).toLowerCase();
+
+        if (
+            cleaned === "gps_off" ||
+            cleaned === "tracking_off" ||
+            cleaned === "permission_missing" ||
+            cleaned === "no_permission" ||
+            cleaned === "off"
+        ) {
+            return "gps_off";
+        }
+
+        if (
+            cleaned === "sync_pending" ||
+            cleaned === "weak_signal" ||
+            cleaned === "pending" ||
+            cleaned === "offline"
+        ) {
+            return "sync_pending";
+        }
+
+        if (cleaned === "active" || cleaned === "live" || cleaned === "on" || cleaned === "synced") {
+            return "active";
+        }
+
+        return "sync_pending";
+    }
+
+    async updateTrackingDeviceStatus(sessionId, data = {}) {
+        const statusKey = this.normalizeTrackingDeviceStatus(
+            data.tracking_status_key ||
+            data.gps_status ||
+            data.sync_status ||
+            data.status
+        );
+
+        const source = this.cleanText(data.source || data.sync_source || "mobile");
+
+        const [sessionRows] = await db.query(
+            `
+            SELECT id, truck_id, session_status
+            FROM truck_tracking_sessions
+            WHERE id = ?
+            LIMIT 1
+            `,
+            [sessionId]
+        );
+
+        if (sessionRows.length === 0) {
+            throw new Error("Tracking session not found");
+        }
+
+        const session = sessionRows[0];
+
+        await db.query(
+            `
+            UPDATE truck_tracking_sessions
+            SET updated_at = NOW()
+            WHERE id = ?
+            `,
+            [sessionId]
+        );
+
+        /*
+          Only update existing last-location row.
+          If there is no row yet, /tracking/active will still show GPS off
+          because no GPS point exists for the active session.
+        */
+        await db.query(
+            `
+            UPDATE truck_last_locations
+            SET status = ?,
+                updated_at = NOW()
+            WHERE session_id = ?
+            `,
+            [statusKey, sessionId]
+        );
+
+        return {
+            success: true,
+            message: `Tracking device status updated to ${statusKey}.`,
+            tracking_status_key: statusKey,
+            gps_status: statusKey === "gps_off" ? "off" : "on",
+            source,
+            truck_id: session.truck_id
+        };
+    }
+
     async getActiveTrucks() {
         await this.autoStopExpiredSessions();
 
@@ -847,6 +936,7 @@ class TrackingService {
                 tts.enforcer_id,
                 tts.enforcer_name,
                 tts.device_id,
+                tts.session_status,
                 tts.started_at,
                 tts.shift_end_time,
                 tts.last_updated_at,
@@ -858,12 +948,104 @@ class TrackingService {
                 tll.heading,
                 tll.altitude,
                 tll.last_updated_at AS location_last_updated,
+                tll.status AS last_location_status,
+                TIMESTAMPDIFF(SECOND, tll.last_updated_at, NOW()) AS last_sync_age_seconds,
                 CASE
                     WHEN tts.session_status = 'active'
                          AND tll.last_updated_at >= (NOW() - INTERVAL 30 SECOND)
                     THEN 'active'
                     ELSE 'offline'
-                END AS truck_status
+                END AS truck_status,
+                CASE
+                    WHEN tts.session_status <> 'active'
+                    THEN 'stopped'
+
+                    WHEN LOWER(COALESCE(tll.status, '')) IN ('gps_off', 'tracking_off', 'permission_missing')
+                    THEN 'gps_off'
+
+                    WHEN LOWER(COALESCE(tll.status, '')) IN ('sync_pending', 'weak_signal')
+                    THEN 'sync_pending'
+
+                    WHEN tll.last_updated_at IS NULL
+                    THEN 'gps_off'
+
+                    WHEN tll.last_updated_at >= (NOW() - INTERVAL 60 SECOND)
+                    THEN 'active'
+
+                    WHEN tll.last_updated_at >= (NOW() - INTERVAL 5 MINUTE)
+                    THEN 'sync_pending'
+
+                    ELSE 'gps_off'
+                END AS tracking_status_key,
+                CASE
+                    WHEN tts.session_status <> 'active'
+                    THEN 'Stopped'
+
+                    WHEN LOWER(COALESCE(tll.status, '')) IN ('gps_off', 'tracking_off', 'permission_missing')
+                    THEN 'GPS off'
+
+                    WHEN LOWER(COALESCE(tll.status, '')) IN ('sync_pending', 'weak_signal')
+                    THEN 'Sync pending'
+
+                    WHEN tll.last_updated_at IS NULL
+                    THEN 'GPS off'
+
+                    WHEN tll.last_updated_at >= (NOW() - INTERVAL 60 SECOND)
+                    THEN 'Live'
+
+                    WHEN tll.last_updated_at >= (NOW() - INTERVAL 5 MINUTE)
+                    THEN 'Sync pending'
+
+                    ELSE 'GPS off'
+                END AS tracking_status_label,
+                CASE
+                    WHEN tts.session_status <> 'active'
+                    THEN 'Tracking session has ended.'
+
+                    WHEN LOWER(COALESCE(tll.status, '')) IN ('gps_off', 'tracking_off', 'permission_missing')
+                    THEN 'GPS tracking is turned off. No live route points are being recorded.'
+
+                    WHEN LOWER(COALESCE(tll.status, '')) IN ('sync_pending', 'weak_signal')
+                    THEN 'GPS may still be on, but mobile signal is weak. Route points will continue after the phone syncs.'
+
+                    WHEN tll.last_updated_at IS NULL
+                    THEN 'GPS tracking is turned off or no live GPS points are being recorded.'
+
+                    WHEN tll.last_updated_at >= (NOW() - INTERVAL 60 SECOND)
+                    THEN 'Live GPS signal is syncing normally.'
+
+                    WHEN tll.last_updated_at >= (NOW() - INTERVAL 5 MINUTE)
+                    THEN 'GPS may still be on, but mobile signal is weak. Route points will continue after the phone syncs.'
+
+                    ELSE 'GPS tracking is turned off or no live GPS points are being recorded.'
+                END AS tracking_status_description,
+                CASE
+                    WHEN LOWER(COALESCE(tll.status, '')) IN ('gps_off', 'tracking_off', 'permission_missing')
+                    THEN 'off'
+
+                    WHEN tll.last_updated_at IS NULL
+                    THEN 'off'
+
+                    WHEN tll.last_updated_at >= (NOW() - INTERVAL 5 MINUTE)
+                    THEN 'on'
+
+                    ELSE 'off'
+                END AS gps_status,
+                CASE
+                    WHEN LOWER(COALESCE(tll.status, '')) IN ('gps_off', 'tracking_off', 'permission_missing')
+                    THEN 'not_syncing'
+
+                    WHEN LOWER(COALESCE(tll.status, '')) IN ('sync_pending', 'weak_signal')
+                    THEN 'pending'
+
+                    WHEN tll.last_updated_at >= (NOW() - INTERVAL 60 SECOND)
+                    THEN 'synced'
+
+                    WHEN tll.last_updated_at >= (NOW() - INTERVAL 5 MINUTE)
+                    THEN 'pending'
+
+                    ELSE 'not_syncing'
+                END AS sync_status
             FROM truck_tracking_sessions tts
             LEFT JOIN truck_last_locations tll
                 ON tts.id = tll.session_id
