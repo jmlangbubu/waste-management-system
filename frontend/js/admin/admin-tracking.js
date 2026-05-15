@@ -12,6 +12,234 @@ function initializeTruckMap() {
   isTruckMapInitialized = true;
 }
 
+/* =========================================================
+   OFFLINE-SAFE TRACKING UI HELPERS
+   Works with the mobile offline queue:
+   - "Active" = live GPS points are reaching the server.
+   - "Sync pending" = session is still active, but phone signal is weak/offline.
+   - Route redraws as one full route once queued mobile points sync.
+========================================================= */
+
+const TRACKING_LIVE_WINDOW_MS = 60 * 1000;
+const TRACKING_ROUTE_GAP_MS = 90 * 1000;
+
+function parseTrackingDate(value) {
+  if (!value) return null;
+
+  const text = String(value).trim();
+  if (!text) return null;
+
+  const normalized = text.includes("T") ? text : text.replace(" ", "T");
+  const date = new Date(normalized);
+
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return date;
+}
+
+function formatTrackingTimeSafe(value) {
+  try {
+    if (typeof formatTrackingTime === "function") {
+      return formatTrackingTime(value);
+    }
+  } catch (error) {
+    // Fall back below.
+  }
+
+  const date = parseTrackingDate(value);
+  if (!date) return "--";
+
+  return date.toLocaleString();
+}
+
+function getTruckLastUpdateValue(truck) {
+  if (!truck) return "";
+
+  return (
+    truck.location_last_updated ||
+    truck.last_updated_at ||
+    truck.lastUpdatedAt ||
+    truck.updated_at ||
+    truck.updatedAt ||
+    ""
+  );
+}
+
+function getTrackingStatusMeta(truck) {
+  const rawStatus = String(truck?.truck_status || truck?.status || "").toLowerCase();
+  const sessionStatus = String(truck?.session_status || "").toLowerCase();
+  const lastUpdateValue = getTruckLastUpdateValue(truck);
+  const lastDate = parseTrackingDate(lastUpdateValue);
+  const ageMs = lastDate ? Date.now() - lastDate.getTime() : Number.POSITIVE_INFINITY;
+
+  if (sessionStatus === "stopped" || sessionStatus === "auto_stopped") {
+    return {
+      key: "stopped",
+      label: "Stopped",
+      className: "stopped",
+      description: "Tracking session has ended."
+    };
+  }
+
+  if (rawStatus === "active" && ageMs <= TRACKING_LIVE_WINDOW_MS) {
+    return {
+      key: "active",
+      label: "Live",
+      className: "active",
+      description: "Live GPS signal is syncing normally."
+    };
+  }
+
+  /*
+    The /tracking/active endpoint returns sessions that are still active.
+    When truck_status becomes offline here, it usually means signal/server sync
+    is temporarily delayed, not that the route ended.
+  */
+  return {
+    key: "sync_pending",
+    label: "Sync pending",
+    className: "sync-pending",
+    description: "Mobile signal may be weak. Route points will continue after the phone syncs."
+  };
+}
+
+function getTrackingSignalSummary(trucks) {
+  const safeTrucks = Array.isArray(trucks) ? trucks : [];
+  const liveCount = safeTrucks.filter((truck) => getTrackingStatusMeta(truck).key === "active").length;
+  const pendingCount = safeTrucks.filter((truck) => getTrackingStatusMeta(truck).key === "sync_pending").length;
+
+  if (!safeTrucks.length) {
+    return {
+      text: "No active sessions",
+      className: "idle"
+    };
+  }
+
+  if (pendingCount > 0 && liveCount > 0) {
+    return {
+      text: `${liveCount} live • ${pendingCount} sync pending`,
+      className: "warning"
+    };
+  }
+
+  if (pendingCount > 0) {
+    return {
+      text: `${pendingCount} sync pending`,
+      className: "warning"
+    };
+  }
+
+  return {
+    text: `${liveCount} live`,
+    className: "good"
+  };
+}
+
+function updateTrackingSummaryCards(trucks) {
+  const safeTrucks = Array.isArray(trucks) ? trucks : [];
+  const activeTruckCount = document.getElementById("activeTruckCount");
+  const trackingSignalStatus = document.getElementById("trackingSignalStatus");
+
+  if (activeTruckCount) {
+    /*
+      Count active tracking sessions, not only currently live signal.
+      This prevents the web dashboard from looking like tracking stopped
+      when the phone simply has weak mobile data.
+    */
+    activeTruckCount.textContent = safeTrucks.length;
+  }
+
+  if (trackingSignalStatus) {
+    const summary = getTrackingSignalSummary(safeTrucks);
+    trackingSignalStatus.textContent = summary.text;
+    trackingSignalStatus.className = `tracking-signal-status ${summary.className}`;
+  }
+}
+
+function updateTrackingRouteStats(routeLogs = []) {
+  const routePointCount = document.getElementById("trackingRoutePointCount");
+  if (routePointCount) {
+    routePointCount.textContent = String(Array.isArray(routeLogs) ? routeLogs.length : 0);
+  }
+}
+
+function clearTrackingGapPolylines() {
+  if (!window.trackingGapPolylines || !Array.isArray(window.trackingGapPolylines)) {
+    window.trackingGapPolylines = [];
+    return;
+  }
+
+  window.trackingGapPolylines.forEach((line) => {
+    try {
+      if (line && truckMap) {
+        truckMap.removeLayer(line);
+      }
+    } catch (error) {
+      // Continue clearing the rest.
+    }
+  });
+
+  window.trackingGapPolylines = [];
+}
+
+function getRoutePointTimestamp(point) {
+  const date = parseTrackingDate(point?.recorded_at || point?.created_at || point?.createdAt);
+  return date ? date.getTime() : 0;
+}
+
+function buildTrackingMarkerIcon(statusMeta) {
+  const color = statusMeta?.key === "active"
+    ? "#198754"
+    : statusMeta?.key === "sync_pending"
+      ? "#f59e0b"
+      : "#6c757d";
+
+  const pulse = statusMeta?.key === "active"
+    ? "tracking-marker-pulse"
+    : "";
+
+  return L.divIcon({
+    className: `custom-truck-marker ${statusMeta?.className || ""}`,
+    html: `
+      <div class="truck-marker-shell ${pulse}" style="
+        width:22px;
+        height:22px;
+        border-radius:50%;
+        background:${color};
+        border:3px solid #ffffff;
+        box-shadow:0 3px 12px rgba(0,0,0,0.28);
+      "></div>
+    `,
+    iconSize: [22, 22],
+    iconAnchor: [11, 11]
+  });
+}
+
+function getTrackingRouteNotice(routeLogs = []) {
+  if (!Array.isArray(routeLogs) || routeLogs.length < 2) {
+    return "";
+  }
+
+  let gapCount = 0;
+
+  for (let i = 1; i < routeLogs.length; i++) {
+    const prevTime = getRoutePointTimestamp(routeLogs[i - 1]);
+    const currTime = getRoutePointTimestamp(routeLogs[i]);
+
+    if (prevTime && currTime && currTime - prevTime > TRACKING_ROUTE_GAP_MS) {
+      gapCount++;
+    }
+  }
+
+  if (gapCount <= 0) {
+    return "";
+  }
+
+  return `${gapCount} route gap${gapCount > 1 ? "s" : ""} connected after mobile sync.`;
+}
+
 async function loadActiveTrucks() {
   try {
     const res = await fetch(getTrackingActiveApiUrl());
@@ -21,18 +249,9 @@ async function loadActiveTrucks() {
       ? data
       : (data.data || []);
 
-    // ✅ active count only
-    const activeOnly = trucks.filter(
-      (truck) => String(truck.truck_status || "").toLowerCase() === "active"
-    );
-
     renderActiveTruckList(trucks);
     updateTruckMarkers(trucks);
-
-    const activeTruckCount = document.getElementById("activeTruckCount");
-    if (activeTruckCount) {
-      activeTruckCount.textContent = activeOnly.length;
-    }
+    updateTrackingSummaryCards(trucks);
 
     if (selectedSessionId) {
       const selectedTruck = trucks.find(
@@ -44,27 +263,31 @@ async function loadActiveTrucks() {
         return;
       }
 
-    
       await loadTruckRoute(selectedSessionId, { keepView: true });
 
       const selectedLabel = document.getElementById("selectedTruckLabel");
       if (selectedLabel) {
-        const statusLabel = String(selectedTruck.truck_status || "").toLowerCase() === "active"
-          ? "Active"
-          : "Offline";
-
-        selectedLabel.textContent = `Truck ${selectedTruck.truck_id} (${statusLabel})`;
+        const statusMeta = getTrackingStatusMeta(selectedTruck);
+        selectedLabel.textContent = `Truck ${selectedTruck.truck_id} (${statusMeta.label})`;
       }
 
       const lastUpdated = document.getElementById("trackingLastUpdated");
       if (lastUpdated) {
-        lastUpdated.textContent = formatTrackingTime(
+        lastUpdated.textContent = formatTrackingTimeSafe(
           selectedTruck.location_last_updated || selectedTruck.last_updated_at
         );
       }
+    } else {
+      updateTrackingRouteStats([]);
     }
   } catch (error) {
     console.error("Error loading active trucks:", error);
+
+    const trackingSignalStatus = document.getElementById("trackingSignalStatus");
+    if (trackingSignalStatus) {
+      trackingSignalStatus.textContent = "Unable to refresh";
+      trackingSignalStatus.className = "tracking-signal-status warning";
+    }
   }
 }
 
@@ -73,23 +296,31 @@ function renderActiveTruckList(trucks) {
   if (!container) return;
 
   if (!Array.isArray(trucks) || !trucks.length) {
-    container.innerHTML = `<div class="empty-state">No tracked trucks</div>`;
+    container.innerHTML = `
+      <div class="empty-state">
+        No active tracking sessions yet.
+      </div>
+    `;
     return;
   }
 
   container.innerHTML = trucks.map((truck) => {
     const isSelected = String(selectedSessionId) === String(truck.session_id);
-    const status = String(truck.truck_status || "offline").toLowerCase();
-    const statusLabel = status === "active" ? "Active" : "Offline";
+    const statusMeta = getTrackingStatusMeta(truck);
+    const lastUpdated = getTruckLastUpdateValue(truck);
 
     return `
       <div
-        class="active-truck-item ${isSelected ? "active" : ""} ${status === "offline" ? "offline" : ""}"
+        class="active-truck-item ${isSelected ? "active" : ""} ${statusMeta.className}"
         onclick="selectTruck(${truck.session_id}, '${escapeHtml(truck.truck_id)}')"
       >
-        <strong>Truck ${escapeHtml(truck.truck_id)}</strong><br>
+        <div class="truck-list-topline">
+          <strong>Truck ${escapeHtml(truck.truck_id || "-")}</strong>
+          <small class="truck-status-label ${statusMeta.className}">${escapeHtml(statusMeta.label)}</small>
+        </div>
         <small>${escapeHtml(truck.enforcer_name || "-")}</small><br>
-        <small class="truck-status-label ${status}">${statusLabel}</small>
+        <small class="truck-sync-note">${escapeHtml(statusMeta.description)}</small><br>
+        <small class="truck-last-sync">Last sync: ${escapeHtml(formatTrackingTimeSafe(lastUpdated))}</small>
       </div>
     `;
   }).join("");
@@ -98,7 +329,6 @@ function renderActiveTruckList(trucks) {
 function updateTruckMarkers(trucks) {
   if (!truckMap) return;
 
- 
   Object.keys(truckMarkers).forEach((id) => {
     if (truckMarkers[id]) {
       truckMap.removeLayer(truckMarkers[id]);
@@ -106,7 +336,6 @@ function updateTruckMarkers(trucks) {
   });
   truckMarkers = {};
 
- 
   if (!selectedSessionId) {
     return;
   }
@@ -123,8 +352,17 @@ function updateTruckMarkers(trucks) {
 
   if (latitude == null || longitude == null) return;
 
-  const marker = L.marker([latitude, longitude]).addTo(truckMap);
-  marker.bindPopup(`Truck ${truck_id}`);
+  const statusMeta = getTrackingStatusMeta(selectedTruck);
+  const marker = L.marker([latitude, longitude], {
+    icon: buildTrackingMarkerIcon(statusMeta)
+  }).addTo(truckMap);
+
+  marker.bindPopup(`
+    <strong>Truck ${escapeHtml(truck_id || "-")}</strong><br>
+    Status: ${escapeHtml(statusMeta.label)}<br>
+    Last sync: ${escapeHtml(formatTrackingTimeSafe(getTruckLastUpdateValue(selectedTruck)))}
+  `);
+
   truckMarkers[session_id] = marker;
 }
 
@@ -137,15 +375,24 @@ async function loadTruckRoute(sessionId, options = {}) {
     const res = await fetch(getTrackingRouteApiUrl(sessionId));
     const data = await res.json();
 
-    // ✅ actual backend shape: { success: true, data: { session, route_logs } }
     const routeLogs = Array.isArray(data?.data?.route_logs)
       ? data.data.route_logs
       : [];
+
+    const orderedRouteLogs = routeLogs
+      .slice()
+      .sort((a, b) => {
+        const aTime = getRoutePointTimestamp(a);
+        const bTime = getRoutePointTimestamp(b);
+        return aTime - bTime;
+      });
 
     if (selectedRoutePolyline) {
       truckMap.removeLayer(selectedRoutePolyline);
       selectedRoutePolyline = null;
     }
+
+    clearTrackingGapPolylines();
 
     if (selectedStartMarker) {
       truckMap.removeLayer(selectedStartMarker);
@@ -157,7 +404,9 @@ async function loadTruckRoute(sessionId, options = {}) {
       selectedCurrentMarker = null;
     }
 
-    if (!routeLogs.length) {
+    updateTrackingRouteStats(orderedRouteLogs);
+
+    if (!orderedRouteLogs.length) {
       const lastUpdated = document.getElementById("trackingLastUpdated");
       if (lastUpdated) {
         lastUpdated.textContent = "--";
@@ -165,10 +414,17 @@ async function loadTruckRoute(sessionId, options = {}) {
       return;
     }
 
-    const latlngs = routeLogs
+    const routePoints = orderedRouteLogs
       .filter((p) => p.latitude != null && p.longitude != null)
-      .map((p) => [parseFloat(p.latitude), parseFloat(p.longitude)])
-      .filter(([lat, lng]) => !Number.isNaN(lat) && !Number.isNaN(lng));
+      .map((p) => ({
+        ...p,
+        lat: parseFloat(p.latitude),
+        lng: parseFloat(p.longitude),
+        timestamp: getRoutePointTimestamp(p)
+      }))
+      .filter((p) => !Number.isNaN(p.lat) && !Number.isNaN(p.lng));
+
+    const latlngs = routePoints.map((p) => [p.lat, p.lng]);
 
     if (!latlngs.length) return;
 
@@ -178,6 +434,29 @@ async function loadTruckRoute(sessionId, options = {}) {
         weight: 5,
         opacity: 0.9
       }).addTo(truckMap);
+
+      for (let i = 1; i < routePoints.length; i++) {
+        const prev = routePoints[i - 1];
+        const current = routePoints[i];
+
+        if (prev.timestamp && current.timestamp && current.timestamp - prev.timestamp > TRACKING_ROUTE_GAP_MS) {
+          const gapLine = L.polyline(
+            [
+              [prev.lat, prev.lng],
+              [current.lat, current.lng]
+            ],
+            {
+              color: "#0d6efd",
+              weight: 4,
+              opacity: 0.65,
+              dashArray: "8, 10"
+            }
+          ).addTo(truckMap);
+
+          gapLine.bindPopup("Estimated/connected route segment after mobile sync gap.");
+          window.trackingGapPolylines.push(gapLine);
+        }
+      }
     }
 
     const startPoint = latlngs[0];
@@ -215,15 +494,16 @@ async function loadTruckRoute(sessionId, options = {}) {
       iconAnchor: [10, 10]
     });
 
+    const routeNotice = getTrackingRouteNotice(orderedRouteLogs);
+
     selectedStartMarker = L.marker(startPoint, { icon: startIcon })
       .addTo(truckMap)
       .bindPopup("Start Point");
 
     selectedCurrentMarker = L.marker(currentPoint, { icon: currentIcon })
       .addTo(truckMap)
-      .bindPopup("Current Location");
+      .bindPopup(routeNotice ? `Current Location<br>${escapeHtml(routeNotice)}` : "Current Location");
 
-    // sync active truck marker too
     if (truckMarkers[sessionId]) {
       truckMarkers[sessionId].setLatLng(currentPoint);
     }
@@ -240,10 +520,16 @@ async function loadTruckRoute(sessionId, options = {}) {
 
     const lastUpdated = document.getElementById("trackingLastUpdated");
     if (lastUpdated) {
-      const lastPoint = routeLogs[routeLogs.length - 1];
-      lastUpdated.textContent = formatTrackingTime(
+      const lastPoint = orderedRouteLogs[orderedRouteLogs.length - 1];
+      lastUpdated.textContent = formatTrackingTimeSafe(
         lastPoint.recorded_at || lastPoint.created_at || lastPoint.createdAt
       );
+    }
+
+    const trackingSignalStatus = document.getElementById("trackingSignalStatus");
+    if (trackingSignalStatus && routeNotice) {
+      trackingSignalStatus.textContent = routeNotice;
+      trackingSignalStatus.className = "tracking-signal-status warning";
     }
   } catch (error) {
     console.error("Error loading route:", error);
@@ -255,6 +541,8 @@ function resetTrackingView() {
     truckMap.removeLayer(selectedRoutePolyline);
     selectedRoutePolyline = null;
   }
+
+  clearTrackingGapPolylines();
 
   if (selectedStartMarker && truckMap) {
     truckMap.removeLayer(selectedStartMarker);
@@ -284,6 +572,14 @@ function resetTrackingView() {
   const lastUpdated = document.getElementById("trackingLastUpdated");
   if (lastUpdated) {
     lastUpdated.textContent = "--";
+  }
+
+  updateTrackingRouteStats([]);
+
+  const trackingSignalStatus = document.getElementById("trackingSignalStatus");
+  if (trackingSignalStatus) {
+    trackingSignalStatus.textContent = "No selected truck";
+    trackingSignalStatus.className = "tracking-signal-status idle";
   }
 
   updateTrackingActionButtons();
@@ -698,6 +994,19 @@ window.selectTruck = selectTruck;
 // TRACKING REPORTS
 // =============================
 
+function getTrackingReportsApiUrl() {
+  const apiBase =
+    window.APP_CONFIG?.API_BASE_URL ||
+    window.API_BASE ||
+    "http://192.168.1.37:8081/api";
+
+  return `${apiBase.replace(/\/$/, "")}/tracking/reports`;
+}
+
+function getTrackingReportDetailsApiUrl(sessionId) {
+  return `${getTrackingReportsApiUrl()}/${encodeURIComponent(sessionId)}`;
+}
+
 async function loadTrackingReports() {
   const tbody = document.getElementById("trackingReportsTableBody");
   if (!tbody) return;
@@ -718,7 +1027,7 @@ async function loadTrackingReports() {
     const data = await res.json();
 
     if (!res.ok || data.success === false) {
-      throw new Error(data.message || "Failed to load reports.");
+      throw new Error(data.message || "Failed to load tracking reports.");
     }
 
     const reports = Array.isArray(data)
@@ -806,8 +1115,6 @@ function openTrackingReportModal(data) {
       reportMap.remove();
       reportMap = null;
     }
-
-    mapContainer.innerHTML = "";
 
     reportMap = L.map("trackingReportMap").setView([6.1164, 125.1716], 13);
 
