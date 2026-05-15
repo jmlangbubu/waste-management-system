@@ -73,6 +73,145 @@ function getTableColumnSet(tableName, callback) {
   });
 }
 
+function getTableIndexSet(tableName, callback) {
+  const safeTableName = String(tableName || "").replace(/[^a-zA-Z0-9_]/g, "");
+
+  if (!safeTableName) {
+    return callback(new Error("Invalid table name"), new Set());
+  }
+
+  db.query(`SHOW INDEX FROM ${safeTableName}`, (err, rows) => {
+    if (err) {
+      console.error(`[DB] Failed to inspect ${safeTableName} indexes:`, err);
+      return callback(err, new Set());
+    }
+
+    const indexSet = new Set(
+      (rows || []).map((row) => String(row.Key_name || "").trim())
+    );
+
+    return callback(null, indexSet);
+  });
+}
+
+function ensurePendingWasteSyncColumns(callback) {
+  getTableColumnSet("pending_waste_records", (columnErr, columnSet) => {
+    if (columnErr) {
+      return callback(columnErr, columnSet || new Set());
+    }
+
+    const alters = [];
+
+    if (!hasColumn(columnSet, "client_request_id")) {
+      alters.push("ADD COLUMN client_request_id VARCHAR(160) NULL");
+    }
+
+    if (!hasColumn(columnSet, "sync_source")) {
+      alters.push("ADD COLUMN sync_source VARCHAR(80) NULL");
+    }
+
+    if (alters.length === 0) {
+      return ensurePendingWasteUniqueIndex(callback);
+    }
+
+    const alterSql = `
+      ALTER TABLE pending_waste_records
+      ${alters.join(",\n      ")}
+    `;
+
+    db.query(alterSql, (alterErr) => {
+      if (alterErr && alterErr.code !== "ER_DUP_FIELDNAME") {
+        console.error("[DB] Failed to add pending_waste_records sync columns:", alterErr);
+        return callback(alterErr, columnSet);
+      }
+
+      return ensurePendingWasteUniqueIndex(callback);
+    });
+  });
+}
+
+function ensurePendingWasteUniqueIndex(callback) {
+  getTableIndexSet("pending_waste_records", (indexErr, indexSet) => {
+    if (indexErr) {
+      return callback(indexErr, new Set());
+    }
+
+    if (indexSet.has("uniq_pending_waste_client_request")) {
+      return getTableColumnSet("pending_waste_records", callback);
+    }
+
+    const indexSql = `
+      ALTER TABLE pending_waste_records
+      ADD UNIQUE KEY uniq_pending_waste_client_request (client_request_id)
+    `;
+
+    db.query(indexSql, (alterErr) => {
+      if (alterErr && alterErr.code !== "ER_DUP_KEYNAME") {
+        console.error("[DB] Failed to add pending_waste_records unique client_request_id index:", alterErr);
+        return callback(alterErr, new Set());
+      }
+
+      return getTableColumnSet("pending_waste_records", callback);
+    });
+  });
+}
+
+function findPendingWasteByClientRequestId(clientRequestId, callback) {
+  const cleanClientRequestId = cleanText(clientRequestId);
+
+  if (!cleanClientRequestId) {
+    return callback(null, null);
+  }
+
+  const sql = `
+    SELECT id, client_request_id
+    FROM pending_waste_records
+    WHERE client_request_id = ?
+    LIMIT 1
+  `;
+
+  db.query(sql, [cleanClientRequestId], (err, rows) => {
+    if (err) {
+      return callback(err, null);
+    }
+
+    return callback(null, Array.isArray(rows) && rows.length > 0 ? rows[0] : null);
+  });
+}
+
+function buildPendingWasteInsert(payload, columnSet) {
+  const columns = ["barangay_name", "period_from", "period_to", "raw_payload", "created_at"];
+  const values = [
+    payload.barangayName,
+    payload.periodFrom,
+    payload.periodTo,
+    JSON.stringify(payload),
+    new Date()
+  ];
+
+  if (hasColumn(columnSet, "client_request_id")) {
+    columns.splice(3, 0, "client_request_id");
+    values.splice(3, 0, cleanText(payload.client_request_id || payload.clientRequestId) || null);
+  }
+
+  if (hasColumn(columnSet, "sync_source")) {
+    columns.splice(columns.length - 1, 0, "sync_source");
+    values.splice(values.length - 1, 0, cleanText(payload.sync_source || payload.syncSource) || "android_barangay_offline_safe");
+  }
+
+  const placeholders = columns.map(() => "?").join(", ");
+
+  return {
+    sql: `
+      INSERT INTO pending_waste_records (
+        ${columns.join(",\n        ")}
+      )
+      VALUES (${placeholders})
+    `,
+    values
+  };
+}
+
 function getCurrentMonthDateFilter(columnSet) {
   /*
     Citizen dashboard analytics must reset every month.
@@ -989,7 +1128,7 @@ router.get("/record-qr/:id", async (req, res) => {
    PENDING WASTE RECORDS FOR QR
 ========================================= */
 router.post("/pending-records", (req, res) => {
-  const payload = req.body;
+  const payload = req.body || {};
 
   if (!payload || !payload.barangayName || !payload.periodFrom || !payload.periodTo) {
     return res.status(400).json({
@@ -998,42 +1137,94 @@ router.post("/pending-records", (req, res) => {
     });
   }
 
-  const sql = `
-    INSERT INTO pending_waste_records (
-      barangay_name,
-      period_from,
-      period_to,
-      raw_payload,
-      created_at
-    )
-    VALUES (?, ?, ?, ?, NOW())
-  `;
+  const clientRequestId = cleanText(payload.client_request_id || payload.clientRequestId);
 
-  db.query(
-    sql,
-    [
-      payload.barangayName,
-      payload.periodFrom,
-      payload.periodTo,
-      JSON.stringify(payload)
-    ],
-    (err, result) => {
-      if (err) {
-        console.error("Create pending waste record error:", err);
+  if (clientRequestId) {
+    payload.client_request_id = clientRequestId;
+    payload.clientRequestId = clientRequestId;
+  }
+
+  ensurePendingWasteSyncColumns((syncErr, columnSet) => {
+    if (syncErr) {
+      console.error("[DB] Pending waste sync column check failed:", syncErr);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to prepare pending waste sync storage",
+        error: syncErr.message
+      });
+    }
+
+    const insertNewPendingWasteRecord = () => {
+      const builtInsert = buildPendingWasteInsert(payload, columnSet || new Set());
+
+      db.query(builtInsert.sql, builtInsert.values, (err, result) => {
+        if (err) {
+          if (err.code === "ER_DUP_ENTRY" && clientRequestId) {
+            return findPendingWasteByClientRequestId(clientRequestId, (findErr, existingRow) => {
+              if (!findErr && existingRow && existingRow.id) {
+                return res.json({
+                  success: true,
+                  message: "Pending waste record already saved",
+                  id: existingRow.id,
+                  duplicate: true,
+                  client_request_id: clientRequestId
+                });
+              }
+
+              console.error("Create pending waste record duplicate lookup error:", findErr || err);
+              return res.status(500).json({
+                success: false,
+                message: "Failed to save pending waste record",
+                error: err.message
+              });
+            });
+          }
+
+          console.error("Create pending waste record error:", err);
+          return res.status(500).json({
+            success: false,
+            message: "Failed to save pending waste record",
+            error: err.message
+          });
+        }
+
+        return res.json({
+          success: true,
+          message: "Pending waste record saved",
+          id: result.insertId,
+          duplicate: false,
+          client_request_id: clientRequestId || null
+        });
+      });
+    };
+
+    if (!clientRequestId || !hasColumn(columnSet, "client_request_id")) {
+      return insertNewPendingWasteRecord();
+    }
+
+    findPendingWasteByClientRequestId(clientRequestId, (findErr, existingRow) => {
+      if (findErr) {
+        console.error("Find pending waste by client_request_id error:", findErr);
         return res.status(500).json({
           success: false,
-          message: "Failed to save pending waste record",
-          error: err.message
+          message: "Failed to check existing pending waste record",
+          error: findErr.message
         });
       }
 
-      return res.json({
-        success: true,
-        message: "Pending waste record saved",
-        id: result.insertId
-      });
-    }
-  );
+      if (existingRow && existingRow.id) {
+        return res.json({
+          success: true,
+          message: "Pending waste record already saved",
+          id: existingRow.id,
+          duplicate: true,
+          client_request_id: clientRequestId
+        });
+      }
+
+      return insertNewPendingWasteRecord();
+    });
+  });
 });
 
 router.get("/pending-records/:id", (req, res) => {
