@@ -109,12 +109,107 @@ class TrackingService {
         await db.query(offlineSql);
     }
 
+
+    async ensureWmoNotificationsTableSafe() {
+        /*
+          The current notificationController reads WMO notifications using:
+          SELECT * FROM notifications ORDER BY createdAt DESC
+
+          So GPS notifications must use createdAt, not created_at.
+          This helper keeps the tracking flow safe even if the notifications
+          table is incomplete on local/hosted databases.
+        */
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS notifications (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                type VARCHAR(100) NULL,
+                title VARCHAR(255) NULL,
+                message TEXT NULL,
+                isRead TINYINT(1) NOT NULL DEFAULT 0,
+                createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+
+        const [columns] = await db.query(`SHOW COLUMNS FROM notifications`);
+        const columnSet = new Set((columns || []).map((row) => String(row.Field || "").trim()));
+        const alters = [];
+
+        if (!columnSet.has("type")) {
+            alters.push("ADD COLUMN type VARCHAR(100) NULL");
+        }
+
+        if (!columnSet.has("title")) {
+            alters.push("ADD COLUMN title VARCHAR(255) NULL");
+        }
+
+        if (!columnSet.has("message")) {
+            alters.push("ADD COLUMN message TEXT NULL");
+        }
+
+        if (!columnSet.has("isRead")) {
+            alters.push("ADD COLUMN isRead TINYINT(1) NOT NULL DEFAULT 0");
+        }
+
+        if (!columnSet.has("createdAt")) {
+            alters.push("ADD COLUMN createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP");
+        }
+
+        if (alters.length > 0) {
+            try {
+                await db.query(`
+                    ALTER TABLE notifications
+                    ${alters.join(",\\n                    ")}
+                `);
+            } catch (error) {
+                if (error && error.code === "ER_DUP_FIELDNAME") {
+                    console.warn("[DB] notifications optional column already exists.");
+                } else {
+                    throw error;
+                }
+            }
+        }
+    }
+
+    async hasRecentGpsTrackingNotification(eventType, truckId) {
+        const action = eventType === "off" ? "OFF" : "ON";
+
+        const [rows] = await db.query(
+            `
+            SELECT id
+            FROM notifications
+            WHERE type = 'tracking'
+              AND title = ?
+              AND message LIKE ?
+              AND createdAt >= (NOW() - INTERVAL 2 MINUTE)
+            LIMIT 1
+            `,
+            [
+                `GPS Tracking Turned ${action}`,
+                `%Truck ${truckId}%`
+            ]
+        );
+
+        return rows.length > 0;
+    }
+
     async createGpsTrackingNotification(eventType, sessionData = {}) {
         try {
+            await this.ensureWmoNotificationsTableSafe();
+
             const action = eventType === "off" ? "OFF" : "ON";
             const truckId = this.cleanText(sessionData.truck_id || sessionData.truckId || "Unknown Truck");
             const enforcerName = this.cleanText(sessionData.enforcer_name || sessionData.enforcerName || "");
             const sessionId = sessionData.session_id || sessionData.sessionId || sessionData.id || null;
+
+            /*
+              Prevent duplicate bell alerts if Android retries start/stop because
+              of weak signal or if the service re-sends the same action quickly.
+            */
+            const hasRecent = await this.hasRecentGpsTrackingNotification(eventType, truckId);
+
+            if (hasRecent) {
+                return null;
+            }
 
             const title = `GPS Tracking Turned ${action}`;
             const message = enforcerName
@@ -124,17 +219,17 @@ class TrackingService {
             await db.query(
                 `
                 INSERT INTO notifications (
+                    type,
                     title,
                     message,
-                    type,
-                    created_at
+                    isRead
                 )
-                VALUES (?, ?, ?, NOW())
+                VALUES (?, ?, ?, 0)
                 `,
                 [
+                    "tracking",
                     title,
-                    message,
-                    "tracking"
+                    message
                 ]
             );
 
@@ -184,6 +279,13 @@ class TrackingService {
         const [activeRows] = await db.query(checkActiveSql, [truck_id]);
 
         if (activeRows.length > 0) {
+            await this.createGpsTrackingNotification("on", {
+                truck_id,
+                enforcer_id,
+                enforcer_name,
+                session_id: activeRows[0].id
+            });
+
             return {
                 alreadyActive: true,
                 sessionId: activeRows[0].id
@@ -631,48 +733,54 @@ class TrackingService {
     }
 
     async checkMaintenanceNotification(truckId) {
-        const [truckRows] = await db.query(
-            `
-            SELECT id, truck_name, total_distance_km, maintenance_threshold_km
-            FROM trucks
-            WHERE id = ?
-            `,
-            [truckId]
-        );
+        try {
+            await this.ensureWmoNotificationsTableSafe();
 
-        if (truckRows.length === 0) return;
+            const [truckRows] = await db.query(
+                `
+                SELECT id, truck_name, total_distance_km, maintenance_threshold_km
+                FROM trucks
+                WHERE id = ?
+                `,
+                [truckId]
+            );
 
-        const truck = truckRows[0];
+            if (truckRows.length === 0) return;
 
-        if (Number(truck.total_distance_km || 0) < Number(truck.maintenance_threshold_km || 0)) {
-            return;
+            const truck = truckRows[0];
+
+            if (Number(truck.total_distance_km || 0) < Number(truck.maintenance_threshold_km || 0)) {
+                return;
+            }
+
+            const [existing] = await db.query(
+                `
+                SELECT id
+                FROM notifications
+                WHERE type = 'maintenance'
+                  AND message LIKE ?
+                  AND DATE(createdAt) = CURDATE()
+                LIMIT 1
+                `,
+                [`%Truck ${truck.truck_name}%`]
+            );
+
+            if (existing.length > 0) return;
+
+            await db.query(
+                `
+                INSERT INTO notifications (type, title, message, isRead)
+                VALUES (?, ?, ?, 0)
+                `,
+                [
+                    "maintenance",
+                    "Maintenance Required",
+                    `Truck ${truck.truck_name} reached ${Number(truck.total_distance_km || 0).toFixed(2)} km`
+                ]
+            );
+        } catch (error) {
+            console.error("checkMaintenanceNotification warning:", error);
         }
-
-        const [existing] = await db.query(
-            `
-            SELECT id
-            FROM notifications
-            WHERE truck_id = ?
-              AND type = 'maintenance'
-              AND DATE(created_at) = CURDATE()
-            `,
-            [truck.id]
-        );
-
-        if (existing.length > 0) return;
-
-        await db.query(
-            `
-            INSERT INTO notifications (title, message, type, truck_id, created_at)
-            VALUES (?, ?, ?, ?, NOW())
-            `,
-            [
-                "Maintenance Required",
-                `Truck ${truck.truck_name} reached ${Number(truck.total_distance_km || 0).toFixed(2)} km`,
-                "maintenance",
-                truck.id
-            ]
-        );
     }
 
     async upsertLastLocation(data) {
