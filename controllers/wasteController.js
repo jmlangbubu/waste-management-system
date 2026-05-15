@@ -5,7 +5,8 @@ const db = require("../config/dbPromise");
    Safe validated waste records persistence
    - Keeps existing API response shape
    - Adds DB column safety checks for signature/notes/raw payload fields
-   - Prevents internal server error when optional columns are missing
+   - Handles older validated_waste_records tables with personnel_name NOT NULL
+   - Prevents notification insert failure from blocking validation save
 ========================================= */
 
 function cleanText(value) {
@@ -18,6 +19,35 @@ function cleanText(value) {
   }
 
   return text;
+}
+
+function safeJsonParse(value) {
+  if (value === undefined || value === null || value === "") return null;
+
+  if (typeof value === "object") return value;
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+
+    try {
+      return JSON.parse(trimmed);
+    } catch (firstError) {
+      try {
+        const unwrapped = JSON.parse(trimmed);
+
+        if (typeof unwrapped === "string") {
+          return JSON.parse(unwrapped);
+        }
+
+        return unwrapped;
+      } catch (secondError) {
+        return null;
+      }
+    }
+  }
+
+  return null;
 }
 
 function normalizeRawPayload(rawPayload) {
@@ -86,7 +116,17 @@ function normalizeMysqlDate(value) {
   return new Date();
 }
 
-async function getTableColumnSet(tableName) {
+function firstNonEmpty(...values) {
+  for (const value of values) {
+    const cleaned = cleanText(value);
+
+    if (cleaned) return cleaned;
+  }
+
+  return "";
+}
+
+async function getTableColumns(tableName) {
   const safeTableName = String(tableName || "").replace(/[^a-zA-Z0-9_]/g, "");
 
   if (!safeTableName) {
@@ -95,13 +135,33 @@ async function getTableColumnSet(tableName) {
 
   const [rows] = await db.query(`SHOW COLUMNS FROM ${safeTableName}`);
 
+  return rows || [];
+}
+
+async function getTableColumnSet(tableName) {
+  const rows = await getTableColumns(tableName);
+
   return new Set(
-    (rows || []).map((row) => String(row.Field || "").trim())
+    rows.map((row) => String(row.Field || "").trim())
   );
 }
 
 function hasColumn(columnSet, columnName) {
   return columnSet && columnSet.has(columnName);
+}
+
+function getColumnMetaMap(rows = []) {
+  const map = new Map();
+
+  rows.forEach((row) => {
+    const field = cleanText(row.Field);
+
+    if (field) {
+      map.set(field, row);
+    }
+  });
+
+  return map;
 }
 
 async function runAlterTableSafely(sql, label) {
@@ -152,6 +212,15 @@ async function ensureValidatedWasteRecordColumns() {
 
   if (!hasColumn(columnSet, "source_type")) {
     alters.push("ADD COLUMN source_type VARCHAR(120) NULL");
+  }
+
+  /*
+    Some older validated_waste_records tables already have personnel_name as NOT NULL.
+    Android validation sends validated_by as the enforcer name, so the insert must
+    provide personnel_name too when the column exists.
+  */
+  if (!hasColumn(columnSet, "personnel_name")) {
+    alters.push("ADD COLUMN personnel_name VARCHAR(255) NULL");
   }
 
   if (!hasColumn(columnSet, "period_from")) {
@@ -303,6 +372,105 @@ async function createWmoWasteNotification(sourceName) {
   }
 }
 
+function getPersonnelNameFromBody(body = {}) {
+  const rawPayloadObject = safeJsonParse(body.raw_payload);
+  const nestedRawPayload = rawPayloadObject && typeof rawPayloadObject === "object"
+    ? rawPayloadObject
+    : {};
+
+  return firstNonEmpty(
+    body.personnel_name,
+    body.personnelName,
+    body.submitted_by,
+    body.submittedBy,
+    body.created_by,
+    body.createdBy,
+    nestedRawPayload.personnel_name,
+    nestedRawPayload.personnelName,
+    nestedRawPayload.submitted_by,
+    nestedRawPayload.submittedBy,
+    nestedRawPayload.created_by,
+    nestedRawPayload.createdBy,
+    body.validated_by,
+    "Unknown Personnel"
+  );
+}
+
+function getFallbackValueForRequiredColumn(columnName, body = {}) {
+  const rawPayloadObject = safeJsonParse(body.raw_payload);
+  const nestedRawPayload = rawPayloadObject && typeof rawPayloadObject === "object"
+    ? rawPayloadObject
+    : {};
+
+  switch (columnName) {
+    case "personnel_name":
+      return getPersonnelNameFromBody(body);
+
+    case "entry_type":
+      return cleanText(body.entry_type) || "barangay";
+
+    case "barangay_name":
+      return firstNonEmpty(body.barangay_name, nestedRawPayload.barangayName, nestedRawPayload.barangay_name, "N/A");
+
+    case "establishment_name":
+      return firstNonEmpty(body.establishment_name, nestedRawPayload.establishmentName, nestedRawPayload.establishment_name, "N/A");
+
+    case "period_from":
+    case "period_to":
+      return null;
+
+    case "remarks":
+    case "validation_notes":
+    case "raw_payload":
+    case "enforcer_signature":
+      return "";
+
+    case "biodegradable_subtotal":
+    case "recyclable_subtotal":
+    case "residual_subtotal":
+    case "special_subtotal":
+    case "grand_total":
+      return 0;
+
+    case "validation_status":
+      return "Validated";
+
+    case "validated_by":
+      return firstNonEmpty(body.validated_by, "Unknown Enforcer");
+
+    case "validated_at":
+      return new Date();
+
+    default:
+      return "";
+  }
+}
+
+/*
+  Some legacy table columns may be NOT NULL with no default.
+  This function prevents ER_NO_DEFAULT_FOR_FIELD by adding safe fallback values
+  for any required column that the dynamic insert did not already include.
+*/
+async function addRequiredNoDefaultColumns(insertColumns, insertValues, body = {}) {
+  const rows = await getTableColumns("validated_waste_records");
+  const columnMetaMap = getColumnMetaMap(rows);
+  const existing = new Set(insertColumns);
+
+  columnMetaMap.forEach((meta, columnName) => {
+    const isAutoIncrement = cleanText(meta.Extra).toLowerCase().includes("auto_increment");
+    const canBeNull = String(meta.Null || "").toUpperCase() === "YES";
+    const hasDefault = meta.Default !== null && meta.Default !== undefined;
+
+    if (existing.has(columnName) || isAutoIncrement || canBeNull || hasDefault) {
+      return;
+    }
+
+    insertColumns.push(columnName);
+    insertValues.push(getFallbackValueForRequiredColumn(columnName, body));
+    existing.add(columnName);
+  });
+}
+
 /* =========================================
    CREATE VALIDATED WASTE RECORD
 ========================================= */
@@ -344,6 +512,7 @@ const createValidatedWasteRecord = async (req, res) => {
 
     const normalizedRawPayload = normalizeRawPayload(raw_payload);
     const columnSet = await ensureValidatedWasteRecordColumns();
+    const personnelName = getPersonnelNameFromBody(body);
 
     /*
       Dynamic insert:
@@ -367,6 +536,7 @@ const createValidatedWasteRecord = async (req, res) => {
     addColumn("barangay_address", cleanText(barangay_address) || null);
     addColumn("establishment_address", cleanText(establishment_address) || null);
     addColumn("source_type", cleanText(source_type) || null);
+    addColumn("personnel_name", personnelName);
     addColumn("period_from", cleanText(period_from) || null);
     addColumn("period_to", cleanText(period_to) || null);
     addColumn("remarks", cleanText(remarks) || null);
@@ -381,6 +551,8 @@ const createValidatedWasteRecord = async (req, res) => {
     addColumn("validated_at", normalizeMysqlDate(validated_at));
     addColumn("validation_notes", cleanText(validation_notes) || null);
     addColumn("raw_payload", normalizedRawPayload);
+
+    await addRequiredNoDefaultColumns(insertColumns, insertValues, body);
 
     if (!insertColumns.length) {
       return res.status(500).json({
@@ -435,6 +607,7 @@ const getValidatedWasteRecords = async (req, res) => {
       "barangay_address",
       "establishment_address",
       "source_type",
+      "personnel_name",
       "period_from",
       "period_to",
       "remarks",
