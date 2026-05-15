@@ -20,6 +20,11 @@
 const NOTIF_DISMISSED_STORAGE_KEY = "wmoDismissedNotificationKeys";
 const NOTIF_SEEN_STORAGE_KEY = "wmoSeenNotificationKeys";
 
+let notificationRealtimeSocket = null;
+let notificationRealtimeStarted = false;
+let notificationRealtimeRefreshTimer = null;
+let notificationInitialLoadStarted = false;
+
 function safeNotificationText(value) {
   if (value === null || value === undefined) return "";
   return String(value).trim();
@@ -1079,6 +1084,159 @@ function closeNotificationDetailModal() {
 }
 
 
+function getNotificationRealtimeBaseUrl() {
+  if (window.APP_CONFIG?.BASE_URL) {
+    return String(window.APP_CONFIG.BASE_URL).replace(/\/$/, "");
+  }
+
+  if (window.APP_CONFIG?.API_BASE_URL) {
+    return String(window.APP_CONFIG.API_BASE_URL)
+      .replace(/\/api\/?$/, "")
+      .replace(/\/$/, "");
+  }
+
+  if (typeof getAppApiBase === "function") {
+    return String(getAppApiBase())
+      .replace(/\/api\/?$/, "")
+      .replace(/\/$/, "");
+  }
+
+  return window.location.origin;
+}
+
+function loadSocketIoClientForNotifications() {
+  return new Promise((resolve, reject) => {
+    if (window.io) {
+      resolve(window.io);
+      return;
+    }
+
+    const existingScript = document.querySelector("script[data-wmo-socket-client='true']");
+
+    if (existingScript) {
+      existingScript.addEventListener("load", () => resolve(window.io));
+      existingScript.addEventListener("error", () => reject(new Error("Socket.IO client failed to load.")));
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.dataset.wmoSocketClient = "true";
+    script.async = true;
+    script.src = `${getNotificationRealtimeBaseUrl()}/socket.io/socket.io.js`;
+
+    script.onload = () => {
+      if (window.io) {
+        resolve(window.io);
+      } else {
+        reject(new Error("Socket.IO client loaded but window.io is unavailable."));
+      }
+    };
+
+    script.onerror = () => {
+      reject(new Error("Socket.IO client script request failed."));
+    };
+
+    document.head.appendChild(script);
+  });
+}
+
+function scheduleRealtimeNotificationRefresh(reason = "realtime") {
+  if (notificationRealtimeRefreshTimer) {
+    clearTimeout(notificationRealtimeRefreshTimer);
+  }
+
+  notificationRealtimeRefreshTimer = setTimeout(() => {
+    loadNotifications(false).catch((error) => {
+      console.warn("Realtime notification refresh failed:", reason, error);
+    });
+  }, 250);
+}
+
+function setupAdminNotificationRealtime() {
+  if (notificationRealtimeStarted) {
+    return;
+  }
+
+  notificationRealtimeStarted = true;
+
+  loadSocketIoClientForNotifications()
+    .then((ioClient) => {
+      const realtimeBaseUrl = getNotificationRealtimeBaseUrl();
+
+      notificationRealtimeSocket = ioClient(realtimeBaseUrl, {
+        transports: ["websocket", "polling"],
+        reconnection: true,
+        reconnectionAttempts: Infinity,
+        reconnectionDelay: 1000,
+        timeout: 10000
+      });
+
+      notificationRealtimeSocket.on("connect", () => {
+        notificationRealtimeSocket.emit("join:wmo");
+        scheduleRealtimeNotificationRefresh("socket-connected");
+        console.log("[WMO Notifications] Realtime connected.");
+      });
+
+      notificationRealtimeSocket.on("disconnect", (reason) => {
+        console.log("[WMO Notifications] Realtime disconnected:", reason);
+      });
+
+      notificationRealtimeSocket.on("connect_error", (error) => {
+        console.warn("[WMO Notifications] Realtime connection error:", error?.message || error);
+      });
+
+      const refreshEvents = [
+        "wmo:barangay-explanation-received",
+        "wmo:complaint-auto-rejected-overdue",
+        "wmo:complaint-created",
+        "wmo:complaint-submitted",
+        "wmo:complaint-notification",
+        "wmo:complaint-forwarded",
+        "wmo:complaint-resolved",
+        "wmo:complaint-rejected",
+        "wmo:tracking-notification",
+        "wmo:gps-tracking-notification",
+        "notification:new",
+        "notifications:new",
+        "wmo:notification"
+      ];
+
+      refreshEvents.forEach((eventName) => {
+        notificationRealtimeSocket.on(eventName, () => {
+          scheduleRealtimeNotificationRefresh(eventName);
+        });
+      });
+
+      /*
+        Safe catch-all:
+        Any future WMO event should refresh the bell/list immediately.
+        This avoids needing to update the frontend every time a new WMO event
+        name is added in the backend.
+      */
+      if (typeof notificationRealtimeSocket.onAny === "function") {
+        notificationRealtimeSocket.onAny((eventName) => {
+          const eventText = safeNotificationText(eventName).toLowerCase();
+
+          if (
+            eventText.startsWith("wmo:") ||
+            eventText.includes("notification") ||
+            eventText.includes("complaint")
+          ) {
+            scheduleRealtimeNotificationRefresh(eventName);
+          }
+        });
+      }
+    })
+    .catch((error) => {
+      /*
+        If realtime client cannot load, polling still works.
+        The polling interval is also shortened below for a safer fallback.
+      */
+      console.warn("[WMO Notifications] Realtime unavailable. Polling fallback remains active.", error);
+    });
+}
+
+
 function renderNotificationsFromFeed(list = []) {
   notificationFeedItems = sortNotificationsNewestFirst(Array.isArray(list) ? list : []);
   renderNotifications(notificationFeedItems);
@@ -1111,9 +1269,14 @@ function startNotificationPolling() {
     clearInterval(notificationPollingInterval);
   }
 
+  if (!notificationInitialLoadStarted) {
+    notificationInitialLoadStarted = true;
+    loadNotifications(false);
+  }
+
   notificationPollingInterval = setInterval(() => {
     loadNotifications(false);
-  }, 10000);
+  }, 3000);
 }
 
 function renderNotifications(list = []) {
@@ -1220,6 +1383,9 @@ function bindNotificationActions() {
   const notificationList = document.getElementById("notificationList");
 
   if (!notificationBtn || !notificationDropdown) return;
+
+  setupAdminNotificationRealtime();
+  startNotificationPolling();
 
   ensureNotificationHeaderActions();
   ensureNotificationDropdownScrollStyles();
@@ -1328,3 +1494,18 @@ function bindNotificationActions() {
     };
   }
 }
+
+
+/*
+  Fallback initializer:
+  If admin-init.js does not call bindNotificationActions for any reason,
+  this keeps the WMO notification bell/list live.
+*/
+document.addEventListener("DOMContentLoaded", () => {
+  setTimeout(() => {
+    bindNotificationActions();
+    setupAdminNotificationRealtime();
+    startNotificationPolling();
+  }, 300);
+});
+
