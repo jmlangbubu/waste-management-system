@@ -41,6 +41,76 @@ function getNotificationCreatedValue(notif = {}) {
   );
 }
 
+function parseNotificationTimeMs(value) {
+  const raw = safeNotificationText(value);
+
+  if (!raw) return 0;
+
+  if (/^\d+$/.test(raw)) {
+    const numeric = Number(raw);
+    return raw.length <= 10 ? numeric * 1000 : numeric;
+  }
+
+  const normalized = raw
+    .replace("T", " ")
+    .replace(/\.\d+Z$/, "Z")
+    .trim();
+
+  const directTime = Date.parse(raw);
+  if (!Number.isNaN(directTime)) {
+    return directTime;
+  }
+
+  /*
+    MySQL DATETIME format sometimes arrives as:
+    2026-05-15 18:46:56
+    Convert it to a local ISO-like date for reliable sorting.
+  */
+  const mysqlDateMatch = normalized.match(
+    /^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})(?::(\d{2}))?$/
+  );
+
+  if (mysqlDateMatch) {
+    const [, year, month, day, hour, minute, second = "00"] = mysqlDateMatch;
+    return new Date(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hour),
+      Number(minute),
+      Number(second)
+    ).getTime();
+  }
+
+  return 0;
+}
+
+function getNotificationTimeMs(notif = {}) {
+  return parseNotificationTimeMs(getNotificationCreatedValue(notif));
+}
+
+function sortNotificationsNewestFirst(list = []) {
+  return (Array.isArray(list) ? list : [])
+    .map((notif, index) => ({
+      notif,
+      index,
+      timeMs: getNotificationTimeMs(notif)
+    }))
+    .sort((a, b) => {
+      /*
+        New/current notifications must stay at the top.
+        Older/past notifications go below.
+        If date is missing/same, keep original order to avoid UI jumping.
+      */
+      if (b.timeMs !== a.timeMs) {
+        return b.timeMs - a.timeMs;
+      }
+
+      return a.index - b.index;
+    })
+    .map((item) => item.notif);
+}
+
 function getNotificationType(notif = {}) {
   const rawType = safeNotificationText(
     notif.notification_type ||
@@ -231,6 +301,126 @@ function getNotificationStatusClass(notif = {}) {
 
   return "pending";
 }
+
+function getNotificationDisplayTitle(notif = {}) {
+  const rawTitle = getNotificationTitle(notif);
+  const lowerTitle = rawTitle.toLowerCase();
+  const message = getNotificationMessage(notif).toLowerCase();
+  const type = getNotificationType(notif).toLowerCase();
+
+  if (
+    lowerTitle.includes("barangay explanation") ||
+    message.includes("replied to wmo") ||
+    message.includes("explanation received") ||
+    type.includes("explanation")
+  ) {
+    return "Barangay Explanation Received";
+  }
+
+  if (
+    lowerTitle.includes("accepted complaint overdue") ||
+    message.includes("did not submit a resolution within 24 hours")
+  ) {
+    return "Accepted Complaint Overdue";
+  }
+
+  if (
+    lowerTitle.includes("gps tracking turned on") ||
+    message.includes("gps tracking was turned on")
+  ) {
+    return "GPS Tracking Turned On";
+  }
+
+  if (
+    lowerTitle.includes("gps tracking turned off") ||
+    message.includes("gps tracking was turned off")
+  ) {
+    return "GPS Tracking Turned Off";
+  }
+
+  return rawTitle;
+}
+
+function getNotificationDisplayIcon(notif = {}) {
+  const combined = [
+    getNotificationType(notif),
+    getNotificationDisplayTitle(notif),
+    getNotificationMessage(notif),
+    safeNotificationText(notif.status)
+  ].join(" ").toLowerCase();
+
+  if (combined.includes("explanation") || combined.includes("replied to wmo")) {
+    return "💬";
+  }
+
+  if (combined.includes("resolution") || combined.includes("resolved")) {
+    return "✅";
+  }
+
+  if (combined.includes("complaint") || combined.includes("concern")) {
+    return "⚠️";
+  }
+
+  if (combined.includes("gps") || combined.includes("tracking") || combined.includes("truck")) {
+    return "🚛";
+  }
+
+  if (combined.includes("waste") || combined.includes("validation") || combined.includes("qr")) {
+    return "♻️";
+  }
+
+  if (combined.includes("appointment") || combined.includes("orientation")) {
+    return "📅";
+  }
+
+  return "🔔";
+}
+
+function getNotificationToneClass(notif = {}) {
+  const combined = [
+    getNotificationType(notif),
+    getNotificationDisplayTitle(notif),
+    getNotificationMessage(notif),
+    safeNotificationText(notif.status)
+  ].join(" ").toLowerCase();
+
+  if (combined.includes("explanation") || combined.includes("replied to wmo")) {
+    return "info";
+  }
+
+  if (combined.includes("resolution") || combined.includes("resolved")) {
+    return "success";
+  }
+
+  if (combined.includes("gps") || combined.includes("tracking") || combined.includes("truck")) {
+    return "tracking";
+  }
+
+  if (combined.includes("overdue") || combined.includes("rejected")) {
+    return "danger";
+  }
+
+  if (combined.includes("complaint") || combined.includes("concern")) {
+    return "warning";
+  }
+
+  return "default";
+}
+
+function getNotificationDisplayMessage(notif = {}) {
+  const message = getNotificationMessage(notif);
+  const title = getNotificationDisplayTitle(notif).toLowerCase();
+
+  if (
+    title.includes("barangay explanation received") &&
+    message.toLowerCase().includes("replied to wmo")
+  ) {
+    return message;
+  }
+
+  return message || "Open the related module for more details.";
+}
+
 
 function getNotificationSource(notif = {}) {
   return safeNotificationText(notif.source || notif._source || notif.target_type || "");
@@ -613,63 +803,14 @@ function ensureNotificationHeaderActions() {
 }
 
 function ensureNotificationDropdownScrollStyles() {
-  if (document.getElementById("wmo-notification-scroll-style")) return;
+  /*
+    Styles are now handled by external CSS files:
+    - css/admin/admin-topbar.css
+    - css/admin/admin-overrides.css
 
-  const style = document.createElement("style");
-  style.id = "wmo-notification-scroll-style";
-  style.textContent = `
-    #notificationDropdown {
-      max-height: min(74vh, 560px) !important;
-      overflow: hidden !important;
-      display: flex !important;
-      flex-direction: column !important;
-    }
-
-    #notificationDropdown.hidden {
-      display: none !important;
-    }
-
-    #notificationDropdown .notif-header {
-      flex: 0 0 auto !important;
-    }
-
-    #notificationList {
-      flex: 1 1 auto !important;
-      min-height: 0 !important;
-      max-height: min(62vh, 455px) !important;
-      overflow-y: auto !important;
-      overflow-x: hidden !important;
-      overscroll-behavior: contain !important;
-      -webkit-overflow-scrolling: touch !important;
-      padding-right: 6px !important;
-    }
-
-    #notificationList::-webkit-scrollbar {
-      width: 8px !important;
-    }
-
-    #notificationList::-webkit-scrollbar-thumb {
-      background: #cbd5e1 !important;
-      border-radius: 999px !important;
-    }
-
-    #notificationList::-webkit-scrollbar-track {
-      background: transparent !important;
-    }
-
-    @media (max-width: 640px) {
-      #notificationDropdown {
-        width: min(94vw, 420px) !important;
-        max-height: 76vh !important;
-      }
-
-      #notificationList {
-        max-height: 58vh !important;
-      }
-    }
-  `;
-
-  document.head.appendChild(style);
+    Kept as a safe no-op because existing notification code calls this function.
+  */
+  return;
 }
 
 function isNotificationEventInsideDropdown(event) {
@@ -788,8 +929,158 @@ function bindNotificationAutoCloseOnScroll() {
   });
 }
 
+function escapeNotificationDetailHtml(value) {
+  const text = safeNotificationText(value);
+
+  if (typeof escapeHtml === "function") {
+    return escapeHtml(text);
+  }
+
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function getNotificationByStableKey(key = "") {
+  const targetKey = safeNotificationText(key);
+
+  if (!targetKey) return null;
+
+  return (Array.isArray(notificationFeedItems) ? notificationFeedItems : []).find(
+    (item) => getNotificationStableKey(item) === targetKey
+  ) || null;
+}
+
+function formatNotificationDetailDate(value) {
+  if (!value) return "";
+
+  if (typeof formatDate === "function") {
+    return formatDate(value);
+  }
+
+  return safeNotificationText(value);
+}
+
+function ensureNotificationDetailModal() {
+  let modal = document.getElementById("notificationDetailModal");
+
+  if (modal) return modal;
+
+  modal = document.createElement("div");
+  modal.id = "notificationDetailModal";
+  modal.className = "notification-detail-modal hidden";
+  modal.setAttribute("aria-hidden", "true");
+
+  modal.innerHTML = `
+    <div class="notification-detail-backdrop" data-notification-detail-close="true"></div>
+
+    <section class="notification-detail-card" role="dialog" aria-modal="true" aria-labelledby="notificationDetailTitle">
+      <header class="notification-detail-header">
+        <div class="notification-detail-icon" id="notificationDetailIcon">💬</div>
+
+        <div class="notification-detail-heading">
+          <p class="notification-detail-eyebrow" id="notificationDetailType">Notification</p>
+          <h3 id="notificationDetailTitle">Notification Details</h3>
+          <span id="notificationDetailDate" class="notification-detail-date"></span>
+        </div>
+
+        <button type="button" class="notification-detail-close" data-notification-detail-close="true" aria-label="Close notification detail">×</button>
+      </header>
+
+      <div class="notification-detail-body">
+        <div class="notification-detail-message" id="notificationDetailMessage"></div>
+      </div>
+
+      <footer class="notification-detail-footer">
+        <button type="button" class="notification-detail-secondary" data-notification-detail-close="true">Close</button>
+        <button type="button" class="notification-detail-primary" id="notificationDetailOpenTargetBtn">Open Related Module</button>
+      </footer>
+    </section>
+  `;
+
+  document.body.appendChild(modal);
+
+  modal.addEventListener("click", (event) => {
+    if (event.target.closest("[data-notification-detail-close='true']")) {
+      closeNotificationDetailModal();
+    }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !modal.classList.contains("hidden")) {
+      closeNotificationDetailModal();
+    }
+  });
+
+  return modal;
+}
+
+function openNotificationDetailModal(notif = {}) {
+  const modal = ensureNotificationDetailModal();
+  const normalizedNotif = normalizeAdminNotification(notif, getNotificationSource(notif));
+  const icon = getNotificationDisplayIcon(normalizedNotif);
+  const title = getNotificationDisplayTitle(normalizedNotif);
+  const message = getNotificationDisplayMessage(normalizedNotif);
+  const type = getNotificationType(normalizedNotif);
+  const dateValue = getNotificationCreatedValue(normalizedNotif);
+  const dateText = formatNotificationDetailDate(dateValue);
+  const toneClass = getNotificationToneClass(normalizedNotif);
+
+  const iconEl = modal.querySelector("#notificationDetailIcon");
+  const typeEl = modal.querySelector("#notificationDetailType");
+  const titleEl = modal.querySelector("#notificationDetailTitle");
+  const dateEl = modal.querySelector("#notificationDetailDate");
+  const messageEl = modal.querySelector("#notificationDetailMessage");
+  const openBtn = modal.querySelector("#notificationDetailOpenTargetBtn");
+
+  modal.className = `notification-detail-modal notif-detail-tone-${toneClass}`;
+
+  if (iconEl) iconEl.textContent = icon || "🔔";
+  if (typeEl) typeEl.textContent = type || "Notification";
+  if (titleEl) titleEl.textContent = title || "Notification Details";
+  if (dateEl) {
+    dateEl.textContent = dateText || "";
+    dateEl.style.display = dateText ? "inline-flex" : "none";
+  }
+
+  if (messageEl) {
+    messageEl.innerHTML = escapeNotificationDetailHtml(
+      message || "No message content available."
+    ).replace(/\n/g, "<br>");
+  }
+
+  if (openBtn) {
+    openBtn.onclick = () => {
+      closeNotificationDetailModal();
+      notificationsOpen = false;
+
+      const dropdown = document.getElementById("notificationDropdown");
+      if (dropdown) {
+        dropdown.classList.add("hidden");
+      }
+
+      openNotificationTarget(normalizedNotif);
+    };
+  }
+
+  modal.classList.remove("hidden");
+  modal.setAttribute("aria-hidden", "false");
+}
+
+function closeNotificationDetailModal() {
+  const modal = document.getElementById("notificationDetailModal");
+  if (!modal) return;
+
+  modal.classList.add("hidden");
+  modal.setAttribute("aria-hidden", "true");
+}
+
+
 function renderNotificationsFromFeed(list = []) {
-  notificationFeedItems = Array.isArray(list) ? list : [];
+  notificationFeedItems = sortNotificationsNewestFirst(Array.isArray(list) ? list : []);
   renderNotifications(notificationFeedItems);
 }
 
@@ -803,10 +1094,10 @@ async function loadNotifications(playSound = true) {
       fetchNotificationListFromUrl(getWmoComplaintNotificationsApiUrl(), "wmo_complaints")
     ]);
 
-    notificationFeedItems = uniqueNotificationsByStableKey([
+    notificationFeedItems = sortNotificationsNewestFirst(uniqueNotificationsByStableKey([
       ...genericNotifications,
       ...complaintNotifications
-    ]);
+    ]));
 
     renderNotificationsFromFeed(notificationFeedItems);
   } catch (error) {
@@ -835,14 +1126,14 @@ function renderNotifications(list = []) {
   ensureNotificationDropdownScrollStyles();
   bindNotificationDropdownInnerScrollProtection();
 
-  const safeList = Array.isArray(list) ? list : [];
+  const safeList = sortNotificationsNewestFirst(Array.isArray(list) ? list : []);
   const dismissedKeys = getDismissedNotificationIds();
   const seenKeys = getSeenNotificationKeys();
 
-  const visibleNotifications = safeList.filter((notif) => {
+  const visibleNotifications = sortNotificationsNewestFirst(safeList.filter((notif) => {
     const key = getNotificationStableKey(notif);
     return !dismissedKeys.includes(key);
-  });
+  }));
 
   const unseenNotifications = visibleNotifications.filter((notif) => {
     const key = getNotificationStableKey(notif);
@@ -860,39 +1151,65 @@ function renderNotifications(list = []) {
   notificationList.innerHTML = visibleNotifications.slice(0, 20).map((notif) => {
     const normalizedNotif = normalizeAdminNotification(notif, getNotificationSource(notif));
     const key = getNotificationStableKey(normalizedNotif);
-    const title = getNotificationTitle(normalizedNotif);
-    const message = getNotificationMessage(normalizedNotif);
+    const title = getNotificationDisplayTitle(normalizedNotif);
+    const message = getNotificationDisplayMessage(normalizedNotif);
     const type = getNotificationType(normalizedNotif);
     const statusClass = getNotificationStatusClass(normalizedNotif);
+    const toneClass = getNotificationToneClass(normalizedNotif);
+    const icon = getNotificationDisplayIcon(normalizedNotif);
     const createdRaw = getNotificationCreatedValue(normalizedNotif);
     const createdAt = createdRaw ? formatDate(createdRaw) : "";
     const isSeen = seenKeys.includes(key);
 
     return `
-      <div
-        class="notif-item ${isSeen ? "seen" : "unseen"}"
+      <article
+        class="notif-item notif-tone-${escapeHtml(toneClass)} ${isSeen ? "seen" : "unseen"}"
         data-key="${escapeHtml(key)}"
         data-type="${escapeHtml(type)}"
+        role="button"
+        tabindex="0"
+        aria-label="${escapeHtml(title)}"
       >
-        <div class="notif-content">
-          <div class="notif-title">${escapeHtml(title)}</div>
-          <div class="notif-meta">
-            <span>${escapeHtml(message)}</span>
-          </div>
-          <div class="notif-status-row">
-            <span class="notif-status ${escapeHtml(statusClass)}">${escapeHtml(type)}</span>
-            <span class="notif-assigned">${escapeHtml(createdAt)}</span>
+        <div class="notif-main">
+          <div class="notif-icon" aria-hidden="true">${escapeHtml(icon)}</div>
+
+          <div class="notif-content">
+            <div class="notif-title-row">
+              <div class="notif-title">${escapeHtml(title)}</div>
+              ${isSeen ? "" : `<span class="notif-unread-dot" aria-label="Unread"></span>`}
+            </div>
+
+            <p class="notif-message">${escapeHtml(message)}</p>
+
+            <div class="notif-status-row">
+              <span class="notif-status ${escapeHtml(statusClass)}">${escapeHtml(type)}</span>
+              ${createdAt ? `<span class="notif-date">${escapeHtml(createdAt)}</span>` : ""}
+            </div>
           </div>
         </div>
 
-        <button
-          type="button"
-          class="clear-notification-btn btn-clear-notif"
-          data-key="${escapeHtml(key)}"
-        >
-          Clear
-        </button>
-      </div>
+        <div class="notif-actions">
+          <button
+            type="button"
+            class="view-notification-btn btn-view-notif"
+            data-key="${escapeHtml(key)}"
+            aria-label="View full notification message"
+            title="View full message"
+          >
+            View
+          </button>
+
+          <button
+            type="button"
+            class="clear-notification-btn btn-clear-notif"
+            data-key="${escapeHtml(key)}"
+            aria-label="Clear notification"
+            title="Clear notification"
+          >
+            Clear
+          </button>
+        </div>
+      </article>
     `;
   }).join("");
 }
@@ -937,6 +1254,32 @@ function bindNotificationActions() {
 
   if (notificationList) {
     notificationList.onclick = (event) => {
+      const viewBtn = event.target.closest(".btn-view-notif");
+
+      if (viewBtn) {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const key = viewBtn.getAttribute("data-key");
+        const selectedNotification = getNotificationByStableKey(key);
+
+        if (key) {
+          const seen = getSeenNotificationKeys();
+          if (!seen.includes(key)) {
+            seen.push(key);
+            setSeenNotificationKeys(seen);
+          }
+        }
+
+        openNotificationDetailModal(selectedNotification || {
+          title: "Notification Details",
+          message: viewBtn.closest(".notif-item")?.querySelector(".notif-message")?.textContent || ""
+        });
+
+        renderNotificationsFromFeed(notificationFeedItems);
+        return;
+      }
+
       const clearBtn = event.target.closest(".btn-clear-notif");
 
       if (clearBtn) {
@@ -980,7 +1323,7 @@ function bindNotificationActions() {
       openNotificationTarget(selectedNotification || {
         type: notifItem.getAttribute("data-type") || "",
         title: notifItem.querySelector(".notif-title")?.textContent || "",
-        message: notifItem.querySelector(".notif-meta")?.textContent || ""
+        message: notifItem.querySelector(".notif-message")?.textContent || notifItem.querySelector(".notif-meta")?.textContent || ""
       });
     };
   }
