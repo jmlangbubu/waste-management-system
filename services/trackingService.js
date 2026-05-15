@@ -109,6 +109,53 @@ class TrackingService {
         await db.query(offlineSql);
     }
 
+    async createGpsTrackingNotification(eventType, sessionData = {}) {
+        try {
+            const action = eventType === "off" ? "OFF" : "ON";
+            const truckId = this.cleanText(sessionData.truck_id || sessionData.truckId || "Unknown Truck");
+            const enforcerName = this.cleanText(sessionData.enforcer_name || sessionData.enforcerName || "");
+            const sessionId = sessionData.session_id || sessionData.sessionId || sessionData.id || null;
+
+            const title = `GPS Tracking Turned ${action}`;
+            const message = enforcerName
+                ? `Truck ${truckId} GPS tracking was turned ${action} by ${enforcerName}.`
+                : `Truck ${truckId} GPS tracking was turned ${action}.`;
+
+            await db.query(
+                `
+                INSERT INTO notifications (
+                    title,
+                    message,
+                    type,
+                    created_at
+                )
+                VALUES (?, ?, ?, NOW())
+                `,
+                [
+                    title,
+                    message,
+                    "tracking"
+                ]
+            );
+
+            return {
+                title,
+                message,
+                type: "tracking",
+                truck_id: truckId,
+                session_id: sessionId
+            };
+        } catch (error) {
+            /*
+              Do not block GPS tracking if notification insert fails.
+              Tracking data is more important than the notification UI.
+            */
+            console.error("createGpsTrackingNotification error:", error);
+            return null;
+        }
+    }
+
+
     async startTrackingSession(data) {
         await this.autoStopExpiredSessions();
 
@@ -191,6 +238,13 @@ class TrackingService {
             });
         }
 
+        await this.createGpsTrackingNotification("on", {
+            truck_id,
+            enforcer_id,
+            enforcer_name,
+            session_id: sessionId
+        });
+
         return {
             alreadyActive: false,
             sessionId
@@ -209,7 +263,7 @@ class TrackingService {
             : "stopped";
 
         const getSessionSql = `
-            SELECT id, truck_id, session_status
+            SELECT id, truck_id, enforcer_name, session_status
             FROM truck_tracking_sessions
             WHERE id = ?
             LIMIT 1
@@ -263,6 +317,12 @@ class TrackingService {
         `;
 
         await db.query(updateLastLocationSql, [sessionId]);
+
+        await this.createGpsTrackingNotification("off", {
+            truck_id: session.truck_id,
+            enforcer_name: session.enforcer_name || "",
+            session_id: sessionId
+        });
 
         return {
             success: true,
