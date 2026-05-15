@@ -1,6 +1,89 @@
 const db = require("../config/dbPromise");
 
 class TrackingService {
+    cleanText(value) {
+        if (value === null || value === undefined) return "";
+
+        const text = String(value).trim();
+
+        if (!text || text.toLowerCase() === "null" || text.toLowerCase() === "undefined") {
+            return "";
+        }
+
+        return text;
+    }
+
+    normalizeDateTime(value) {
+        const cleaned = this.cleanText(value);
+
+        if (!cleaned) {
+            return new Date();
+        }
+
+        if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(cleaned)) {
+            return cleaned;
+        }
+
+        if (/^\d{4}-\d{2}-\d{2}T/.test(cleaned)) {
+            return cleaned.replace("T", " ").replace(/\.\d{3}Z?$/, "").replace(/Z$/, "");
+        }
+
+        const parsed = new Date(cleaned);
+
+        if (!Number.isNaN(parsed.getTime())) {
+            return parsed.toISOString().slice(0, 19).replace("T", " ");
+        }
+
+        return new Date();
+    }
+
+    async ensureOfflineTrackingColumns() {
+        try {
+            const [columns] = await db.query(`SHOW COLUMNS FROM truck_location_logs`);
+            const columnSet = new Set((columns || []).map((row) => String(row.Field || "").trim()));
+
+            const alters = [];
+
+            if (!columnSet.has("local_point_id")) {
+                alters.push("ADD COLUMN local_point_id VARCHAR(160) NULL");
+            }
+
+            if (!columnSet.has("sync_source")) {
+                alters.push("ADD COLUMN sync_source VARCHAR(50) NULL");
+            }
+
+            if (alters.length > 0) {
+                await db.query(`
+                    ALTER TABLE truck_location_logs
+                    ${alters.join(",\n                    ")}
+                `);
+            }
+
+            const [indexes] = await db.query(`
+                SELECT COUNT(1) AS index_count
+                FROM INFORMATION_SCHEMA.STATISTICS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = 'truck_location_logs'
+                  AND INDEX_NAME = 'uniq_session_local_point_id'
+            `);
+
+            const indexExists = Number(indexes && indexes[0] ? indexes[0].index_count : 0) > 0;
+
+            if (!indexExists) {
+                await db.query(`
+                    ALTER TABLE truck_location_logs
+                    ADD UNIQUE KEY uniq_session_local_point_id (session_id, local_point_id)
+                `);
+            }
+        } catch (error) {
+            console.error("ensureOfflineTrackingColumns error:", error);
+            /*
+              Do not block tracking because of optional migration failure.
+              The normal GPS logging can still continue.
+            */
+        }
+    }
+
     async autoStopExpiredSessions() {
         const sql = `
             UPDATE truck_tracking_sessions
@@ -189,7 +272,71 @@ class TrackingService {
     }
 
     async addLocationLog(sessionId, data) {
+        const result = await this.addSingleLocationLog(sessionId, data);
+
+        return {
+            success: true,
+            message: result.duplicate
+                ? "Location already recorded"
+                : "Location recorded successfully",
+            duplicate: result.duplicate || false,
+            local_point_id: result.local_point_id || null
+        };
+    }
+
+    async addLocationLogsBatch(sessionId, data = {}) {
+        await this.ensureOfflineTrackingColumns();
+
+        const locations = Array.isArray(data.locations) ? data.locations : [];
+
+        if (locations.length === 0) {
+            return {
+                success: true,
+                message: "No location points to sync",
+                inserted_count: 0,
+                duplicate_count: 0,
+                synced_local_point_ids: []
+            };
+        }
+
+        const sortedLocations = locations
+            .filter((item) => item && item.latitude !== undefined && item.longitude !== undefined)
+            .sort((a, b) => {
+                const aTime = new Date(a.recorded_at || a.recordedAt || 0).getTime();
+                const bTime = new Date(b.recorded_at || b.recordedAt || 0).getTime();
+                return aTime - bTime;
+            });
+
+        let insertedCount = 0;
+        let duplicateCount = 0;
+        const syncedLocalPointIds = [];
+
+        for (const point of sortedLocations) {
+            const result = await this.addSingleLocationLog(sessionId, point);
+
+            if (result.duplicate) {
+                duplicateCount++;
+            } else {
+                insertedCount++;
+            }
+
+            if (result.local_point_id) {
+                syncedLocalPointIds.push(result.local_point_id);
+            }
+        }
+
+        return {
+            success: true,
+            message: "Location batch synced successfully",
+            inserted_count: insertedCount,
+            duplicate_count: duplicateCount,
+            synced_local_point_ids: syncedLocalPointIds
+        };
+    }
+
+    async addSingleLocationLog(sessionId, data) {
         await this.autoStopExpiredSessions();
+        await this.ensureOfflineTrackingColumns();
 
         const {
             latitude,
@@ -200,12 +347,15 @@ class TrackingService {
             altitude = null
         } = data;
 
+        const localPointId = this.cleanText(data.local_point_id || data.localPointId);
+        const recordedAt = this.normalizeDateTime(data.recorded_at || data.recordedAt);
+
         if (latitude == null || longitude == null) {
             throw new Error("latitude and longitude are required");
         }
 
         const sessionSql = `
-            SELECT id, truck_id, session_status, shift_end_time, last_latitude, last_longitude
+            SELECT id, truck_id, session_status, shift_end_time, ended_at
             FROM truck_tracking_sessions
             WHERE id = ?
             LIMIT 1
@@ -219,14 +369,58 @@ class TrackingService {
 
         const session = sessionRows[0];
 
-        if (session.session_status !== "active") {
+        if (localPointId) {
+            const [existingPointRows] = await db.query(
+                `
+                SELECT id
+                FROM truck_location_logs
+                WHERE session_id = ?
+                  AND local_point_id = ?
+                LIMIT 1
+                `,
+                [sessionId, localPointId]
+            );
+
+            if (existingPointRows.length > 0) {
+                return {
+                    duplicate: true,
+                    local_point_id: localPointId
+                };
+            }
+        }
+
+        const shiftEnd = session.shift_end_time ? new Date(session.shift_end_time) : null;
+        const endedAt = session.ended_at ? new Date(session.ended_at) : null;
+        const pointTime = recordedAt instanceof Date ? recordedAt : new Date(recordedAt);
+
+        const isHistoricalPointBeforeEnd =
+            localPointId &&
+            shiftEnd &&
+            !Number.isNaN(pointTime.getTime()) &&
+            pointTime <= shiftEnd;
+
+        const isHistoricalPointBeforeStoppedTime =
+            localPointId &&
+            endedAt &&
+            !Number.isNaN(pointTime.getTime()) &&
+            pointTime <= endedAt;
+
+        if (
+            session.session_status !== "active" &&
+            !isHistoricalPointBeforeEnd &&
+            !isHistoricalPointBeforeStoppedTime
+        ) {
             throw new Error("Tracking session is no longer active");
         }
 
         const now = new Date();
-        const shiftEnd = new Date(session.shift_end_time);
 
-        if (now >= shiftEnd) {
+        if (
+            session.session_status === "active" &&
+            shiftEnd &&
+            now >= shiftEnd &&
+            !isHistoricalPointBeforeEnd
+        ) {
             await this.stopTrackingSession(sessionId, {
                 end_latitude: latitude,
                 end_longitude: longitude,
@@ -246,10 +440,12 @@ class TrackingService {
                 accuracy,
                 heading,
                 altitude,
+                local_point_id,
+                sync_source,
                 recorded_at,
                 created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
         `;
 
         await db.query(logSql, [
@@ -260,69 +456,102 @@ class TrackingService {
             speed,
             accuracy,
             heading,
-            altitude
+            altitude,
+            localPointId || null,
+            localPointId ? "mobile_offline_queue" : "mobile_live",
+            recordedAt
         ]);
 
-        const prevLat = session.last_latitude;
-        const prevLng = session.last_longitude;
+        await this.recalculateSessionDistanceAndLatestLocation(sessionId);
 
-        if (prevLat != null && prevLng != null) {
-            const distance = this.calculateDistanceKm(
-                Number(prevLat),
-                Number(prevLng),
-                Number(latitude),
-                Number(longitude)
-            );
+        return {
+            duplicate: false,
+            local_point_id: localPointId || null
+        };
+    }
 
-            await db.query(
-                `
-                UPDATE truck_tracking_sessions
-                SET session_distance_km = COALESCE(session_distance_km, 0) + ?
-                WHERE id = ?
-                `,
-                [distance, sessionId]
-            );
-
-            await db.query(
-                `
-                UPDATE trucks
-                SET total_distance_km = COALESCE(total_distance_km, 0) + ?
-                WHERE id = ?
-                `,
-                [distance, session.truck_id]
-            );
-
-            await this.checkMaintenanceNotification(session.truck_id);
-        }
-
-        const sessionUpdateSql = `
-            UPDATE truck_tracking_sessions
-            SET
-                last_latitude = ?,
-                last_longitude = ?,
-                last_updated_at = NOW(),
-                updated_at = NOW()
+    async recalculateSessionDistanceAndLatestLocation(sessionId) {
+        const sessionSql = `
+            SELECT id, truck_id, session_status
+            FROM truck_tracking_sessions
             WHERE id = ?
+            LIMIT 1
         `;
 
-        await db.query(sessionUpdateSql, [latitude, longitude, sessionId]);
+        const [sessionRows] = await db.query(sessionSql, [sessionId]);
+
+        if (sessionRows.length === 0) return;
+
+        const session = sessionRows[0];
+
+        const logsSql = `
+            SELECT latitude, longitude, speed, accuracy, heading, altitude, recorded_at
+            FROM truck_location_logs
+            WHERE session_id = ?
+            ORDER BY recorded_at ASC, id ASC
+        `;
+
+        const [logs] = await db.query(logsSql, [sessionId]);
+
+        let totalDistanceKm = 0;
+        let previous = null;
+        let latest = null;
+
+        for (const log of logs || []) {
+            if (previous) {
+                const distance = this.calculateDistanceKm(
+                    Number(previous.latitude),
+                    Number(previous.longitude),
+                    Number(log.latitude),
+                    Number(log.longitude)
+                );
+
+                /*
+                  Ignore extreme GPS jumps while preserving normal road movement.
+                  This keeps reports more stable when mobile signal/GPS accuracy is poor.
+                */
+                if (Number.isFinite(distance) && distance >= 0 && distance <= 10) {
+                    totalDistanceKm += distance;
+                }
+            }
+
+            previous = log;
+            latest = log;
+        }
+
+        if (!latest) return;
+
+        await db.query(
+            `
+            UPDATE truck_tracking_sessions
+            SET
+                session_distance_km = ?,
+                last_latitude = ?,
+                last_longitude = ?,
+                last_updated_at = ?,
+                updated_at = NOW()
+            WHERE id = ?
+            `,
+            [
+                Number(totalDistanceKm.toFixed(4)),
+                latest.latitude,
+                latest.longitude,
+                latest.recorded_at,
+                sessionId
+            ]
+        );
 
         await this.upsertLastLocation({
             truck_id: session.truck_id,
             session_id: sessionId,
-            latitude,
-            longitude,
-            speed,
-            accuracy,
-            heading,
-            altitude,
-            status: "active"
+            latitude: latest.latitude,
+            longitude: latest.longitude,
+            speed: latest.speed,
+            accuracy: latest.accuracy,
+            heading: latest.heading,
+            altitude: latest.altitude,
+            status: session.session_status === "active" ? "active" : "offline"
         });
-
-        return {
-            success: true,
-            message: "Location recorded successfully"
-        };
     }
 
     calculateDistanceKm(lat1, lon1, lat2, lon2) {
@@ -479,6 +708,8 @@ class TrackingService {
     }
 
     async getRouteHistoryBySession(sessionId) {
+        await this.ensureOfflineTrackingColumns();
+
         const sessionSql = `
             SELECT *
             FROM truck_tracking_sessions
@@ -503,6 +734,8 @@ class TrackingService {
                 accuracy,
                 heading,
                 altitude,
+                local_point_id,
+                sync_source,
                 recorded_at
             FROM truck_location_logs
             WHERE session_id = ?
@@ -564,6 +797,8 @@ class TrackingService {
     }
 
     async getTrackingReportDetails(sessionId) {
+        await this.ensureOfflineTrackingColumns();
+
         const sessionSql = `
             SELECT *
             FROM truck_tracking_sessions
@@ -588,6 +823,8 @@ class TrackingService {
                 accuracy,
                 heading,
                 altitude,
+                local_point_id,
+                sync_source,
                 recorded_at
             FROM truck_location_logs
             WHERE session_id = ?
