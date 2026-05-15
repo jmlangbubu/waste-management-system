@@ -2977,6 +2977,11 @@ router.get("/notifications/barangay/:barangayName", (req, res) => {
       // Do not block normal notification loading. The dashboard should still work.
     }
 
+    ensureBarangayResponseMessagesTable((responseTableErr) => {
+      if (responseTableErr) {
+        console.error("Failed preparing barangay response message storage:", responseTableErr);
+      }
+
     ensureComplaintNotificationClearColumns((ensureErr) => {
     if (ensureErr) {
       return res.status(500).json({
@@ -2996,9 +3001,18 @@ router.get("/notifications/barangay/:barangayName", (req, res) => {
         c.image_url,
         c.latitude,
         c.longitude,
-        c.created_at AS complaint_created_at
+        c.created_at AS complaint_created_at,
+        brm.id AS explanation_request_id,
+        brm.request_message AS explanation_request_message,
+        brm.response_message,
+        brm.status AS explanation_status,
+        brm.replied_at
       FROM complaint_notifications cn
       INNER JOIN complaints c ON c.id = cn.complaint_id
+      LEFT JOIN barangay_response_messages brm
+        ON brm.source_complaint_id = cn.complaint_id
+       AND brm.barangay_key = ${normalizeSqlBarangayExpression("cn.target_name")}
+       AND brm.trigger_month = DATE_FORMAT(COALESCE(cn.created_at, NOW()), '%Y-%m')
       WHERE cn.target_type = 'barangay'
         AND LOWER(REPLACE(REPLACE(REPLACE(TRIM(cn.target_name), ' ', ''), '-', ''), '.', '')) = ?
         AND cn.cleared_at IS NULL
@@ -3021,6 +3035,7 @@ router.get("/notifications/barangay/:barangayName", (req, res) => {
         success: true,
         notifications: rows || []
       });
+    });
     });
     });
   });
@@ -3196,10 +3211,10 @@ router.post("/notifications/barangay/:barangayName/not-accepted-explanation/repl
     });
   }
 
-  if (!responseMessage || responseMessage.length < 8) {
+  if (!responseMessage || responseMessage.length < 10) {
     return res.status(400).json({
       success: false,
-      message: "Please provide a clear explanation with at least 8 characters."
+      message: "Please provide a clear explanation with at least 10 characters."
     });
   }
 
@@ -3301,7 +3316,10 @@ router.post("/notifications/barangay/:barangayName/not-accepted-explanation/repl
                 message: "Your explanation was sent to WMO.",
                 barangay,
                 request_id: requestRow.id,
-                source_complaint_id: sourceComplaintId
+                source_complaint_id: sourceComplaintId,
+                response_message: responseMessage,
+                explanation_status: "replied",
+                replied_at: new Date().toISOString()
               });
             }
           );
