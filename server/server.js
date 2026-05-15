@@ -245,6 +245,14 @@ app.use("/api/certificates", certificateRoutes);
 app.use("/api/invoices", invoiceRoutes);
 
 /* =========================
+   BACKGROUND SCHEDULERS
+========================= */
+if (typeof complaintRoutes.startOverdueAcceptedComplaintScheduler === "function") {
+  complaintRoutes.startOverdueAcceptedComplaintScheduler(app);
+}
+
+
+/* =========================
    404 HANDLER
 ========================= */
 app.use((req, res) => {
