@@ -2539,18 +2539,43 @@ function syncComplaintDetailsActionButtons(status) {
 
   const rejectBtn = document.getElementById("btnRejectComplaintFromDetails");
   const validateBtn = document.getElementById("btnValidateComplaintFromDetails");
+  const footer = document.querySelector("#complaintDetailsModal .complaint-details-footer");
 
+  /*
+    WMO review actions must appear only while complaint is still pending.
+    Once the complaint is forwarded/accepted/in-progress/resolved/rejected,
+    Validate Complaint and Reject Complaint must disappear from the details modal.
+  */
   const canReview = normalized === "pending";
 
-  if (rejectBtn) {
-    rejectBtn.style.display = canReview ? "inline-flex" : "none";
-    rejectBtn.disabled = !canReview;
-  }
+  const applyReviewButtonState = (button) => {
+    if (!button) return;
 
-  if (validateBtn) {
-    validateBtn.style.display = canReview ? "inline-flex" : "none";
-    validateBtn.disabled = !canReview;
+    button.disabled = !canReview;
+    button.setAttribute("aria-hidden", canReview ? "false" : "true");
+    button.classList.toggle("complaint-action-hidden", !canReview);
+
+    if (canReview) {
+      button.style.setProperty("display", "inline-flex", "important");
+      button.style.removeProperty("visibility");
+      button.style.removeProperty("pointer-events");
+    } else {
+      button.style.setProperty("display", "none", "important");
+      button.style.setProperty("visibility", "hidden", "important");
+      button.style.setProperty("pointer-events", "none", "important");
+    }
+  };
+
+  applyReviewButtonState(rejectBtn);
+  applyReviewButtonState(validateBtn);
+
+  if (footer) {
+    footer.classList.toggle("review-actions-disabled", !canReview);
   }
+}
+
+function isComplaintPendingForWmoReview(complaint = currentComplaint) {
+  return String(complaint?.status || "pending").trim().toLowerCase() === "pending";
 }
 
 function openComplaintRejectModal() {
@@ -2692,6 +2717,12 @@ async function requestComplaintReviewFromDetails() {
 async function validateComplaintFromDetails() {
   if (!currentComplaint || !currentComplaint.id) {
     alert("No complaint selected.");
+    return;
+  }
+
+  if (!isComplaintPendingForWmoReview(currentComplaint)) {
+    syncComplaintDetailsActionButtons(currentComplaint.status);
+    alert("This complaint is already forwarded or processed. Validation is no longer available.");
     return;
   }
 
@@ -3032,6 +3063,14 @@ function openComplaintModal(data) {
 
   openComplaintModalWithPosition("complaintDetailsModal");
   renderComplaintDetailsMapPreview(data, forwardingBarangayTargets || []);
+
+  /*
+    Re-apply after modal render/layout because some modal CSS uses strong
+    display rules. This keeps review actions hidden for forwarded records.
+  */
+  setTimeout(() => {
+    syncComplaintDetailsActionButtons(data.status || "pending");
+  }, 0);
 }
 
 function closeComplaintModal() {
@@ -3519,6 +3558,12 @@ async function validateComplaint() {
 async function validateAndForwardComplaint() {
   if (!currentComplaint || !currentComplaint.id) {
     alert("No complaint selected.");
+    return;
+  }
+
+  if (!isComplaintPendingForWmoReview(currentComplaint)) {
+    syncComplaintDetailsActionButtons(currentComplaint.status);
+    alert("This complaint is already forwarded or processed. Validation is no longer available.");
     return;
   }
 
