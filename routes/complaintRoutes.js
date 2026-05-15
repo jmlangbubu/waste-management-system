@@ -807,6 +807,305 @@ function insertWmoComplaintNotification(complaintId, notificationType, title, me
   });
 }
 
+
+/* =========================
+   BARANGAY NOT-ACCEPTED EXPLANATION HELPERS
+   Purpose:
+   - When a barangay reaches 3 forwarded concerns accepted by other barangays,
+     WMO automatically asks for an explanation.
+   - Barangay can reply from the mobile dashboard.
+   - WMO receives the reply through the existing complaint notification bell.
+========================= */
+
+function getCurrentMonthKey() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  return `${year}-${month}`;
+}
+
+function ensureBarangayResponseMessagesTable(callback) {
+  const sql = `
+    CREATE TABLE IF NOT EXISTS barangay_response_messages (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      barangay_name VARCHAR(255) NOT NULL,
+      barangay_key VARCHAR(255) NOT NULL,
+      source_complaint_id INT NULL,
+      trigger_count INT NOT NULL DEFAULT 0,
+      trigger_month CHAR(7) NOT NULL,
+      request_title VARCHAR(255) NOT NULL,
+      request_message TEXT NOT NULL,
+      response_message TEXT NULL,
+      status VARCHAR(40) NOT NULL DEFAULT 'pending',
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      replied_at DATETIME NULL,
+      INDEX idx_barangay_response_key_month (barangay_key, trigger_month),
+      INDEX idx_barangay_response_status (status),
+      INDEX idx_barangay_response_source (source_complaint_id)
+    )
+  `;
+
+  db.query(sql, (err) => {
+    if (err) {
+      console.error("Failed ensuring barangay_response_messages table:", err);
+    }
+
+    return callback && callback(err || null);
+  });
+}
+
+function getBarangayNotAcceptedSummary(barangayName, callback) {
+  const barangayKey = getBarangayMatchParam(barangayName);
+
+  const sql = `
+    SELECT
+      COUNT(DISTINCT cn.complaint_id) AS not_accepted_count,
+      MAX(cn.complaint_id) AS source_complaint_id
+    FROM complaint_notifications cn
+    WHERE cn.target_type = 'barangay'
+      AND ${normalizeSqlBarangayExpression("cn.target_name")} = ?
+      AND (
+        LOWER(COALESCE(cn.notification_type, '')) = 'accepted_by_other_barangay'
+        OR LOWER(COALESCE(cn.message, '')) LIKE '%no action is needed from your barangay%'
+        OR LOWER(COALESCE(cn.message, '')) LIKE '%accepted the wmo-forwarded complaint%'
+      )
+      AND cn.created_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
+      AND cn.created_at < DATE_ADD(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 1 MONTH)
+  `;
+
+  db.query(sql, [barangayKey], (err, rows) => {
+    if (err) {
+      console.error("Failed loading barangay not-accepted summary:", err);
+      return callback(err, {
+        not_accepted_count: 0,
+        source_complaint_id: null
+      });
+    }
+
+    const row = rows && rows.length ? rows[0] : {};
+
+    return callback(null, {
+      not_accepted_count: Number(row.not_accepted_count || 0),
+      source_complaint_id: row.source_complaint_id || null
+    });
+  });
+}
+
+function findBarangayExplanationRequest(barangayName, triggerMonth, callback) {
+  const barangayKey = getBarangayMatchParam(barangayName);
+
+  const sql = `
+    SELECT *
+    FROM barangay_response_messages
+    WHERE barangay_key = ?
+      AND trigger_month = ?
+    ORDER BY id DESC
+    LIMIT 1
+  `;
+
+  db.query(sql, [barangayKey, triggerMonth], (err, rows) => {
+    if (err) {
+      console.error("Failed finding barangay explanation request:", err);
+      return callback(err, null);
+    }
+
+    return callback(null, rows && rows.length ? rows[0] : null);
+  });
+}
+
+function createBarangayExplanationRequestNotification(req, requestRow, callback) {
+  if (!requestRow || !requestRow.source_complaint_id) {
+    return callback && callback(null);
+  }
+
+  ensureComplaintNotificationClearColumns((ensureErr) => {
+    if (ensureErr) {
+      return callback && callback(ensureErr);
+    }
+
+    const duplicateSql = `
+      SELECT id
+      FROM complaint_notifications
+      WHERE complaint_id = ?
+        AND target_type = 'barangay'
+        AND ${normalizeSqlBarangayExpression("target_name")} = ?
+        AND LOWER(COALESCE(notification_type, '')) = 'not_accepted_explanation_request'
+        AND created_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
+        AND created_at < DATE_ADD(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 1 MONTH)
+      LIMIT 1
+    `;
+
+    db.query(
+      duplicateSql,
+      [requestRow.source_complaint_id, getBarangayMatchParam(requestRow.barangay_name)],
+      (dupErr, dupRows) => {
+        if (dupErr) {
+          console.error("Failed checking duplicate explanation notification:", dupErr);
+          return callback && callback(dupErr);
+        }
+
+        if (dupRows && dupRows.length) {
+          return callback && callback(null);
+        }
+
+        const insertSql = `
+          INSERT INTO complaint_notifications (
+            complaint_id,
+            target_type,
+            target_name,
+            notification_type,
+            title,
+            message,
+            is_read
+          )
+          VALUES (?, 'barangay', ?, 'not_accepted_explanation_request', ?, ?, 0)
+        `;
+
+        db.query(
+          insertSql,
+          [
+            requestRow.source_complaint_id,
+            requestRow.barangay_name,
+            requestRow.request_title,
+            requestRow.request_message
+          ],
+          (insertErr) => {
+            if (insertErr) {
+              console.error("Failed creating barangay explanation notification:", insertErr);
+              return callback && callback(insertErr);
+            }
+
+            emitBarangayRealtime(req, requestRow.barangay_name, "barangay:not-accepted-explanation-request", {
+              complaint_id: requestRow.source_complaint_id,
+              title: requestRow.request_title,
+              message: requestRow.request_message,
+              notification_type: "not_accepted_explanation_request",
+              status: "pending_explanation"
+            });
+
+            return callback && callback(null);
+          }
+        );
+      }
+    );
+  });
+}
+
+function maybeCreateBarangayNotAcceptedExplanationRequest(req, barangayName, callback) {
+  const barangay = normalizeBarangayName(barangayName);
+
+  if (!barangay) {
+    return callback && callback(null, {
+      created: false,
+      count: 0,
+      request: null
+    });
+  }
+
+  const triggerMonth = getCurrentMonthKey();
+
+  ensureBarangayResponseMessagesTable((tableErr) => {
+    if (tableErr) {
+      return callback && callback(tableErr, null);
+    }
+
+    getBarangayNotAcceptedSummary(barangay, (summaryErr, summary) => {
+      if (summaryErr) {
+        return callback && callback(summaryErr, null);
+      }
+
+      const count = Number(summary.not_accepted_count || 0);
+      const sourceComplaintId = summary.source_complaint_id || null;
+
+      if (count < 3 || !sourceComplaintId) {
+        return callback && callback(null, {
+          created: false,
+          count,
+          request: null
+        });
+      }
+
+      findBarangayExplanationRequest(barangay, triggerMonth, (findErr, existingRequest) => {
+        if (findErr) {
+          return callback && callback(findErr, null);
+        }
+
+        if (existingRequest) {
+          createBarangayExplanationRequestNotification(req, existingRequest, () => {
+            return callback && callback(null, {
+              created: false,
+              count,
+              request: existingRequest
+            });
+          });
+          return;
+        }
+
+        const title = "WMO explanation request";
+        const message = `${barangay} has ${count} forwarded concern${count === 1 ? "" : "s"} this month that were accepted by another barangay. Please send a short reason so WMO can review the forwarding process.`;
+
+        const insertSql = `
+          INSERT INTO barangay_response_messages (
+            barangay_name,
+            barangay_key,
+            source_complaint_id,
+            trigger_count,
+            trigger_month,
+            request_title,
+            request_message,
+            status
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
+        `;
+
+        db.query(
+          insertSql,
+          [
+            barangay,
+            getBarangayMatchParam(barangay),
+            sourceComplaintId,
+            count,
+            triggerMonth,
+            title,
+            message
+          ],
+          (insertErr, insertResult) => {
+            if (insertErr) {
+              console.error("Failed inserting barangay explanation request:", insertErr);
+              return callback && callback(insertErr, null);
+            }
+
+            const requestRow = {
+              id: insertResult.insertId,
+              barangay_name: barangay,
+              barangay_key: getBarangayMatchParam(barangay),
+              source_complaint_id: sourceComplaintId,
+              trigger_count: count,
+              trigger_month: triggerMonth,
+              request_title: title,
+              request_message: message,
+              status: "pending"
+            };
+
+            createBarangayExplanationRequestNotification(req, requestRow, (notifErr) => {
+              if (notifErr) {
+                return callback && callback(notifErr, null);
+              }
+
+              return callback && callback(null, {
+                created: true,
+                count,
+                request: requestRow
+              });
+            });
+          }
+        );
+      });
+    });
+  });
+}
+
+
 function truncateNotificationText(value, maxLength = 180) {
   const clean = cleanText(value);
 
@@ -2587,7 +2886,13 @@ router.get("/notifications/wmo", (req, res) => {
 router.get("/notifications/barangay/:barangayName", (req, res) => {
   const barangayName = decodeURIComponent(req.params.barangayName || "").trim();
 
-  ensureComplaintNotificationClearColumns((ensureErr) => {
+  maybeCreateBarangayNotAcceptedExplanationRequest(req, barangayName, (explainErr) => {
+    if (explainErr) {
+      console.error("Failed preparing not-accepted explanation request:", explainErr);
+      // Do not block normal notification loading. The dashboard should still work.
+    }
+
+    ensureComplaintNotificationClearColumns((ensureErr) => {
     if (ensureErr) {
       return res.status(500).json({
         success: false,
@@ -2631,6 +2936,7 @@ router.get("/notifications/barangay/:barangayName", (req, res) => {
         success: true,
         notifications: rows || []
       });
+    });
     });
   });
 });
@@ -2778,6 +3084,153 @@ router.patch("/notifications/barangay/:barangayName/clear", (req, res, next) => 
   req.method = "POST";
   router.handle(req, res, next);
 });
+
+
+/* =========================
+   BARANGAY NOT-ACCEPTED EXPLANATION REPLY
+   Barangay replies to the automated WMO explanation request.
+========================= */
+router.post("/notifications/barangay/:barangayName/not-accepted-explanation/reply", (req, res) => {
+  const barangay = normalizeBarangayName(
+    decodeURIComponent(String(req.params.barangayName || "").trim())
+  );
+
+  const responseMessage = cleanText(
+    req.body && (
+      req.body.response_message ||
+      req.body.reply ||
+      req.body.message ||
+      req.body.reason
+    )
+  );
+
+  if (!barangay) {
+    return res.status(400).json({
+      success: false,
+      message: "Barangay name is required."
+    });
+  }
+
+  if (!responseMessage || responseMessage.length < 8) {
+    return res.status(400).json({
+      success: false,
+      message: "Please provide a clear explanation with at least 8 characters."
+    });
+  }
+
+  const triggerMonth = getCurrentMonthKey();
+
+  maybeCreateBarangayNotAcceptedExplanationRequest(req, barangay, (ensureErr) => {
+    if (ensureErr) {
+      return res.status(500).json({
+        success: false,
+        message: "Failed to prepare the WMO explanation request.",
+        error: ensureErr.message,
+        code: ensureErr.code
+      });
+    }
+
+    ensureBarangayResponseMessagesTable((tableErr) => {
+      if (tableErr) {
+        return res.status(500).json({
+          success: false,
+          message: "Failed to prepare barangay response storage.",
+          error: tableErr.message,
+          code: tableErr.code
+        });
+      }
+
+      findBarangayExplanationRequest(barangay, triggerMonth, (findErr, requestRow) => {
+        if (findErr) {
+          return res.status(500).json({
+            success: false,
+            message: "Failed to find the WMO explanation request.",
+            error: findErr.message,
+            code: findErr.code
+          });
+        }
+
+        if (!requestRow) {
+          return res.status(404).json({
+            success: false,
+            message: "No active WMO explanation request was found for this barangay."
+          });
+        }
+
+        const updateSql = `
+          UPDATE barangay_response_messages
+          SET response_message = ?,
+              status = 'replied',
+              replied_at = NOW()
+          WHERE id = ?
+        `;
+
+        db.query(updateSql, [responseMessage, requestRow.id], (updateErr) => {
+          if (updateErr) {
+            console.error("Failed saving barangay explanation reply:", updateErr);
+            return res.status(500).json({
+              success: false,
+              message: "Failed to save barangay explanation reply.",
+              error: updateErr.message,
+              code: updateErr.code
+            });
+          }
+
+          const sourceComplaintId = requestRow.source_complaint_id;
+          const title = "Barangay explanation received";
+          const message = `${barangay} replied to WMO's not-accepted forwarded concerns request: ${truncateNotificationText(responseMessage, 140)}`;
+
+          insertWmoComplaintNotification(
+            sourceComplaintId,
+            "barangay_not_accepted_explanation_reply",
+            title,
+            message,
+            (notifErr) => {
+              if (notifErr) {
+                console.error("Failed creating WMO explanation reply notification:", notifErr);
+                return res.status(500).json({
+                  success: false,
+                  message: "Reply saved, but WMO notification could not be created.",
+                  error: notifErr.message,
+                  code: notifErr.code
+                });
+              }
+
+              emitWmoRealtime(req, "wmo:barangay-explanation-received", {
+                complaint_id: sourceComplaintId,
+                title,
+                message,
+                barangay,
+                notification_type: "barangay_not_accepted_explanation_reply"
+              });
+
+              emitBarangayRealtime(req, barangay, "barangay:not-accepted-explanation-replied", {
+                complaint_id: sourceComplaintId,
+                title: "Explanation sent",
+                message: "Your explanation was sent to WMO.",
+                notification_type: "not_accepted_explanation_replied"
+              });
+
+              return res.json({
+                success: true,
+                message: "Your explanation was sent to WMO.",
+                barangay,
+                request_id: requestRow.id,
+                source_complaint_id: sourceComplaintId
+              });
+            }
+          );
+        });
+      });
+    });
+  });
+});
+
+router.patch("/notifications/barangay/:barangayName/not-accepted-explanation/reply", (req, res, next) => {
+  req.method = "POST";
+  router.handle(req, res, next);
+});
+
 
 /* =========================
    MARK AS IN PROGRESS
@@ -3070,3 +3523,4 @@ router.get("/:id", (req, res) => {
 });
 
 module.exports = router;
+ 
