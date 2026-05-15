@@ -81,6 +81,26 @@ exports.addLocationLogsBatch = async (req, res) => {
     }
 };
 
+exports.updateTrackingDeviceStatus = async (req, res) => {
+    try {
+        const { sessionId } = req.params;
+        const result = await trackingService.updateTrackingDeviceStatus(sessionId, req.body);
+
+        return res.status(200).json({
+            success: true,
+            message: result.message,
+            tracking_status_key: result.tracking_status_key,
+            gps_status: result.gps_status
+        });
+    } catch (error) {
+        console.error('updateTrackingDeviceStatus error:', error);
+        return res.status(400).json({
+            success: false,
+            message: error.message || 'Failed to update tracking device status'
+        });
+    }
+};
+
 exports.getActiveTrucks = async (req, res) => {
     try {
         const rows = await trackingService.getActiveTrucks();
