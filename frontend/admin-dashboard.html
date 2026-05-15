@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="css/admin/admin-tables.css">
 <link rel="stylesheet" href="css/admin/admin-appointments.css">
 <link rel="stylesheet" href="css/admin/admin-tracking.css">
+<link rel="stylesheet" href="css/admin/admin-tracking-offline-sync.css">
 <link rel="stylesheet" href="css/admin/admin-users.css">
 <link rel="stylesheet" href="css/admin/admin-modals.css">
 <link rel="stylesheet" href="css/admin/admin-responsive.css">
@@ -782,7 +783,7 @@
           <div class="page-card-header dashboard-header-row">
   <div>
     <h2>Live Truck Tracking</h2>
-    <p>Real-time GPS monitoring of active garbage trucks.</p>
+    <p>Offline-safe GPS monitoring of active garbage trucks and enforcer routes.</p>
   </div>
 
   <div class="dashboard-header-actions">
@@ -792,9 +793,19 @@
   </div>
 </div>
 
+          <div class="tracking-offline-notice">
+            <div class="tracking-offline-notice-icon">GPS</div>
+            <div>
+              <strong>Weak signal supported</strong>
+              <span>
+                If the mobile device loses data signal, tracking stays active. Saved GPS points sync later and the route continues in the same session.
+              </span>
+            </div>
+          </div>
+
           <div class="tracking-summary-row">
             <div class="tracking-mini-card">
-              <span>Active Trucks</span>
+              <span>Tracking Sessions</span>
               <strong id="activeTruckCount">0</strong>
             </div>
 
@@ -804,8 +815,18 @@
             </div>
 
             <div class="tracking-mini-card">
-              <span>Last Updated</span>
+              <span>Last Synced Point</span>
               <strong id="trackingLastUpdated">--</strong>
+            </div>
+
+            <div class="tracking-mini-card">
+              <span>Signal / Sync</span>
+              <strong id="trackingSignalStatus" class="tracking-signal-status idle">No selected truck</strong>
+            </div>
+
+            <div class="tracking-mini-card">
+              <span>Route Points</span>
+              <strong id="trackingRoutePointCount">0</strong>
             </div>
 
             <div class="dashboard-header-actions">
@@ -822,6 +843,13 @@
           <div class="tracking-layout">
             <div class="tracking-map-wrap">
               <div id="truckMap"></div>
+
+              <div class="tracking-map-legend">
+                <span><i class="tracking-legend-dot start"></i> Start</span>
+                <span><i class="tracking-legend-dot current"></i> Current / Last synced</span>
+                <span><i class="tracking-legend-line actual"></i> Actual synced route</span>
+                <span><i class="tracking-legend-line gap"></i> Connected after sync gap</span>
+              </div>
             </div>
 
             <div class="tracking-side-panel">
