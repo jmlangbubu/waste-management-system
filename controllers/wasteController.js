@@ -1,5 +1,25 @@
 const db = require("../config/dbPromise");
 
+/* =========================================
+   WASTE CONTROLLER
+   Safe validated waste records persistence
+   - Keeps existing API response shape
+   - Adds DB column safety checks for signature/notes/raw payload fields
+   - Prevents internal server error when optional columns are missing
+========================================= */
+
+function cleanText(value) {
+  if (value === undefined || value === null) return "";
+
+  const text = String(value).trim();
+
+  if (!text || text.toLowerCase() === "null" || text.toLowerCase() === "undefined") {
+    return "";
+  }
+
+  return text;
+}
+
 function normalizeRawPayload(rawPayload) {
   if (rawPayload === undefined || rawPayload === null || rawPayload === "") {
     return null;
@@ -20,10 +40,12 @@ function normalizeRawPayload(rawPayload) {
     } catch (firstError) {
       try {
         const unwrapped = JSON.parse(trimmed);
+
         if (typeof unwrapped === "string") {
           const parsedAgain = JSON.parse(unwrapped);
           return JSON.stringify(parsedAgain);
         }
+
         return JSON.stringify(unwrapped);
       } catch (secondError) {
         return trimmed;
@@ -34,11 +56,260 @@ function normalizeRawPayload(rawPayload) {
   return String(rawPayload);
 }
 
+function toNumber(value, fallback = 0) {
+  const parsed = Number(value);
+
+  if (!Number.isFinite(parsed) || Number.isNaN(parsed)) {
+    return fallback;
+  }
+
+  return parsed;
+}
+
+function normalizeMysqlDate(value) {
+  const cleaned = cleanText(value);
+
+  if (!cleaned) {
+    return new Date();
+  }
+
+  /*
+    Android currently sends "yyyy-MM-dd HH:mm:ss".
+    This also accepts ISO dates from future clients.
+  */
+  const parsed = new Date(cleaned.includes("T") ? cleaned : cleaned.replace(" ", "T"));
+
+  if (!Number.isNaN(parsed.getTime())) {
+    return cleaned;
+  }
+
+  return new Date();
+}
+
+async function getTableColumnSet(tableName) {
+  const safeTableName = String(tableName || "").replace(/[^a-zA-Z0-9_]/g, "");
+
+  if (!safeTableName) {
+    throw new Error("Invalid table name.");
+  }
+
+  const [rows] = await db.query(`SHOW COLUMNS FROM ${safeTableName}`);
+
+  return new Set(
+    (rows || []).map((row) => String(row.Field || "").trim())
+  );
+}
+
+function hasColumn(columnSet, columnName) {
+  return columnSet && columnSet.has(columnName);
+}
+
+async function runAlterTableSafely(sql, label) {
+  try {
+    await db.query(sql);
+    console.log(`[DB] ${label}`);
+  } catch (error) {
+    /*
+      Duplicate column can happen if two requests run the column check at the same time.
+      Do not crash the validation flow because of a harmless duplicate-column race.
+    */
+    if (error && error.code === "ER_DUP_FIELDNAME") {
+      console.warn(`[DB] ${label} skipped because column already exists.`);
+      return;
+    }
+
+    throw error;
+  }
+}
+
+async function ensureValidatedWasteRecordColumns() {
+  let columnSet = await getTableColumnSet("validated_waste_records");
+  const alters = [];
+
+  /*
+    These columns are used by the Android enforcer validation flow.
+    Use LONGTEXT for enforcer_signature because base64 PNG signatures can be large.
+  */
+  if (!hasColumn(columnSet, "entry_type")) {
+    alters.push("ADD COLUMN entry_type VARCHAR(80) NULL");
+  }
+
+  if (!hasColumn(columnSet, "barangay_name")) {
+    alters.push("ADD COLUMN barangay_name VARCHAR(255) NULL");
+  }
+
+  if (!hasColumn(columnSet, "establishment_name")) {
+    alters.push("ADD COLUMN establishment_name VARCHAR(255) NULL");
+  }
+
+  if (!hasColumn(columnSet, "barangay_address")) {
+    alters.push("ADD COLUMN barangay_address VARCHAR(255) NULL");
+  }
+
+  if (!hasColumn(columnSet, "establishment_address")) {
+    alters.push("ADD COLUMN establishment_address VARCHAR(255) NULL");
+  }
+
+  if (!hasColumn(columnSet, "source_type")) {
+    alters.push("ADD COLUMN source_type VARCHAR(120) NULL");
+  }
+
+  if (!hasColumn(columnSet, "period_from")) {
+    alters.push("ADD COLUMN period_from DATE NULL");
+  }
+
+  if (!hasColumn(columnSet, "period_to")) {
+    alters.push("ADD COLUMN period_to DATE NULL");
+  }
+
+  if (!hasColumn(columnSet, "remarks")) {
+    alters.push("ADD COLUMN remarks TEXT NULL");
+  }
+
+  if (!hasColumn(columnSet, "biodegradable_subtotal")) {
+    alters.push("ADD COLUMN biodegradable_subtotal DECIMAL(12,2) NOT NULL DEFAULT 0");
+  }
+
+  if (!hasColumn(columnSet, "recyclable_subtotal")) {
+    alters.push("ADD COLUMN recyclable_subtotal DECIMAL(12,2) NOT NULL DEFAULT 0");
+  }
+
+  if (!hasColumn(columnSet, "residual_subtotal")) {
+    alters.push("ADD COLUMN residual_subtotal DECIMAL(12,2) NOT NULL DEFAULT 0");
+  }
+
+  if (!hasColumn(columnSet, "special_subtotal")) {
+    alters.push("ADD COLUMN special_subtotal DECIMAL(12,2) NOT NULL DEFAULT 0");
+  }
+
+  if (!hasColumn(columnSet, "grand_total")) {
+    alters.push("ADD COLUMN grand_total DECIMAL(12,2) NOT NULL DEFAULT 0");
+  }
+
+  if (!hasColumn(columnSet, "validation_status")) {
+    alters.push("ADD COLUMN validation_status VARCHAR(80) NOT NULL DEFAULT 'Validated'");
+  }
+
+  if (!hasColumn(columnSet, "validated_by")) {
+    alters.push("ADD COLUMN validated_by VARCHAR(255) NULL");
+  }
+
+  if (!hasColumn(columnSet, "enforcer_signature")) {
+    alters.push("ADD COLUMN enforcer_signature LONGTEXT NULL");
+  }
+
+  if (!hasColumn(columnSet, "validated_at")) {
+    alters.push("ADD COLUMN validated_at DATETIME NULL");
+  }
+
+  if (!hasColumn(columnSet, "validation_notes")) {
+    alters.push("ADD COLUMN validation_notes TEXT NULL");
+  }
+
+  if (!hasColumn(columnSet, "raw_payload")) {
+    alters.push("ADD COLUMN raw_payload LONGTEXT NULL");
+  }
+
+  if (!hasColumn(columnSet, "created_at")) {
+    alters.push("ADD COLUMN created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP");
+  }
+
+  if (alters.length > 0) {
+    await runAlterTableSafely(
+      `
+        ALTER TABLE validated_waste_records
+        ${alters.join(",\n        ")}
+      `,
+      "validated_waste_records optional columns checked/added."
+    );
+
+    columnSet = await getTableColumnSet("validated_waste_records");
+  }
+
+  return columnSet;
+}
+
+async function ensureNotificationsTableSafe() {
+  /*
+    Existing WMO notification UI reads from notifications in some parts of the web
+    admin. Keep this safe so waste validation does not fail if notification schema
+    is incomplete.
+  */
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS notifications (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      type VARCHAR(100) NULL,
+      title VARCHAR(255) NULL,
+      message TEXT NULL,
+      createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  let columnSet = await getTableColumnSet("notifications");
+  const alters = [];
+
+  if (!hasColumn(columnSet, "type")) {
+    alters.push("ADD COLUMN type VARCHAR(100) NULL");
+  }
+
+  if (!hasColumn(columnSet, "title")) {
+    alters.push("ADD COLUMN title VARCHAR(255) NULL");
+  }
+
+  if (!hasColumn(columnSet, "message")) {
+    alters.push("ADD COLUMN message TEXT NULL");
+  }
+
+  if (!hasColumn(columnSet, "createdAt")) {
+    alters.push("ADD COLUMN createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP");
+  }
+
+  if (alters.length > 0) {
+    await runAlterTableSafely(
+      `
+        ALTER TABLE notifications
+        ${alters.join(",\n        ")}
+      `,
+      "notifications optional columns checked/added."
+    );
+
+    columnSet = await getTableColumnSet("notifications");
+  }
+
+  return columnSet;
+}
+
+async function createWmoWasteNotification(sourceName) {
+  try {
+    await ensureNotificationsTableSafe();
+
+    await db.query(
+      `
+        INSERT INTO notifications (type, title, message)
+        VALUES (?, ?, ?)
+      `,
+      [
+        "waste_report",
+        "New Validated Waste Record",
+        `${sourceName || "Unknown source"} • Validated waste submission`
+      ]
+    );
+  } catch (error) {
+    /*
+      Notification failure should not block the validated waste record.
+      The main data save is more important for the Android enforcer flow.
+    */
+    console.error("createWmoWasteNotification warning:", error);
+  }
+}
+
 /* =========================================
    CREATE VALIDATED WASTE RECORD
 ========================================= */
 const createValidatedWasteRecord = async (req, res) => {
   try {
+    const body = req.body || {};
+
     const {
       entry_type,
       barangay_name,
@@ -60,70 +331,77 @@ const createValidatedWasteRecord = async (req, res) => {
       validated_at,
       validation_notes,
       raw_payload
-    } = req.body;
+    } = body;
+
+    const sourceName = cleanText(barangay_name || establishment_name);
+
+    if (!sourceName) {
+      return res.status(400).json({
+        success: false,
+        message: "Barangay name or establishment name is required."
+      });
+    }
 
     const normalizedRawPayload = normalizeRawPayload(raw_payload);
+    const columnSet = await ensureValidatedWasteRecordColumns();
+
+    /*
+      Dynamic insert:
+      Only inserts columns that exist in the current database.
+      This prevents 500 errors on older databases while still saving new fields
+      after ensureValidatedWasteRecordColumns adds them.
+    */
+    const insertColumns = [];
+    const insertValues = [];
+
+    function addColumn(columnName, value) {
+      if (!hasColumn(columnSet, columnName)) return;
+
+      insertColumns.push(columnName);
+      insertValues.push(value);
+    }
+
+    addColumn("entry_type", cleanText(entry_type) || null);
+    addColumn("barangay_name", cleanText(barangay_name) || null);
+    addColumn("establishment_name", cleanText(establishment_name) || null);
+    addColumn("barangay_address", cleanText(barangay_address) || null);
+    addColumn("establishment_address", cleanText(establishment_address) || null);
+    addColumn("source_type", cleanText(source_type) || null);
+    addColumn("period_from", cleanText(period_from) || null);
+    addColumn("period_to", cleanText(period_to) || null);
+    addColumn("remarks", cleanText(remarks) || null);
+    addColumn("biodegradable_subtotal", toNumber(biodegradable_subtotal));
+    addColumn("recyclable_subtotal", toNumber(recyclable_subtotal));
+    addColumn("residual_subtotal", toNumber(residual_subtotal));
+    addColumn("special_subtotal", toNumber(special_subtotal));
+    addColumn("grand_total", toNumber(grand_total));
+    addColumn("validation_status", cleanText(validation_status) || "Validated");
+    addColumn("validated_by", cleanText(validated_by) || null);
+    addColumn("enforcer_signature", cleanText(enforcer_signature) || null);
+    addColumn("validated_at", normalizeMysqlDate(validated_at));
+    addColumn("validation_notes", cleanText(validation_notes) || null);
+    addColumn("raw_payload", normalizedRawPayload);
+
+    if (!insertColumns.length) {
+      return res.status(500).json({
+        success: false,
+        message: "Validated waste record table has no compatible columns."
+      });
+    }
+
+    const placeholders = insertColumns.map(() => "?").join(", ");
 
     const [result] = await db.query(
       `
-      INSERT INTO validated_waste_records (
-        entry_type,
-        barangay_name,
-        establishment_name,
-        barangay_address,
-        establishment_address,
-        source_type,
-        period_from,
-        period_to,
-        remarks,
-        biodegradable_subtotal,
-        recyclable_subtotal,
-        residual_subtotal,
-        special_subtotal,
-        grand_total,
-        validation_status,
-        validated_by,
-        enforcer_signature,
-        validated_at,
-        validation_notes,
-        raw_payload
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `,
-      [
-        entry_type || null,
-        barangay_name || null,
-        establishment_name || null,
-        barangay_address || null,
-        establishment_address || null,
-        source_type || null,
-        period_from || null,
-        period_to || null,
-        remarks || null,
-        Number(biodegradable_subtotal || 0),
-        Number(recyclable_subtotal || 0),
-        Number(residual_subtotal || 0),
-        Number(special_subtotal || 0),
-        Number(grand_total || 0),
-        validation_status || "Validated",
-        validated_by || null,
-        enforcer_signature || null,
-        validated_at || new Date(),
-        validation_notes || null,
-        normalizedRawPayload
-      ]
+        INSERT INTO validated_waste_records (
+          ${insertColumns.join(",\n          ")}
+        )
+        VALUES (${placeholders})
+      `,
+      insertValues
     );
 
-    await db.query(
-      `
-      INSERT INTO notifications (type, title, message)
-      VALUES (?, ?, ?)
-    `,
-      [
-        "waste_report",
-        "New Validated Waste Record",
-        `${barangay_name || establishment_name || "Unknown source"} • Validated waste submission`
-      ]
-    );
+    await createWmoWasteNotification(sourceName);
 
     return res.status(201).json({
       success: true,
@@ -132,10 +410,12 @@ const createValidatedWasteRecord = async (req, res) => {
     });
   } catch (error) {
     console.error("createValidatedWasteRecord error:", error);
+
     return res.status(500).json({
       success: false,
       message: "Internal server error",
-      error: error.message
+      error: error.message,
+      code: error.code || null
     });
   }
 };
@@ -145,34 +425,48 @@ const createValidatedWasteRecord = async (req, res) => {
 ========================================= */
 const getValidatedWasteRecords = async (req, res) => {
   try {
+    const columnSet = await ensureValidatedWasteRecordColumns();
+
+    const preferredFields = [
+      "id",
+      "entry_type",
+      "barangay_name",
+      "establishment_name",
+      "barangay_address",
+      "establishment_address",
+      "source_type",
+      "period_from",
+      "period_to",
+      "remarks",
+      "biodegradable_subtotal",
+      "recyclable_subtotal",
+      "residual_subtotal",
+      "special_subtotal",
+      "grand_total",
+      "validation_status",
+      "validated_by",
+      "enforcer_signature",
+      "validated_at",
+      "validation_notes",
+      "raw_payload",
+      "created_at"
+    ];
+
+    const fields = preferredFields.filter((field) => hasColumn(columnSet, field));
+
+    const orderColumn = hasColumn(columnSet, "validated_at")
+      ? "validated_at"
+      : hasColumn(columnSet, "created_at")
+        ? "created_at"
+        : "id";
+
     const [results] = await db.query(
       `
-      SELECT
-        id,
-        entry_type,
-        barangay_name,
-        establishment_name,
-        barangay_address,
-        establishment_address,
-        source_type,
-        period_from,
-        period_to,
-        remarks,
-        biodegradable_subtotal,
-        recyclable_subtotal,
-        residual_subtotal,
-        special_subtotal,
-        grand_total,
-        validation_status,
-        validated_by,
-        enforcer_signature,
-        validated_at,
-        validation_notes,
-        raw_payload,
-        created_at
-      FROM validated_waste_records
-      ORDER BY COALESCE(validated_at, created_at) DESC, id DESC
-    `
+        SELECT
+          ${fields.join(",\n          ")}
+        FROM validated_waste_records
+        ORDER BY ${orderColumn} DESC, id DESC
+      `
     );
 
     return res.status(200).json({
@@ -181,10 +475,12 @@ const getValidatedWasteRecords = async (req, res) => {
     });
   } catch (error) {
     console.error("getValidatedWasteRecords error:", error);
+
     return res.status(500).json({
       success: false,
       message: "Failed to fetch validated waste records.",
-      error: error.message
+      error: error.message,
+      code: error.code || null
     });
   }
 };
