@@ -21,6 +21,7 @@ function initializeTruckMap() {
 ========================================================= */
 
 const TRACKING_LIVE_WINDOW_MS = 60 * 1000;
+const TRACKING_SYNC_PENDING_WINDOW_MS = 5 * 60 * 1000;
 const TRACKING_ROUTE_GAP_MS = 90 * 1000;
 
 function parseTrackingDate(value) {
@@ -70,11 +71,23 @@ function getTruckLastUpdateValue(truck) {
 function getTrackingStatusMeta(truck) {
   const rawStatus = String(truck?.truck_status || truck?.status || "").toLowerCase();
   const sessionStatus = String(truck?.session_status || "").toLowerCase();
-  const lastUpdateValue = getTruckLastUpdateValue(truck);
-  const lastDate = parseTrackingDate(lastUpdateValue);
-  const ageMs = lastDate ? Date.now() - lastDate.getTime() : Number.POSITIVE_INFINITY;
 
-  if (sessionStatus === "stopped" || sessionStatus === "auto_stopped") {
+  /*
+    Prefer backend-computed status when available.
+    This allows the web UI to show different warnings for:
+    - GPS Off / no live GPS points
+    - Sync Pending / weak mobile signal
+    - Live / normal tracking
+  */
+  const serverKey = String(
+    truck?.tracking_status_key ||
+    truck?.tracking_warning_key ||
+    truck?.gps_status ||
+    truck?.sync_status ||
+    ""
+  ).toLowerCase();
+
+  if (sessionStatus === "stopped" || sessionStatus === "auto_stopped" || serverKey === "stopped") {
     return {
       key: "stopped",
       label: "Stopped",
@@ -82,6 +95,45 @@ function getTrackingStatusMeta(truck) {
       description: "Tracking session has ended."
     };
   }
+
+  if (
+    serverKey.includes("gps_off") ||
+    serverKey.includes("tracking_off") ||
+    serverKey.includes("no_gps")
+  ) {
+    return {
+      key: "gps_off",
+      label: "GPS off",
+      className: "gps-off",
+      description: "GPS tracking is turned off. No live route points are being recorded."
+    };
+  }
+
+  if (
+    serverKey.includes("sync_pending") ||
+    serverKey.includes("weak_signal") ||
+    serverKey.includes("pending")
+  ) {
+    return {
+      key: "sync_pending",
+      label: "Sync pending",
+      className: "sync-pending",
+      description: "GPS may still be on, but mobile signal is weak. Route points will continue after the phone syncs."
+    };
+  }
+
+  if (serverKey.includes("live") || serverKey === "active" || serverKey === "on") {
+    return {
+      key: "active",
+      label: "Live",
+      className: "active",
+      description: "Live GPS signal is syncing normally."
+    };
+  }
+
+  const lastUpdateValue = getTruckLastUpdateValue(truck);
+  const lastDate = parseTrackingDate(lastUpdateValue);
+  const ageMs = lastDate ? Date.now() - lastDate.getTime() : Number.POSITIVE_INFINITY;
 
   if (rawStatus === "active" && ageMs <= TRACKING_LIVE_WINDOW_MS) {
     return {
@@ -92,16 +144,20 @@ function getTrackingStatusMeta(truck) {
     };
   }
 
-  /*
-    The /tracking/active endpoint returns sessions that are still active.
-    When truck_status becomes offline here, it usually means signal/server sync
-    is temporarily delayed, not that the route ended.
-  */
+  if (ageMs <= TRACKING_SYNC_PENDING_WINDOW_MS) {
+    return {
+      key: "sync_pending",
+      label: "Sync pending",
+      className: "sync-pending",
+      description: "GPS may still be on, but mobile signal is weak. Route points will continue after the phone syncs."
+    };
+  }
+
   return {
-    key: "sync_pending",
-    label: "Sync pending",
-    className: "sync-pending",
-    description: "Mobile signal may be weak. Route points will continue after the phone syncs."
+    key: "gps_off",
+    label: "GPS off",
+    className: "gps-off",
+    description: "GPS tracking is turned off or no live GPS points are being recorded."
   };
 }
 
@@ -109,6 +165,7 @@ function getTrackingSignalSummary(trucks) {
   const safeTrucks = Array.isArray(trucks) ? trucks : [];
   const liveCount = safeTrucks.filter((truck) => getTrackingStatusMeta(truck).key === "active").length;
   const pendingCount = safeTrucks.filter((truck) => getTrackingStatusMeta(truck).key === "sync_pending").length;
+  const gpsOffCount = safeTrucks.filter((truck) => getTrackingStatusMeta(truck).key === "gps_off").length;
 
   if (!safeTrucks.length) {
     return {
@@ -117,23 +174,29 @@ function getTrackingSignalSummary(trucks) {
     };
   }
 
-  if (pendingCount > 0 && liveCount > 0) {
+  const parts = [];
+
+  if (liveCount > 0) parts.push(`${liveCount} live`);
+  if (pendingCount > 0) parts.push(`${pendingCount} sync pending`);
+  if (gpsOffCount > 0) parts.push(`${gpsOffCount} GPS off`);
+
+  if (gpsOffCount > 0) {
     return {
-      text: `${liveCount} live • ${pendingCount} sync pending`,
-      className: "warning"
+      text: parts.join(" • "),
+      className: "danger"
     };
   }
 
   if (pendingCount > 0) {
     return {
-      text: `${pendingCount} sync pending`,
+      text: parts.join(" • "),
       className: "warning"
     };
   }
 
   return {
-    text: `${liveCount} live`,
-    className: "good"
+    text: parts.join(" • ") || "No live GPS",
+    className: liveCount > 0 ? "good" : "idle"
   };
 }
 
@@ -194,7 +257,9 @@ function buildTrackingMarkerIcon(statusMeta) {
     ? "#198754"
     : statusMeta?.key === "sync_pending"
       ? "#f59e0b"
-      : "#6c757d";
+      : statusMeta?.key === "gps_off"
+        ? "#dc3545"
+        : "#6c757d";
 
   const pulse = statusMeta?.key === "active"
     ? "tracking-marker-pulse"
@@ -360,6 +425,7 @@ function updateTruckMarkers(trucks) {
   marker.bindPopup(`
     <strong>Truck ${escapeHtml(truck_id || "-")}</strong><br>
     Status: ${escapeHtml(statusMeta.label)}<br>
+    ${escapeHtml(statusMeta.description)}<br>
     Last sync: ${escapeHtml(formatTrackingTimeSafe(getTruckLastUpdateValue(selectedTruck)))}
   `);
 
