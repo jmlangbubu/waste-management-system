@@ -47,13 +47,36 @@ exports.addLocationLog = async (req, res) => {
 
         return res.status(200).json({
             success: true,
-            message: result.message
+            message: result.message,
+            duplicate: result.duplicate || false,
+            local_point_id: result.local_point_id || null
         });
     } catch (error) {
         console.error('addLocationLog error:', error);
         return res.status(400).json({
             success: false,
             message: error.message || 'Failed to record location'
+        });
+    }
+};
+
+exports.addLocationLogsBatch = async (req, res) => {
+    try {
+        const { sessionId } = req.params;
+        const result = await trackingService.addLocationLogsBatch(sessionId, req.body);
+
+        return res.status(200).json({
+            success: true,
+            message: result.message,
+            inserted_count: result.inserted_count || 0,
+            duplicate_count: result.duplicate_count || 0,
+            synced_local_point_ids: result.synced_local_point_ids || []
+        });
+    } catch (error) {
+        console.error('addLocationLogsBatch error:', error);
+        return res.status(400).json({
+            success: false,
+            message: error.message || 'Failed to sync location batch'
         });
     }
 };
