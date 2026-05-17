@@ -66,7 +66,7 @@ function getComplaintStatusBadge(status) {
   if (s === "validated") return `<span class="status-badge forwarded">Validated</span>`;
   if (s === "forwarded") return `<span class="status-badge forwarded">Forwarded</span>`;
   if (s === "in_progress") return `<span class="status-badge in-progress">In Progress</span>`;
-  if (s === "accepted_overdue") return `<span class="status-badge accepted-overdue">Accepted · Overdue</span>`;
+  if (s === "accepted_overdue") return `<span class="status-badge accepted-overdue" title="Accepted · Overdue">Overdue</span>`;
   if (s === "resolved") return `<span class="status-badge resolved">Resolved</span>`;
   if (s === "rejected") return `<span class="status-badge rejected">Rejected</span>`;
 
@@ -3638,7 +3638,7 @@ function formatComplaintHistoryStatus(status) {
 
   if (normalized === "forwarded") return "Forwarded";
   if (normalized === "accepted_by_barangay") return "Accepted";
-  if (normalized === "accepted_overdue") return "Accepted · Overdue";
+  if (normalized === "accepted_overdue") return "Overdue";
   if (normalized === "in_progress") return "In Progress";
   if (normalized === "resolved") return "Resolved";
   if (normalized === "rejected") return "Rejected";
@@ -4764,7 +4764,7 @@ function getComplaintReadableStatus(status) {
     validated: "Validated",
     forwarded: "Forwarded",
     accepted_by_barangay: "Accepted",
-    accepted_overdue: "Accepted · Overdue",
+    accepted_overdue: "Overdue",
     in_progress: "In Progress",
     resolved: "Resolved",
     rejected: "Rejected"
