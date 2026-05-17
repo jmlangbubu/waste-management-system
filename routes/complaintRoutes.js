@@ -843,6 +843,7 @@ function ensureBarangayResponseMessagesTable(callback) {
       source_complaint_id INT NULL,
       trigger_count INT NOT NULL DEFAULT 0,
       trigger_month CHAR(7) NOT NULL,
+      request_type VARCHAR(80) NOT NULL DEFAULT 'not_accepted_forwarded',
       request_title VARCHAR(255) NOT NULL,
       request_message TEXT NOT NULL,
       response_message TEXT NULL,
@@ -850,6 +851,7 @@ function ensureBarangayResponseMessagesTable(callback) {
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       replied_at DATETIME NULL,
       INDEX idx_barangay_response_key_month (barangay_key, trigger_month),
+      INDEX idx_barangay_response_type (request_type),
       INDEX idx_barangay_response_status (status),
       INDEX idx_barangay_response_source (source_complaint_id)
     )
@@ -858,9 +860,38 @@ function ensureBarangayResponseMessagesTable(callback) {
   db.query(sql, (err) => {
     if (err) {
       console.error("Failed ensuring barangay_response_messages table:", err);
+      return callback && callback(err);
     }
 
-    return callback && callback(err || null);
+    db.query(`SHOW COLUMNS FROM barangay_response_messages`, (columnErr, columns) => {
+      if (columnErr) {
+        console.error("Failed checking barangay_response_messages columns:", columnErr);
+        return callback && callback(columnErr);
+      }
+
+      const columnSet = new Set((columns || []).map((row) => String(row.Field || "").trim()));
+      const alters = [];
+
+      if (!columnSet.has("request_type")) {
+        alters.push("ADD COLUMN request_type VARCHAR(80) NOT NULL DEFAULT 'not_accepted_forwarded'");
+      }
+
+      if (!alters.length) {
+        return callback && callback(null);
+      }
+
+      db.query(
+        `ALTER TABLE barangay_response_messages ${alters.join(", ")}`,
+        (alterErr) => {
+          if (alterErr && alterErr.code !== "ER_DUP_FIELDNAME") {
+            console.error("Failed updating barangay_response_messages columns:", alterErr);
+            return callback && callback(alterErr);
+          }
+
+          return callback && callback(null);
+        }
+      );
+    });
   });
 }
 
@@ -905,7 +936,7 @@ function getBarangayNotAcceptedSummary(barangayName, callback) {
         ON c.id = cn_forwarded.complaint_id
       WHERE cn_forwarded.target_type = 'barangay'
         AND ${normalizeSqlBarangayExpression("cn_forwarded.target_name")} = ?
-        AND LOWER(TRIM(COALESCE(c.status, ''))) IN ('accepted_by_barangay', 'in_progress', 'resolved')
+        AND LOWER(TRIM(COALESCE(c.status, ''))) IN ('accepted_by_barangay', 'accepted_overdue', 'in_progress', 'resolved')
         AND c.assigned_barangay IS NOT NULL
         AND TRIM(c.assigned_barangay) <> ''
         AND ${normalizeSqlBarangayExpression("c.assigned_barangay")} <> ?
@@ -932,19 +963,36 @@ function getBarangayNotAcceptedSummary(barangayName, callback) {
   });
 }
 
-function findBarangayExplanationRequest(barangayName, triggerMonth, callback) {
+function normalizeBarangayExplanationRequestType(value) {
+  const cleaned = cleanText(value).toLowerCase();
+
+  if (
+    cleaned.includes("accepted_overdue") ||
+    cleaned.includes("overdue_resolution") ||
+    cleaned.includes("resolution_overdue") ||
+    cleaned.includes("accepted complaint overdue")
+  ) {
+    return "accepted_overdue_resolution";
+  }
+
+  return "not_accepted_forwarded";
+}
+
+function findBarangayExplanationRequest(barangayName, triggerMonth, callback, requestType = "not_accepted_forwarded") {
   const barangayKey = getBarangayMatchParam(barangayName);
+  const normalizedRequestType = normalizeBarangayExplanationRequestType(requestType);
 
   const sql = `
     SELECT *
     FROM barangay_response_messages
     WHERE barangay_key = ?
       AND trigger_month = ?
+      AND COALESCE(request_type, 'not_accepted_forwarded') = ?
     ORDER BY id DESC
     LIMIT 1
   `;
 
-  db.query(sql, [barangayKey, triggerMonth], (err, rows) => {
+  db.query(sql, [barangayKey, triggerMonth, normalizedRequestType], (err, rows) => {
     if (err) {
       console.error("Failed finding barangay explanation request:", err);
       return callback(err, null);
@@ -1092,11 +1140,12 @@ function maybeCreateBarangayNotAcceptedExplanationRequest(req, barangayName, cal
             source_complaint_id,
             trigger_count,
             trigger_month,
+            request_type,
             request_title,
             request_message,
             status
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
+          VALUES (?, ?, ?, ?, ?, 'not_accepted_forwarded', ?, ?, 'pending')
         `;
 
         db.query(
@@ -1123,6 +1172,7 @@ function maybeCreateBarangayNotAcceptedExplanationRequest(req, barangayName, cal
               source_complaint_id: sourceComplaintId,
               trigger_count: count,
               trigger_month: triggerMonth,
+              request_type: "not_accepted_forwarded",
               request_title: title,
               request_message: message,
               status: "pending"
@@ -2470,7 +2520,7 @@ router.put("/:id/resolve", upload.single("evidence"), (req, res) => {
           UPDATE complaints
           SET ${setClauses.join(",\n              ")}
           WHERE id = ?
-            AND status IN ('forwarded', 'in_progress', 'accepted_by_barangay')
+            AND status IN ('forwarded', 'in_progress', 'accepted_by_barangay', 'accepted_overdue')
         `;
 
         values.push(complaintId);
@@ -2637,11 +2687,11 @@ router.get("/history/resolved", (req, res) => {
       GROUP BY complaint_id
     ) forwarded
       ON forwarded.complaint_id = c.id
-    WHERE c.status IN ('resolved', 'rejected', 'forwarded', 'accepted_by_barangay', 'in_progress')
+    WHERE c.status IN ('resolved', 'rejected', 'forwarded', 'accepted_by_barangay', 'accepted_overdue', 'in_progress')
     ORDER BY
       CASE
         WHEN c.status = 'rejected' THEN COALESCE(c.rejected_at, c.created_at)
-        WHEN c.status IN ('forwarded', 'accepted_by_barangay', 'in_progress') THEN COALESCE(c.validated_at, c.accepted_at, c.in_progress_at, c.created_at)
+        WHEN c.status IN ('forwarded', 'accepted_by_barangay', 'accepted_overdue', 'in_progress') THEN COALESCE(c.accepted_overdue_at, c.validated_at, c.accepted_at, c.in_progress_at, c.created_at)
         ELSE COALESCE(c.resolved_at, c.created_at)
       END DESC,
       c.created_at DESC
@@ -2736,7 +2786,7 @@ router.get("/barangay-analytics/:barangay", (req, res) => {
               ON c.id = cn_forwarded.complaint_id
             WHERE cn_forwarded.target_type = 'barangay'
               AND ${normalizeSqlBarangayExpression("cn_forwarded.target_name")} = ?
-              AND LOWER(TRIM(COALESCE(c.status, ''))) IN ('accepted_by_barangay', 'in_progress', 'resolved')
+              AND LOWER(TRIM(COALESCE(c.status, ''))) IN ('accepted_by_barangay', 'accepted_overdue', 'in_progress', 'resolved')
               AND c.assigned_barangay IS NOT NULL
               AND TRIM(c.assigned_barangay) <> ''
               AND ${normalizeSqlBarangayExpression("c.assigned_barangay")} <> ?
@@ -2865,7 +2915,7 @@ router.get("/barangay/:barangayName", (req, res) => {
         AND cn.id IS NOT NULL
       )
       OR (
-        c.status IN ('in_progress', 'accepted_by_barangay')
+        c.status IN ('in_progress', 'accepted_by_barangay', 'accepted_overdue')
         AND LOWER(REPLACE(REPLACE(REPLACE(TRIM(c.assigned_barangay), ' ', ''), '-', ''), '.', '')) = ?
       )
     ORDER BY c.created_at DESC
@@ -3013,6 +3063,7 @@ router.get("/notifications/barangay/:barangayName", (req, res) => {
         c.longitude,
         c.created_at AS complaint_created_at,
         brm.id AS explanation_request_id,
+        brm.request_type AS explanation_request_type,
         brm.request_message AS explanation_request_message,
         brm.response_message,
         brm.status AS explanation_status,
@@ -3026,7 +3077,7 @@ router.get("/notifications/barangay/:barangayName", (req, res) => {
       WHERE cn.target_type = 'barangay'
         AND LOWER(REPLACE(REPLACE(REPLACE(TRIM(cn.target_name), ' ', ''), '-', ''), '.', '')) COLLATE utf8mb4_general_ci = ? COLLATE utf8mb4_general_ci
         AND cn.cleared_at IS NULL
-        AND c.status IN ('forwarded', 'in_progress', 'accepted_by_barangay', 'resolved')
+        AND c.status IN ('forwarded', 'in_progress', 'accepted_by_barangay', 'accepted_overdue', 'resolved')
       ORDER BY cn.created_at DESC
     `;
 
@@ -3095,7 +3146,7 @@ router.post("/notifications/barangay/:barangayName/:notificationId/clear", (req,
         AND cn.target_type = 'barangay'
         AND LOWER(REPLACE(REPLACE(REPLACE(TRIM(cn.target_name), ' ', ''), '-', ''), '.', '')) COLLATE utf8mb4_general_ci = ? COLLATE utf8mb4_general_ci
         AND cn.cleared_at IS NULL
-        AND c.status IN ('forwarded', 'in_progress', 'accepted_by_barangay', 'resolved')
+        AND c.status IN ('forwarded', 'in_progress', 'accepted_by_barangay', 'accepted_overdue', 'resolved')
     `;
 
     db.query(sql, [clearedBy, notificationId, getBarangayMatchParam(barangayName)], (err, result) => {
@@ -3166,7 +3217,7 @@ router.post("/notifications/barangay/:barangayName/clear", (req, res) => {
       WHERE cn.target_type = 'barangay'
         AND LOWER(REPLACE(REPLACE(REPLACE(TRIM(cn.target_name), ' ', ''), '-', ''), '.', '')) COLLATE utf8mb4_general_ci = ? COLLATE utf8mb4_general_ci
         AND cn.cleared_at IS NULL
-        AND c.status IN ('forwarded', 'in_progress', 'accepted_by_barangay', 'resolved')
+        AND c.status IN ('forwarded', 'in_progress', 'accepted_by_barangay', 'accepted_overdue', 'resolved')
     `;
 
     db.query(sql, [clearedBy, getBarangayMatchParam(barangayName)], (err, result) => {
@@ -3197,8 +3248,10 @@ router.patch("/notifications/barangay/:barangayName/clear", (req, res, next) => 
 
 
 /* =========================
-   BARANGAY NOT-ACCEPTED EXPLANATION REPLY
-   Barangay replies to the automated WMO explanation request.
+   BARANGAY EXPLANATION REPLY
+   Barangay replies to either:
+   - not-accepted forwarded concern explanation request
+   - accepted complaint overdue resolution explanation request
 ========================= */
 router.post("/notifications/barangay/:barangayName/not-accepted-explanation/reply", (req, res) => {
   const barangay = normalizeBarangayName(
@@ -3211,6 +3264,16 @@ router.post("/notifications/barangay/:barangayName/not-accepted-explanation/repl
       req.body.reply ||
       req.body.message ||
       req.body.reason
+    )
+  );
+
+  const requestType = normalizeBarangayExplanationRequestType(
+    req.body && (
+      req.body.request_type ||
+      req.body.notification_type ||
+      req.body.type ||
+      req.body.title ||
+      ""
     )
   );
 
@@ -3230,16 +3293,7 @@ router.post("/notifications/barangay/:barangayName/not-accepted-explanation/repl
 
   const triggerMonth = getCurrentMonthKey();
 
-  maybeCreateBarangayNotAcceptedExplanationRequest(req, barangay, (ensureErr) => {
-    if (ensureErr) {
-      return res.status(500).json({
-        success: false,
-        message: "Failed to prepare the WMO explanation request.",
-        error: ensureErr.message,
-        code: ensureErr.code
-      });
-    }
-
+  const continueReply = () => {
     ensureBarangayResponseMessagesTable((tableErr) => {
       if (tableErr) {
         return res.status(500).json({
@@ -3287,12 +3341,20 @@ router.post("/notifications/barangay/:barangayName/not-accepted-explanation/repl
           }
 
           const sourceComplaintId = requestRow.source_complaint_id;
-          const title = "Barangay explanation received";
-          const message = `${barangay} replied to WMO's not-accepted forwarded concerns request: ${truncateNotificationText(responseMessage, 140)}`;
+          const isAcceptedOverdue = requestType === "accepted_overdue_resolution";
+          const title = isAcceptedOverdue
+            ? "Overdue complaint explanation received"
+            : "Barangay explanation received";
+          const message = isAcceptedOverdue
+            ? `${barangay} replied to WMO's accepted complaint overdue request: ${truncateNotificationText(responseMessage, 140)}`
+            : `${barangay} replied to WMO's not-accepted forwarded concerns request: ${truncateNotificationText(responseMessage, 140)}`;
+          const replyNotificationType = isAcceptedOverdue
+            ? "barangay_accepted_overdue_explanation_reply"
+            : "barangay_not_accepted_explanation_reply";
 
           insertWmoComplaintNotification(
             sourceComplaintId,
-            "barangay_not_accepted_explanation_reply",
+            replyNotificationType,
             title,
             message,
             (notifErr) => {
@@ -3311,14 +3373,18 @@ router.post("/notifications/barangay/:barangayName/not-accepted-explanation/repl
                 title,
                 message,
                 barangay,
-                notification_type: "barangay_not_accepted_explanation_reply"
+                notification_type: replyNotificationType,
+                request_type: requestType
               });
 
               emitBarangayRealtime(req, barangay, "barangay:not-accepted-explanation-replied", {
                 complaint_id: sourceComplaintId,
                 title: "Explanation sent",
                 message: "Your explanation was sent to WMO.",
-                notification_type: "not_accepted_explanation_replied"
+                notification_type: isAcceptedOverdue
+                  ? "accepted_overdue_explanation_replied"
+                  : "not_accepted_explanation_replied",
+                request_type: requestType
               });
 
               return res.json({
@@ -3329,14 +3395,33 @@ router.post("/notifications/barangay/:barangayName/not-accepted-explanation/repl
                 source_complaint_id: sourceComplaintId,
                 response_message: responseMessage,
                 explanation_status: "replied",
+                request_type: requestType,
                 replied_at: new Date().toISOString()
               });
             }
           );
         });
-      });
+      }, requestType);
     });
-  });
+  };
+
+  if (requestType === "not_accepted_forwarded") {
+    maybeCreateBarangayNotAcceptedExplanationRequest(req, barangay, (ensureErr) => {
+      if (ensureErr) {
+        return res.status(500).json({
+          success: false,
+          message: "Failed to prepare the WMO explanation request.",
+          error: ensureErr.message,
+          code: ensureErr.code
+        });
+      }
+
+      continueReply();
+    });
+    return;
+  }
+
+  continueReply();
 });
 
 router.patch("/notifications/barangay/:barangayName/not-accepted-explanation/reply", (req, res, next) => {
@@ -3549,13 +3634,14 @@ router.get("/detect-barangay", (req, res) => {
 
 
 /* =========================
-   ACCEPTED COMPLAINT 24-HOUR AUTO REJECT - NOTIFICATION ONLY
+   ACCEPTED COMPLAINT 24-HOUR OVERDUE CHECK
    Purpose:
    - If a barangay accepts a WMO-forwarded complaint but does not submit a
-     resolution report within 24 hours, the complaint is automatically marked rejected.
+     resolution report within 24 hours, keep the complaint valid and mark it
+     as accepted_overdue instead of rejected.
    - WMO gets an in-system notification.
-   - The accepting barangay gets an in-system notification.
-   - No email is sent.
+   - The accepting barangay gets an explanation request notification.
+   - The barangay can still resolve the complaint after it becomes overdue.
 ========================= */
 
 function dbQueryAsync(sql, values = []) {
@@ -3576,7 +3662,7 @@ function insertWmoComplaintNotificationAsync(complaintId, notificationType, titl
       message,
       (err) => {
         if (err) {
-          console.error("Auto-reject WMO notification error:", err);
+          console.error("Overdue accepted WMO notification error:", err);
         }
 
         resolve(!err);
@@ -3595,7 +3681,7 @@ function insertBarangayInfoNotificationsAsync(complaintId, targetBarangays, noti
       message,
       (err) => {
         if (err) {
-          console.error("Auto-reject barangay notification error:", err);
+          console.error("Overdue accepted barangay notification error:", err);
         }
 
         resolve(!err);
@@ -3609,6 +3695,19 @@ async function ensureAcceptedComplaintDeadlineColumns() {
   const columnSet = new Set((rows || []).map((row) => String(row.Field || "").trim()));
   const alterSql = [];
 
+  if (!columnSet.has("accepted_overdue_at")) {
+    alterSql.push(`ADD COLUMN accepted_overdue_at DATETIME NULL`);
+  }
+
+  if (!columnSet.has("accepted_overdue_reason")) {
+    alterSql.push(`ADD COLUMN accepted_overdue_reason TEXT NULL`);
+  }
+
+  /*
+    Keep these legacy columns safe because older database versions may already
+    have them from the previous auto-reject implementation. We no longer use
+    them to mark valid complaints as rejected.
+  */
   if (!columnSet.has("rejection_reason")) {
     alterSql.push(`ADD COLUMN rejection_reason TEXT NULL`);
   }
@@ -3640,6 +3739,77 @@ async function ensureAcceptedComplaintDeadlineColumns() {
   }
 }
 
+function createAcceptedOverdueExplanationRequestAsync(complaintId, barangay, title, message) {
+  return new Promise((resolve) => {
+    ensureBarangayResponseMessagesTable((tableErr) => {
+      if (tableErr) {
+        console.error("Failed preparing accepted-overdue explanation request table:", tableErr);
+        return resolve(false);
+      }
+
+      const triggerMonth = getCurrentMonthKey();
+      const requestType = "accepted_overdue_resolution";
+      const barangayKey = getBarangayMatchParam(barangay);
+
+      const duplicateSql = `
+        SELECT id
+        FROM barangay_response_messages
+        WHERE barangay_key = ?
+          AND source_complaint_id = ?
+          AND COALESCE(request_type, '') = ?
+        LIMIT 1
+      `;
+
+      db.query(duplicateSql, [barangayKey, complaintId, requestType], (dupErr, dupRows) => {
+        if (dupErr) {
+          console.error("Failed checking accepted-overdue explanation duplicate:", dupErr);
+          return resolve(false);
+        }
+
+        if (dupRows && dupRows.length) {
+          return resolve(true);
+        }
+
+        const insertSql = `
+          INSERT INTO barangay_response_messages (
+            barangay_name,
+            barangay_key,
+            source_complaint_id,
+            trigger_count,
+            trigger_month,
+            request_type,
+            request_title,
+            request_message,
+            status
+          )
+          VALUES (?, ?, ?, 1, ?, ?, ?, ?, 'pending')
+        `;
+
+        db.query(
+          insertSql,
+          [
+            barangay,
+            barangayKey,
+            complaintId,
+            triggerMonth,
+            requestType,
+            title,
+            message
+          ],
+          (insertErr) => {
+            if (insertErr) {
+              console.error("Failed inserting accepted-overdue explanation request:", insertErr);
+              return resolve(false);
+            }
+
+            return resolve(true);
+          }
+        );
+      });
+    });
+  });
+}
+
 async function processOverdueAcceptedComplaint(app, complaint) {
   const complaintId = complaint.id;
   const barangay = normalizeBarangayName(
@@ -3655,22 +3825,21 @@ async function processOverdueAcceptedComplaint(app, complaint) {
   }
 
   const reason =
-    `Auto-rejected: ${barangay} accepted this WMO-forwarded complaint but did not submit a resolution report within 24 hours.`;
+    `${barangay} accepted this WMO-forwarded complaint but did not submit a resolution report within 24 hours.`;
 
   const updateResult = await dbQueryAsync(
     `
     UPDATE complaints
-    SET status = 'rejected',
-        rejection_reason = ?,
-        rejected_at = NOW(),
-        auto_rejected_at = NOW()
+    SET status = 'accepted_overdue',
+        accepted_overdue_reason = ?,
+        accepted_overdue_at = NOW()
     WHERE id = ?
       AND status IN ('accepted_by_barangay', 'in_progress')
       AND accepted_at IS NOT NULL
       AND accepted_at <= DATE_SUB(NOW(), INTERVAL 24 HOUR)
       AND (
-        auto_rejected_at IS NULL
-        OR auto_rejected_at = '0000-00-00 00:00:00'
+        accepted_overdue_at IS NULL
+        OR accepted_overdue_at = '0000-00-00 00:00:00'
       )
     `,
     [
@@ -3688,17 +3857,24 @@ async function processOverdueAcceptedComplaint(app, complaint) {
   }
 
   const subject = truncateNotificationText(complaint.subject || "Accepted complaint", 90);
-  const wmoTitle = "Accepted complaint overdue";
+  const wmoTitle = "Accepted Complaint Overdue";
   const wmoMessage =
-    `${barangay} accepted the WMO-forwarded complaint${subject ? `: ${subject}` : ""} but did not submit a resolution within 24 hours. The complaint was automatically marked as rejected.`;
+    `${barangay} accepted the WMO-forwarded complaint${subject ? `: ${subject}` : ""} but did not submit a resolution within 24 hours. WMO should review the delay and wait for the barangay explanation.`;
 
-  const barangayTitle = "Accepted complaint overdue";
+  const barangayTitle = "Resolution Explanation Required";
   const barangayMessage =
-    `Your barangay accepted this WMO-forwarded complaint${subject ? `: ${subject}` : ""}, but no resolution report was submitted within 24 hours. Please coordinate with WMO.`;
+    `Your barangay accepted this WMO-forwarded complaint${subject ? `: ${subject}` : ""}, but no resolution report was submitted within 24 hours. Please send a short explanation to WMO and resolve the concern as soon as possible.`;
+
+  await createAcceptedOverdueExplanationRequestAsync(
+    complaintId,
+    barangay,
+    barangayTitle,
+    barangayMessage
+  );
 
   await insertWmoComplaintNotificationAsync(
     complaintId,
-    "accepted_complaint_overdue_auto_rejected",
+    "accepted_complaint_overdue",
     wmoTitle,
     wmoMessage
   );
@@ -3706,7 +3882,7 @@ async function processOverdueAcceptedComplaint(app, complaint) {
   await insertBarangayInfoNotificationsAsync(
     complaintId,
     [barangay],
-    "accepted_complaint_overdue_auto_rejected",
+    "accepted_overdue_explanation_request",
     barangayTitle,
     barangayMessage
   );
@@ -3714,20 +3890,22 @@ async function processOverdueAcceptedComplaint(app, complaint) {
   const fakeReq = app ? { app } : null;
 
   if (fakeReq) {
-    emitWmoRealtime(fakeReq, "wmo:complaint-auto-rejected-overdue", {
+    emitWmoRealtime(fakeReq, "wmo:complaint-accepted-overdue", {
       complaint_id: complaintId,
       title: wmoTitle,
       message: wmoMessage,
       assigned_barangay: barangay,
-      status: "rejected"
+      status: "accepted_overdue",
+      notification_type: "accepted_complaint_overdue"
     });
 
-    emitBarangayRealtime(fakeReq, barangay, "barangay:complaint-auto-rejected-overdue", {
+    emitBarangayRealtime(fakeReq, barangay, "barangay:accepted-overdue-explanation-request", {
       complaint_id: complaintId,
       title: barangayTitle,
       message: barangayMessage,
       assigned_barangay: barangay,
-      status: "rejected"
+      status: "accepted_overdue",
+      notification_type: "accepted_overdue_explanation_request"
     });
   }
 
@@ -3735,11 +3913,12 @@ async function processOverdueAcceptedComplaint(app, complaint) {
     complaint_id: complaintId,
     updated: true,
     assigned_barangay: barangay,
-    notification_only: true
+    status: "accepted_overdue",
+    notification_only: false
   };
 }
 
-async function autoRejectOverdueAcceptedComplaints(app = null) {
+async function markOverdueAcceptedComplaints(app = null) {
   await ensureAcceptedComplaintDeadlineColumns();
 
   const rows = await dbQueryAsync(
@@ -3759,8 +3938,8 @@ async function autoRejectOverdueAcceptedComplaints(app = null) {
       AND accepted_at IS NOT NULL
       AND accepted_at <= DATE_SUB(NOW(), INTERVAL 24 HOUR)
       AND (
-        auto_rejected_at IS NULL
-        OR auto_rejected_at = '0000-00-00 00:00:00'
+        accepted_overdue_at IS NULL
+        OR accepted_overdue_at = '0000-00-00 00:00:00'
       )
     ORDER BY accepted_at ASC
     LIMIT 25
@@ -3785,11 +3964,20 @@ async function autoRejectOverdueAcceptedComplaints(app = null) {
 
   return {
     checked: true,
-    notification_only: true,
+    notification_only: false,
     count: rows ? rows.length : 0,
     processed: results.filter((item) => item.updated).length,
     results
   };
+}
+
+/*
+  Backward-compatible alias.
+  server.js may still call the old exported function name, but the behavior is
+  now overdue marking, not rejection.
+*/
+async function autoRejectOverdueAcceptedComplaints(app = null) {
+  return markOverdueAcceptedComplaints(app);
 }
 
 let overdueAcceptedComplaintSchedulerStarted = false;
@@ -3802,11 +3990,11 @@ function startOverdueAcceptedComplaintScheduler(app) {
   overdueAcceptedComplaintSchedulerStarted = true;
 
   const runCheck = () => {
-    autoRejectOverdueAcceptedComplaints(app)
+    markOverdueAcceptedComplaints(app)
       .then((result) => {
         if (result.processed > 0) {
           console.log(
-            `[Complaint Scheduler] Auto-rejected ${result.processed} overdue accepted complaint(s). Notifications only.`
+            `[Complaint Scheduler] Marked ${result.processed} accepted complaint(s) as overdue.`
           );
         }
       })
@@ -3822,12 +4010,12 @@ function startOverdueAcceptedComplaintScheduler(app) {
   setTimeout(runCheck, 15000);
   setInterval(runCheck, 5 * 60 * 1000);
 
-  console.log("[Complaint Scheduler] 24-hour accepted complaint notification-only checker started.");
+  console.log("[Complaint Scheduler] 24-hour accepted complaint overdue checker started.");
 }
 
 router.post("/maintenance/check-overdue-accepted", async (req, res) => {
   try {
-    const result = await autoRejectOverdueAcceptedComplaints(req.app);
+    const result = await markOverdueAcceptedComplaints(req.app);
 
     return res.json({
       success: true,
@@ -3933,6 +4121,7 @@ router.get("/:id", (req, res) => {
   });
 });
 
+router.markOverdueAcceptedComplaints = markOverdueAcceptedComplaints;
 router.autoRejectOverdueAcceptedComplaints = autoRejectOverdueAcceptedComplaints;
 router.startOverdueAcceptedComplaintScheduler = startOverdueAcceptedComplaintScheduler;
 
