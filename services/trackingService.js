@@ -216,7 +216,7 @@ class TrackingService {
                 ? `Truck ${truckId} GPS tracking was turned ${action} by ${enforcerName}.`
                 : `Truck ${truckId} GPS tracking was turned ${action}.`;
 
-            await db.query(
+            const [insertResult] = await db.query(
                 `
                 INSERT INTO notifications (
                     type,
@@ -233,12 +233,20 @@ class TrackingService {
                 ]
             );
 
+            const notificationId = insertResult && insertResult.insertId
+                ? insertResult.insertId
+                : null;
+
             return {
+                id: notificationId,
+                notification_id: notificationId,
                 title,
                 message,
                 type: "tracking",
                 truck_id: truckId,
-                session_id: sessionId
+                session_id: sessionId,
+                reference_id: sessionId,
+                createdAt: new Date().toISOString()
             };
         } catch (error) {
             /*
@@ -279,7 +287,7 @@ class TrackingService {
         const [activeRows] = await db.query(checkActiveSql, [truck_id]);
 
         if (activeRows.length > 0) {
-            await this.createGpsTrackingNotification("on", {
+            const notification = await this.createGpsTrackingNotification("on", {
                 truck_id,
                 enforcer_id,
                 enforcer_name,
@@ -288,7 +296,8 @@ class TrackingService {
 
             return {
                 alreadyActive: true,
-                sessionId: activeRows[0].id
+                sessionId: activeRows[0].id,
+                notification
             };
         }
 
@@ -340,7 +349,7 @@ class TrackingService {
             });
         }
 
-        await this.createGpsTrackingNotification("on", {
+        const notification = await this.createGpsTrackingNotification("on", {
             truck_id,
             enforcer_id,
             enforcer_name,
@@ -349,7 +358,8 @@ class TrackingService {
 
         return {
             alreadyActive: false,
-            sessionId
+            sessionId,
+            notification
         };
     }
 
@@ -383,7 +393,8 @@ class TrackingService {
             return {
                 success: true,
                 message: "Session already stopped",
-                truck_id: session.truck_id
+                truck_id: session.truck_id,
+                notification: null
             };
         }
 
@@ -420,7 +431,7 @@ class TrackingService {
 
         await db.query(updateLastLocationSql, [sessionId]);
 
-        await this.createGpsTrackingNotification("off", {
+        const notification = await this.createGpsTrackingNotification("off", {
             truck_id: session.truck_id,
             enforcer_name: session.enforcer_name || "",
             session_id: sessionId
@@ -429,7 +440,8 @@ class TrackingService {
         return {
             success: true,
             message: "Tracking session stopped successfully",
-            truck_id: session.truck_id
+            truck_id: session.truck_id,
+            notification
         };
     }
 
@@ -878,7 +890,7 @@ class TrackingService {
 
         const [sessionRows] = await db.query(
             `
-            SELECT id, truck_id, session_status
+            SELECT id, truck_id, enforcer_name, session_status
             FROM truck_tracking_sessions
             WHERE id = ?
             LIMIT 1
@@ -891,6 +903,20 @@ class TrackingService {
         }
 
         const session = sessionRows[0];
+
+        const [lastLocationRows] = await db.query(
+            `
+            SELECT status
+            FROM truck_last_locations
+            WHERE session_id = ?
+            LIMIT 1
+            `,
+            [sessionId]
+        );
+
+        const previousStatusKey = lastLocationRows.length > 0
+            ? this.normalizeTrackingDeviceStatus(lastLocationRows[0].status)
+            : "";
 
         await db.query(
             `
@@ -916,13 +942,40 @@ class TrackingService {
             [statusKey, sessionId]
         );
 
+        let notification = null;
+
+        /*
+          Create a WMO bell notification only when the mobile status actually
+          changes to GPS ON or GPS OFF. This prevents repeated notifications
+          when the phone reports "active" every few seconds.
+        */
+        if (session.session_status === "active") {
+            if (statusKey === "active" && previousStatusKey !== "active") {
+                notification = await this.createGpsTrackingNotification("on", {
+                    truck_id: session.truck_id,
+                    enforcer_name: session.enforcer_name || data.enforcer_name || "",
+                    session_id: sessionId
+                });
+            }
+
+            if (statusKey === "gps_off" && previousStatusKey !== "gps_off") {
+                notification = await this.createGpsTrackingNotification("off", {
+                    truck_id: session.truck_id,
+                    enforcer_name: session.enforcer_name || data.enforcer_name || "",
+                    session_id: sessionId
+                });
+            }
+        }
+
         return {
             success: true,
             message: `Tracking device status updated to ${statusKey}.`,
             tracking_status_key: statusKey,
             gps_status: statusKey === "gps_off" ? "off" : "on",
             source,
-            truck_id: session.truck_id
+            truck_id: session.truck_id,
+            previous_tracking_status_key: previousStatusKey || null,
+            notification
         };
     }
 
