@@ -12585,3 +12585,36 @@ body #sidebarOtherMenu.sidebar-other-menu-portal.open:not(.hidden) {
     text-align: center;
   }
 }
+
+/* =========================================================
+   COMPLAINT ACCEPTED OVERDUE STATUS PATCH
+   Purpose: show valid accepted complaints that missed the 24-hour
+   resolution deadline without incorrectly labeling them rejected.
+========================================================= */
+.status-badge.accepted-overdue,
+.complaint-history-status.accepted-overdue,
+.complaint-status-pill.accepted-overdue,
+.status-pill.accepted-overdue {
+  background: #fff3cd !important;
+  color: #9a5b00 !important;
+  border: 1px solid #facc15 !important;
+  box-shadow: none !important;
+}
+
+#complaintHistoryModal .complaint-history-status.accepted-overdue {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-width: 128px !important;
+  padding: 8px 14px !important;
+  border-radius: 999px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.01em !important;
+}
+
+.notification-item.danger .notification-type,
+.notification-card.danger .notification-type,
+.notification-row.danger .notification-type {
+  background: #fff3cd !important;
+  color: #9a5b00 !important;
+}
