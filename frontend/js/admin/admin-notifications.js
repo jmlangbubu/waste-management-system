@@ -282,6 +282,10 @@ function getNotificationStatusClass(notif = {}) {
     return "resolved";
   }
 
+  if (title.includes("overdue") || status.includes("overdue")) {
+    return "rejected";
+  }
+
   if (type.includes("complaint")) {
     return "pending";
   }
@@ -1187,6 +1191,7 @@ function setupAdminNotificationRealtime() {
 
       const refreshEvents = [
         "wmo:barangay-explanation-received",
+        "wmo:complaint-accepted-overdue",
         "wmo:complaint-auto-rejected-overdue",
         "wmo:complaint-created",
         "wmo:complaint-submitted",
