@@ -12618,3 +12618,101 @@ body #sidebarOtherMenu.sidebar-other-menu-portal.open:not(.hidden) {
   background: #fff3cd !important;
   color: #9a5b00 !important;
 }
+
+
+/* =========================================================
+   COMPLAINT HISTORY ACCEPTED OVERDUE BADGE FONT FIX
+   Purpose: make Accepted · Overdue readable inside the Status column.
+   This only affects the complaint history status badge.
+========================================================= */
+#complaintHistoryModal .complaint-history-status.accepted-overdue,
+#complaintHistoryModal .status-badge.accepted-overdue,
+#complaintHistoryModal .complaint-status-pill.accepted-overdue,
+#complaintHistoryModal .status-pill.accepted-overdue {
+  min-width: 104px !important;
+  max-width: 136px !important;
+  padding: 7px 10px !important;
+  font-size: 11px !important;
+  line-height: 1.1 !important;
+  font-weight: 800 !important;
+  letter-spacing: 0 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  border-radius: 999px !important;
+}
+
+#complaintHistoryModal th:nth-child(5),
+#complaintHistoryModal td:nth-child(5) {
+  min-width: 148px !important;
+  text-align: center !important;
+  overflow: visible !important;
+}
+
+#complaintHistoryModal td:nth-child(5) {
+  padding-left: 10px !important;
+  padding-right: 10px !important;
+}
+
+@media (max-width: 768px) {
+  #complaintHistoryModal .complaint-history-status.accepted-overdue,
+  #complaintHistoryModal .status-badge.accepted-overdue,
+  #complaintHistoryModal .complaint-status-pill.accepted-overdue,
+  #complaintHistoryModal .status-pill.accepted-overdue {
+    min-width: 94px !important;
+    max-width: 118px !important;
+    padding: 6px 8px !important;
+    font-size: 10.5px !important;
+  }
+}
+
+
+/* =========================================================
+   COMPLAINT HISTORY OVERDUE SHORT BADGE FINAL FIX
+   Purpose: show accepted overdue status as a compact "Overdue" badge
+   so the Status and Date columns do not overlap.
+========================================================= */
+#complaintHistoryModal .complaint-history-status.accepted-overdue,
+#complaintHistoryModal .status-badge.accepted-overdue,
+#complaintHistoryModal .complaint-status-pill.accepted-overdue,
+#complaintHistoryModal .status-pill.accepted-overdue {
+  min-width: 82px !important;
+  max-width: 92px !important;
+  padding: 7px 11px !important;
+  font-size: 11px !important;
+  line-height: 1 !important;
+  font-weight: 800 !important;
+  letter-spacing: 0 !important;
+  white-space: nowrap !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  border-radius: 999px !important;
+  background: #fff3cd !important;
+  color: #9a5b00 !important;
+  border: 1px solid #facc15 !important;
+}
+
+#complaintHistoryModal th:nth-child(5),
+#complaintHistoryModal td:nth-child(5) {
+  min-width: 112px !important;
+  width: 112px !important;
+  text-align: center !important;
+  overflow: visible !important;
+}
+
+#complaintHistoryModal td:nth-child(5) {
+  padding-left: 8px !important;
+  padding-right: 8px !important;
+}
+
+@media (max-width: 768px) {
+  #complaintHistoryModal .complaint-history-status.accepted-overdue,
+  #complaintHistoryModal .status-badge.accepted-overdue,
+  #complaintHistoryModal .complaint-status-pill.accepted-overdue,
+  #complaintHistoryModal .status-pill.accepted-overdue {
+    min-width: 76px !important;
+    max-width: 86px !important;
+    padding: 6px 9px !important;
+    font-size: 10.5px !important;
+  }
+}
