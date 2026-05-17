@@ -12716,3 +12716,69 @@ body #sidebarOtherMenu.sidebar-other-menu-portal.open:not(.hidden) {
     font-size: 10.5px !important;
   }
 }
+
+/* =========================================================
+   FULL PAGE BACKGROUND CONTINUITY FIX
+   Purpose:
+   - Prevents admin pages from looking cut off when content is short
+   - Keeps Orientation, Complaints, Appointments, and other sections
+     using one continuous page background down to the bottom viewport
+   - Final-layer patch only; no HTML or JS changes required
+========================================================= */
+
+html,
+body {
+  min-height: 100% !important;
+  background:
+    radial-gradient(circle at top left, rgba(47, 138, 52, 0.10), transparent 34%),
+    linear-gradient(180deg, #f6fbf8 0%, #eef3f0 100%) !important;
+}
+
+body {
+  min-height: 100vh !important;
+  min-height: 100dvh !important;
+}
+
+.admin-layout {
+  min-height: 100vh !important;
+  min-height: 100dvh !important;
+  background:
+    radial-gradient(circle at top left, rgba(47, 138, 52, 0.10), transparent 34%),
+    linear-gradient(180deg, #f6fbf8 0%, #eef3f0 100%) !important;
+}
+
+.main-content {
+  min-height: 100vh !important;
+  min-height: 100dvh !important;
+  background: transparent !important;
+}
+
+.content-section {
+  min-height: calc(100vh - 120px) !important;
+  background: transparent !important;
+}
+
+.content-section.active {
+  background: transparent !important;
+}
+
+@media (min-width: 993px) {
+  .main-content {
+    min-height: 100vh !important;
+    min-height: 100dvh !important;
+  }
+}
+
+@media (max-width: 992px) {
+  .main-content,
+  .admin-layout.sidebar-collapsed .main-content {
+    min-height: 100vh !important;
+    min-height: 100dvh !important;
+    background: transparent !important;
+  }
+
+  .content-section {
+    min-height: calc(100vh - 100px) !important;
+  }
+}
+
