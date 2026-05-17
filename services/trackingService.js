@@ -37,6 +37,208 @@ class TrackingService {
         return new Date();
     }
 
+
+    getManilaNowDateTime() {
+        /*
+          Server hosting can use UTC while the WMO shift is based on
+          Philippine time. Use a fixed +08:00 Manila time string so
+          5:00 PM auto-stop works the same on local and hosted servers.
+        */
+        const now = new Date(Date.now() + (8 * 60 * 60 * 1000));
+        return now.toISOString().slice(0, 19).replace("T", " ");
+    }
+
+    normalizeDateTimeText(value) {
+        if (value === null || value === undefined) return "";
+
+        if (value instanceof Date && !Number.isNaN(value.getTime())) {
+            return value.toISOString().slice(0, 19).replace("T", " ");
+        }
+
+        const cleaned = this.cleanText(value);
+        if (!cleaned) return "";
+
+        if (/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}$/.test(cleaned)) {
+            return cleaned;
+        }
+
+        if (/^\d{4}-\d{2}-\d{2}T/.test(cleaned)) {
+            return cleaned.replace("T", " ").replace(/\.\d{3}Z?$/, "").replace(/Z$/, "").slice(0, 19);
+        }
+
+        const parsed = new Date(cleaned);
+        if (!Number.isNaN(parsed.getTime())) {
+            return parsed.toISOString().slice(0, 19).replace("T", " ");
+        }
+
+        return cleaned.slice(0, 19);
+    }
+
+    getDatePart(value) {
+        const text = this.normalizeDateTimeText(value);
+        const match = text.match(/^(\d{4}-\d{2}-\d{2})/);
+        return match ? match[1] : this.getManilaNowDateTime().slice(0, 10);
+    }
+
+    getDailyDutyShiftEnd(startedAtValue) {
+        return `${this.getDatePart(startedAtValue)} 17:00:00`;
+    }
+
+    resolveShiftEndForDuty(clientShiftEndValue, startedAtValue) {
+        const dutyEnd = this.getDailyDutyShiftEnd(startedAtValue);
+        const clientShiftEnd = this.normalizeDateTimeText(clientShiftEndValue);
+
+        if (!clientShiftEnd) {
+            return dutyEnd;
+        }
+
+        /*
+          If Android was opened after 5 PM, older app logic could send
+          tomorrow 5 PM. Clamp it to the actual duty day 5 PM so the truck
+          does not remain in Live Tracking overnight.
+        */
+        return clientShiftEnd > dutyEnd ? dutyEnd : clientShiftEnd;
+    }
+
+    getEffectiveShiftEndTime(session = {}) {
+        return this.resolveShiftEndForDuty(
+            session.shift_end_time || session.effective_shift_end_time,
+            session.started_at || session.created_at || this.getManilaNowDateTime()
+        );
+    }
+
+    parseManilaDateTimeMs(value) {
+        const text = this.normalizeDateTimeText(value);
+        if (!text) return 0;
+
+        const parsed = new Date(`${text.replace(" ", "T")}+08:00`);
+        const time = parsed.getTime();
+        return Number.isNaN(time) ? 0 : time;
+    }
+
+    getTrackingStatusDescription(statusKey) {
+        if (statusKey === "active") {
+            return "Live GPS signal was syncing normally until the shift ended.";
+        }
+
+        if (statusKey === "sync_pending") {
+            return "Mobile data was weak or offline before the shift ended. Saved points may sync later.";
+        }
+
+        if (statusKey === "gps_off") {
+            return "GPS tracking was off or no live GPS points were recorded before the shift ended.";
+        }
+
+        return "Tracking session ended.";
+    }
+
+    getFinalGpsStatus(statusKey) {
+        return statusKey === "gps_off" ? "off" : "on";
+    }
+
+    getFinalSyncStatus(statusKey) {
+        if (statusKey === "active") return "synced";
+        if (statusKey === "sync_pending") return "pending";
+        return "not_syncing";
+    }
+
+    computeFinalTrackingStatus(session = {}) {
+        const rawExplicitStatus = this.cleanText(
+            session.last_location_status ||
+            session.last_device_status ||
+            session.tracking_status_key ||
+            ""
+        );
+
+        const explicitStatus = rawExplicitStatus
+            ? this.normalizeTrackingDeviceStatus(rawExplicitStatus)
+            : "";
+
+        if (explicitStatus === "gps_off" || explicitStatus === "sync_pending") {
+            return explicitStatus;
+        }
+
+        const lastUpdated = this.normalizeDateTimeText(
+            session.location_last_updated ||
+            session.last_location_updated_at ||
+            session.last_updated_at ||
+            ""
+        );
+
+        if (!lastUpdated) {
+            return "gps_off";
+        }
+
+        const shiftEndMs = this.parseManilaDateTimeMs(this.getEffectiveShiftEndTime(session));
+        const lastUpdatedMs = this.parseManilaDateTimeMs(lastUpdated);
+
+        if (!shiftEndMs || !lastUpdatedMs) {
+            return explicitStatus || "gps_off";
+        }
+
+        const ageAtShiftEndSeconds = Math.max(0, Math.floor((shiftEndMs - lastUpdatedMs) / 1000));
+
+        if (ageAtShiftEndSeconds <= 60) {
+            return "active";
+        }
+
+        if (ageAtShiftEndSeconds <= 300) {
+            return "sync_pending";
+        }
+
+        return "gps_off";
+    }
+
+    async ensureTrackingSessionReportColumns() {
+        try {
+            const [columns] = await db.query(`SHOW COLUMNS FROM truck_tracking_sessions`);
+            const columnSet = new Set((columns || []).map((row) => String(row.Field || "").trim()));
+            const alters = [];
+
+            if (!columnSet.has("last_device_status")) {
+                alters.push("ADD COLUMN last_device_status VARCHAR(50) NULL");
+            }
+
+            if (!columnSet.has("last_device_status_at")) {
+                alters.push("ADD COLUMN last_device_status_at DATETIME NULL");
+            }
+
+            if (!columnSet.has("effective_shift_end_time")) {
+                alters.push("ADD COLUMN effective_shift_end_time DATETIME NULL");
+            }
+
+            if (!columnSet.has("final_tracking_status_key")) {
+                alters.push("ADD COLUMN final_tracking_status_key VARCHAR(50) NULL");
+            }
+
+            if (!columnSet.has("final_gps_status")) {
+                alters.push("ADD COLUMN final_gps_status VARCHAR(20) NULL");
+            }
+
+            if (!columnSet.has("final_sync_status")) {
+                alters.push("ADD COLUMN final_sync_status VARCHAR(50) NULL");
+            }
+
+            if (!columnSet.has("final_tracking_status_description")) {
+                alters.push("ADD COLUMN final_tracking_status_description TEXT NULL");
+            }
+
+            if (alters.length > 0) {
+                await db.query(`
+                    ALTER TABLE truck_tracking_sessions
+                    ${alters.join(",\n                    ")}
+                `);
+            }
+        } catch (error) {
+            console.error("ensureTrackingSessionReportColumns error:", error);
+            /*
+              Do not block tracking if optional report columns cannot be
+              created immediately. Existing tracking still works.
+            */
+        }
+    }
+
+
     async ensureOfflineTrackingColumns() {
         try {
             const [columns] = await db.query(`SHOW COLUMNS FROM truck_location_logs`);
@@ -84,31 +286,92 @@ class TrackingService {
         }
     }
 
+
     async autoStopExpiredSessions() {
-        const sql = `
-            UPDATE truck_tracking_sessions
-            SET 
-                session_status = 'auto_stopped',
-                ended_at = IFNULL(ended_at, NOW()),
-                updated_at = NOW()
-            WHERE session_status = 'active'
-              AND shift_end_time <= NOW()
-        `;
+        await this.ensureTrackingSessionReportColumns();
 
-        await db.query(sql);
+        const manilaNow = this.getManilaNowDateTime();
 
-        const offlineSql = `
-            UPDATE truck_last_locations tll
-            INNER JOIN truck_tracking_sessions tts ON tll.session_id = tts.id
-            SET 
-                tll.status = 'offline',
-                tll.updated_at = NOW()
-            WHERE tts.session_status IN ('stopped', 'auto_stopped')
-        `;
+        const [sessions] = await db.query(
+            `
+            SELECT
+                tts.id,
+                tts.truck_id,
+                tts.enforcer_name,
+                tts.session_status,
+                tts.started_at,
+                tts.created_at,
+                tts.shift_end_time,
+                tts.last_updated_at,
+                tts.last_device_status,
+                tts.last_device_status_at,
+                tll.status AS last_location_status,
+                tll.last_updated_at AS location_last_updated
+            FROM truck_tracking_sessions tts
+            LEFT JOIN truck_last_locations tll
+                ON tts.id = tll.session_id
+            WHERE tts.session_status = 'active'
+            `
+        );
 
-        await db.query(offlineSql);
+        for (const session of sessions || []) {
+            const effectiveShiftEnd = this.getEffectiveShiftEndTime(session);
+
+            if (effectiveShiftEnd > manilaNow) {
+                continue;
+            }
+
+            const finalStatusKey = this.computeFinalTrackingStatus(session);
+            const finalGpsStatus = this.getFinalGpsStatus(finalStatusKey);
+            const finalSyncStatus = this.getFinalSyncStatus(finalStatusKey);
+            const finalDescription = this.getTrackingStatusDescription(finalStatusKey);
+            const lastLocationStatus = finalStatusKey === "active" ? "offline" : finalStatusKey;
+
+            const [updateResult] = await db.query(
+                `
+                UPDATE truck_tracking_sessions
+                SET
+                    session_status = 'auto_stopped',
+                    ended_at = IFNULL(ended_at, ?),
+                    effective_shift_end_time = ?,
+                    final_tracking_status_key = ?,
+                    final_gps_status = ?,
+                    final_sync_status = ?,
+                    final_tracking_status_description = ?,
+                    last_device_status = COALESCE(last_device_status, ?),
+                    last_device_status_at = COALESCE(last_device_status_at, ?),
+                    updated_at = ?
+                WHERE id = ?
+                  AND session_status = 'active'
+                `,
+                [
+                    effectiveShiftEnd,
+                    effectiveShiftEnd,
+                    finalStatusKey,
+                    finalGpsStatus,
+                    finalSyncStatus,
+                    finalDescription,
+                    finalStatusKey,
+                    manilaNow,
+                    manilaNow,
+                    session.id
+                ]
+            );
+
+            if (updateResult && updateResult.affectedRows > 0) {
+                await db.query(
+                    `
+                    UPDATE truck_last_locations
+                    SET
+                        status = ?,
+                        updated_at = ?
+                    WHERE session_id = ?
+                    `,
+                    [lastLocationStatus, manilaNow, session.id]
+                );
+            }
+        }
     }
-
 
     async ensureWmoNotificationsTableSafe() {
         /*
@@ -259,8 +522,10 @@ class TrackingService {
     }
 
 
+
     async startTrackingSession(data) {
         await this.autoStopExpiredSessions();
+        await this.ensureTrackingSessionReportColumns();
 
         const {
             truck_id,
@@ -276,6 +541,9 @@ class TrackingService {
             throw new Error("truck_id and shift_end_time are required");
         }
 
+        const startedAt = this.getManilaNowDateTime();
+        const effectiveShiftEnd = this.resolveShiftEndForDuty(shift_end_time, startedAt);
+
         const checkActiveSql = `
             SELECT id 
             FROM truck_tracking_sessions
@@ -287,6 +555,19 @@ class TrackingService {
         const [activeRows] = await db.query(checkActiveSql, [truck_id]);
 
         if (activeRows.length > 0) {
+            await db.query(
+                `
+                UPDATE truck_tracking_sessions
+                SET
+                    last_device_status = 'active',
+                    last_device_status_at = ?,
+                    effective_shift_end_time = COALESCE(effective_shift_end_time, ?),
+                    updated_at = ?
+                WHERE id = ?
+                `,
+                [startedAt, effectiveShiftEnd, startedAt, activeRows[0].id]
+            );
+
             const notification = await this.createGpsTrackingNotification("on", {
                 truck_id,
                 enforcer_id,
@@ -310,15 +591,18 @@ class TrackingService {
                 session_status,
                 started_at,
                 shift_end_time,
+                effective_shift_end_time,
                 start_latitude,
                 start_longitude,
                 last_latitude,
                 last_longitude,
                 last_updated_at,
+                last_device_status,
+                last_device_status_at,
                 created_at,
                 updated_at
             )
-            VALUES (?, ?, ?, ?, 'active', NOW(), ?, ?, ?, ?, ?, NOW(), NOW(), NOW())
+            VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)
         `;
 
         const [result] = await db.query(insertSql, [
@@ -326,11 +610,17 @@ class TrackingService {
             enforcer_id,
             enforcer_name,
             device_id,
-            shift_end_time,
+            startedAt,
+            effectiveShiftEnd,
+            effectiveShiftEnd,
             start_latitude,
             start_longitude,
             start_latitude,
-            start_longitude
+            start_longitude,
+            startedAt,
+            startedAt,
+            startedAt,
+            startedAt
         ]);
 
         const sessionId = result.insertId;
@@ -356,6 +646,8 @@ class TrackingService {
             session_id: sessionId
         });
 
+        await this.autoStopExpiredSessions();
+
         return {
             alreadyActive: false,
             sessionId,
@@ -363,7 +655,10 @@ class TrackingService {
         };
     }
 
+
     async stopTrackingSession(sessionId, data = {}) {
+        await this.ensureTrackingSessionReportColumns();
+
         const {
             end_latitude = null,
             end_longitude = null,
@@ -374,10 +669,28 @@ class TrackingService {
             ? stop_type
             : "stopped";
 
+        const stoppedAt = allowedStopType === "auto_stopped"
+            ? null
+            : this.getManilaNowDateTime();
+
         const getSessionSql = `
-            SELECT id, truck_id, enforcer_name, session_status
-            FROM truck_tracking_sessions
-            WHERE id = ?
+            SELECT
+                tts.id,
+                tts.truck_id,
+                tts.enforcer_name,
+                tts.session_status,
+                tts.started_at,
+                tts.created_at,
+                tts.shift_end_time,
+                tts.last_updated_at,
+                tts.last_device_status,
+                tts.last_device_status_at,
+                tll.status AS last_location_status,
+                tll.last_updated_at AS location_last_updated
+            FROM truck_tracking_sessions tts
+            LEFT JOIN truck_last_locations tll
+                ON tts.id = tll.session_id
+            WHERE tts.id = ?
             LIMIT 1
         `;
 
@@ -398,38 +711,59 @@ class TrackingService {
             };
         }
 
+        const effectiveShiftEnd = this.getEffectiveShiftEndTime(session);
+        const endedAt = stoppedAt || effectiveShiftEnd;
+        const finalStatusKey = this.computeFinalTrackingStatus(session);
+        const finalGpsStatus = this.getFinalGpsStatus(finalStatusKey);
+        const finalSyncStatus = this.getFinalSyncStatus(finalStatusKey);
+        const finalDescription = this.getTrackingStatusDescription(finalStatusKey);
+        const lastLocationStatus = finalStatusKey === "active" ? "offline" : finalStatusKey;
+
         const updateSql = `
             UPDATE truck_tracking_sessions
             SET
                 session_status = ?,
-                ended_at = NOW(),
+                ended_at = ?,
+                effective_shift_end_time = ?,
+                final_tracking_status_key = ?,
+                final_gps_status = ?,
+                final_sync_status = ?,
+                final_tracking_status_description = ?,
                 end_latitude = ?,
                 end_longitude = ?,
                 last_latitude = COALESCE(?, last_latitude),
                 last_longitude = COALESCE(?, last_longitude),
-                last_updated_at = NOW(),
-                updated_at = NOW()
+                last_updated_at = ?,
+                updated_at = ?
             WHERE id = ?
         `;
 
         await db.query(updateSql, [
             allowedStopType,
+            endedAt,
+            effectiveShiftEnd,
+            finalStatusKey,
+            finalGpsStatus,
+            finalSyncStatus,
+            finalDescription,
             end_latitude,
             end_longitude,
             end_latitude,
             end_longitude,
+            endedAt,
+            this.getManilaNowDateTime(),
             sessionId
         ]);
 
         const updateLastLocationSql = `
             UPDATE truck_last_locations
             SET
-                status = 'offline',
-                updated_at = NOW()
+                status = ?,
+                updated_at = ?
             WHERE session_id = ?
         `;
 
-        await db.query(updateLastLocationSql, [sessionId]);
+        await db.query(updateLastLocationSql, [lastLocationStatus, this.getManilaNowDateTime(), sessionId]);
 
         const notification = await this.createGpsTrackingNotification("off", {
             truck_id: session.truck_id,
@@ -619,7 +953,7 @@ class TrackingService {
                 recorded_at,
                 created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
 
         await db.query(logSql, [
@@ -633,7 +967,8 @@ class TrackingService {
             altitude,
             localPointId || null,
             localPointId ? "mobile_offline_queue" : "mobile_live",
-            recordedAt
+            recordedAt,
+            this.getManilaNowDateTime()
         ]);
 
         await this.recalculateSessionDistanceAndLatestLocation(sessionId);
@@ -703,7 +1038,9 @@ class TrackingService {
                 last_latitude = ?,
                 last_longitude = ?,
                 last_updated_at = ?,
-                updated_at = NOW()
+                last_device_status = 'active',
+                last_device_status_at = ?,
+                updated_at = ?
             WHERE id = ?
             `,
             [
@@ -711,6 +1048,8 @@ class TrackingService {
                 latest.latitude,
                 latest.longitude,
                 latest.recorded_at,
+                latest.recorded_at,
+                this.getManilaNowDateTime(),
                 sessionId
             ]
         );
@@ -795,6 +1134,7 @@ class TrackingService {
         }
     }
 
+
     async upsertLastLocation(data) {
         const {
             truck_id,
@@ -807,6 +1147,8 @@ class TrackingService {
             altitude = null,
             status = "active"
         } = data;
+
+        const manilaNow = this.getManilaNowDateTime();
 
         const sql = `
             INSERT INTO truck_last_locations (
@@ -822,7 +1164,7 @@ class TrackingService {
                 status,
                 updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, NOW())
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE
                 session_id = VALUES(session_id),
                 latitude = VALUES(latitude),
@@ -831,9 +1173,9 @@ class TrackingService {
                 accuracy = VALUES(accuracy),
                 heading = VALUES(heading),
                 altitude = VALUES(altitude),
-                last_updated_at = NOW(),
+                last_updated_at = VALUES(last_updated_at),
                 status = VALUES(status),
-                updated_at = NOW()
+                updated_at = VALUES(updated_at)
         `;
 
         await db.query(sql, [
@@ -845,7 +1187,9 @@ class TrackingService {
             accuracy,
             heading,
             altitude,
-            status
+            manilaNow,
+            status,
+            manilaNow
         ]);
     }
 
@@ -878,7 +1222,10 @@ class TrackingService {
         return "sync_pending";
     }
 
+
     async updateTrackingDeviceStatus(sessionId, data = {}) {
+        await this.ensureTrackingSessionReportColumns();
+
         const statusKey = this.normalizeTrackingDeviceStatus(
             data.tracking_status_key ||
             data.gps_status ||
@@ -887,6 +1234,7 @@ class TrackingService {
         );
 
         const source = this.cleanText(data.source || data.sync_source || "mobile");
+        const manilaNow = this.getManilaNowDateTime();
 
         const [sessionRows] = await db.query(
             `
@@ -921,34 +1269,32 @@ class TrackingService {
         await db.query(
             `
             UPDATE truck_tracking_sessions
-            SET updated_at = NOW()
+            SET
+                last_device_status = ?,
+                last_device_status_at = ?,
+                updated_at = ?
             WHERE id = ?
             `,
-            [sessionId]
+            [statusKey, manilaNow, manilaNow, sessionId]
         );
 
         /*
-          Only update existing last-location row.
-          If there is no row yet, /tracking/active will still show GPS off
-          because no GPS point exists for the active session.
+          Update existing last-location row. If there is no row yet,
+          /tracking/active still shows the active session as GPS off because
+          there are no live route points.
         */
         await db.query(
             `
             UPDATE truck_last_locations
             SET status = ?,
-                updated_at = NOW()
+                updated_at = ?
             WHERE session_id = ?
             `,
-            [statusKey, sessionId]
+            [statusKey, manilaNow, sessionId]
         );
 
         let notification = null;
 
-        /*
-          Create a WMO bell notification only when the mobile status actually
-          changes to GPS ON or GPS OFF. This prevents repeated notifications
-          when the phone reports "active" every few seconds.
-        */
         if (session.session_status === "active") {
             if (statusKey === "active" && previousStatusKey !== "active") {
                 notification = await this.createGpsTrackingNotification("on", {
@@ -967,6 +1313,8 @@ class TrackingService {
             }
         }
 
+        await this.autoStopExpiredSessions();
+
         return {
             success: true,
             message: `Tracking device status updated to ${statusKey}.`,
@@ -979,8 +1327,11 @@ class TrackingService {
         };
     }
 
+
     async getActiveTrucks() {
         await this.autoStopExpiredSessions();
+
+        const manilaNow = this.getManilaNowDateTime();
 
         const sql = `
             SELECT
@@ -992,7 +1343,10 @@ class TrackingService {
                 tts.session_status,
                 tts.started_at,
                 tts.shift_end_time,
+                tts.effective_shift_end_time,
                 tts.last_updated_at,
+                tts.last_device_status,
+                tts.last_device_status_at,
                 tts.session_distance_km,
                 tll.latitude,
                 tll.longitude,
@@ -1002,10 +1356,10 @@ class TrackingService {
                 tll.altitude,
                 tll.last_updated_at AS location_last_updated,
                 tll.status AS last_location_status,
-                TIMESTAMPDIFF(SECOND, tll.last_updated_at, NOW()) AS last_sync_age_seconds,
+                TIMESTAMPDIFF(SECOND, tll.last_updated_at, current_time_ref.manila_now) AS last_sync_age_seconds,
                 CASE
                     WHEN tts.session_status = 'active'
-                         AND tll.last_updated_at >= (NOW() - INTERVAL 30 SECOND)
+                         AND tll.last_updated_at >= DATE_SUB(current_time_ref.manila_now, INTERVAL 30 SECOND)
                     THEN 'active'
                     ELSE 'offline'
                 END AS truck_status,
@@ -1013,19 +1367,19 @@ class TrackingService {
                     WHEN tts.session_status <> 'active'
                     THEN 'stopped'
 
-                    WHEN LOWER(COALESCE(tll.status, '')) IN ('gps_off', 'tracking_off', 'permission_missing')
+                    WHEN LOWER(COALESCE(tll.status, tts.last_device_status, '')) IN ('gps_off', 'tracking_off', 'permission_missing')
                     THEN 'gps_off'
 
-                    WHEN LOWER(COALESCE(tll.status, '')) IN ('sync_pending', 'weak_signal')
+                    WHEN LOWER(COALESCE(tll.status, tts.last_device_status, '')) IN ('sync_pending', 'weak_signal')
                     THEN 'sync_pending'
 
                     WHEN tll.last_updated_at IS NULL
                     THEN 'gps_off'
 
-                    WHEN tll.last_updated_at >= (NOW() - INTERVAL 60 SECOND)
+                    WHEN tll.last_updated_at >= DATE_SUB(current_time_ref.manila_now, INTERVAL 60 SECOND)
                     THEN 'active'
 
-                    WHEN tll.last_updated_at >= (NOW() - INTERVAL 5 MINUTE)
+                    WHEN tll.last_updated_at >= DATE_SUB(current_time_ref.manila_now, INTERVAL 5 MINUTE)
                     THEN 'sync_pending'
 
                     ELSE 'gps_off'
@@ -1034,19 +1388,19 @@ class TrackingService {
                     WHEN tts.session_status <> 'active'
                     THEN 'Stopped'
 
-                    WHEN LOWER(COALESCE(tll.status, '')) IN ('gps_off', 'tracking_off', 'permission_missing')
+                    WHEN LOWER(COALESCE(tll.status, tts.last_device_status, '')) IN ('gps_off', 'tracking_off', 'permission_missing')
                     THEN 'GPS off'
 
-                    WHEN LOWER(COALESCE(tll.status, '')) IN ('sync_pending', 'weak_signal')
+                    WHEN LOWER(COALESCE(tll.status, tts.last_device_status, '')) IN ('sync_pending', 'weak_signal')
                     THEN 'Sync pending'
 
                     WHEN tll.last_updated_at IS NULL
                     THEN 'GPS off'
 
-                    WHEN tll.last_updated_at >= (NOW() - INTERVAL 60 SECOND)
+                    WHEN tll.last_updated_at >= DATE_SUB(current_time_ref.manila_now, INTERVAL 60 SECOND)
                     THEN 'Live'
 
-                    WHEN tll.last_updated_at >= (NOW() - INTERVAL 5 MINUTE)
+                    WHEN tll.last_updated_at >= DATE_SUB(current_time_ref.manila_now, INTERVAL 5 MINUTE)
                     THEN 'Sync pending'
 
                     ELSE 'GPS off'
@@ -1055,46 +1409,46 @@ class TrackingService {
                     WHEN tts.session_status <> 'active'
                     THEN 'Tracking session has ended.'
 
-                    WHEN LOWER(COALESCE(tll.status, '')) IN ('gps_off', 'tracking_off', 'permission_missing')
+                    WHEN LOWER(COALESCE(tll.status, tts.last_device_status, '')) IN ('gps_off', 'tracking_off', 'permission_missing')
                     THEN 'GPS tracking is turned off. No live route points are being recorded.'
 
-                    WHEN LOWER(COALESCE(tll.status, '')) IN ('sync_pending', 'weak_signal')
+                    WHEN LOWER(COALESCE(tll.status, tts.last_device_status, '')) IN ('sync_pending', 'weak_signal')
                     THEN 'GPS may still be on, but mobile signal is weak. Route points will continue after the phone syncs.'
 
                     WHEN tll.last_updated_at IS NULL
                     THEN 'GPS tracking is turned off or no live GPS points are being recorded.'
 
-                    WHEN tll.last_updated_at >= (NOW() - INTERVAL 60 SECOND)
+                    WHEN tll.last_updated_at >= DATE_SUB(current_time_ref.manila_now, INTERVAL 60 SECOND)
                     THEN 'Live GPS signal is syncing normally.'
 
-                    WHEN tll.last_updated_at >= (NOW() - INTERVAL 5 MINUTE)
+                    WHEN tll.last_updated_at >= DATE_SUB(current_time_ref.manila_now, INTERVAL 5 MINUTE)
                     THEN 'GPS may still be on, but mobile signal is weak. Route points will continue after the phone syncs.'
 
                     ELSE 'GPS tracking is turned off or no live GPS points are being recorded.'
                 END AS tracking_status_description,
                 CASE
-                    WHEN LOWER(COALESCE(tll.status, '')) IN ('gps_off', 'tracking_off', 'permission_missing')
+                    WHEN LOWER(COALESCE(tll.status, tts.last_device_status, '')) IN ('gps_off', 'tracking_off', 'permission_missing')
                     THEN 'off'
 
                     WHEN tll.last_updated_at IS NULL
                     THEN 'off'
 
-                    WHEN tll.last_updated_at >= (NOW() - INTERVAL 5 MINUTE)
+                    WHEN tll.last_updated_at >= DATE_SUB(current_time_ref.manila_now, INTERVAL 5 MINUTE)
                     THEN 'on'
 
                     ELSE 'off'
                 END AS gps_status,
                 CASE
-                    WHEN LOWER(COALESCE(tll.status, '')) IN ('gps_off', 'tracking_off', 'permission_missing')
+                    WHEN LOWER(COALESCE(tll.status, tts.last_device_status, '')) IN ('gps_off', 'tracking_off', 'permission_missing')
                     THEN 'not_syncing'
 
-                    WHEN LOWER(COALESCE(tll.status, '')) IN ('sync_pending', 'weak_signal')
+                    WHEN LOWER(COALESCE(tll.status, tts.last_device_status, '')) IN ('sync_pending', 'weak_signal')
                     THEN 'pending'
 
-                    WHEN tll.last_updated_at >= (NOW() - INTERVAL 60 SECOND)
+                    WHEN tll.last_updated_at >= DATE_SUB(current_time_ref.manila_now, INTERVAL 60 SECOND)
                     THEN 'synced'
 
-                    WHEN tll.last_updated_at >= (NOW() - INTERVAL 5 MINUTE)
+                    WHEN tll.last_updated_at >= DATE_SUB(current_time_ref.manila_now, INTERVAL 5 MINUTE)
                     THEN 'pending'
 
                     ELSE 'not_syncing'
@@ -1102,11 +1456,12 @@ class TrackingService {
             FROM truck_tracking_sessions tts
             LEFT JOIN truck_last_locations tll
                 ON tts.id = tll.session_id
+            CROSS JOIN (SELECT ? AS manila_now) current_time_ref
             WHERE tts.session_status = 'active'
-            ORDER BY tll.last_updated_at DESC
+            ORDER BY tll.last_updated_at DESC, tts.started_at DESC
         `;
 
-        const [rows] = await db.query(sql);
+        const [rows] = await db.query(sql, [manilaNow]);
         return rows;
     }
 
@@ -1171,7 +1526,11 @@ class TrackingService {
         return rows[0];
     }
 
+
     async getTrackingReports() {
+        await this.autoStopExpiredSessions();
+        await this.ensureTrackingSessionReportColumns();
+
         const sql = `
             SELECT
                 id,
@@ -1183,6 +1542,7 @@ class TrackingService {
                 started_at,
                 ended_at,
                 shift_end_time,
+                effective_shift_end_time,
                 start_latitude,
                 start_longitude,
                 end_latitude,
@@ -1190,9 +1550,15 @@ class TrackingService {
                 last_latitude,
                 last_longitude,
                 last_updated_at,
+                last_device_status,
+                last_device_status_at,
+                final_tracking_status_key,
+                final_gps_status,
+                final_sync_status,
+                final_tracking_status_description,
                 session_distance_km
             FROM truck_tracking_sessions
-            ORDER BY started_at DESC
+            ORDER BY started_at DESC, id DESC
         `;
 
         const [rows] = await db.query(sql);
@@ -1200,7 +1566,9 @@ class TrackingService {
     }
 
     async getTrackingReportDetails(sessionId) {
+        await this.autoStopExpiredSessions();
         await this.ensureOfflineTrackingColumns();
+        await this.ensureTrackingSessionReportColumns();
 
         const sessionSql = `
             SELECT *
