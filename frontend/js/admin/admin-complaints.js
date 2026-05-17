@@ -66,6 +66,7 @@ function getComplaintStatusBadge(status) {
   if (s === "validated") return `<span class="status-badge forwarded">Validated</span>`;
   if (s === "forwarded") return `<span class="status-badge forwarded">Forwarded</span>`;
   if (s === "in_progress") return `<span class="status-badge in-progress">In Progress</span>`;
+  if (s === "accepted_overdue") return `<span class="status-badge accepted-overdue">Accepted · Overdue</span>`;
   if (s === "resolved") return `<span class="status-badge resolved">Resolved</span>`;
   if (s === "rejected") return `<span class="status-badge rejected">Rejected</span>`;
 
@@ -3637,6 +3638,7 @@ function formatComplaintHistoryStatus(status) {
 
   if (normalized === "forwarded") return "Forwarded";
   if (normalized === "accepted_by_barangay") return "Accepted";
+  if (normalized === "accepted_overdue") return "Accepted · Overdue";
   if (normalized === "in_progress") return "In Progress";
   if (normalized === "resolved") return "Resolved";
   if (normalized === "rejected") return "Rejected";
@@ -3651,6 +3653,7 @@ function getComplaintHistoryStatusClass(status) {
   if (normalized === "rejected") return "rejected";
   if (normalized === "forwarded") return "forwarded";
   if (normalized === "accepted_by_barangay") return "accepted";
+  if (normalized === "accepted_overdue") return "accepted-overdue";
   if (normalized === "in_progress") return "in-progress";
 
   return "unknown";
@@ -4761,6 +4764,7 @@ function getComplaintReadableStatus(status) {
     validated: "Validated",
     forwarded: "Forwarded",
     accepted_by_barangay: "Accepted",
+    accepted_overdue: "Accepted · Overdue",
     in_progress: "In Progress",
     resolved: "Resolved",
     rejected: "Rejected"
@@ -4916,6 +4920,7 @@ function setComplaintResolutionStatusPill(status) {
   else if (normalized === "forwarded") pill.classList.add("forwarded");
   else if (normalized === "in_progress") pill.classList.add("in-progress");
   else if (normalized === "accepted_by_barangay") pill.classList.add("accepted");
+  else if (normalized === "accepted_overdue") pill.classList.add("accepted-overdue");
   else pill.classList.add("pending");
 }
 
