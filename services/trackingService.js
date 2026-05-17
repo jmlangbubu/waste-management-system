@@ -1526,6 +1526,149 @@ class TrackingService {
         return rows[0];
     }
 
+    buildTrackingReportStatus(row = {}) {
+        const sessionStatus = this.cleanText(row.session_status || row.status || "").toLowerCase();
+        const routeCount = Number(row.route_logs_count || row.route_count || 0);
+        const distanceKm = Number(row.session_distance_km || row.total_distance_km || 0);
+        const hasRoute = routeCount > 0 || distanceKm > 0;
+        const hasMeasuredDistance = distanceKm > 0;
+
+        const rawFinalStatus = this.cleanText(
+            row.final_tracking_status_key ||
+            row.last_device_status ||
+            row.last_location_status ||
+            row.tracking_status_key ||
+            row.final_gps_status ||
+            ""
+        );
+
+        let trackingStatusKey = rawFinalStatus
+            ? this.normalizeTrackingDeviceStatus(rawFinalStatus)
+            : "";
+
+        /*
+          Important:
+          Do not label a report as "No Route" when the session has distance.
+          Older rows may have route_logs_count = 0 but still have session_distance_km
+          because the distance was recalculated or saved from older logic.
+        */
+        if (!trackingStatusKey) {
+            trackingStatusKey = hasRoute ? "active" : "gps_off";
+        }
+
+        let reportStatusKey = "completed";
+        let reportStatusLabel = "Completed Normally";
+        let reportStatusTone = "completed";
+        let gpsConditionLabel = "GPS Active / Route Recorded";
+        let reportStatusDescription = this.cleanText(row.final_tracking_status_description);
+        let routeConditionLabel = hasRoute
+            ? (routeCount > 0
+                ? `${routeCount} route point${routeCount === 1 ? "" : "s"}`
+                : `${distanceKm.toFixed(2)} km route recorded`)
+            : "No route points";
+
+        if (trackingStatusKey === "gps_off") {
+            gpsConditionLabel = hasRoute ? "GPS Off / Partial Route" : "GPS Off / No GPS Route";
+        } else if (trackingStatusKey === "sync_pending") {
+            gpsConditionLabel = hasRoute ? "Sync Pending / Route Recorded" : "Sync Pending / No Route";
+        } else if (!hasRoute) {
+            gpsConditionLabel = "GPS Active / No Route Yet";
+        }
+
+        if (!reportStatusDescription) {
+            if (trackingStatusKey === "gps_off" && hasRoute) {
+                reportStatusDescription = "The session ended with GPS off, but earlier route data was recorded.";
+            } else if (trackingStatusKey === "gps_off" && !hasRoute) {
+                reportStatusDescription = "The session ended with GPS off and no route points were recorded.";
+            } else if (trackingStatusKey === "sync_pending") {
+                reportStatusDescription = hasRoute
+                    ? "The route was recorded, but the mobile signal had sync delays during the shift."
+                    : "The mobile signal was weak or pending and no route points were recorded.";
+            } else {
+                reportStatusDescription = hasRoute
+                    ? "Tracking session was completed with route data recorded."
+                    : "Tracking session completed, but no route points were recorded.";
+            }
+        }
+
+        if (sessionStatus === "active") {
+            if (trackingStatusKey === "gps_off") {
+                reportStatusKey = hasRoute ? "active_gps_off_partial_route" : "active_gps_off_no_route";
+                reportStatusLabel = hasRoute ? "Active · GPS Off" : "Active · No GPS Route";
+                reportStatusTone = "gps-off";
+            } else if (trackingStatusKey === "sync_pending") {
+                reportStatusKey = hasRoute ? "active_sync_pending_route" : "active_sync_pending_no_route";
+                reportStatusLabel = "Active · Sync Pending";
+                reportStatusTone = "sync-pending";
+            } else {
+                reportStatusKey = hasRoute ? "active_live_route" : "active_live_no_route";
+                reportStatusLabel = hasRoute ? "Active · Live Route" : "Active · Live";
+                reportStatusTone = "active";
+            }
+        } else if (sessionStatus === "auto_stopped") {
+            if (trackingStatusKey === "gps_off") {
+                reportStatusKey = hasRoute ? "shift_completed_gps_off_partial_route" : "shift_completed_no_gps_route";
+                reportStatusLabel = hasRoute ? "Shift Completed · GPS Off" : "Shift Completed · No GPS Route";
+                reportStatusTone = "gps-off";
+            } else if (trackingStatusKey === "sync_pending") {
+                reportStatusKey = hasRoute ? "shift_completed_synced_route" : "shift_completed_sync_pending_no_route";
+                reportStatusLabel = hasRoute ? "Shift Completed · Synced Route" : "Shift Completed · Sync Pending";
+                reportStatusTone = "sync-pending";
+            } else if (hasRoute) {
+                reportStatusKey = "shift_completed_route_recorded";
+                reportStatusLabel = "Shift Completed · Route Recorded";
+                reportStatusTone = "completed";
+            } else {
+                reportStatusKey = "shift_completed_no_route";
+                reportStatusLabel = "Shift Completed · No Route";
+                reportStatusTone = "neutral";
+            }
+        } else if (sessionStatus === "stopped") {
+            if (trackingStatusKey === "gps_off") {
+                reportStatusKey = hasRoute ? "stopped_gps_off_partial_route" : "stopped_no_gps_route";
+                reportStatusLabel = hasRoute ? "Stopped · GPS Off" : "Stopped · No GPS Route";
+                reportStatusTone = "gps-off";
+            } else if (trackingStatusKey === "sync_pending") {
+                reportStatusKey = hasRoute ? "stopped_sync_pending_route" : "stopped_sync_pending_no_route";
+                reportStatusLabel = "Stopped · Sync Pending";
+                reportStatusTone = "sync-pending";
+            } else if (hasRoute) {
+                reportStatusKey = "stopped_route_recorded";
+                reportStatusLabel = "Manually Stopped · Route Recorded";
+                reportStatusTone = "stopped";
+            } else {
+                reportStatusKey = "stopped_no_route";
+                reportStatusLabel = "Manually Stopped · No Route";
+                reportStatusTone = "neutral";
+            }
+        } else if (sessionStatus) {
+            reportStatusKey = sessionStatus;
+            reportStatusLabel = sessionStatus.replace(/_/g, " ");
+            reportStatusTone = "neutral";
+        }
+
+        return {
+            report_status_key: reportStatusKey,
+            report_status_label: reportStatusLabel,
+            report_status_tone: reportStatusTone,
+            gps_condition_label: gpsConditionLabel,
+            tracking_status_key: trackingStatusKey,
+            route_logs_count: routeCount,
+            route_condition_label: routeConditionLabel,
+            has_route_recorded: hasRoute ? 1 : 0,
+            has_measured_distance: hasMeasuredDistance ? 1 : 0,
+            report_status_description: reportStatusDescription
+        };
+    }
+
+    enrichTrackingReportRow(row = {}) {
+        const statusMeta = this.buildTrackingReportStatus(row);
+
+        return {
+            ...row,
+            ...statusMeta
+        };
+    }
 
     async getTrackingReports() {
         await this.autoStopExpiredSessions();
@@ -1533,36 +1676,43 @@ class TrackingService {
 
         const sql = `
             SELECT
-                id,
-                truck_id,
-                enforcer_id,
-                enforcer_name,
-                device_id,
-                session_status,
-                started_at,
-                ended_at,
-                shift_end_time,
-                effective_shift_end_time,
-                start_latitude,
-                start_longitude,
-                end_latitude,
-                end_longitude,
-                last_latitude,
-                last_longitude,
-                last_updated_at,
-                last_device_status,
-                last_device_status_at,
-                final_tracking_status_key,
-                final_gps_status,
-                final_sync_status,
-                final_tracking_status_description,
-                session_distance_km
-            FROM truck_tracking_sessions
-            ORDER BY started_at DESC, id DESC
+                tts.id,
+                tts.truck_id,
+                tts.enforcer_id,
+                tts.enforcer_name,
+                tts.device_id,
+                tts.session_status,
+                DATE_FORMAT(tts.started_at, '%Y-%m-%d %H:%i:%s') AS started_at,
+                DATE_FORMAT(tts.ended_at, '%Y-%m-%d %H:%i:%s') AS ended_at,
+                DATE_FORMAT(tts.shift_end_time, '%Y-%m-%d %H:%i:%s') AS shift_end_time,
+                DATE_FORMAT(tts.effective_shift_end_time, '%Y-%m-%d %H:%i:%s') AS effective_shift_end_time,
+                tts.start_latitude,
+                tts.start_longitude,
+                tts.end_latitude,
+                tts.end_longitude,
+                tts.last_latitude,
+                tts.last_longitude,
+                DATE_FORMAT(tts.last_updated_at, '%Y-%m-%d %H:%i:%s') AS last_updated_at,
+                tts.last_device_status,
+                DATE_FORMAT(tts.last_device_status_at, '%Y-%m-%d %H:%i:%s') AS last_device_status_at,
+                tts.final_tracking_status_key,
+                tts.final_gps_status,
+                tts.final_sync_status,
+                tts.final_tracking_status_description,
+                tts.session_distance_km,
+                COALESCE(route_counts.route_logs_count, 0) AS route_logs_count
+            FROM truck_tracking_sessions tts
+            LEFT JOIN (
+                SELECT session_id, COUNT(*) AS route_logs_count
+                FROM truck_location_logs
+                GROUP BY session_id
+            ) route_counts
+                ON route_counts.session_id = tts.id
+            ORDER BY tts.started_at DESC, tts.id DESC
         `;
 
         const [rows] = await db.query(sql);
-        return rows;
+        return (rows || []).map((row) => this.enrichTrackingReportRow(row));
     }
 
     async getTrackingReportDetails(sessionId) {
@@ -1571,9 +1721,23 @@ class TrackingService {
         await this.ensureTrackingSessionReportColumns();
 
         const sessionSql = `
-            SELECT *
-            FROM truck_tracking_sessions
-            WHERE id = ?
+            SELECT
+                tts.*,
+                DATE_FORMAT(tts.started_at, '%Y-%m-%d %H:%i:%s') AS started_at,
+                DATE_FORMAT(tts.ended_at, '%Y-%m-%d %H:%i:%s') AS ended_at,
+                DATE_FORMAT(tts.shift_end_time, '%Y-%m-%d %H:%i:%s') AS shift_end_time,
+                DATE_FORMAT(tts.effective_shift_end_time, '%Y-%m-%d %H:%i:%s') AS effective_shift_end_time,
+                DATE_FORMAT(tts.last_updated_at, '%Y-%m-%d %H:%i:%s') AS last_updated_at,
+                DATE_FORMAT(tts.last_device_status_at, '%Y-%m-%d %H:%i:%s') AS last_device_status_at,
+                COALESCE(route_counts.route_logs_count, 0) AS route_logs_count
+            FROM truck_tracking_sessions tts
+            LEFT JOIN (
+                SELECT session_id, COUNT(*) AS route_logs_count
+                FROM truck_location_logs
+                GROUP BY session_id
+            ) route_counts
+                ON route_counts.session_id = tts.id
+            WHERE tts.id = ?
             LIMIT 1
         `;
 
@@ -1596,16 +1760,20 @@ class TrackingService {
                 altitude,
                 local_point_id,
                 sync_source,
-                recorded_at
+                DATE_FORMAT(recorded_at, '%Y-%m-%d %H:%i:%s') AS recorded_at
             FROM truck_location_logs
             WHERE session_id = ?
             ORDER BY recorded_at ASC
         `;
 
         const [logRows] = await db.query(logsSql, [sessionId]);
+        const session = this.enrichTrackingReportRow({
+            ...sessionRows[0],
+            route_logs_count: Array.isArray(logRows) ? logRows.length : 0
+        });
 
         return {
-            session: sessionRows[0],
+            session,
             route_logs: logRows
         };
     }
