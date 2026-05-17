@@ -1,8 +1,46 @@
 const trackingService = require('../services/trackingService');
 
+function buildTrackingNotificationPayload(notification = {}) {
+    return {
+        ...notification,
+        _source: 'tracking',
+        type: notification.type || 'tracking',
+        createdAt: notification.createdAt || new Date().toISOString()
+    };
+}
+
+function emitWmoTrackingNotification(req, notification) {
+    if (!notification) return;
+
+    try {
+        const io = req.app && typeof req.app.get === 'function'
+            ? req.app.get('io')
+            : null;
+
+        if (!io || typeof io.to !== 'function') {
+            return;
+        }
+
+        const payload = buildTrackingNotificationPayload(notification);
+
+        /*
+          The web notification script already listens to these event names.
+          Emitting all three keeps this safe with the existing WMO bell logic
+          and avoids touching frontend notification code.
+        */
+        io.to('wmo').emit('wmo:gps-tracking-notification', payload);
+        io.to('wmo').emit('wmo:tracking-notification', payload);
+        io.to('wmo').emit('notification:new', payload);
+    } catch (error) {
+        console.error('emitWmoTrackingNotification warning:', error);
+    }
+}
+
 exports.startTrackingSession = async (req, res) => {
     try {
         const result = await trackingService.startTrackingSession(req.body);
+
+        emitWmoTrackingNotification(req, result.notification);
 
         return res.status(200).json({
             success: true,
@@ -10,7 +48,8 @@ exports.startTrackingSession = async (req, res) => {
                 ? 'Tracking session already active'
                 : 'Tracking session started successfully',
             sessionId: result.sessionId,
-            alreadyActive: result.alreadyActive
+            alreadyActive: result.alreadyActive,
+            notification: result.notification || null
         });
     } catch (error) {
         console.error('startTrackingSession error:', error);
@@ -26,10 +65,13 @@ exports.stopTrackingSession = async (req, res) => {
         const { sessionId } = req.params;
         const result = await trackingService.stopTrackingSession(sessionId, req.body);
 
+        emitWmoTrackingNotification(req, result.notification);
+
         return res.status(200).json({
             success: true,
             message: result.message,
-            truck_id: result.truck_id
+            truck_id: result.truck_id,
+            notification: result.notification || null
         });
     } catch (error) {
         console.error('stopTrackingSession error:', error);
@@ -86,11 +128,14 @@ exports.updateTrackingDeviceStatus = async (req, res) => {
         const { sessionId } = req.params;
         const result = await trackingService.updateTrackingDeviceStatus(sessionId, req.body);
 
+        emitWmoTrackingNotification(req, result.notification);
+
         return res.status(200).json({
             success: true,
             message: result.message,
             tracking_status_key: result.tracking_status_key,
-            gps_status: result.gps_status
+            gps_status: result.gps_status,
+            notification: result.notification || null
         });
     } catch (error) {
         console.error('updateTrackingDeviceStatus error:', error);
