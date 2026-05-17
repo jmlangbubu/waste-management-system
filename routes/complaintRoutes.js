@@ -4013,24 +4013,35 @@ function startOverdueAcceptedComplaintScheduler(app) {
   console.log("[Complaint Scheduler] 24-hour accepted complaint overdue checker started.");
 }
 
-router.post("/maintenance/check-overdue-accepted", async (req, res) => {
+async function handleManualOverdueAcceptedCheck(req, res) {
   try {
     const result = await markOverdueAcceptedComplaints(req.app);
 
     return res.json({
       success: true,
-      ...result
+      checked: true,
+      ...result,
+      note: "Accepted complaints older than 24 hours are marked as accepted_overdue, not rejected."
     });
   } catch (error) {
     console.error("Manual overdue accepted complaint check error:", error);
 
     return res.status(500).json({
       success: false,
+      checked: false,
       message: "Failed to check overdue accepted complaints.",
       error: error.message
     });
   }
-});
+}
+
+/*
+  Manual maintenance endpoint.
+  POST is used by tools/Postman.
+  GET is intentionally supported too so the team can test it directly from a browser.
+*/
+router.post("/maintenance/check-overdue-accepted", handleManualOverdueAcceptedCheck);
+router.get("/maintenance/check-overdue-accepted", handleManualOverdueAcceptedCheck);
 
 
 /* =========================
