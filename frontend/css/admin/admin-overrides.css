@@ -12067,3 +12067,521 @@ body #sidebarOtherMenu.sidebar-other-menu-portal.open:not(.hidden) {
   overflow-wrap: anywhere !important;
 }
 
+/* =========================================================
+   TRACKING REPORT STATUS BADGES + DETAIL SUMMARY
+   Added for Daily Tracking Reports GPS condition display.
+   Keeps existing modal/layout logic intact.
+========================================================= */
+
+#trackingReportsModal .tracking-report-status-badge,
+#trackingReportModal .tracking-report-status-badge {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-height: 28px !important;
+  padding: 7px 12px !important;
+  border-radius: 999px !important;
+  font-size: 12px !important;
+  font-weight: 800 !important;
+  line-height: 1 !important;
+  white-space: nowrap !important;
+  border: 1px solid transparent !important;
+}
+
+#trackingReportsModal .tracking-report-status-completed,
+#trackingReportModal .tracking-report-status-completed {
+  background: #dcfce7 !important;
+  color: #166534 !important;
+  border-color: #bbf7d0 !important;
+}
+
+#trackingReportsModal .tracking-report-status-active,
+#trackingReportModal .tracking-report-status-active {
+  background: #e0f2fe !important;
+  color: #075985 !important;
+  border-color: #bae6fd !important;
+}
+
+#trackingReportsModal .tracking-report-status-gps-off,
+#trackingReportModal .tracking-report-status-gps-off {
+  background: #fee2e2 !important;
+  color: #991b1b !important;
+  border-color: #fecaca !important;
+}
+
+#trackingReportsModal .tracking-report-status-sync-pending,
+#trackingReportModal .tracking-report-status-sync-pending {
+  background: #fef3c7 !important;
+  color: #92400e !important;
+  border-color: #fde68a !important;
+}
+
+#trackingReportsModal .tracking-report-status-stopped,
+#trackingReportModal .tracking-report-status-stopped {
+  background: #f1f5f9 !important;
+  color: #334155 !important;
+  border-color: #e2e8f0 !important;
+}
+
+#trackingReportsModal .tracking-report-status-neutral,
+#trackingReportModal .tracking-report-status-neutral {
+  background: #f8fafc !important;
+  color: #475569 !important;
+  border-color: #e2e8f0 !important;
+}
+
+#trackingReportsModal .tracking-report-status-note {
+  margin-top: 7px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  color: #64748b !important;
+  line-height: 1.35 !important;
+  white-space: normal !important;
+}
+
+#trackingReportsModal td:nth-child(5) {
+  white-space: normal !important;
+  min-width: 230px !important;
+}
+
+#trackingReportModal .tracking-report-summary-panel {
+  margin: 0 0 18px !important;
+  padding: 18px !important;
+  border: 1px solid #e5e7eb !important;
+  border-radius: 20px !important;
+  background: linear-gradient(135deg, #f8fafc 0%, #ffffff 100%) !important;
+}
+
+#trackingReportModal .tracking-report-summary-head {
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: space-between !important;
+  gap: 16px !important;
+  margin-bottom: 16px !important;
+}
+
+#trackingReportModal .tracking-report-eyebrow {
+  display: block !important;
+  margin-bottom: 6px !important;
+  color: #64748b !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.06em !important;
+  text-transform: uppercase !important;
+}
+
+#trackingReportModal .tracking-report-summary-head h4 {
+  margin: 0 !important;
+  color: #0f3324 !important;
+  font-size: 18px !important;
+  font-weight: 900 !important;
+  line-height: 1.2 !important;
+}
+
+#trackingReportModal .tracking-report-summary-head p {
+  margin: 7px 0 0 !important;
+  color: #64748b !important;
+  font-size: 13px !important;
+  line-height: 1.45 !important;
+}
+
+#trackingReportModal .tracking-report-summary-grid {
+  display: grid !important;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  gap: 10px !important;
+}
+
+#trackingReportModal .tracking-report-summary-item {
+  min-width: 0 !important;
+  padding: 13px 14px !important;
+  border: 1px solid #e5e7eb !important;
+  border-radius: 16px !important;
+  background: #ffffff !important;
+}
+
+#trackingReportModal .tracking-report-summary-item span {
+  display: block !important;
+  margin-bottom: 6px !important;
+  color: #64748b !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+}
+
+#trackingReportModal .tracking-report-summary-item strong {
+  display: block !important;
+  color: #123826 !important;
+  font-size: 13px !important;
+  font-weight: 900 !important;
+  line-height: 1.25 !important;
+  white-space: normal !important;
+}
+
+#trackingReportModal .tracking-report-map-empty {
+  height: 340px !important;
+  min-height: 340px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  padding: 24px !important;
+  border: 1px dashed #cbd5e1 !important;
+  border-radius: 18px !important;
+  background: #f8fafc !important;
+  color: #64748b !important;
+  font-weight: 700 !important;
+}
+
+@media (max-width: 1100px) {
+  #trackingReportModal .tracking-report-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 768px) {
+  #trackingReportModal .tracking-report-summary-head {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+  }
+
+  #trackingReportModal .tracking-report-summary-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  #trackingReportsModal td:nth-child(5) {
+    min-width: 260px !important;
+  }
+}
+
+
+/* =========================================================
+   TRACKING REPORT STATUS - ROUTE QUALITY PATCH
+   Keeps report labels honest: GPS Off with recorded movement is
+   shown as Partial Route, not No Route.
+========================================================= */
+
+#trackingReportsModal .tracking-report-status-note,
+#trackingReportModal .tracking-report-status-note {
+  display: block !important;
+  margin-top: 7px !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  color: #64748b !important;
+  line-height: 1.35 !important;
+  white-space: normal !important;
+}
+
+#trackingReportsModal td:nth-child(5),
+#trackingReportModal td:nth-child(5) {
+  min-width: 260px !important;
+  white-space: normal !important;
+}
+
+#trackingReportsModal .tracking-report-status-badge,
+#trackingReportModal .tracking-report-status-badge {
+  max-width: 100% !important;
+  text-align: center !important;
+}
+
+@media (max-width: 768px) {
+  #trackingReportsModal td:nth-child(5),
+  #trackingReportModal td:nth-child(5) {
+    min-width: 300px !important;
+  }
+}
+
+
+/* =========================================================
+   TRACKING REPORTS BOTTOM HORIZONTAL SCROLLBAR
+   Keeps sideways scrolling available under the table without
+   covering the header or first row.
+========================================================= */
+#trackingReportsModal .custom-modal-body {
+  position: relative !important;
+  display: flex !important;
+  flex-direction: column !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+#trackingReportsModal .table-shell {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  max-height: calc(60vh - 42px) !important;
+  overflow: auto !important;
+  scrollbar-width: thin !important;
+  scrollbar-color: #cbd5e1 #f8fafc !important;
+}
+
+#trackingReportsModal #trackingReportsFloatingScroll.tracking-floating-scroll {
+  position: sticky !important;
+  bottom: 0 !important;
+  z-index: 12 !important;
+  flex: 0 0 auto !important;
+  width: 100% !important;
+  height: 24px !important;
+  margin: 12px 0 0 !important;
+  padding: 4px 4px 3px !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  border: 1px solid #dbece2 !important;
+  border-radius: 999px !important;
+  background: linear-gradient(180deg, #ffffff 0%, #f4fbf6 100%) !important;
+  box-shadow: 0 -8px 22px rgba(15, 23, 42, 0.08) !important;
+  scrollbar-width: thin !important;
+  scrollbar-color: #2f8a34 #e8f7ee !important;
+}
+
+#trackingReportsModal #trackingReportsFloatingScroll.tracking-floating-scroll.is-hidden {
+  display: none !important;
+}
+
+#trackingReportsModal #trackingReportsFloatingScroll .tracking-floating-scroll-inner {
+  height: 1px !important;
+  min-height: 1px !important;
+}
+
+#trackingReportsModal #trackingReportsFloatingScroll::-webkit-scrollbar {
+  height: 10px !important;
+}
+
+#trackingReportsModal #trackingReportsFloatingScroll::-webkit-scrollbar-track {
+  background: #e8f7ee !important;
+  border-radius: 999px !important;
+}
+
+#trackingReportsModal #trackingReportsFloatingScroll::-webkit-scrollbar-thumb {
+  background: #2f8a34 !important;
+  border-radius: 999px !important;
+  border: 2px solid #e8f7ee !important;
+}
+
+#trackingReportsModal #trackingReportsFloatingScroll::-webkit-scrollbar-thumb:hover {
+  background: #166534 !important;
+}
+
+@media (max-width: 768px) {
+  #trackingReportsModal .table-shell {
+    max-height: calc(100dvh - 270px) !important;
+  }
+
+  #trackingReportsModal #trackingReportsFloatingScroll.tracking-floating-scroll {
+    height: 26px !important;
+    margin-top: 10px !important;
+  }
+}
+
+
+/* =========================================================
+   TRACKING REPORTS SINGLE BOTTOM SCROLLBAR FIX
+   Keeps only the custom bottom horizontal scrollbar.
+   The table body keeps vertical scrolling, while native
+   horizontal scrolling is controlled by the synced bar below.
+========================================================= */
+#trackingReportsModal .table-shell.has-custom-horizontal-scroll {
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  padding-bottom: 0 !important;
+}
+
+#trackingReportsModal .table-shell.has-custom-horizontal-scroll::-webkit-scrollbar:horizontal {
+  height: 0 !important;
+  display: none !important;
+}
+
+#trackingReportsModal .table-shell.has-custom-horizontal-scroll::-webkit-scrollbar-thumb:horizontal,
+#trackingReportsModal .table-shell.has-custom-horizontal-scroll::-webkit-scrollbar-track:horizontal {
+  display: none !important;
+}
+
+#trackingReportsModal #trackingReportsFloatingScroll.tracking-floating-scroll {
+  position: sticky !important;
+  bottom: 0 !important;
+  z-index: 16 !important;
+  width: 100% !important;
+  height: 22px !important;
+  margin: 10px 0 0 !important;
+  padding: 4px 4px 3px !important;
+}
+
+#trackingReportsModal #trackingReportsFloatingScroll.tracking-floating-scroll::-webkit-scrollbar {
+  height: 9px !important;
+}
+
+@media (max-width: 768px) {
+  #trackingReportsModal .table-shell.has-custom-horizontal-scroll {
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+  }
+
+  #trackingReportsModal #trackingReportsFloatingScroll.tracking-floating-scroll {
+    height: 24px !important;
+    margin-top: 9px !important;
+  }
+}
+
+/* =========================================================
+   TRACKING REPORTS MOBILE TOUCH SCROLL FIX
+   Mobile users can swipe the table horizontally, so the custom
+   bottom scrollbar is hidden only on small screens.
+========================================================= */
+@media (max-width: 768px) {
+  #trackingReportsModal #trackingReportsFloatingScroll.tracking-floating-scroll,
+  #trackingReportsModal #trackingReportsFloatingScroll {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    pointer-events: none !important;
+  }
+
+  #trackingReportsModal .table-shell,
+  #trackingReportsModal .table-shell.has-custom-horizontal-scroll,
+  #trackingReportsModal .table-shell.tracking-reports-touch-scroll {
+    overflow-x: auto !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    padding-bottom: 0 !important;
+    touch-action: pan-x pan-y !important;
+  }
+
+  /* Hide only the horizontal scrollbar visual on mobile.
+     The table can still be swiped left/right by touch. */
+  #trackingReportsModal .table-shell::-webkit-scrollbar:horizontal,
+  #trackingReportsModal .table-shell.has-custom-horizontal-scroll::-webkit-scrollbar:horizontal,
+  #trackingReportsModal .table-shell.tracking-reports-touch-scroll::-webkit-scrollbar:horizontal {
+    height: 0 !important;
+    display: none !important;
+  }
+
+  #trackingReportsModal .table-shell::-webkit-scrollbar-thumb:horizontal,
+  #trackingReportsModal .table-shell::-webkit-scrollbar-track:horizontal,
+  #trackingReportsModal .table-shell.has-custom-horizontal-scroll::-webkit-scrollbar-thumb:horizontal,
+  #trackingReportsModal .table-shell.has-custom-horizontal-scroll::-webkit-scrollbar-track:horizontal,
+  #trackingReportsModal .table-shell.tracking-reports-touch-scroll::-webkit-scrollbar-thumb:horizontal,
+  #trackingReportsModal .table-shell.tracking-reports-touch-scroll::-webkit-scrollbar-track:horizontal {
+    display: none !important;
+  }
+}
+
+
+/* =========================================================
+   TRACKING REPORTS SEARCH + FILTER TOOLBAR
+   Targeted only to Daily Tracking Reports modal
+========================================================= */
+#trackingReportsModal .tracking-reports-filter-toolbar {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(240px, 1.4fr) minmax(160px, 0.8fr) minmax(150px, 0.7fr) minmax(150px, 0.7fr) auto;
+  gap: 12px;
+  align-items: end;
+  margin: 0 0 14px;
+  padding: 14px;
+  border: 1px solid #dfeee5;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #fbfffc 0%, #f6fbf8 100%);
+  box-shadow: 0 12px 28px rgba(15, 61, 36, 0.06);
+}
+
+#trackingReportsModal .tracking-report-filter-field {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#trackingReportsModal .tracking-report-filter-field span {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #64748b;
+}
+
+#trackingReportsModal .tracking-report-filter-field input,
+#trackingReportsModal .tracking-report-filter-field select {
+  width: 100%;
+  height: 42px;
+  border: 1px solid #d7e6dc;
+  border-radius: 13px;
+  background: #ffffff;
+  color: #173c2c;
+  font-size: 13px;
+  font-weight: 650;
+  outline: none;
+  padding: 0 12px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+#trackingReportsModal .tracking-report-filter-field input:focus,
+#trackingReportsModal .tracking-report-filter-field select:focus {
+  border-color: #2f8a34;
+  box-shadow: 0 0 0 3px rgba(47, 138, 52, 0.12);
+}
+
+#trackingReportsModal .tracking-report-filter-reset {
+  height: 42px;
+  min-width: 90px;
+  border: 1px solid #cfe6d6 !important;
+  border-radius: 13px !important;
+  background: #ffffff !important;
+  color: #0b4b2b !important;
+  font-size: 13px !important;
+  font-weight: 850 !important;
+  cursor: pointer;
+  padding: 0 16px !important;
+}
+
+#trackingReportsModal .tracking-report-filter-reset:hover {
+  background: #eaf6ee !important;
+}
+
+#trackingReportsModal .tracking-report-filter-count {
+  grid-column: 1 / -1;
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 28px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #eaf6ee;
+  color: #2f8a34;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+@media (max-width: 1100px) {
+  #trackingReportsModal .tracking-reports-filter-toolbar {
+    grid-template-columns: minmax(220px, 1fr) repeat(3, minmax(130px, 0.6fr));
+  }
+
+  #trackingReportsModal .tracking-report-filter-reset {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+}
+
+@media (max-width: 768px) {
+  #trackingReportsModal .tracking-reports-filter-toolbar {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    padding: 12px;
+    margin-bottom: 12px;
+    border-radius: 16px;
+  }
+
+  #trackingReportsModal .tracking-report-filter-field input,
+  #trackingReportsModal .tracking-report-filter-field select,
+  #trackingReportsModal .tracking-report-filter-reset {
+    height: 44px;
+    font-size: 13px !important;
+  }
+
+  #trackingReportsModal .tracking-report-filter-count {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+  }
+}
