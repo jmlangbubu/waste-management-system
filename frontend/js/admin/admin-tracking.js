@@ -1073,6 +1073,812 @@ function getTrackingReportDetailsApiUrl(sessionId) {
   return `${getTrackingReportsApiUrl()}/${encodeURIComponent(sessionId)}`;
 }
 
+function formatTrackingReportDateTime(value) {
+  const raw = value === null || value === undefined ? "" : String(value).trim();
+  if (!raw || raw.toLowerCase() === "null") return "--";
+
+  const mysqlMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (mysqlMatch) {
+    const [, year, month, day, hour, minute, second = "00"] = mysqlMatch;
+    const date = new Date(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hour),
+      Number(minute),
+      Number(second)
+    );
+
+    if (!Number.isNaN(date.getTime())) {
+      return date.toLocaleString();
+    }
+  }
+
+  try {
+    if (typeof formatTrackingTime === "function") {
+      return formatTrackingTime(raw);
+    }
+  } catch (error) {
+    // Fallback below.
+  }
+
+  const date = parseTrackingDate(raw);
+  return date ? date.toLocaleString() : raw;
+}
+
+function normalizeReportText(value) {
+  if (value === null || value === undefined) return "";
+  return String(value).trim();
+}
+
+function normalizeReportStatusKey(value) {
+  const raw = normalizeReportText(value).toLowerCase();
+
+  if (["gps_off", "tracking_off", "permission_missing", "no_permission", "off"].includes(raw)) {
+    return "gps_off";
+  }
+
+  if (["sync_pending", "weak_signal", "pending", "offline"].includes(raw)) {
+    return "sync_pending";
+  }
+
+  if (["active", "live", "on", "synced"].includes(raw)) {
+    return "active";
+  }
+
+  return raw || "gps_off";
+}
+
+function getTrackingReportRouteMeta(report = {}) {
+  const routeCount = Number(report.route_logs_count || report.route_count || 0);
+  const distanceKm = Number(report.session_distance_km || report.total_distance_km || 0);
+  const hasRoute = routeCount > 0 || distanceKm > 0;
+
+  let routeText = "No route";
+
+  if (routeCount > 0) {
+    routeText = `${routeCount} point${routeCount === 1 ? "" : "s"}`;
+  } else if (distanceKm > 0) {
+    routeText = `${distanceKm.toFixed(2)} km route`;
+  }
+
+  return {
+    routeCount,
+    distanceKm,
+    hasRoute,
+    routeText
+  };
+}
+
+function getTrackingReportStatusMeta(report = {}) {
+  const rawLabel = normalizeReportText(report.report_status_label);
+  const rawTone = normalizeReportText(report.report_status_tone).toLowerCase();
+  const sessionStatus = normalizeReportText(report.session_status || report.status).toLowerCase();
+  const routeMeta = getTrackingReportRouteMeta(report);
+
+  const finalStatus = normalizeReportStatusKey(
+    report.tracking_status_key ||
+    report.final_tracking_status_key ||
+    report.last_device_status ||
+    report.final_gps_status ||
+    ""
+  );
+
+  let label = "Completed Normally";
+  let tone = "completed";
+  let key = "completed";
+
+  if (sessionStatus === "active") {
+    if (finalStatus === "gps_off") {
+      label = routeMeta.hasRoute ? "Active · GPS Off" : "Active · No GPS Route";
+      tone = "gps-off";
+      key = routeMeta.hasRoute ? "active_gps_off_partial_route" : "active_gps_off_no_route";
+    } else if (finalStatus === "sync_pending") {
+      label = "Active · Sync Pending";
+      tone = "sync-pending";
+      key = routeMeta.hasRoute ? "active_sync_pending_route" : "active_sync_pending_no_route";
+    } else {
+      label = routeMeta.hasRoute ? "Active · Live Route" : "Active · Live";
+      tone = "active";
+      key = routeMeta.hasRoute ? "active_live_route" : "active_live_no_route";
+    }
+  } else if (sessionStatus === "auto_stopped") {
+    if (finalStatus === "gps_off") {
+      label = routeMeta.hasRoute ? "Shift Completed · GPS Off" : "Shift Completed · No GPS Route";
+      tone = "gps-off";
+      key = routeMeta.hasRoute ? "shift_completed_gps_off_partial_route" : "shift_completed_no_gps_route";
+    } else if (finalStatus === "sync_pending") {
+      label = routeMeta.hasRoute ? "Shift Completed · Synced Route" : "Shift Completed · Sync Pending";
+      tone = "sync-pending";
+      key = routeMeta.hasRoute ? "shift_completed_synced_route" : "shift_completed_sync_pending_no_route";
+    } else {
+      label = routeMeta.hasRoute ? "Shift Completed · Route Recorded" : "Shift Completed · No Route";
+      tone = routeMeta.hasRoute ? "completed" : "neutral";
+      key = routeMeta.hasRoute ? "shift_completed_route_recorded" : "shift_completed_no_route";
+    }
+  } else if (sessionStatus === "stopped") {
+    if (finalStatus === "gps_off") {
+      label = routeMeta.hasRoute ? "Stopped · GPS Off" : "Stopped · No GPS Route";
+      tone = "gps-off";
+      key = routeMeta.hasRoute ? "stopped_gps_off_partial_route" : "stopped_no_gps_route";
+    } else if (finalStatus === "sync_pending") {
+      label = "Stopped · Sync Pending";
+      tone = "sync-pending";
+      key = routeMeta.hasRoute ? "stopped_sync_pending_route" : "stopped_sync_pending_no_route";
+    } else {
+      label = routeMeta.hasRoute ? "Manually Stopped · Route Recorded" : "Manually Stopped · No Route";
+      tone = routeMeta.hasRoute ? "stopped" : "neutral";
+      key = routeMeta.hasRoute ? "stopped_route_recorded" : "stopped_no_route";
+    }
+  } else if (sessionStatus) {
+    label = sessionStatus.replace(/_/g, " ");
+    tone = "neutral";
+    key = sessionStatus;
+  }
+
+  /*
+    Backend may still return old labels for existing deployments.
+    Trust backend labels only when they do not contradict the route evidence.
+  */
+  const rawLabelLooksWrong =
+    rawLabel &&
+    routeMeta.hasRoute &&
+    /no\s+route|no\s+gps\s+route/i.test(rawLabel);
+
+  if (rawLabel && !rawLabelLooksWrong) {
+    label = rawLabel;
+    tone = rawTone || tone;
+    key = normalizeReportText(report.report_status_key) || key;
+  }
+
+  return {
+    label,
+    tone,
+    gpsLabel: normalizeReportText(report.gps_condition_label) || getTrackingReportGpsLabel(finalStatus, routeMeta),
+    description: getTrackingReportDescription(report, finalStatus, routeMeta),
+    key,
+    routeCount: routeMeta.routeCount,
+    distanceKm: routeMeta.distanceKm,
+    hasRoute: routeMeta.hasRoute,
+    routeText: normalizeReportText(report.route_condition_label) || routeMeta.routeText,
+    finalStatus
+  };
+}
+
+function getTrackingReportGpsLabel(statusKey, routeMeta = {}) {
+  const hasRoute = !!routeMeta.hasRoute;
+
+  if (statusKey === "gps_off") {
+    return hasRoute ? "GPS Off / Partial Route" : "GPS Off / No GPS Route";
+  }
+
+  if (statusKey === "sync_pending") {
+    return hasRoute ? "Sync Pending / Route Recorded" : "Sync Pending / No Route";
+  }
+
+  return hasRoute ? "GPS Active / Route Recorded" : "GPS Active / No Route Yet";
+}
+
+function getTrackingReportDescription(report = {}, finalStatus = "", routeMeta = {}) {
+  const direct = normalizeReportText(report.report_status_description || report.final_tracking_status_description);
+  const directLooksWrong = direct && routeMeta.hasRoute && /no\s+route|no\s+route\s+points/i.test(direct);
+
+  if (direct && !directLooksWrong) {
+    return direct;
+  }
+
+  if (finalStatus === "gps_off") {
+    return routeMeta.hasRoute
+      ? "GPS was turned off before the shift ended, but earlier route data was recorded."
+      : "GPS was off or unavailable during the shift, so no route points were recorded.";
+  }
+
+  if (finalStatus === "sync_pending") {
+    return routeMeta.hasRoute
+      ? "The mobile device had weak signal or delayed sync, but route data was recorded."
+      : "The mobile device had weak signal or delayed sync and no route points were recorded.";
+  }
+
+  return routeMeta.hasRoute
+    ? "GPS stayed available and the shift completed with route data recorded."
+    : "The session completed, but no route points were recorded.";
+}
+
+function renderTrackingReportStatusBadge(report = {}) {
+  const meta = getTrackingReportStatusMeta(report);
+
+  return `
+    <span class="tracking-report-status-badge tracking-report-status-${escapeHtml(meta.tone || "neutral")}">
+      ${escapeHtml(meta.label)}
+    </span>
+  `;
+}
+
+function getTrackingReportSession(data = {}) {
+  return data && data.session ? data.session : (data || {});
+}
+
+function renderTrackingReportSummary(data = {}, logs = []) {
+  const mapContainer = document.getElementById("trackingReportMap");
+  if (!mapContainer || !mapContainer.parentElement) return;
+
+  const session = getTrackingReportSession(data);
+  const statusMeta = getTrackingReportStatusMeta({
+    ...session,
+    route_logs_count: Array.isArray(logs) ? logs.length : Number(session.route_logs_count || 0)
+  });
+
+  let panel = document.getElementById("trackingReportSummaryPanel");
+  if (!panel) {
+    panel = document.createElement("div");
+    panel.id = "trackingReportSummaryPanel";
+    panel.className = "tracking-report-summary-panel";
+    mapContainer.parentElement.insertBefore(panel, mapContainer);
+  }
+
+  const description = statusMeta.description || (
+    statusMeta.tone === "gps-off"
+      ? "GPS was off or no live route points were recorded during this shift."
+      : statusMeta.tone === "sync-pending"
+        ? "Mobile signal was weak or pending before the shift ended."
+        : "Tracking session was completed with normal route data."
+  );
+
+  panel.innerHTML = `
+    <div class="tracking-report-summary-head">
+      <div>
+        <span class="tracking-report-eyebrow">Session Result</span>
+        <h4>${escapeHtml(statusMeta.label)}</h4>
+        <p>${escapeHtml(description)}</p>
+      </div>
+      ${renderTrackingReportStatusBadge({ ...session, route_logs_count: statusMeta.routeCount })}
+    </div>
+    <div class="tracking-report-summary-grid">
+      <div class="tracking-report-summary-item">
+        <span>Truck</span>
+        <strong>${escapeHtml(session.truck_id || "-")}</strong>
+      </div>
+      <div class="tracking-report-summary-item">
+        <span>GPS Condition</span>
+        <strong>${escapeHtml(statusMeta.gpsLabel)}</strong>
+      </div>
+      <div class="tracking-report-summary-item">
+        <span>Route Evidence</span>
+        <strong>${escapeHtml(statusMeta.routeText || String(statusMeta.routeCount || 0))}</strong>
+      </div>
+      <div class="tracking-report-summary-item">
+        <span>Start</span>
+        <strong>${escapeHtml(formatTrackingReportDateTime(session.started_at))}</strong>
+      </div>
+      <div class="tracking-report-summary-item">
+        <span>End</span>
+        <strong>${escapeHtml(session.ended_at ? formatTrackingReportDateTime(session.ended_at) : "Still Active")}</strong>
+      </div>
+    </div>
+  `;
+}
+
+
+
+/* =========================================================
+   TRACKING REPORTS BOTTOM HORIZONTAL SCROLLBAR
+   Keeps the horizontal scroll visible under the table body
+   without covering the first row/header.
+========================================================= */
+let trackingReportsFloatingScrollState = {
+  resizeObserver: null,
+  isSyncing: false
+};
+
+function getTrackingReportsTableParts() {
+  const tbody = document.getElementById("trackingReportsTableBody");
+  const table = tbody ? tbody.closest("table") : null;
+  const shell = table ? table.closest(".table-shell") : null;
+  const modal = document.getElementById("trackingReportsModal");
+  const body = modal ? modal.querySelector(".custom-modal-body") : null;
+
+  return { tbody, table, shell, modal, body };
+}
+
+function isTrackingReportsTouchLayout() {
+  return window.matchMedia?.("(max-width: 768px)")?.matches === true;
+}
+
+function applyTrackingReportsTouchScrollMode() {
+  const { shell } = getTrackingReportsTableParts();
+  const floatingScroll = document.getElementById("trackingReportsFloatingScroll");
+
+  if (shell) {
+    shell.classList.remove("has-custom-horizontal-scroll");
+    shell.classList.add("tracking-reports-touch-scroll");
+  }
+
+  if (floatingScroll) {
+    floatingScroll.remove();
+  }
+}
+
+function destroyTrackingReportsFloatingScrollbar() {
+  const floatingScroll = document.getElementById("trackingReportsFloatingScroll");
+  const { shell } = getTrackingReportsTableParts();
+
+  if (trackingReportsFloatingScrollState.resizeObserver) {
+    try {
+      trackingReportsFloatingScrollState.resizeObserver.disconnect();
+    } catch (error) {
+      // Keep UI safe if observer is already disconnected.
+    }
+  }
+
+  trackingReportsFloatingScrollState = {
+    resizeObserver: null,
+    isSyncing: false
+  };
+
+  if (shell) {
+    shell.classList.remove("has-custom-horizontal-scroll");
+    shell.classList.remove("tracking-reports-touch-scroll");
+  }
+
+  if (floatingScroll) {
+    floatingScroll.remove();
+  }
+}
+
+function setupTrackingReportsFloatingScrollbar() {
+  const { table, shell, modal, body } = getTrackingReportsTableParts();
+
+  if (!modal || !body || !table || !shell) return;
+
+  if (isTrackingReportsTouchLayout()) {
+    applyTrackingReportsTouchScrollMode();
+    return;
+  }
+
+  shell.classList.remove("tracking-reports-touch-scroll");
+  shell.classList.add("has-custom-horizontal-scroll");
+
+  let floatingScroll = document.getElementById("trackingReportsFloatingScroll");
+  let floatingInner = document.getElementById("trackingReportsFloatingScrollInner");
+
+  if (!floatingScroll) {
+    floatingScroll = document.createElement("div");
+    floatingScroll.id = "trackingReportsFloatingScroll";
+    floatingScroll.className = "tracking-floating-scroll";
+    floatingScroll.setAttribute("aria-label", "Scroll tracking reports horizontally");
+
+    floatingInner = document.createElement("div");
+    floatingInner.id = "trackingReportsFloatingScrollInner";
+    floatingInner.className = "tracking-floating-scroll-inner";
+
+    floatingScroll.appendChild(floatingInner);
+    shell.insertAdjacentElement("afterend", floatingScroll);
+  } else if (floatingScroll.previousElementSibling !== shell) {
+    shell.insertAdjacentElement("afterend", floatingScroll);
+  }
+
+  if (!floatingInner) {
+    floatingInner = document.createElement("div");
+    floatingInner.id = "trackingReportsFloatingScrollInner";
+    floatingInner.className = "tracking-floating-scroll-inner";
+    floatingScroll.appendChild(floatingInner);
+  }
+
+  const updateFloatingScrollSize = () => {
+    const tableWidth = Math.max(table.scrollWidth || 0, table.offsetWidth || 0, shell.scrollWidth || 0);
+    const shellWidth = shell.clientWidth || shell.offsetWidth || 0;
+
+    floatingInner.style.width = `${tableWidth}px`;
+    floatingScroll.scrollLeft = shell.scrollLeft;
+
+    if (tableWidth <= shellWidth + 8) {
+      floatingScroll.classList.add("is-hidden");
+      shell.classList.remove("has-custom-horizontal-scroll");
+    } else {
+      floatingScroll.classList.remove("is-hidden");
+      shell.classList.add("has-custom-horizontal-scroll");
+    }
+  };
+
+  const syncFromFloating = () => {
+    if (trackingReportsFloatingScrollState.isSyncing) return;
+
+    trackingReportsFloatingScrollState.isSyncing = true;
+    shell.scrollLeft = floatingScroll.scrollLeft;
+    trackingReportsFloatingScrollState.isSyncing = false;
+  };
+
+  const syncFromTable = () => {
+    if (trackingReportsFloatingScrollState.isSyncing) return;
+
+    trackingReportsFloatingScrollState.isSyncing = true;
+    floatingScroll.scrollLeft = shell.scrollLeft;
+    trackingReportsFloatingScrollState.isSyncing = false;
+  };
+
+  if (!floatingScroll.dataset.bound) {
+    floatingScroll.addEventListener("scroll", syncFromFloating, { passive: true });
+    floatingScroll.dataset.bound = "true";
+  }
+
+  if (!shell.dataset.floatingScrollBound) {
+    shell.addEventListener("scroll", syncFromTable, { passive: true });
+    shell.dataset.floatingScrollBound = "true";
+  }
+
+  if (trackingReportsFloatingScrollState.resizeObserver) {
+    try {
+      trackingReportsFloatingScrollState.resizeObserver.disconnect();
+    } catch (error) {
+      // Ignore observer cleanup errors.
+    }
+  }
+
+  if (typeof ResizeObserver !== "undefined") {
+    trackingReportsFloatingScrollState.resizeObserver = new ResizeObserver(() => {
+      updateFloatingScrollSize();
+    });
+
+    trackingReportsFloatingScrollState.resizeObserver.observe(table);
+    trackingReportsFloatingScrollState.resizeObserver.observe(shell);
+  }
+
+  updateFloatingScrollSize();
+  setTimeout(updateFloatingScrollSize, 80);
+  setTimeout(updateFloatingScrollSize, 250);
+}
+
+
+let trackingReportsCache = [];
+let trackingReportsFilterState = {
+  search: "",
+  status: "all",
+  date: "all",
+  route: "all"
+};
+
+function parseTrackingReportDateForFilter(value) {
+  const raw = value === null || value === undefined ? "" : String(value).trim();
+  if (!raw || raw.toLowerCase() === "null") return null;
+
+  const mysqlMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (mysqlMatch) {
+    const [, year, month, day, hour, minute, second = "00"] = mysqlMatch;
+    const date = new Date(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hour),
+      Number(minute),
+      Number(second)
+    );
+
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  try {
+    if (typeof parseTrackingDate === "function") {
+      const parsed = parseTrackingDate(raw);
+      if (parsed && !Number.isNaN(parsed.getTime())) return parsed;
+    }
+  } catch (error) {
+    // Fallback below.
+  }
+
+  const fallback = new Date(raw);
+  return Number.isNaN(fallback.getTime()) ? null : fallback;
+}
+
+function getTrackingReportSearchText(report = {}) {
+  const statusMeta = getTrackingReportStatusMeta(report);
+
+  return [
+    report.truck_id,
+    report.truck_name,
+    report.enforcer_name,
+    report.device_id,
+    report.session_status,
+    report.status,
+    report.report_status_label,
+    statusMeta.label,
+    statusMeta.gpsLabel,
+    statusMeta.routeText,
+    statusMeta.description
+  ]
+    .map(normalizeReportText)
+    .join(" ")
+    .toLowerCase();
+}
+
+function getTrackingReportStatusFilterKey(report = {}) {
+  const statusMeta = getTrackingReportStatusMeta(report);
+  const sessionStatus = normalizeReportText(report.session_status || report.status).toLowerCase();
+  const label = normalizeReportText(statusMeta.label).toLowerCase();
+
+  if (statusMeta.finalStatus === "gps_off" || label.includes("gps off")) {
+    return "gps_off";
+  }
+
+  if (statusMeta.finalStatus === "sync_pending" || label.includes("sync pending")) {
+    return "sync_pending";
+  }
+
+  if (!statusMeta.hasRoute || label.includes("no gps route") || label.includes("no route")) {
+    return "no_route";
+  }
+
+  if (sessionStatus === "stopped" || label.includes("manually stopped") || label.startsWith("stopped")) {
+    return "stopped";
+  }
+
+  if (sessionStatus === "auto_stopped" || label.includes("shift completed")) {
+    return "completed";
+  }
+
+  return "all";
+}
+
+function isTrackingReportInsideDateFilter(report = {}, dateFilter = "all") {
+  if (dateFilter === "all") return true;
+
+  const date = parseTrackingReportDateForFilter(report.started_at || report.created_at || report.ended_at);
+  if (!date) return false;
+
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfTomorrow = new Date(startOfToday);
+  startOfTomorrow.setDate(startOfTomorrow.getDate() + 1);
+
+  if (dateFilter === "today") {
+    return date >= startOfToday && date < startOfTomorrow;
+  }
+
+  if (dateFilter === "week") {
+    const startOfWeek = new Date(startOfToday);
+    const day = startOfWeek.getDay();
+    const diffToMonday = day === 0 ? -6 : 1 - day;
+    startOfWeek.setDate(startOfWeek.getDate() + diffToMonday);
+
+    const startOfNextWeek = new Date(startOfWeek);
+    startOfNextWeek.setDate(startOfNextWeek.getDate() + 7);
+
+    return date >= startOfWeek && date < startOfNextWeek;
+  }
+
+  if (dateFilter === "month") {
+    return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
+  }
+
+  return true;
+}
+
+function getFilteredTrackingReports() {
+  const safeReports = Array.isArray(trackingReportsCache) ? trackingReportsCache : [];
+  const search = normalizeReportText(trackingReportsFilterState.search).toLowerCase();
+  const statusFilter = trackingReportsFilterState.status || "all";
+  const dateFilter = trackingReportsFilterState.date || "all";
+  const routeFilter = trackingReportsFilterState.route || "all";
+
+  return safeReports.filter((report) => {
+    const statusMeta = getTrackingReportStatusMeta(report);
+
+    if (search && !getTrackingReportSearchText(report).includes(search)) {
+      return false;
+    }
+
+    if (statusFilter !== "all") {
+      const key = getTrackingReportStatusFilterKey(report);
+
+      if (statusFilter === "completed") {
+        const sessionStatus = normalizeReportText(report.session_status || report.status).toLowerCase();
+        if (sessionStatus !== "auto_stopped" && !normalizeReportText(statusMeta.label).toLowerCase().includes("shift completed")) {
+          return false;
+        }
+      } else if (key !== statusFilter) {
+        return false;
+      }
+    }
+
+    if (!isTrackingReportInsideDateFilter(report, dateFilter)) {
+      return false;
+    }
+
+    if (routeFilter === "with_route" && !statusMeta.hasRoute) {
+      return false;
+    }
+
+    if (routeFilter === "no_route" && statusMeta.hasRoute) {
+      return false;
+    }
+
+    return true;
+  });
+}
+
+function setupTrackingReportsFilterToolbar() {
+  const { tbody, shell, body } = getTrackingReportsTableParts();
+  if (!tbody || !shell || !body) return;
+
+  let toolbar = document.getElementById("trackingReportsFilterToolbar");
+
+  if (!toolbar) {
+    toolbar = document.createElement("div");
+    toolbar.id = "trackingReportsFilterToolbar";
+    toolbar.className = "tracking-reports-filter-toolbar";
+    toolbar.innerHTML = `
+      <div class="tracking-report-filter-field tracking-report-filter-search">
+        <span>Search</span>
+        <input
+          id="trackingReportsSearchInput"
+          type="search"
+          placeholder="Truck, enforcer, or status..."
+          autocomplete="off"
+        />
+      </div>
+
+      <label class="tracking-report-filter-field">
+        <span>Status</span>
+        <select id="trackingReportsStatusFilter">
+          <option value="all">All statuses</option>
+          <option value="completed">Shift Completed</option>
+          <option value="gps_off">GPS Off</option>
+          <option value="sync_pending">Sync Pending</option>
+          <option value="no_route">No GPS Route</option>
+          <option value="stopped">Stopped</option>
+        </select>
+      </label>
+
+      <label class="tracking-report-filter-field">
+        <span>Date</span>
+        <select id="trackingReportsDateFilter">
+          <option value="all">All dates</option>
+          <option value="today">Today</option>
+          <option value="week">This week</option>
+          <option value="month">This month</option>
+        </select>
+      </label>
+
+      <label class="tracking-report-filter-field">
+        <span>Route</span>
+        <select id="trackingReportsRouteFilter">
+          <option value="all">All routes</option>
+          <option value="with_route">With route</option>
+          <option value="no_route">No route</option>
+        </select>
+      </label>
+
+      <button id="trackingReportsResetFilterBtn" type="button" class="tracking-report-filter-reset">
+        Reset
+      </button>
+
+      <div id="trackingReportsFilterCount" class="tracking-report-filter-count">
+        Showing 0 reports
+      </div>
+    `;
+
+    shell.insertAdjacentElement("beforebegin", toolbar);
+  }
+
+  const searchInput = document.getElementById("trackingReportsSearchInput");
+  const statusFilter = document.getElementById("trackingReportsStatusFilter");
+  const dateFilter = document.getElementById("trackingReportsDateFilter");
+  const routeFilter = document.getElementById("trackingReportsRouteFilter");
+  const resetBtn = document.getElementById("trackingReportsResetFilterBtn");
+
+  if (searchInput) searchInput.value = trackingReportsFilterState.search || "";
+  if (statusFilter) statusFilter.value = trackingReportsFilterState.status || "all";
+  if (dateFilter) dateFilter.value = trackingReportsFilterState.date || "all";
+  if (routeFilter) routeFilter.value = trackingReportsFilterState.route || "all";
+
+  if (!toolbar.dataset.bound) {
+    const rerender = () => {
+      trackingReportsFilterState = {
+        search: searchInput ? searchInput.value : "",
+        status: statusFilter ? statusFilter.value : "all",
+        date: dateFilter ? dateFilter.value : "all",
+        route: routeFilter ? routeFilter.value : "all"
+      };
+
+      renderTrackingReportsTable();
+    };
+
+    searchInput?.addEventListener("input", rerender);
+    statusFilter?.addEventListener("change", rerender);
+    dateFilter?.addEventListener("change", rerender);
+    routeFilter?.addEventListener("change", rerender);
+
+    resetBtn?.addEventListener("click", () => {
+      trackingReportsFilterState = {
+        search: "",
+        status: "all",
+        date: "all",
+        route: "all"
+      };
+
+      if (searchInput) searchInput.value = "";
+      if (statusFilter) statusFilter.value = "all";
+      if (dateFilter) dateFilter.value = "all";
+      if (routeFilter) routeFilter.value = "all";
+
+      renderTrackingReportsTable();
+    });
+
+    toolbar.dataset.bound = "true";
+  }
+}
+
+function updateTrackingReportsFilterCount(filteredCount, totalCount) {
+  const countEl = document.getElementById("trackingReportsFilterCount");
+  if (!countEl) return;
+
+  if (totalCount <= 0) {
+    countEl.textContent = "No reports loaded";
+    return;
+  }
+
+  countEl.textContent = `Showing ${filteredCount} of ${totalCount} report${totalCount === 1 ? "" : "s"}`;
+}
+
+function renderTrackingReportsTable() {
+  const tbody = document.getElementById("trackingReportsTableBody");
+  if (!tbody) return;
+
+  const totalReports = Array.isArray(trackingReportsCache) ? trackingReportsCache.length : 0;
+
+  if (!totalReports) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="7" class="empty-state">No tracking reports found.</td>
+      </tr>
+    `;
+    updateTrackingReportsFilterCount(0, 0);
+    destroyTrackingReportsFloatingScrollbar();
+    return;
+  }
+
+  const filteredReports = getFilteredTrackingReports();
+  updateTrackingReportsFilterCount(filteredReports.length, totalReports);
+
+  if (!filteredReports.length) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="7" class="empty-state">No reports match the current filters.</td>
+      </tr>
+    `;
+    destroyTrackingReportsFloatingScrollbar();
+    return;
+  }
+
+  tbody.innerHTML = filteredReports.map((r) => {
+    const sessionId = r.id || r.session_id;
+    const statusMeta = getTrackingReportStatusMeta(r);
+    const routePointsText = statusMeta.routeText || (statusMeta.hasRoute ? "Route recorded" : "No route");
+
+    return `
+      <tr>
+        <td>${escapeHtml(r.truck_id || "-")}</td>
+        <td>${escapeHtml(r.enforcer_name || "-")}</td>
+        <td>${formatTrackingReportDateTime(r.started_at)}</td>
+        <td>${r.ended_at ? formatTrackingReportDateTime(r.ended_at) : "Still Active"}</td>
+        <td>
+          ${renderTrackingReportStatusBadge(r)}
+          <div class="tracking-report-status-note">
+            ${escapeHtml(statusMeta.gpsLabel)} • ${escapeHtml(routePointsText)}
+          </div>
+        </td>
+        <td>${Number(r.session_distance_km || r.total_distance_km || 0).toFixed(2)} km</td>
+        <td>
+          <button type="button" class="view-all-btn small" onclick="viewTrackingReport('${escapeHtml(String(sessionId))}')">
+            View
+          </button>
+        </td>
+      </tr>
+    `;
+  }).join("");
+
+  setTimeout(setupTrackingReportsFloatingScrollbar, 60);
+}
+
 async function loadTrackingReports() {
   const tbody = document.getElementById("trackingReportsTableBody");
   if (!tbody) return;
@@ -1096,49 +1902,27 @@ async function loadTrackingReports() {
       throw new Error(data.message || "Failed to load tracking reports.");
     }
 
-    const reports = Array.isArray(data)
+    trackingReportsCache = Array.isArray(data)
       ? data
       : Array.isArray(data.data)
         ? data.data
         : [];
 
-    if (!reports.length) {
-      tbody.innerHTML = `
-        <tr>
-          <td colspan="7" class="empty-state">No tracking reports found.</td>
-        </tr>
-      `;
-      return;
-    }
-
-    tbody.innerHTML = reports.map((r) => {
-      const sessionId = r.id || r.session_id;
-
-      return `
-        <tr>
-          <td>${escapeHtml(r.truck_id || "-")}</td>
-          <td>${escapeHtml(r.enforcer_name || "-")}</td>
-          <td>${formatTrackingTime(r.started_at)}</td>
-          <td>${r.ended_at ? formatTrackingTime(r.ended_at) : "Still Active"}</td>
-          <td>${escapeHtml(r.session_status || r.status || "-")}</td>
-          <td>${Number(r.session_distance_km || r.total_distance_km || 0).toFixed(2)} km</td>
-          <td>
-            <button type="button" class="view-all-btn small" onclick="viewTrackingReport('${escapeHtml(String(sessionId))}')">
-              View
-            </button>
-          </td>
-        </tr>
-      `;
-    }).join("");
+    setupTrackingReportsFilterToolbar();
+    renderTrackingReportsTable();
 
   } catch (error) {
     console.error("loadTrackingReports error:", error);
+
+    trackingReportsCache = [];
+    updateTrackingReportsFilterCount(0, 0);
 
     tbody.innerHTML = `
       <tr>
         <td colspan="7" class="empty-state">Failed to load reports.</td>
       </tr>
     `;
+    destroyTrackingReportsFloatingScrollbar();
   }
 }
 
@@ -1182,20 +1966,21 @@ function openTrackingReportModal(data) {
       reportMap = null;
     }
 
-    reportMap = L.map("trackingReportMap").setView([6.1164, 125.1716], 13);
-
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
-      attribution: "&copy; OpenStreetMap contributors &copy; CARTO"
-    }).addTo(reportMap);
-
     const logs = Array.isArray(data?.route_logs)
       ? data.route_logs
       : Array.isArray(data?.logs)
         ? data.logs
         : [];
 
+    renderTrackingReportSummary(data, logs);
+    mapContainer.innerHTML = "";
+
     if (!logs.length) {
-      mapContainer.innerHTML = `<div class="empty-state">No route logs available.</div>`;
+      mapContainer.innerHTML = `
+        <div class="empty-state tracking-report-map-empty">
+          No route logs are available for this session. Check the report summary above to confirm whether GPS was off, signal was pending, or no valid GPS points were recorded.
+        </div>
+      `;
       return;
     }
 
@@ -1204,9 +1989,19 @@ function openTrackingReportModal(data) {
       .filter(([lat, lng]) => !Number.isNaN(lat) && !Number.isNaN(lng));
 
     if (!latlngs.length) {
-      mapContainer.innerHTML = `<div class="empty-state">No valid route coordinates available.</div>`;
+      mapContainer.innerHTML = `
+        <div class="empty-state tracking-report-map-empty">
+          No valid route coordinates available.
+        </div>
+      `;
       return;
     }
+
+    reportMap = L.map("trackingReportMap").setView([6.1164, 125.1716], 13);
+
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+      attribution: "&copy; OpenStreetMap contributors &copy; CARTO"
+    }).addTo(reportMap);
 
     const startIcon = L.icon({
       iconUrl: "https://maps.google.com/mapfiles/ms/icons/green-dot.png",
@@ -1275,11 +2070,23 @@ function closeTrackingReportsModal() {
 
   if (modal) {
     modal.classList.add("hidden");
+    destroyTrackingReportsFloatingScrollbar();
   }
 }
+
+window.addEventListener("resize", () => {
+  const modal = document.getElementById("trackingReportsModal");
+  if (!modal || modal.classList.contains("hidden")) return;
+
+  window.clearTimeout(window.__trackingReportsScrollResizeTimer);
+  window.__trackingReportsScrollResizeTimer = window.setTimeout(() => {
+    setupTrackingReportsFloatingScrollbar();
+  }, 120);
+});
 
 window.loadTrackingReports = loadTrackingReports;
 window.viewTrackingReport = viewTrackingReport;
 window.openTrackingReportsModal = openTrackingReportsModal;
 window.closeTrackingReportsModal = closeTrackingReportsModal;
 window.closeTrackingReportModal = closeTrackingReportModal;
+window.setupTrackingReportsFloatingScrollbar = setupTrackingReportsFloatingScrollbar;
