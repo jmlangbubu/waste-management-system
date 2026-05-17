@@ -3739,6 +3739,41 @@ async function ensureAcceptedComplaintDeadlineColumns() {
   }
 }
 
+async function cleanupAcceptedComplaintZeroDateValues() {
+  try {
+    const rows = await dbQueryAsync(`SHOW COLUMNS FROM complaints`);
+    const columnSet = new Set((rows || []).map((row) => String(row.Field || "").trim()));
+
+    const dateColumns = [
+      "accepted_at",
+      "accepted_overdue_at",
+      "auto_rejected_at",
+      "rejected_at",
+      "resolved_at",
+      "validated_at",
+      "forwarded_at",
+      "in_progress_at"
+    ].filter((columnName) => columnSet.has(columnName));
+
+    for (const columnName of dateColumns) {
+      await dbQueryAsync(
+        `
+        UPDATE complaints
+        SET ${columnName} = NULL
+        WHERE ${columnName} IS NOT NULL
+          AND CAST(${columnName} AS CHAR) IN ('0000-00-00 00:00:00', '0000-00-00')
+        `
+      );
+    }
+  } catch (error) {
+    console.error("cleanupAcceptedComplaintZeroDateValues warning:", error);
+    /*
+      Do not block the checker if cleanup fails. The main overdue queries use
+      CAST/NULLIF guards so zero-date rows will not crash the route.
+    */
+  }
+}
+
 function createAcceptedOverdueExplanationRequestAsync(complaintId, barangay, title, message) {
   return new Promise((resolve) => {
     ensureBarangayResponseMessagesTable((tableErr) => {
@@ -3836,10 +3871,14 @@ async function processOverdueAcceptedComplaint(app, complaint) {
     WHERE id = ?
       AND status IN ('accepted_by_barangay', 'in_progress')
       AND accepted_at IS NOT NULL
-      AND accepted_at <= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+      AND NULLIF(CAST(accepted_at AS CHAR), '0000-00-00 00:00:00') IS NOT NULL
+      AND STR_TO_DATE(
+        NULLIF(CAST(accepted_at AS CHAR), '0000-00-00 00:00:00'),
+        '%Y-%m-%d %H:%i:%s'
+      ) <= DATE_SUB(NOW(), INTERVAL 24 HOUR)
       AND (
         accepted_overdue_at IS NULL
-        OR accepted_overdue_at = '0000-00-00 00:00:00'
+        OR NULLIF(CAST(accepted_overdue_at AS CHAR), '0000-00-00 00:00:00') IS NULL
       )
     `,
     [
@@ -3920,6 +3959,7 @@ async function processOverdueAcceptedComplaint(app, complaint) {
 
 async function markOverdueAcceptedComplaints(app = null) {
   await ensureAcceptedComplaintDeadlineColumns();
+  await cleanupAcceptedComplaintZeroDateValues();
 
   const rows = await dbQueryAsync(
     `
@@ -3936,10 +3976,14 @@ async function markOverdueAcceptedComplaints(app = null) {
     FROM complaints
     WHERE status IN ('accepted_by_barangay', 'in_progress')
       AND accepted_at IS NOT NULL
-      AND accepted_at <= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+      AND NULLIF(CAST(accepted_at AS CHAR), '0000-00-00 00:00:00') IS NOT NULL
+      AND STR_TO_DATE(
+        NULLIF(CAST(accepted_at AS CHAR), '0000-00-00 00:00:00'),
+        '%Y-%m-%d %H:%i:%s'
+      ) <= DATE_SUB(NOW(), INTERVAL 24 HOUR)
       AND (
         accepted_overdue_at IS NULL
-        OR accepted_overdue_at = '0000-00-00 00:00:00'
+        OR NULLIF(CAST(accepted_overdue_at AS CHAR), '0000-00-00 00:00:00') IS NULL
       )
     ORDER BY accepted_at ASC
     LIMIT 25
@@ -4021,7 +4065,7 @@ async function handleManualOverdueAcceptedCheck(req, res) {
       success: true,
       checked: true,
       ...result,
-      note: "Accepted complaints older than 24 hours are marked as accepted_overdue, not rejected."
+      note: "Accepted complaints older than 24 hours are marked as accepted_overdue, not rejected. Zero-date DATETIME values are handled safely."
     });
   } catch (error) {
     console.error("Manual overdue accepted complaint check error:", error);
