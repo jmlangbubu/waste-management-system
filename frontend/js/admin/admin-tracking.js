@@ -1447,106 +1447,37 @@ function destroyTrackingReportsFloatingScrollbar() {
 }
 
 function setupTrackingReportsFloatingScrollbar() {
-  const { table, shell, modal, body } = getTrackingReportsTableParts();
+  const { shell } = getTrackingReportsTableParts();
 
-  if (!modal || !body || !table || !shell) return;
-
-  if (isTrackingReportsTouchLayout()) {
-    applyTrackingReportsTouchScrollMode();
-    return;
-  }
-
-  shell.classList.remove("tracking-reports-touch-scroll");
-  shell.classList.add("has-custom-horizontal-scroll");
-
-  let floatingScroll = document.getElementById("trackingReportsFloatingScroll");
-  let floatingInner = document.getElementById("trackingReportsFloatingScrollInner");
-
-  if (!floatingScroll) {
-    floatingScroll = document.createElement("div");
-    floatingScroll.id = "trackingReportsFloatingScroll";
-    floatingScroll.className = "tracking-floating-scroll";
-    floatingScroll.setAttribute("aria-label", "Scroll tracking reports horizontally");
-
-    floatingInner = document.createElement("div");
-    floatingInner.id = "trackingReportsFloatingScrollInner";
-    floatingInner.className = "tracking-floating-scroll-inner";
-
-    floatingScroll.appendChild(floatingInner);
-    shell.insertAdjacentElement("afterend", floatingScroll);
-  } else if (floatingScroll.previousElementSibling !== shell) {
-    shell.insertAdjacentElement("afterend", floatingScroll);
-  }
-
-  if (!floatingInner) {
-    floatingInner = document.createElement("div");
-    floatingInner.id = "trackingReportsFloatingScrollInner";
-    floatingInner.className = "tracking-floating-scroll-inner";
-    floatingScroll.appendChild(floatingInner);
-  }
-
-  const updateFloatingScrollSize = () => {
-    const tableWidth = Math.max(table.scrollWidth || 0, table.offsetWidth || 0, shell.scrollWidth || 0);
-    const shellWidth = shell.clientWidth || shell.offsetWidth || 0;
-
-    floatingInner.style.width = `${tableWidth}px`;
-    floatingScroll.scrollLeft = shell.scrollLeft;
-
-    if (tableWidth <= shellWidth + 8) {
-      floatingScroll.classList.add("is-hidden");
-      shell.classList.remove("has-custom-horizontal-scroll");
-    } else {
-      floatingScroll.classList.remove("is-hidden");
-      shell.classList.add("has-custom-horizontal-scroll");
-    }
-  };
-
-  const syncFromFloating = () => {
-    if (trackingReportsFloatingScrollState.isSyncing) return;
-
-    trackingReportsFloatingScrollState.isSyncing = true;
-    shell.scrollLeft = floatingScroll.scrollLeft;
-    trackingReportsFloatingScrollState.isSyncing = false;
-  };
-
-  const syncFromTable = () => {
-    if (trackingReportsFloatingScrollState.isSyncing) return;
-
-    trackingReportsFloatingScrollState.isSyncing = true;
-    floatingScroll.scrollLeft = shell.scrollLeft;
-    trackingReportsFloatingScrollState.isSyncing = false;
-  };
-
-  if (!floatingScroll.dataset.bound) {
-    floatingScroll.addEventListener("scroll", syncFromFloating, { passive: true });
-    floatingScroll.dataset.bound = "true";
-  }
-
-  if (!shell.dataset.floatingScrollBound) {
-    shell.addEventListener("scroll", syncFromTable, { passive: true });
-    shell.dataset.floatingScrollBound = "true";
-  }
+  /*
+    Comfortable report modal rule:
+    Use the table shell's native horizontal/vertical scroll instead of
+    creating a second floating green scrollbar under the table. This keeps
+    more vertical space available for report rows and feels more natural for users.
+  */
+  const floatingScroll = document.getElementById("trackingReportsFloatingScroll");
 
   if (trackingReportsFloatingScrollState.resizeObserver) {
     try {
       trackingReportsFloatingScrollState.resizeObserver.disconnect();
     } catch (error) {
-      // Ignore observer cleanup errors.
+      // Keep UI safe if observer is already disconnected.
     }
   }
 
-  if (typeof ResizeObserver !== "undefined") {
-    trackingReportsFloatingScrollState.resizeObserver = new ResizeObserver(() => {
-      updateFloatingScrollSize();
-    });
+  trackingReportsFloatingScrollState = {
+    resizeObserver: null,
+    isSyncing: false
+  };
 
-    trackingReportsFloatingScrollState.resizeObserver.observe(table);
-    trackingReportsFloatingScrollState.resizeObserver.observe(shell);
+  if (floatingScroll) {
+    floatingScroll.remove();
   }
 
-  updateFloatingScrollSize();
-  setTimeout(updateFloatingScrollSize, 80);
-  setTimeout(updateFloatingScrollSize, 250);
+  if (shell) {
+    shell.classList.remove("has-custom-horizontal-scroll");
+    shell.classList.add("tracking-reports-touch-scroll");
+  }
 }
 
 
@@ -1993,13 +1924,22 @@ function openTrackingReportModal(data) {
         ? data.logs
         : [];
 
-    renderTrackingReportSummary(data, logs);
+    /*
+      Route view modal rule:
+      The View action should show the map only.
+      Remove the old summary panel so the route map can use the full modal body.
+    */
+    const existingSummaryPanel = document.getElementById("trackingReportSummaryPanel");
+    if (existingSummaryPanel) {
+      existingSummaryPanel.remove();
+    }
+
     mapContainer.innerHTML = "";
 
     if (!logs.length) {
       mapContainer.innerHTML = `
         <div class="empty-state tracking-report-map-empty">
-          No route logs are available for this session. Check the report summary above to confirm whether GPS was off, signal was pending, or no valid GPS points were recorded.
+          No route logs are available for this session.
         </div>
       `;
       return;
