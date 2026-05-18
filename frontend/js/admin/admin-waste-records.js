@@ -529,6 +529,54 @@ function buildReportGridItem(label, value) {
   `;
 }
 
+
+function buildReportFieldRow(label, value, options = {}) {
+  const safeLabel = escapeHtml(label);
+  const safeValue = escapeHtml(value || "—");
+  const extraClass = options.highlight ? " report-field-row-highlight" : "";
+
+  return `
+    <div class="report-field-row${extraClass}">
+      <div class="report-field-label">${safeLabel}</div>
+      <div class="report-field-colon">:</div>
+      <div class="report-field-value">${safeValue}</div>
+    </div>
+  `;
+}
+
+function buildWasteSummaryRow(label, value, options = {}) {
+  const safeLabel = escapeHtml(label);
+  const safeValue = escapeHtml(value || "0 kg");
+  const extraClass = options.total ? " report-summary-total-row" : "";
+
+  return `
+    <tr class="report-summary-row${extraClass}">
+      <td class="report-summary-label">${safeLabel}</td>
+      <td class="report-summary-value">${safeValue}</td>
+    </tr>
+  `;
+}
+
+function buildReportInfoList(rows) {
+  return `
+    <div class="report-info-list">
+      ${rows.join("")}
+    </div>
+  `;
+}
+
+function buildWasteSummaryTable(rows) {
+  return `
+    <div class="report-summary-table-wrap">
+      <table class="report-summary-table">
+        <tbody>
+          ${rows.join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
 function openValidationDetailsModal(record) {
   const modal = document.getElementById("validationDetailsModal");
   const basicInfo = document.getElementById("reportBasicInfo");
@@ -545,6 +593,11 @@ function openValidationDetailsModal(record) {
   const type = getRecordType(record);
   const period = formatPeriod(record.period_from, record.period_to);
   const grandTotal = `${formatNumber(record.grand_total)} kg`;
+
+  const biodegradable = formatKg(record.biodegradable_subtotal);
+  const recyclable = formatKg(record.recyclable_subtotal);
+  const residual = formatKg(record.residual_subtotal);
+  const special = formatKg(record.special_subtotal);
 
   const validatedBy = record.validated_by || "—";
   const validatedAt = formatDate(record.validated_at || record.created_at || record.createdAt);
@@ -565,45 +618,46 @@ function openValidationDetailsModal(record) {
       : `<div class="report-signature-placeholder"></div>`;
 
     reportFooterValidator.innerHTML = `
-  <div class="report-signature-block">
-    <div class="report-signature-caption">
-      Validated and reviewed by:
-    </div>
+      <div class="report-signature-block">
+        <div class="report-signature-caption">
+          Validated and reviewed by:
+        </div>
 
-    <div class="report-signature-box">
-      ${signatureHtml}
-    </div>
+        <div class="report-signature-box">
+          ${signatureHtml}
+        </div>
 
-    <div class="report-signature-line"></div>
+        <div class="report-signature-line"></div>
 
-    <div class="report-signature-name">
-      ${escapeHtml(validatedBy)}
-    </div>
-  </div>
-`;
+        <div class="report-signature-name">
+          ${escapeHtml(validatedBy)}
+        </div>
+      </div>
+    `;
   }
 
-  basicInfo.innerHTML = [
-    buildReportGridItem("Name", name),
-    buildReportGridItem("Type", type),
-    buildReportGridItem("Period", period),
-    buildReportGridItem("Grand Total", grandTotal)
-  ].join("");
+  basicInfo.innerHTML = buildReportInfoList([
+    buildReportFieldRow("Name", name),
+    buildReportFieldRow("Type", type),
+    buildReportFieldRow("Period", period),
+    buildReportFieldRow("Grand Total", grandTotal, { highlight: true })
+  ]);
 
-  wasteSummary.innerHTML = [
-    buildReportGridItem("Biodegradable", formatKg(record.biodegradable_subtotal)),
-    buildReportGridItem("Recyclable", formatKg(record.recyclable_subtotal)),
-    buildReportGridItem("Residual", formatKg(record.residual_subtotal)),
-    buildReportGridItem("Special", formatKg(record.special_subtotal))
-  ].join("");
+  wasteSummary.innerHTML = buildWasteSummaryTable([
+    buildWasteSummaryRow("Biodegradable", biodegradable),
+    buildWasteSummaryRow("Recyclable", recyclable),
+    buildWasteSummaryRow("Residual", residual),
+    buildWasteSummaryRow("Special Waste", special),
+    buildWasteSummaryRow("Grand Total", grandTotal, { total: true })
+  ]);
 
-  validationInfo.innerHTML = [
-    buildReportGridItem("Validated By", validatedBy),
-    buildReportGridItem("Validated At", validatedAt),
-    buildReportGridItem("Validation Status", status),
-    buildReportGridItem("Validation Notes", notes),
-    buildReportGridItem("Remarks", remarks)
-  ].join("");
+  validationInfo.innerHTML = buildReportInfoList([
+    buildReportFieldRow("Validated By", validatedBy),
+    buildReportFieldRow("Validated At", validatedAt),
+    buildReportFieldRow("Validation Status", status),
+    buildReportFieldRow("Validation Notes", notes),
+    buildReportFieldRow("Remarks", remarks)
+  ]);
 
   modal.classList.remove("hidden");
 }
