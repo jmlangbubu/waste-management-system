@@ -369,6 +369,15 @@ class TrackingService {
                     `,
                     [lastLocationStatus, manilaNow, session.id]
                 );
+
+                await this.createTrackingCompletedNotification({
+                    truck_id: session.truck_id,
+                    enforcer_name: session.enforcer_name || "",
+                    session_id: session.id,
+                    stop_type: "auto_stopped",
+                    final_tracking_status_key: finalStatusKey,
+                    ended_at: effectiveShiftEnd
+                });
             }
         }
     }
@@ -413,6 +422,14 @@ class TrackingService {
             alters.push("ADD COLUMN isRead TINYINT(1) NOT NULL DEFAULT 0");
         }
 
+        if (!columnSet.has("status")) {
+            alters.push("ADD COLUMN status VARCHAR(80) NULL");
+        }
+
+        if (!columnSet.has("reference_id")) {
+            alters.push("ADD COLUMN reference_id VARCHAR(120) NULL");
+        }
+
         if (!columnSet.has("createdAt")) {
             alters.push("ADD COLUMN createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP");
         }
@@ -421,7 +438,7 @@ class TrackingService {
             try {
                 await db.query(`
                     ALTER TABLE notifications
-                    ${alters.join(",\\n                    ")}
+                    ${alters.join(",\n                    ")}
                 `);
             } catch (error) {
                 if (error && error.code === "ER_DUP_FIELDNAME") {
@@ -485,14 +502,18 @@ class TrackingService {
                     type,
                     title,
                     message,
+                    status,
+                    reference_id,
                     isRead
                 )
-                VALUES (?, ?, ?, 0)
+                VALUES (?, ?, ?, ?, ?, 0)
                 `,
                 [
                     "tracking",
                     title,
-                    message
+                    message,
+                    eventType === "off" ? "GPS off" : "GPS active",
+                    sessionId ? String(sessionId) : null
                 ]
             );
 
@@ -506,6 +527,7 @@ class TrackingService {
                 title,
                 message,
                 type: "tracking",
+                status: eventType === "off" ? "GPS off" : "GPS active",
                 truck_id: truckId,
                 session_id: sessionId,
                 reference_id: sessionId,
@@ -517,6 +539,156 @@ class TrackingService {
               Tracking data is more important than the notification UI.
             */
             console.error("createGpsTrackingNotification error:", error);
+            return null;
+        }
+    }
+
+    normalizeStopType(stopType) {
+        const cleaned = this.cleanText(stopType).toLowerCase();
+
+        if ([
+            "manual_stopped",
+            "manual_wmo_stop",
+            "wmo_stop",
+            "stopped",
+            "auto_stopped",
+            "auto_wmo_stop"
+        ].includes(cleaned)) {
+            return cleaned;
+        }
+
+        return "stopped";
+    }
+
+    getTrackingCompletedStatusLabel(stopType, finalStatusKey = "") {
+        const normalizedStopType = this.normalizeStopType(stopType);
+        const normalizedFinalStatus = this.normalizeTrackingDeviceStatus(finalStatusKey || "active");
+
+        if (normalizedStopType === "auto_wmo_stop") {
+            return "Auto-completed at WMO";
+        }
+
+        if (normalizedStopType === "auto_stopped") {
+            return "Auto-completed after shift";
+        }
+
+        if (
+            normalizedStopType === "manual_stopped" ||
+            normalizedStopType === "manual_wmo_stop" ||
+            normalizedStopType === "wmo_stop"
+        ) {
+            return "Completed at WMO";
+        }
+
+        if (normalizedFinalStatus === "gps_off") {
+            return "Completed · GPS off";
+        }
+
+        if (normalizedFinalStatus === "sync_pending") {
+            return "Completed · Sync pending";
+        }
+
+        return "Completed";
+    }
+
+    async hasTrackingCompletedNotification(sessionId) {
+        const cleanSessionId = this.cleanText(sessionId);
+
+        if (!cleanSessionId) {
+            return false;
+        }
+
+        await this.ensureWmoNotificationsTableSafe();
+
+        const [rows] = await db.query(
+            `
+            SELECT id
+            FROM notifications
+            WHERE type = 'tracking_completed'
+              AND reference_id = ?
+            LIMIT 1
+            `,
+            [cleanSessionId]
+        );
+
+        return rows.length > 0;
+    }
+
+    async createTrackingCompletedNotification(sessionData = {}) {
+        try {
+            await this.ensureWmoNotificationsTableSafe();
+
+            const sessionId = sessionData.session_id || sessionData.sessionId || sessionData.id || null;
+            const cleanSessionId = this.cleanText(sessionId);
+
+            if (cleanSessionId && await this.hasTrackingCompletedNotification(cleanSessionId)) {
+                return null;
+            }
+
+            const truckId = this.cleanText(sessionData.truck_id || sessionData.truckId || "Unknown Truck");
+            const enforcerName = this.cleanText(sessionData.enforcer_name || sessionData.enforcerName || "");
+            const stopType = this.normalizeStopType(sessionData.stop_type || sessionData.stopType || "stopped");
+            const finalStatusKey = this.cleanText(sessionData.final_tracking_status_key || sessionData.finalTrackingStatusKey || "");
+            const statusLabel = this.getTrackingCompletedStatusLabel(stopType, finalStatusKey);
+            const endedAt = this.cleanText(sessionData.ended_at || sessionData.endedAt || "");
+
+            const title = "Truck Tracking Completed";
+            const messageParts = [
+                `Truck ${truckId} completed tracking${enforcerName ? ` by ${enforcerName}` : ""}.`,
+                `Status: ${statusLabel}.`
+            ];
+
+            if (endedAt) {
+                messageParts.push(`Ended at: ${endedAt}.`);
+            }
+
+            const message = messageParts.join(" ");
+
+            const [insertResult] = await db.query(
+                `
+                INSERT INTO notifications (
+                    type,
+                    title,
+                    message,
+                    status,
+                    reference_id,
+                    isRead
+                )
+                VALUES (?, ?, ?, ?, ?, 0)
+                `,
+                [
+                    "tracking_completed",
+                    title,
+                    message,
+                    statusLabel,
+                    cleanSessionId || null
+                ]
+            );
+
+            const notificationId = insertResult && insertResult.insertId
+                ? insertResult.insertId
+                : null;
+
+            return {
+                id: notificationId,
+                notification_id: notificationId,
+                title,
+                message,
+                type: "tracking_completed",
+                status: statusLabel,
+                truck_id: truckId,
+                session_id: cleanSessionId || sessionId,
+                reference_id: cleanSessionId || sessionId,
+                stop_type: stopType,
+                final_tracking_status_key: finalStatusKey || null,
+                createdAt: new Date().toISOString()
+            };
+        } catch (error) {
+            /*
+              Do not block the tracking report if the bell notification fails.
+              The completed session/report is still the source of truth.
+            */
+            console.error("createTrackingCompletedNotification error:", error);
             return null;
         }
     }
@@ -665,11 +837,9 @@ class TrackingService {
             stop_type = "stopped"
         } = data;
 
-        const allowedStopType = ["stopped", "auto_stopped"].includes(stop_type)
-            ? stop_type
-            : "stopped";
+        const allowedStopType = this.normalizeStopType(stop_type);
 
-        const stoppedAt = allowedStopType === "auto_stopped"
+        const stoppedAt = ["auto_stopped", "auto_wmo_stop"].includes(allowedStopType)
             ? null
             : this.getManilaNowDateTime();
 
@@ -765,10 +935,13 @@ class TrackingService {
 
         await db.query(updateLastLocationSql, [lastLocationStatus, this.getManilaNowDateTime(), sessionId]);
 
-        const notification = await this.createGpsTrackingNotification("off", {
+        const notification = await this.createTrackingCompletedNotification({
             truck_id: session.truck_id,
             enforcer_name: session.enforcer_name || "",
-            session_id: sessionId
+            session_id: sessionId,
+            stop_type: allowedStopType,
+            final_tracking_status_key: finalStatusKey,
+            ended_at: endedAt
         });
 
         return {
