@@ -380,6 +380,8 @@ class TrackingService {
                 });
             }
         }
+
+        await this.backfillTrackingCompletedNotifications(100);
     }
 
     async ensureWmoNotificationsTableSafe() {
@@ -560,35 +562,43 @@ class TrackingService {
         return "stopped";
     }
 
+    getTrackingCompletedStatusLabelFromSession(sessionData = {}) {
+        const statusMeta = this.buildTrackingReportStatus(sessionData || {});
+        const label = this.cleanText(statusMeta.report_status_label);
+
+        if (label) {
+            return label;
+        }
+
+        return this.getTrackingCompletedStatusLabel(
+            sessionData.stop_type || sessionData.stopType || sessionData.session_status || "stopped",
+            sessionData.final_tracking_status_key || sessionData.finalTrackingStatusKey || sessionData.last_device_status || ""
+        );
+    }
+
     getTrackingCompletedStatusLabel(stopType, finalStatusKey = "") {
         const normalizedStopType = this.normalizeStopType(stopType);
         const normalizedFinalStatus = this.normalizeTrackingDeviceStatus(finalStatusKey || "active");
 
         if (normalizedStopType === "auto_wmo_stop") {
-            return "Auto-completed at WMO";
+            return "Shift Completed · Route Recorded";
         }
 
         if (normalizedStopType === "auto_stopped") {
-            return "Auto-completed after shift";
-        }
-
-        if (
-            normalizedStopType === "manual_stopped" ||
-            normalizedStopType === "manual_wmo_stop" ||
-            normalizedStopType === "wmo_stop"
-        ) {
-            return "Completed at WMO";
+            if (normalizedFinalStatus === "gps_off") return "Shift Completed · No GPS Route";
+            if (normalizedFinalStatus === "sync_pending") return "Shift Completed · Sync Pending";
+            return "Shift Completed · Route Recorded";
         }
 
         if (normalizedFinalStatus === "gps_off") {
-            return "Completed · GPS off";
+            return "Stopped · No GPS Route";
         }
 
         if (normalizedFinalStatus === "sync_pending") {
-            return "Completed · Sync pending";
+            return "Stopped · Sync Pending";
         }
 
-        return "Completed";
+        return "Manually Stopped · Route Recorded";
     }
 
     async hasTrackingCompletedNotification(sessionId) {
@@ -614,6 +624,73 @@ class TrackingService {
         return rows.length > 0;
     }
 
+    async getTrackingNotificationSessionContext(sessionId, fallbackData = {}) {
+        const cleanSessionId = this.cleanText(sessionId || fallbackData.session_id || fallbackData.sessionId || fallbackData.id);
+
+        if (!cleanSessionId) {
+            return fallbackData || {};
+        }
+
+        try {
+            await this.ensureTrackingSessionReportColumns();
+
+            const [rows] = await db.query(
+                `
+                SELECT
+                    tts.id,
+                    tts.id AS session_id,
+                    tts.truck_id,
+                    tts.enforcer_id,
+                    tts.enforcer_name,
+                    tts.device_id,
+                    tts.session_status,
+                    tts.started_at,
+                    tts.ended_at,
+                    tts.shift_end_time,
+                    tts.effective_shift_end_time,
+                    tts.last_updated_at,
+                    tts.last_device_status,
+                    tts.last_device_status_at,
+                    tts.final_tracking_status_key,
+                    tts.final_gps_status,
+                    tts.final_sync_status,
+                    tts.final_tracking_status_description,
+                    tts.session_distance_km,
+                    tll.status AS last_location_status,
+                    tll.last_updated_at AS location_last_updated,
+                    COALESCE(route_counts.route_logs_count, 0) AS route_logs_count
+                FROM truck_tracking_sessions tts
+                LEFT JOIN truck_last_locations tll
+                    ON tts.id = tll.session_id
+                LEFT JOIN (
+                    SELECT session_id, COUNT(*) AS route_logs_count
+                    FROM truck_location_logs
+                    GROUP BY session_id
+                ) route_counts
+                    ON route_counts.session_id = tts.id
+                WHERE tts.id = ?
+                LIMIT 1
+                `,
+                [cleanSessionId]
+            );
+
+            if (rows.length > 0) {
+                return {
+                    ...(fallbackData || {}),
+                    ...rows[0],
+                    session_id: rows[0].session_id || rows[0].id || cleanSessionId
+                };
+            }
+        } catch (error) {
+            console.error("getTrackingNotificationSessionContext warning:", error);
+        }
+
+        return {
+            ...(fallbackData || {}),
+            session_id: cleanSessionId
+        };
+    }
+
     async createTrackingCompletedNotification(sessionData = {}) {
         try {
             await this.ensureWmoNotificationsTableSafe();
@@ -625,12 +702,29 @@ class TrackingService {
                 return null;
             }
 
-            const truckId = this.cleanText(sessionData.truck_id || sessionData.truckId || "Unknown Truck");
-            const enforcerName = this.cleanText(sessionData.enforcer_name || sessionData.enforcerName || "");
-            const stopType = this.normalizeStopType(sessionData.stop_type || sessionData.stopType || "stopped");
-            const finalStatusKey = this.cleanText(sessionData.final_tracking_status_key || sessionData.finalTrackingStatusKey || "");
-            const statusLabel = this.getTrackingCompletedStatusLabel(stopType, finalStatusKey);
-            const endedAt = this.cleanText(sessionData.ended_at || sessionData.endedAt || "");
+            const sessionContext = await this.getTrackingNotificationSessionContext(cleanSessionId, sessionData);
+
+            const truckId = this.cleanText(sessionContext.truck_id || sessionContext.truckId || "Unknown Truck");
+            const enforcerName = this.cleanText(sessionContext.enforcer_name || sessionContext.enforcerName || "");
+            const stopType = this.normalizeStopType(
+                sessionContext.stop_type ||
+                sessionContext.stopType ||
+                sessionContext.session_status ||
+                "stopped"
+            );
+            const finalStatusKey = this.cleanText(
+                sessionContext.final_tracking_status_key ||
+                sessionContext.finalTrackingStatusKey ||
+                sessionContext.last_device_status ||
+                sessionContext.last_location_status ||
+                ""
+            );
+            const statusLabel = this.getTrackingCompletedStatusLabelFromSession({
+                ...sessionContext,
+                stop_type: stopType,
+                final_tracking_status_key: finalStatusKey
+            });
+            const endedAt = this.cleanText(sessionContext.ended_at || sessionContext.endedAt || "");
 
             const title = "Truck Tracking Completed";
             const messageParts = [
@@ -639,7 +733,7 @@ class TrackingService {
             ];
 
             if (endedAt) {
-                messageParts.push(`Ended at: ${endedAt}.`);
+                messageParts.push(`Ended at: ${this.normalizeDateTimeText(endedAt)}.`);
             }
 
             const message = messageParts.join(" ");
@@ -690,6 +784,81 @@ class TrackingService {
             */
             console.error("createTrackingCompletedNotification error:", error);
             return null;
+        }
+    }
+
+    async backfillTrackingCompletedNotifications(limit = 100) {
+        try {
+            await this.ensureWmoNotificationsTableSafe();
+            await this.ensureTrackingSessionReportColumns();
+
+            const safeLimit = Math.max(1, Math.min(Number.parseInt(limit, 10) || 100, 500));
+
+            const [sessions] = await db.query(
+                `
+                SELECT
+                    tts.id,
+                    tts.id AS session_id,
+                    tts.truck_id,
+                    tts.enforcer_id,
+                    tts.enforcer_name,
+                    tts.device_id,
+                    tts.session_status,
+                    tts.started_at,
+                    tts.ended_at,
+                    tts.shift_end_time,
+                    tts.effective_shift_end_time,
+                    tts.last_updated_at,
+                    tts.last_device_status,
+                    tts.last_device_status_at,
+                    tts.final_tracking_status_key,
+                    tts.final_gps_status,
+                    tts.final_sync_status,
+                    tts.final_tracking_status_description,
+                    tts.session_distance_km,
+                    tll.status AS last_location_status,
+                    tll.last_updated_at AS location_last_updated,
+                    COALESCE(route_counts.route_logs_count, 0) AS route_logs_count
+                FROM truck_tracking_sessions tts
+                LEFT JOIN truck_last_locations tll
+                    ON tts.id = tll.session_id
+                LEFT JOIN (
+                    SELECT session_id, COUNT(*) AS route_logs_count
+                    FROM truck_location_logs
+                    GROUP BY session_id
+                ) route_counts
+                    ON route_counts.session_id = tts.id
+                LEFT JOIN notifications n
+                    ON n.type = 'tracking_completed'
+                   AND n.reference_id = CAST(tts.id AS CHAR)
+                WHERE tts.session_status IN (
+                    'stopped',
+                    'auto_stopped',
+                    'manual_stopped',
+                    'manual_wmo_stop',
+                    'wmo_stop',
+                    'auto_wmo_stop'
+                )
+                  AND n.id IS NULL
+                ORDER BY COALESCE(tts.ended_at, tts.updated_at, tts.started_at, tts.created_at) DESC
+                LIMIT ${safeLimit}
+                `
+            );
+
+            let createdCount = 0;
+
+            for (const session of sessions || []) {
+                const notification = await this.createTrackingCompletedNotification(session);
+
+                if (notification) {
+                    createdCount += 1;
+                }
+            }
+
+            return createdCount;
+        } catch (error) {
+            console.error("backfillTrackingCompletedNotifications warning:", error);
+            return 0;
         }
     }
 
@@ -873,11 +1042,17 @@ class TrackingService {
         const session = rows[0];
 
         if (session.session_status !== "active") {
+            const notification = await this.createTrackingCompletedNotification({
+                ...session,
+                session_id: sessionId,
+                stop_type: session.session_status || "stopped"
+            });
+
             return {
                 success: true,
                 message: "Session already stopped",
                 truck_id: session.truck_id,
-                notification: null
+                notification
             };
         }
 
@@ -1503,6 +1678,7 @@ class TrackingService {
 
     async getActiveTrucks() {
         await this.autoStopExpiredSessions();
+        await this.backfillTrackingCompletedNotifications(100);
 
         const manilaNow = this.getManilaNowDateTime();
 
@@ -1700,7 +1876,12 @@ class TrackingService {
     }
 
     buildTrackingReportStatus(row = {}) {
-        const sessionStatus = this.cleanText(row.session_status || row.status || "").toLowerCase();
+        const rawSessionStatus = this.cleanText(row.session_status || row.status || "").toLowerCase();
+        const sessionStatus = rawSessionStatus === "auto_wmo_stop"
+            ? "auto_stopped"
+            : (["manual_stopped", "manual_wmo_stop", "wmo_stop"].includes(rawSessionStatus)
+                ? "stopped"
+                : rawSessionStatus);
         const routeCount = Number(row.route_logs_count || row.route_count || 0);
         const distanceKm = Number(row.session_distance_km || row.total_distance_km || 0);
         const hasRoute = routeCount > 0 || distanceKm > 0;
@@ -1845,6 +2026,7 @@ class TrackingService {
 
     async getTrackingReports() {
         await this.autoStopExpiredSessions();
+        await this.backfillTrackingCompletedNotifications(100);
         await this.ensureTrackingSessionReportColumns();
 
         const sql = `
@@ -1890,6 +2072,7 @@ class TrackingService {
 
     async getTrackingReportDetails(sessionId) {
         await this.autoStopExpiredSessions();
+        await this.backfillTrackingCompletedNotifications(100);
         await this.ensureOfflineTrackingColumns();
         await this.ensureTrackingSessionReportColumns();
 
