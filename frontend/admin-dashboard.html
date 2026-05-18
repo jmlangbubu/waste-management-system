@@ -196,7 +196,16 @@
     <div class="page-card dashboard-primary-card">
       <div class="page-card-header dashboard-header-row">
         <div class="dashboard-title-with-icon">
-          <div class="dashboard-card-icon">📈</div>
+          <div class="dashboard-card-icon dashboard-icon--analytics" aria-hidden="true">
+            <svg viewBox="0 0 24 24" role="img" focusable="false">
+              <path d="M4 19V5" />
+              <path d="M4 19h16" />
+              <path d="M8 16v-5" />
+              <path d="M12 16V8" />
+              <path d="M16 16v-9" />
+              <path d="M8 11l4-3 4 1 4-4" />
+            </svg>
+          </div>
           <div>
             <h2>Waste Monitoring Overview</h2>
             <p>Visual summary of waste activity and collection performance.</p>
@@ -226,7 +235,12 @@
 
       <div class="waste-summary-cards">
         <div class="waste-summary-card biodegradable">
-          <div class="waste-summary-icon">🍃</div>
+          <div class="waste-summary-icon waste-icon--bio" aria-hidden="true">
+            <svg viewBox="0 0 24 24" role="img" focusable="false">
+              <path d="M20 4c-8.5.2-14.5 4.5-15 12.5C4.8 19 7 21 9.5 20.8 17.2 20.2 20 12.7 20 4Z" />
+              <path d="M5 19c3-5 7-8 12-10" />
+            </svg>
+          </div>
           <div>
             <strong id="totalBiodegradable">0</strong>
             <span>Biodegradable</span>
@@ -235,7 +249,16 @@
         </div>
 
         <div class="waste-summary-card recyclable">
-          <div class="waste-summary-icon">♻️</div>
+          <div class="waste-summary-icon waste-icon--recyclable" aria-hidden="true">
+            <svg viewBox="0 0 24 24" role="img" focusable="false">
+              <path d="m7.5 7.5 2.2-3.8a1.2 1.2 0 0 1 2.1 0l1.1 1.9" />
+              <path d="m11 5.6 2-.5.5 2" />
+              <path d="m16.5 10.5 2.2 3.8a1.2 1.2 0 0 1-1 1.8h-2.2" />
+              <path d="m16.8 14.2 1.4 1.5-1.4 1.5" />
+              <path d="M8.4 16.1H6.2a1.2 1.2 0 0 1-1-1.8l1.1-1.9" />
+              <path d="m6.8 14.2-.6-2 2-.5" />
+            </svg>
+          </div>
           <div>
             <strong id="totalRecyclable">0</strong>
             <span>Recyclable</span>
@@ -244,7 +267,15 @@
         </div>
 
         <div class="waste-summary-card residual">
-          <div class="waste-summary-icon">🗑️</div>
+          <div class="waste-summary-icon waste-icon--residual" aria-hidden="true">
+            <svg viewBox="0 0 24 24" role="img" focusable="false">
+              <path d="M4 7h16" />
+              <path d="M9 7V4h6v3" />
+              <path d="M7 7l1 14h8l1-14" />
+              <path d="M10 11v6" />
+              <path d="M14 11v6" />
+            </svg>
+          </div>
           <div>
             <strong id="totalResidual">0</strong>
             <span>Residual</span>
@@ -253,7 +284,13 @@
         </div>
 
         <div class="waste-summary-card special">
-          <div class="waste-summary-icon">⚠️</div>
+          <div class="waste-summary-icon waste-icon--special" aria-hidden="true">
+            <svg viewBox="0 0 24 24" role="img" focusable="false">
+              <path d="M12 3 2.8 20h18.4L12 3Z" />
+              <path d="M12 9v5" />
+              <path d="M12 17h.01" />
+            </svg>
+          </div>
           <div>
             <strong id="totalHazardous">0</strong>
             <span>Special Waste</span>
@@ -269,7 +306,15 @@
       <div class="page-card recent-records-card">
         <div class="page-card-header compact-header">
           <div class="dashboard-title-with-icon">
-            <div class="dashboard-card-icon">📋</div>
+            <div class="dashboard-card-icon dashboard-icon--records" aria-hidden="true">
+            <svg viewBox="0 0 24 24" role="img" focusable="false">
+              <path d="M9 4h6" />
+              <path d="M10 2h4a2 2 0 0 1 2 2v1H8V4a2 2 0 0 1 2-2Z" />
+              <path d="M7 5H6a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-1" />
+              <path d="M8 11h8" />
+              <path d="M8 15h5" />
+            </svg>
+          </div>
             <div>
               <h2>Recent Waste Records</h2>
               <p>Latest submitted waste monitoring records.</p>
@@ -304,7 +349,12 @@
       <div class="page-card latest-summary-card">
         <div class="page-card-header">
           <div class="dashboard-title-with-icon">
-            <div class="dashboard-card-icon">🛡️</div>
+            <div class="dashboard-card-icon dashboard-icon--verified" aria-hidden="true">
+            <svg viewBox="0 0 24 24" role="img" focusable="false">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" />
+              <path d="m9 12 2 2 4-5" />
+            </svg>
+          </div>
             <div>
               <h2>Latest Submission</h2>
               <p>Most recent validated waste record.</p>
@@ -329,7 +379,16 @@
   <div class="page-card dashboard-category-card">
     <div class="page-card-header dashboard-header-row">
       <div class="dashboard-title-with-icon">
-        <div class="dashboard-card-icon">♻️</div>
+        <div class="dashboard-card-icon dashboard-icon--category" aria-hidden="true">
+            <svg class="dashboard-category-icon-art" viewBox="0 0 28 28" role="img" focusable="false">
+              <rect class="cat-bg" x="3" y="3" width="22" height="22" rx="7" />
+              <path class="cat-grid" d="M8 9h12M8 14h12M8 19h12" />
+              <rect class="cat-bar cat-bio" x="8" y="12" width="3" height="7" rx="1.5" />
+              <rect class="cat-bar cat-recyclable" x="12.5" y="9" width="3" height="10" rx="1.5" />
+              <rect class="cat-bar cat-residual" x="17" y="14" width="3" height="5" rx="1.5" />
+              <circle class="cat-dot cat-special" cx="20.5" cy="8" r="2" />
+            </svg>
+          </div>
         <div>
           <h2>Waste Category Analytics</h2>
           <p>Distribution of biodegradable, recyclable, residual, and special waste.</p>
@@ -357,7 +416,13 @@
     <div class="page-card compact-recommendation-card">
       <div class="page-card-header">
         <div class="dashboard-title-with-icon">
-          <div class="dashboard-card-icon">⚠️</div>
+          <div class="dashboard-card-icon dashboard-icon--recommendation" aria-hidden="true">
+            <svg viewBox="0 0 24 24" role="img" focusable="false">
+              <path d="M12 2a7 7 0 0 0-4 12.74V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.26A7 7 0 0 0 12 2Z" />
+              <path d="M10 22h4" />
+              <path d="M9.5 9.5a2.5 2.5 0 0 1 5 0" />
+            </svg>
+          </div>
           <div>
             <h2>System Recommendations</h2>
             <p>Smart operational guidance preview.</p>
@@ -375,7 +440,14 @@
     <div class="page-card monitoring-alert-card">
       <div class="page-card-header compact-header">
         <div class="dashboard-title-with-icon">
-          <div class="dashboard-card-icon">🚛</div>
+          <div class="dashboard-card-icon dashboard-icon--truck" aria-hidden="true">
+            <svg viewBox="0 0 24 24" role="img" focusable="false">
+              <path d="M3 7h11v8H3z" />
+              <path d="M14 10h3l3 3v2h-6z" />
+              <path d="M6.5 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z" />
+              <path d="M17.5 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z" />
+            </svg>
+          </div>
           <div>
             <h2>Truck Monitoring</h2>
             <p>Maintenance alerts and distance monitoring preview.</p>
@@ -2366,6 +2438,7 @@
 <script src="js/admin/admin-notifications.js"></script>
 <script src="js/admin/admin-waste-records.js"></script>
 <script src="js/admin/admin-dashboard-analytics.js"></script>
+<script src="js/admin/admin-dashboard-palette.js"></script>
 <script src="js/admin/admin-complaints.js"></script>
 <script src="js/admin/admin-appointments.js"></script>
 <script src="js/admin/admin-orientation.js"></script>
@@ -2377,8 +2450,5 @@
 <script src="js/admin/admin-profile.js"></script>
 <script src="js/admin/admin-init.js"></script>
 
-<script>
-  lucide.createIcons();
-</script>
 </body>
 </html>
