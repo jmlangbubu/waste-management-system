@@ -14067,3 +14067,854 @@ body {
   }
 }
 
+/* =========================================================
+   DASHBOARD OVERVIEW - VECTOR ICON PROFESSIONAL UI POLISH
+   Scope: #dashboardSection only. Keeps existing data IDs intact.
+========================================================= */
+#dashboardSection {
+  --dash-green: #166534;
+  --dash-green-2: #2f8a34;
+  --dash-ink: #10261c;
+  --dash-muted: #64748b;
+  --dash-line: #e2ece5;
+  --dash-card: #ffffff;
+  --dash-soft: #f6fbf8;
+}
+
+#dashboardSection .page-card {
+  border: 1px solid rgba(197, 220, 205, 0.88) !important;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfdfc 100%) !important;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.065) !important;
+}
+
+#dashboardSection .dashboard-main-grid {
+  grid-template-columns: minmax(0, 1.42fr) minmax(360px, 0.82fr) !important;
+  align-items: stretch !important;
+  gap: 24px !important;
+}
+
+#dashboardSection .dashboard-primary-card,
+#dashboardSection .dashboard-category-card {
+  position: relative !important;
+  overflow: hidden !important;
+}
+
+#dashboardSection .dashboard-primary-card::before,
+#dashboardSection .dashboard-category-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto auto;
+  width: 220px;
+  height: 220px;
+  background: radial-gradient(circle, rgba(47, 138, 52, 0.12), transparent 64%);
+  pointer-events: none;
+}
+
+#dashboardSection .page-card-header {
+  position: relative !important;
+  z-index: 1 !important;
+  margin-bottom: 18px !important;
+}
+
+#dashboardSection .dashboard-title-with-icon {
+  display: grid !important;
+  grid-template-columns: 54px minmax(0, 1fr) !important;
+  gap: 14px !important;
+  align-items: center !important;
+}
+
+#dashboardSection .dashboard-title-with-icon h2 {
+  margin: 0 !important;
+  color: var(--dash-ink) !important;
+  font-size: 22px !important;
+  line-height: 1.15 !important;
+  font-weight: 900 !important;
+  letter-spacing: -0.03em !important;
+}
+
+#dashboardSection .dashboard-title-with-icon p,
+#dashboardSection .page-card-header p {
+  margin-top: 5px !important;
+  color: #617166 !important;
+  font-size: 13px !important;
+  line-height: 1.45 !important;
+}
+
+#dashboardSection .dashboard-card-icon,
+#dashboardSection .waste-summary-icon {
+  position: relative !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex: 0 0 auto !important;
+  overflow: hidden !important;
+  font-size: 0 !important;
+}
+
+#dashboardSection .dashboard-card-icon {
+  width: 52px !important;
+  height: 52px !important;
+  border-radius: 18px !important;
+  border: 1px solid rgba(255, 255, 255, 0.7) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.88), 0 12px 24px rgba(15, 23, 42, 0.08) !important;
+}
+
+#dashboardSection .dashboard-card-icon svg,
+#dashboardSection .waste-summary-icon svg {
+  width: 24px !important;
+  height: 24px !important;
+  stroke: currentColor !important;
+  stroke-width: 2.1 !important;
+  stroke-linecap: round !important;
+  stroke-linejoin: round !important;
+  fill: none !important;
+}
+
+#dashboardSection .dashboard-icon--analytics {
+  color: #166534 !important;
+  background: linear-gradient(135deg, #dcfce7, #f0fdf4) !important;
+}
+#dashboardSection .dashboard-icon--records {
+  color: #1d4ed8 !important;
+  background: linear-gradient(135deg, #dbeafe, #eff6ff) !important;
+}
+#dashboardSection .dashboard-icon--verified {
+  color: #047857 !important;
+  background: linear-gradient(135deg, #ccfbf1, #ecfdf5) !important;
+}
+#dashboardSection .dashboard-icon--category {
+  color: #0f766e !important;
+  background: linear-gradient(135deg, #ccfbf1, #f0fdfa) !important;
+}
+#dashboardSection .dashboard-icon--recommendation {
+  color: #b45309 !important;
+  background: linear-gradient(135deg, #fef3c7, #fffbeb) !important;
+}
+#dashboardSection .dashboard-icon--truck {
+  color: #2563eb !important;
+  background: linear-gradient(135deg, #dbeafe, #eef2ff) !important;
+}
+
+#dashboardSection .dashboard-header-actions .segmented-filter {
+  background: #f1f7f3 !important;
+  border: 1px solid #d9eadf !important;
+  border-radius: 16px !important;
+  padding: 4px !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.8) !important;
+}
+
+#dashboardSection .segment-btn {
+  min-height: 38px !important;
+  border-radius: 12px !important;
+  color: #557064 !important;
+  font-weight: 850 !important;
+}
+
+#dashboardSection .segment-btn.active {
+  background: #ffffff !important;
+  color: #0f5f2c !important;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08) !important;
+}
+
+#dashboardSection .chart-card {
+  position: relative !important;
+  z-index: 1 !important;
+  border: 1px solid #e0ebe4 !important;
+  border-radius: 22px !important;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fcfa 100%) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.9) !important;
+}
+
+#dashboardSection .chart-card-top h3 {
+  color: #123826 !important;
+  font-weight: 900 !important;
+  letter-spacing: -0.02em !important;
+}
+
+#dashboardSection .chart-card-top p {
+  color: #66776c !important;
+}
+
+#dashboardSection .waste-summary-cards {
+  position: relative !important;
+  z-index: 1 !important;
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 14px !important;
+  margin-top: 16px !important;
+}
+
+#dashboardSection .waste-summary-card {
+  position: relative !important;
+  min-height: 118px !important;
+  padding: 17px !important;
+  border: 1px solid #e2ece5 !important;
+  border-radius: 20px !important;
+  background: #ffffff !important;
+  box-shadow: 0 12px 26px rgba(15, 23, 42, 0.055) !important;
+  transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease !important;
+}
+
+#dashboardSection .waste-summary-card:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 18px 34px rgba(15, 23, 42, 0.08) !important;
+}
+
+#dashboardSection .waste-summary-icon {
+  width: 46px !important;
+  height: 46px !important;
+  margin-bottom: 12px !important;
+  border-radius: 16px !important;
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08) !important;
+}
+
+#dashboardSection .waste-icon--bio {
+  color: #15803d !important;
+  background: linear-gradient(135deg, #dcfce7, #f0fdf4) !important;
+}
+#dashboardSection .waste-icon--recyclable {
+  color: #1d4ed8 !important;
+  background: linear-gradient(135deg, #dbeafe, #eff6ff) !important;
+}
+#dashboardSection .waste-icon--residual {
+  color: #c2410c !important;
+  background: linear-gradient(135deg, #ffedd5, #fff7ed) !important;
+}
+#dashboardSection .waste-icon--special {
+  color: #7e22ce !important;
+  background: linear-gradient(135deg, #f3e8ff, #faf5ff) !important;
+}
+
+#dashboardSection .waste-summary-card strong {
+  display: block !important;
+  color: #10261c !important;
+  font-size: 27px !important;
+  line-height: 1.05 !important;
+  font-weight: 950 !important;
+  letter-spacing: -0.04em !important;
+}
+
+#dashboardSection .waste-summary-card span {
+  display: block !important;
+  margin-top: 7px !important;
+  color: #263b30 !important;
+  font-size: 13px !important;
+  font-weight: 850 !important;
+}
+
+#dashboardSection .waste-summary-card small {
+  display: block !important;
+  margin-top: 3px !important;
+  color: #7a887f !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+}
+
+#dashboardSection .recent-records-card,
+#dashboardSection .latest-summary-card,
+#dashboardSection .compact-recommendation-card,
+#dashboardSection .monitoring-alert-card {
+  overflow: hidden !important;
+}
+
+#dashboardSection .recent-records-preview {
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 18px !important;
+  overflow: auto !important;
+  background: #ffffff !important;
+}
+
+#dashboardSection .recent-records-preview table {
+  min-width: 720px !important;
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+}
+
+#dashboardSection .recent-records-preview th {
+  background: #f8fafc !important;
+  color: #475569 !important;
+  font-size: 12px !important;
+  font-weight: 900 !important;
+  text-transform: none !important;
+}
+
+#dashboardSection .recent-records-preview td {
+  color: #1f2937 !important;
+  border-top: 1px solid #edf2f7 !important;
+}
+
+#dashboardSection .session-box {
+  display: grid !important;
+  gap: 10px !important;
+  padding: 4px !important;
+}
+
+#dashboardSection .session-row {
+  display: grid !important;
+  grid-template-columns: minmax(110px, .72fr) minmax(0, 1fr) !important;
+  align-items: center !important;
+  gap: 12px !important;
+  min-height: 44px !important;
+  padding: 11px 13px !important;
+  border: 1px solid #e6eee9 !important;
+  border-radius: 14px !important;
+  background: #f8fbf9 !important;
+}
+
+#dashboardSection .session-label {
+  color: #718177 !important;
+  font-size: 12px !important;
+  font-weight: 850 !important;
+}
+
+#dashboardSection .session-value {
+  color: #10261c !important;
+  font-size: 13px !important;
+  font-weight: 900 !important;
+  text-align: right !important;
+  word-break: break-word !important;
+}
+
+#dashboardSection .dashboard-category-card {
+  margin-top: 24px !important;
+}
+
+#dashboardSection .medium-chart-card {
+  min-height: 380px !important;
+}
+
+#dashboardSection #wasteCategoryChart,
+#dashboardSection .chart-placeholder {
+  min-height: 330px !important;
+  border-radius: 18px !important;
+}
+
+#dashboardSection .dashboard-bottom-grid {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+  gap: 24px !important;
+  margin-top: 24px !important;
+}
+
+#dashboardSection .summary-list .summary-item,
+#dashboardSection .monitoring-alert-list .summary-item {
+  border: 1px solid #e5ece8 !important;
+  border-radius: 16px !important;
+  background: #f8fbf9 !important;
+  color: #55685d !important;
+  padding: 14px 16px !important;
+  font-weight: 750 !important;
+}
+
+#dashboardSection .monitoring-summary-row {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 14px !important;
+  margin-bottom: 14px !important;
+}
+
+#dashboardSection .monitoring-mini-box {
+  min-height: 96px !important;
+  padding: 16px !important;
+  border: 1px solid #e1ece5 !important;
+  border-radius: 18px !important;
+  background: linear-gradient(180deg, #f7fcf9, #ffffff) !important;
+}
+
+#dashboardSection .monitoring-mini-box span {
+  color: #64756b !important;
+  font-size: 12px !important;
+  font-weight: 850 !important;
+}
+
+#dashboardSection .monitoring-mini-box strong {
+  display: block !important;
+  margin-top: 8px !important;
+  color: #0f5f2c !important;
+  font-size: 32px !important;
+  line-height: 1 !important;
+  font-weight: 950 !important;
+}
+
+#dashboardSection .monitoring-mini-box.warning strong {
+  color: #b45309 !important;
+}
+
+@media (max-width: 1280px) {
+  #dashboardSection .dashboard-main-grid,
+  #dashboardSection .dashboard-bottom-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  #dashboardSection .waste-summary-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 768px) {
+  #dashboardSection .dashboard-title-with-icon {
+    grid-template-columns: 48px minmax(0, 1fr) !important;
+  }
+
+  #dashboardSection .dashboard-card-icon {
+    width: 48px !important;
+    height: 48px !important;
+    border-radius: 16px !important;
+  }
+
+  #dashboardSection .waste-summary-cards,
+  #dashboardSection .monitoring-summary-row,
+  #dashboardSection .dashboard-bottom-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  #dashboardSection .session-row {
+    grid-template-columns: 1fr !important;
+  }
+
+  #dashboardSection .session-value {
+    text-align: left !important;
+  }
+}
+
+
+/* =========================================================
+   DASHBOARD OVERVIEW - DROPDOWN + CATEGORY HEIGHT FINAL FIX
+   Scope: Dashboard Overview only.
+   Fixes:
+   - "This Year" custom dropdown being covered by chart/card layers
+   - Waste Category Analytics height too tall
+   - Adds fallback designated colors for DOM-based category bars
+========================================================= */
+
+#dashboardSection .dashboard-primary-card,
+#dashboardSection .dashboard-category-card {
+  overflow: visible !important;
+}
+
+#dashboardSection .dashboard-primary-card .page-card-header,
+#dashboardSection .dashboard-category-card .page-card-header,
+#dashboardSection .dashboard-header-row,
+#dashboardSection .dashboard-header-actions,
+#dashboardSection .dashboard-header-actions .segmented-filter,
+#dashboardSection .dashboard-custom-select,
+#dashboardSection .dashboard-period-select-wrap {
+  position: relative !important;
+  overflow: visible !important;
+  z-index: 500 !important;
+}
+
+#dashboardSection .dashboard-custom-select.open,
+#dashboardSection .dashboard-custom-select:focus-within {
+  z-index: 100000 !important;
+}
+
+#dashboardSection .dashboard-custom-select-menu {
+  z-index: 100001 !important;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.22) !important;
+}
+
+#dashboardSection .chart-card,
+#dashboardSection .modern-trend-card,
+#dashboardSection .medium-chart-card,
+#dashboardSection .waste-trend-box,
+#dashboardSection #wasteCategoryChart {
+  position: relative !important;
+  z-index: 1 !important;
+}
+
+/* Keep chart bodies clipped, but never clip the header/dropdown controls. */
+#dashboardSection .chart-card,
+#dashboardSection .waste-trend-box,
+#dashboardSection #wasteCategoryChart {
+  overflow: hidden !important;
+}
+
+/* Compact Waste Category Analytics card. */
+#dashboardSection .dashboard-category-card {
+  margin-top: 20px !important;
+  padding: 20px !important;
+}
+
+#dashboardSection .dashboard-category-card .page-card-header {
+  margin-bottom: 12px !important;
+}
+
+#dashboardSection .dashboard-category-card .dashboard-title-with-icon h2 {
+  font-size: 20px !important;
+}
+
+#dashboardSection .dashboard-category-card .dashboard-title-with-icon p {
+  font-size: 12.5px !important;
+}
+
+#dashboardSection .dashboard-category-card .medium-chart-card {
+  min-height: 255px !important;
+  max-height: 300px !important;
+  margin-top: 12px !important;
+  padding: 14px 16px !important;
+  border-radius: 20px !important;
+}
+
+#dashboardSection .dashboard-category-card #wasteCategoryChart,
+#dashboardSection .dashboard-category-card .chart-placeholder {
+  min-height: 210px !important;
+  max-height: 240px !important;
+  align-items: stretch !important;
+  justify-items: stretch !important;
+  place-items: stretch !important;
+  padding: 10px !important;
+}
+
+#dashboardSection .dashboard-category-card #wasteCategoryChart canvas,
+#dashboardSection .dashboard-category-card .chart-placeholder canvas {
+  width: 100% !important;
+  max-height: 220px !important;
+}
+
+/* Designated waste colors available to DOM-rendered category bars. */
+#dashboardSection #wasteCategoryChart {
+  --waste-bio: #43a047;
+  --waste-recyclable: #1e88e5;
+  --waste-residual: #fb8c00;
+  --waste-special: #8e24aa;
+  --waste-bio-soft: rgba(67, 160, 71, 0.16);
+  --waste-recyclable-soft: rgba(30, 136, 229, 0.16);
+  --waste-residual-soft: rgba(251, 140, 0, 0.16);
+  --waste-special-soft: rgba(142, 36, 170, 0.16);
+}
+
+#dashboardSection #wasteCategoryChart [class*="bio" i],
+#dashboardSection #wasteCategoryChart [data-category*="bio" i],
+#dashboardSection #wasteCategoryChart [data-waste*="bio" i] {
+  --category-color: var(--waste-bio);
+  --category-soft: var(--waste-bio-soft);
+}
+
+#dashboardSection #wasteCategoryChart [class*="recycl" i],
+#dashboardSection #wasteCategoryChart [data-category*="recycl" i],
+#dashboardSection #wasteCategoryChart [data-waste*="recycl" i] {
+  --category-color: var(--waste-recyclable);
+  --category-soft: var(--waste-recyclable-soft);
+}
+
+#dashboardSection #wasteCategoryChart [class*="residual" i],
+#dashboardSection #wasteCategoryChart [data-category*="residual" i],
+#dashboardSection #wasteCategoryChart [data-waste*="residual" i] {
+  --category-color: var(--waste-residual);
+  --category-soft: var(--waste-residual-soft);
+}
+
+#dashboardSection #wasteCategoryChart [class*="special" i],
+#dashboardSection #wasteCategoryChart [data-category*="special" i],
+#dashboardSection #wasteCategoryChart [data-waste*="special" i] {
+  --category-color: var(--waste-special);
+  --category-soft: var(--waste-special-soft);
+}
+
+#dashboardSection #wasteCategoryChart [class*="bar" i],
+#dashboardSection #wasteCategoryChart [class*="fill" i],
+#dashboardSection #wasteCategoryChart [class*="progress" i] {
+  accent-color: var(--category-color, #2f8a34) !important;
+}
+
+#dashboardSection #wasteCategoryChart [class*="bio" i] [class*="bar" i],
+#dashboardSection #wasteCategoryChart [class*="bio" i] [class*="fill" i],
+#dashboardSection #wasteCategoryChart [data-category*="bio" i] [class*="bar" i],
+#dashboardSection #wasteCategoryChart [data-category*="bio" i] [class*="fill" i] {
+  background: var(--waste-bio) !important;
+}
+
+#dashboardSection #wasteCategoryChart [class*="recycl" i] [class*="bar" i],
+#dashboardSection #wasteCategoryChart [class*="recycl" i] [class*="fill" i],
+#dashboardSection #wasteCategoryChart [data-category*="recycl" i] [class*="bar" i],
+#dashboardSection #wasteCategoryChart [data-category*="recycl" i] [class*="fill" i] {
+  background: var(--waste-recyclable) !important;
+}
+
+#dashboardSection #wasteCategoryChart [class*="residual" i] [class*="bar" i],
+#dashboardSection #wasteCategoryChart [class*="residual" i] [class*="fill" i],
+#dashboardSection #wasteCategoryChart [data-category*="residual" i] [class*="bar" i],
+#dashboardSection #wasteCategoryChart [data-category*="residual" i] [class*="fill" i] {
+  background: var(--waste-residual) !important;
+}
+
+#dashboardSection #wasteCategoryChart [class*="special" i] [class*="bar" i],
+#dashboardSection #wasteCategoryChart [class*="special" i] [class*="fill" i],
+#dashboardSection #wasteCategoryChart [data-category*="special" i] [class*="bar" i],
+#dashboardSection #wasteCategoryChart [data-category*="special" i] [class*="fill" i] {
+  background: var(--waste-special) !important;
+}
+
+@media (max-width: 992px) {
+  #dashboardSection .dashboard-category-card .medium-chart-card {
+    min-height: 250px !important;
+    max-height: none !important;
+  }
+
+  #dashboardSection .dashboard-category-card #wasteCategoryChart,
+  #dashboardSection .dashboard-category-card .chart-placeholder {
+    min-height: 210px !important;
+    max-height: none !important;
+  }
+}
+
+/* =========================================================
+   DASHBOARD WASTE COLOR MAPPING FINAL FIX
+   Required mapping:
+   Bio = Blue, Recyclable = Green, Residual = Orange, Special Waste = Violet.
+   Scope: Dashboard Overview only.
+========================================================= */
+#dashboardSection {
+  --wmo-waste-bio: #2563eb;
+  --wmo-waste-bio-soft: rgba(37, 99, 235, 0.12);
+  --wmo-waste-bio-bg: linear-gradient(135deg, #eff6ff, #f8fbff);
+
+  --wmo-waste-recyclable: #16a34a;
+  --wmo-waste-recyclable-soft: rgba(22, 163, 74, 0.13);
+  --wmo-waste-recyclable-bg: linear-gradient(135deg, #ecfdf5, #f7fef9);
+
+  --wmo-waste-residual: #f97316;
+  --wmo-waste-residual-soft: rgba(249, 115, 22, 0.13);
+  --wmo-waste-residual-bg: linear-gradient(135deg, #fff7ed, #fffaf5);
+
+  --wmo-waste-special: #8b5cf6;
+  --wmo-waste-special-soft: rgba(139, 92, 246, 0.13);
+  --wmo-waste-special-bg: linear-gradient(135deg, #f5f3ff, #fbfaff);
+}
+
+/* Summary card shells */
+#dashboardSection .waste-summary-card.biodegradable {
+  border-color: rgba(37, 99, 235, 0.28) !important;
+  background: var(--wmo-waste-bio-bg) !important;
+}
+
+#dashboardSection .waste-summary-card.recyclable {
+  border-color: rgba(22, 163, 74, 0.30) !important;
+  background: var(--wmo-waste-recyclable-bg) !important;
+}
+
+#dashboardSection .waste-summary-card.residual {
+  border-color: rgba(249, 115, 22, 0.32) !important;
+  background: var(--wmo-waste-residual-bg) !important;
+}
+
+#dashboardSection .waste-summary-card.special {
+  border-color: rgba(139, 92, 246, 0.32) !important;
+  background: var(--wmo-waste-special-bg) !important;
+}
+
+/* Summary card icons */
+#dashboardSection .waste-summary-card.biodegradable .waste-summary-icon,
+#dashboardSection .waste-icon--bio {
+  color: var(--wmo-waste-bio) !important;
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.13), rgba(37, 99, 235, 0.06)) !important;
+  border: 1px solid rgba(37, 99, 235, 0.16) !important;
+}
+
+#dashboardSection .waste-summary-card.recyclable .waste-summary-icon,
+#dashboardSection .waste-icon--recyclable {
+  color: var(--wmo-waste-recyclable) !important;
+  background: linear-gradient(135deg, rgba(22, 163, 74, 0.14), rgba(22, 163, 74, 0.06)) !important;
+  border: 1px solid rgba(22, 163, 74, 0.17) !important;
+}
+
+#dashboardSection .waste-summary-card.residual .waste-summary-icon,
+#dashboardSection .waste-icon--residual {
+  color: var(--wmo-waste-residual) !important;
+  background: linear-gradient(135deg, rgba(249, 115, 22, 0.15), rgba(249, 115, 22, 0.07)) !important;
+  border: 1px solid rgba(249, 115, 22, 0.18) !important;
+}
+
+#dashboardSection .waste-summary-card.special .waste-summary-icon,
+#dashboardSection .waste-icon--special {
+  color: var(--wmo-waste-special) !important;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(139, 92, 246, 0.07)) !important;
+  border: 1px solid rgba(139, 92, 246, 0.18) !important;
+}
+
+/* Summary values/titles */
+#dashboardSection .waste-summary-card.biodegradable strong,
+#dashboardSection .waste-summary-card.biodegradable span {
+  color: #1d4ed8 !important;
+}
+
+#dashboardSection .waste-summary-card.recyclable strong,
+#dashboardSection .waste-summary-card.recyclable span {
+  color: #15803d !important;
+}
+
+#dashboardSection .waste-summary-card.residual strong,
+#dashboardSection .waste-summary-card.residual span {
+  color: #c2410c !important;
+}
+
+#dashboardSection .waste-summary-card.special strong,
+#dashboardSection .waste-summary-card.special span {
+  color: #7e22ce !important;
+}
+
+#dashboardSection .waste-summary-card small {
+  color: #6b7280 !important;
+}
+
+/* DOM-based category chart fallback colors. Canvas chart colors are enforced by the script in admin-dashboard.html. */
+#dashboardSection #wasteCategoryChart {
+  --waste-bio: var(--wmo-waste-bio) !important;
+  --waste-recyclable: var(--wmo-waste-recyclable) !important;
+  --waste-residual: var(--wmo-waste-residual) !important;
+  --waste-special: var(--wmo-waste-special) !important;
+  --waste-bio-soft: var(--wmo-waste-bio-soft) !important;
+  --waste-recyclable-soft: var(--wmo-waste-recyclable-soft) !important;
+  --waste-residual-soft: var(--wmo-waste-residual-soft) !important;
+  --waste-special-soft: var(--wmo-waste-special-soft) !important;
+}
+
+#dashboardSection #wasteCategoryChart [class*="bio" i],
+#dashboardSection #wasteCategoryChart [data-category*="bio" i],
+#dashboardSection #wasteCategoryChart [data-waste*="bio" i] {
+  --category-color: var(--wmo-waste-bio) !important;
+  --category-soft: var(--wmo-waste-bio-soft) !important;
+}
+
+#dashboardSection #wasteCategoryChart [class*="recycl" i],
+#dashboardSection #wasteCategoryChart [data-category*="recycl" i],
+#dashboardSection #wasteCategoryChart [data-waste*="recycl" i] {
+  --category-color: var(--wmo-waste-recyclable) !important;
+  --category-soft: var(--wmo-waste-recyclable-soft) !important;
+}
+
+#dashboardSection #wasteCategoryChart [class*="residual" i],
+#dashboardSection #wasteCategoryChart [data-category*="residual" i],
+#dashboardSection #wasteCategoryChart [data-waste*="residual" i] {
+  --category-color: var(--wmo-waste-residual) !important;
+  --category-soft: var(--wmo-waste-residual-soft) !important;
+}
+
+#dashboardSection #wasteCategoryChart [class*="special" i],
+#dashboardSection #wasteCategoryChart [data-category*="special" i],
+#dashboardSection #wasteCategoryChart [data-waste*="special" i] {
+  --category-color: var(--wmo-waste-special) !important;
+  --category-soft: var(--wmo-waste-special-soft) !important;
+}
+
+#dashboardSection #wasteCategoryChart [class*="bio" i] [class*="bar" i],
+#dashboardSection #wasteCategoryChart [class*="bio" i] [class*="fill" i],
+#dashboardSection #wasteCategoryChart [data-category*="bio" i] [class*="bar" i],
+#dashboardSection #wasteCategoryChart [data-category*="bio" i] [class*="fill" i] {
+  background: var(--wmo-waste-bio) !important;
+}
+
+#dashboardSection #wasteCategoryChart [class*="recycl" i] [class*="bar" i],
+#dashboardSection #wasteCategoryChart [class*="recycl" i] [class*="fill" i],
+#dashboardSection #wasteCategoryChart [data-category*="recycl" i] [class*="bar" i],
+#dashboardSection #wasteCategoryChart [data-category*="recycl" i] [class*="fill" i] {
+  background: var(--wmo-waste-recyclable) !important;
+}
+
+#dashboardSection #wasteCategoryChart [class*="residual" i] [class*="bar" i],
+#dashboardSection #wasteCategoryChart [class*="residual" i] [class*="fill" i],
+#dashboardSection #wasteCategoryChart [data-category*="residual" i] [class*="bar" i],
+#dashboardSection #wasteCategoryChart [data-category*="residual" i] [class*="fill" i] {
+  background: var(--wmo-waste-residual) !important;
+}
+
+#dashboardSection #wasteCategoryChart [class*="special" i] [class*="bar" i],
+#dashboardSection #wasteCategoryChart [class*="special" i] [class*="fill" i],
+#dashboardSection #wasteCategoryChart [data-category*="special" i] [class*="bar" i],
+#dashboardSection #wasteCategoryChart [data-category*="special" i] [class*="fill" i] {
+  background: var(--wmo-waste-special) !important;
+}
+
+/* =========================================================
+   DASHBOARD CATEGORY ANALYTICS FINAL POLISH
+   File: css/admin/admin-overrides.css
+
+   Purpose:
+   - Better Waste Category Analytics vector icon.
+   - Keep category chart colors aligned with WMO waste mapping:
+     Bio = blue, Recyclable = green, Residual = orange, Special = violet.
+   - CSS supports DOM/SVG chart fallbacks; canvas colors are handled by
+     js/admin/admin-dashboard-palette.js.
+========================================================= */
+
+#dashboardSection .dashboard-icon--category {
+  color: #0f766e !important;
+  background:
+    radial-gradient(circle at 85% 12%, rgba(139, 92, 246, 0.18), transparent 28%),
+    radial-gradient(circle at 12% 85%, rgba(37, 99, 235, 0.14), transparent 30%),
+    linear-gradient(135deg, #ecfeff, #f8fafc) !important;
+  border-color: rgba(20, 184, 166, 0.24) !important;
+}
+
+#dashboardSection .dashboard-icon--category .dashboard-category-icon-art {
+  width: 30px !important;
+  height: 30px !important;
+  stroke: none !important;
+  fill: none !important;
+}
+
+#dashboardSection .dashboard-icon--category .cat-bg {
+  fill: rgba(255, 255, 255, 0.92) !important;
+  stroke: rgba(15, 118, 110, 0.20) !important;
+  stroke-width: 1.2 !important;
+}
+
+#dashboardSection .dashboard-icon--category .cat-grid {
+  fill: none !important;
+  stroke: rgba(100, 116, 139, 0.24) !important;
+  stroke-width: 1.15 !important;
+  stroke-linecap: round !important;
+}
+
+#dashboardSection .dashboard-icon--category .cat-bio {
+  fill: #2563eb !important;
+}
+
+#dashboardSection .dashboard-icon--category .cat-recyclable {
+  fill: #16a34a !important;
+}
+
+#dashboardSection .dashboard-icon--category .cat-residual {
+  fill: #f97316 !important;
+}
+
+#dashboardSection .dashboard-icon--category .cat-special {
+  fill: #8b5cf6 !important;
+}
+
+#dashboardSection .dashboard-category-card .medium-chart-card {
+  overflow: visible !important;
+}
+
+#dashboardSection #wasteCategoryChart canvas {
+  max-width: 100% !important;
+}
+
+/* DOM chart fallback only; Chart.js canvas colors are controlled externally. */
+#dashboardSection #wasteCategoryChart [data-category*="bio" i],
+#dashboardSection #wasteCategoryChart .biodegradable,
+#dashboardSection #wasteCategoryChart .bio {
+  --bar-color: #2563eb !important;
+  accent-color: #2563eb !important;
+}
+
+#dashboardSection #wasteCategoryChart [data-category*="recycl" i],
+#dashboardSection #wasteCategoryChart .recyclable,
+#dashboardSection #wasteCategoryChart .recycle {
+  --bar-color: #16a34a !important;
+  accent-color: #16a34a !important;
+}
+
+#dashboardSection #wasteCategoryChart [data-category*="residual" i],
+#dashboardSection #wasteCategoryChart .residual {
+  --bar-color: #f97316 !important;
+  accent-color: #f97316 !important;
+}
+
+#dashboardSection #wasteCategoryChart [data-category*="special" i],
+#dashboardSection #wasteCategoryChart .special,
+#dashboardSection #wasteCategoryChart .hazardous {
+  --bar-color: #8b5cf6 !important;
+  accent-color: #8b5cf6 !important;
+}
