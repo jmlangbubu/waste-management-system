@@ -13232,3 +13232,838 @@ body {
     padding-left: 12px !important;
   }
 }
+
+/* =========================================================
+   DAILY TRACKING REPORTS MODAL - COMFORTABLE TABLE VIEW
+   Final-layer override. Keeps existing report logic intact.
+   Goal: show more rows, reduce cramped scrolling, and remove
+   the distracting thick green bottom scrollbar.
+========================================================= */
+#trackingReportsModal.custom-modal:not(.hidden) {
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 24px !important;
+}
+
+#trackingReportsModal .custom-modal-content {
+  width: min(1280px, calc(100vw - 48px)) !important;
+  max-width: none !important;
+  height: min(860px, calc(100dvh - 48px)) !important;
+  max-height: calc(100dvh - 48px) !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  border-radius: 24px !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+#trackingReportsModal .custom-modal-header {
+  flex: 0 0 auto !important;
+  min-height: auto !important;
+  padding: 24px 32px 18px !important;
+  align-items: center !important;
+  border-bottom: 1px solid #e5e7eb !important;
+}
+
+#trackingReportsModal .custom-modal-header h3 {
+  margin: 0 !important;
+  font-size: 22px !important;
+  line-height: 1.15 !important;
+  letter-spacing: -0.02em !important;
+}
+
+#trackingReportsModal .custom-modal-header p {
+  margin: 6px 0 0 !important;
+  font-size: 13px !important;
+  line-height: 1.35 !important;
+}
+
+#trackingReportsModal .modal-close-btn {
+  width: 48px !important;
+  height: 48px !important;
+  min-width: 48px !important;
+  border-radius: 50% !important;
+  font-size: 24px !important;
+}
+
+#trackingReportsModal .custom-modal-body {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  padding: 18px 32px 26px !important;
+  overflow: hidden !important;
+}
+
+#trackingReportsModal .tracking-reports-filter-toolbar {
+  flex: 0 0 auto !important;
+  display: grid !important;
+  grid-template-columns:
+    minmax(220px, 1.2fr)
+    minmax(140px, 0.7fr)
+    minmax(130px, 0.65fr)
+    minmax(130px, 0.65fr)
+    minmax(92px, auto)
+    minmax(150px, auto) !important;
+  align-items: end !important;
+  gap: 10px !important;
+  margin: 0 0 12px !important;
+  padding: 12px 14px !important;
+  border-radius: 16px !important;
+  box-shadow: 0 8px 18px rgba(15, 61, 36, 0.045) !important;
+}
+
+#trackingReportsModal .tracking-report-filter-field {
+  gap: 5px !important;
+}
+
+#trackingReportsModal .tracking-report-filter-field span {
+  font-size: 10.5px !important;
+  line-height: 1 !important;
+}
+
+#trackingReportsModal .tracking-report-filter-field input,
+#trackingReportsModal .tracking-report-filter-field select,
+#trackingReportsModal .tracking-report-filter-reset {
+  height: 38px !important;
+  min-height: 38px !important;
+  border-radius: 12px !important;
+  font-size: 12.5px !important;
+}
+
+#trackingReportsModal .tracking-report-filter-count {
+  grid-column: auto !important;
+  align-self: end !important;
+  justify-self: end !important;
+  min-height: 38px !important;
+  height: 38px !important;
+  max-width: 100% !important;
+  padding: 0 12px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  white-space: nowrap !important;
+  font-size: 11.5px !important;
+}
+
+#trackingReportsModal .table-shell,
+#trackingReportsModal .table-shell.has-custom-horizontal-scroll,
+#trackingReportsModal .table-shell.tracking-reports-touch-scroll {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  width: 100% !important;
+  margin: 0 !important;
+  overflow: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+  border-radius: 18px !important;
+  border: 1px solid #e5e7eb !important;
+  scrollbar-width: thin !important;
+  scrollbar-color: #cbd5e1 #f8fafc !important;
+}
+
+#trackingReportsModal .table-shell::-webkit-scrollbar,
+#trackingReportsModal .table-shell.has-custom-horizontal-scroll::-webkit-scrollbar,
+#trackingReportsModal .table-shell.tracking-reports-touch-scroll::-webkit-scrollbar {
+  width: 8px !important;
+  height: 8px !important;
+}
+
+#trackingReportsModal .table-shell::-webkit-scrollbar-track,
+#trackingReportsModal .table-shell.has-custom-horizontal-scroll::-webkit-scrollbar-track,
+#trackingReportsModal .table-shell.tracking-reports-touch-scroll::-webkit-scrollbar-track {
+  background: #f8fafc !important;
+  border-radius: 999px !important;
+}
+
+#trackingReportsModal .table-shell::-webkit-scrollbar-thumb,
+#trackingReportsModal .table-shell.has-custom-horizontal-scroll::-webkit-scrollbar-thumb,
+#trackingReportsModal .table-shell.tracking-reports-touch-scroll::-webkit-scrollbar-thumb {
+  background: #cbd5e1 !important;
+  border-radius: 999px !important;
+  border: 2px solid #f8fafc !important;
+}
+
+#trackingReportsModal table {
+  width: 100% !important;
+  min-width: 1040px !important;
+  table-layout: fixed !important;
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+}
+
+#trackingReportsModal thead th,
+#trackingReportsModal th {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 5 !important;
+  padding: 12px 16px !important;
+  background: #f8fafc !important;
+  font-size: 12px !important;
+  font-weight: 850 !important;
+  letter-spacing: 0.01em !important;
+}
+
+#trackingReportsModal td {
+  padding: 12px 16px !important;
+  font-size: 13px !important;
+  line-height: 1.25 !important;
+  vertical-align: middle !important;
+  border-top: 1px solid #eef2f7 !important;
+}
+
+#trackingReportsModal th:nth-child(1),
+#trackingReportsModal td:nth-child(1) { width: 11% !important; }
+#trackingReportsModal th:nth-child(2),
+#trackingReportsModal td:nth-child(2) { width: 16% !important; }
+#trackingReportsModal th:nth-child(3),
+#trackingReportsModal td:nth-child(3) { width: 18% !important; }
+#trackingReportsModal th:nth-child(4),
+#trackingReportsModal td:nth-child(4) { width: 18% !important; }
+#trackingReportsModal th:nth-child(5),
+#trackingReportsModal td:nth-child(5) {
+  width: 25% !important;
+  min-width: 250px !important;
+  white-space: normal !important;
+}
+#trackingReportsModal th:nth-child(6),
+#trackingReportsModal td:nth-child(6) { width: 8% !important; white-space: nowrap !important; }
+#trackingReportsModal th:nth-child(7),
+#trackingReportsModal td:nth-child(7) { width: 8% !important; text-align: center !important; }
+
+#trackingReportsModal .tracking-report-status-badge {
+  min-height: 24px !important;
+  padding: 6px 10px !important;
+  font-size: 11.5px !important;
+  line-height: 1 !important;
+}
+
+#trackingReportsModal .tracking-report-status-note {
+  margin-top: 5px !important;
+  font-size: 11px !important;
+  line-height: 1.25 !important;
+  font-weight: 650 !important;
+  color: #64748b !important;
+}
+
+#trackingReportsModal td .view-all-btn.small,
+#trackingReportsModal td button.view-all-btn.small {
+  min-height: 34px !important;
+  height: 34px !important;
+  padding: 0 12px !important;
+  border-radius: 11px !important;
+  font-size: 12px !important;
+}
+
+#trackingReportsModal #trackingReportsFloatingScroll,
+#trackingReportsModal #trackingReportsFloatingScroll.tracking-floating-scroll {
+  display: none !important;
+  visibility: hidden !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  pointer-events: none !important;
+}
+
+@media (max-width: 1100px) {
+  #trackingReportsModal .custom-modal-content {
+    width: calc(100vw - 28px) !important;
+    height: calc(100dvh - 28px) !important;
+    max-height: calc(100dvh - 28px) !important;
+  }
+
+  #trackingReportsModal .tracking-reports-filter-toolbar {
+    grid-template-columns: 1fr 1fr 1fr !important;
+  }
+
+  #trackingReportsModal .tracking-report-filter-search {
+    grid-column: 1 / -1 !important;
+  }
+
+  #trackingReportsModal .tracking-report-filter-count {
+    justify-self: start !important;
+  }
+}
+
+@media (max-width: 768px) {
+  #trackingReportsModal.custom-modal:not(.hidden) {
+    padding: 10px !important;
+  }
+
+  #trackingReportsModal .custom-modal-content {
+    width: calc(100vw - 20px) !important;
+    height: calc(100dvh - 20px) !important;
+    max-height: calc(100dvh - 20px) !important;
+    border-radius: 20px !important;
+  }
+
+  #trackingReportsModal .custom-modal-header {
+    padding: 18px 18px 14px !important;
+  }
+
+  #trackingReportsModal .custom-modal-body {
+    padding: 14px 16px 18px !important;
+  }
+
+  #trackingReportsModal .tracking-reports-filter-toolbar {
+    grid-template-columns: 1fr !important;
+    gap: 9px !important;
+  }
+
+  #trackingReportsModal .tracking-report-filter-search {
+    grid-column: auto !important;
+  }
+
+  #trackingReportsModal .tracking-report-filter-count {
+    width: 100% !important;
+    justify-self: stretch !important;
+  }
+}
+
+
+/* =========================================================
+   DAILY TRACKING REPORTS MODAL - MORE VISIBLE ROWS / FULLER HEIGHT
+   Final override after density fix.
+   Purpose: use the empty bottom space and show more report rows comfortably.
+========================================================= */
+#trackingReportsModal.custom-modal:not(.hidden) {
+  padding: 10px !important;
+}
+
+#trackingReportsModal .custom-modal-content {
+  width: min(1500px, calc(100vw - 20px)) !important;
+  height: min(940px, calc(100dvh - 20px)) !important;
+  max-height: calc(100dvh - 20px) !important;
+  border-radius: 22px !important;
+}
+
+#trackingReportsModal .custom-modal-header {
+  padding: 18px 30px 14px !important;
+}
+
+#trackingReportsModal .custom-modal-header h3 {
+  font-size: 21px !important;
+}
+
+#trackingReportsModal .custom-modal-header p {
+  margin-top: 4px !important;
+  font-size: 12.5px !important;
+}
+
+#trackingReportsModal .modal-close-btn {
+  width: 44px !important;
+  height: 44px !important;
+  min-width: 44px !important;
+}
+
+#trackingReportsModal .custom-modal-body {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  padding: 12px 30px 14px !important;
+}
+
+#trackingReportsModal .tracking-reports-filter-toolbar {
+  margin-bottom: 8px !important;
+  padding: 9px 12px !important;
+  gap: 8px !important;
+  border-radius: 15px !important;
+}
+
+#trackingReportsModal .tracking-report-filter-field {
+  gap: 4px !important;
+}
+
+#trackingReportsModal .tracking-report-filter-field span {
+  font-size: 10px !important;
+}
+
+#trackingReportsModal .tracking-report-filter-field input,
+#trackingReportsModal .tracking-report-filter-field select,
+#trackingReportsModal .tracking-report-filter-reset,
+#trackingReportsModal .tracking-report-filter-count {
+  height: 34px !important;
+  min-height: 34px !important;
+  border-radius: 11px !important;
+  font-size: 12px !important;
+}
+
+#trackingReportsModal .table-shell,
+#trackingReportsModal .table-shell.has-custom-horizontal-scroll,
+#trackingReportsModal .table-shell.tracking-reports-touch-scroll {
+  flex: 1 1 0 !important;
+  height: 100% !important;
+  min-height: min(620px, calc(100dvh - 190px)) !important;
+  max-height: none !important;
+}
+
+#trackingReportsModal table {
+  min-width: 1120px !important;
+}
+
+#trackingReportsModal thead th,
+#trackingReportsModal th {
+  padding: 10px 14px !important;
+  font-size: 11.5px !important;
+}
+
+#trackingReportsModal td {
+  padding: 9px 14px !important;
+  font-size: 12.5px !important;
+  line-height: 1.18 !important;
+}
+
+#trackingReportsModal .tracking-report-status-badge {
+  min-height: 22px !important;
+  padding: 5px 9px !important;
+  font-size: 11px !important;
+  line-height: 1 !important;
+  white-space: nowrap !important;
+}
+
+#trackingReportsModal .tracking-report-status-note {
+  margin-top: 4px !important;
+  font-size: 10.5px !important;
+  line-height: 1.18 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  max-width: 100% !important;
+}
+
+#trackingReportsModal td .view-all-btn.small,
+#trackingReportsModal td button.view-all-btn.small {
+  min-height: 31px !important;
+  height: 31px !important;
+  padding: 0 12px !important;
+  border-radius: 10px !important;
+  font-size: 11.5px !important;
+}
+
+@media (max-width: 1100px) {
+  #trackingReportsModal.custom-modal:not(.hidden) {
+    padding: 8px !important;
+  }
+
+  #trackingReportsModal .custom-modal-content {
+    width: calc(100vw - 16px) !important;
+    height: calc(100dvh - 16px) !important;
+    max-height: calc(100dvh - 16px) !important;
+  }
+
+  #trackingReportsModal .custom-modal-body {
+    padding: 10px 14px 12px !important;
+  }
+
+  #trackingReportsModal .table-shell,
+  #trackingReportsModal .table-shell.has-custom-horizontal-scroll,
+  #trackingReportsModal .table-shell.tracking-reports-touch-scroll {
+    min-height: min(560px, calc(100dvh - 220px)) !important;
+  }
+}
+
+
+/* =========================================================
+   DAILY TRACKING REPORTS MODAL - TABLE FILLS MODAL BODY
+   Final correction after the height test.
+   Keep the modal at the comfortable previous size, but let the
+   column/row table area use the remaining vertical space.
+========================================================= */
+#trackingReportsModal.custom-modal:not(.hidden) {
+  padding: 24px !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+#trackingReportsModal .custom-modal-content {
+  width: min(1280px, calc(100vw - 48px)) !important;
+  height: min(860px, calc(100dvh - 48px)) !important;
+  max-height: calc(100dvh - 48px) !important;
+  border-radius: 24px !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+#trackingReportsModal .custom-modal-header {
+  flex: 0 0 auto !important;
+  padding: 22px 32px 16px !important;
+  min-height: auto !important;
+  border-bottom: 1px solid #e5e7eb !important;
+}
+
+#trackingReportsModal .custom-modal-header h3 {
+  font-size: 22px !important;
+  line-height: 1.15 !important;
+}
+
+#trackingReportsModal .custom-modal-header p {
+  margin-top: 5px !important;
+  font-size: 13px !important;
+}
+
+#trackingReportsModal .modal-close-btn {
+  width: 46px !important;
+  height: 46px !important;
+  min-width: 46px !important;
+}
+
+#trackingReportsModal .custom-modal-body {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  height: auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+  padding: 14px 32px 18px !important;
+  overflow: hidden !important;
+}
+
+#trackingReportsModal .tracking-reports-filter-toolbar {
+  flex: 0 0 auto !important;
+  margin: 0 0 10px !important;
+  padding: 10px 12px !important;
+  gap: 9px !important;
+  border-radius: 16px !important;
+}
+
+#trackingReportsModal .tracking-report-filter-field input,
+#trackingReportsModal .tracking-report-filter-field select,
+#trackingReportsModal .tracking-report-filter-reset,
+#trackingReportsModal .tracking-report-filter-count {
+  height: 36px !important;
+  min-height: 36px !important;
+  border-radius: 11px !important;
+  font-size: 12.5px !important;
+}
+
+#trackingReportsModal .table-shell,
+#trackingReportsModal .table-shell.has-custom-horizontal-scroll,
+#trackingReportsModal .table-shell.tracking-reports-touch-scroll {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  height: auto !important;
+  max-height: none !important;
+  width: 100% !important;
+  margin: 0 !important;
+  overflow: auto !important;
+  border-radius: 18px !important;
+}
+
+#trackingReportsModal table {
+  min-width: 1080px !important;
+  width: 100% !important;
+  table-layout: fixed !important;
+}
+
+#trackingReportsModal thead th,
+#trackingReportsModal th {
+  padding: 10px 14px !important;
+  font-size: 11.5px !important;
+}
+
+#trackingReportsModal td {
+  padding: 9px 14px !important;
+  font-size: 12.5px !important;
+  line-height: 1.2 !important;
+}
+
+#trackingReportsModal .tracking-report-status-badge {
+  min-height: 22px !important;
+  padding: 5px 9px !important;
+  font-size: 11px !important;
+}
+
+#trackingReportsModal .tracking-report-status-note {
+  margin-top: 4px !important;
+  font-size: 10.5px !important;
+  line-height: 1.18 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+#trackingReportsModal td .view-all-btn.small,
+#trackingReportsModal td button.view-all-btn.small {
+  min-height: 31px !important;
+  height: 31px !important;
+  padding: 0 12px !important;
+  border-radius: 10px !important;
+  font-size: 11.5px !important;
+}
+
+@media (max-width: 1100px) {
+  #trackingReportsModal.custom-modal:not(.hidden) {
+    padding: 10px !important;
+  }
+
+  #trackingReportsModal .custom-modal-content {
+    width: calc(100vw - 20px) !important;
+    height: calc(100dvh - 20px) !important;
+    max-height: calc(100dvh - 20px) !important;
+  }
+
+  #trackingReportsModal .custom-modal-body {
+    padding: 12px 16px 16px !important;
+  }
+}
+
+
+/* =========================================================
+   TRACKING REPORTS MODAL - TABLE EXTEND DOWN FIX
+   Keep the modal size, but force the table/rows area to fill
+   the remaining modal height with only a small bottom gap.
+========================================================= */
+#trackingReportsModal.custom-modal:not(.hidden) {
+  padding: 24px !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+#trackingReportsModal .custom-modal-content {
+  width: min(1280px, calc(100vw - 48px)) !important;
+  height: min(820px, calc(100dvh - 48px)) !important;
+  max-height: calc(100dvh - 48px) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+#trackingReportsModal .custom-modal-header {
+  flex: 0 0 auto !important;
+  padding: 20px 32px 14px !important;
+}
+
+#trackingReportsModal .custom-modal-body {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  max-height: none !important;
+  display: grid !important;
+  grid-template-rows: auto minmax(0, 1fr) !important;
+  gap: 10px !important;
+  padding: 12px 32px 12px !important;
+  overflow: hidden !important;
+}
+
+#trackingReportsModal .tracking-reports-filter-toolbar {
+  margin: 0 !important;
+  padding: 9px 12px !important;
+  min-height: auto !important;
+}
+
+#trackingReportsModal .table-shell,
+#trackingReportsModal .table-shell.has-custom-horizontal-scroll,
+#trackingReportsModal .table-shell.tracking-reports-touch-scroll {
+  min-height: 0 !important;
+  height: 100% !important;
+  max-height: none !important;
+  margin: 0 0 2px !important;
+  overflow: auto !important;
+  border-radius: 18px !important;
+}
+
+#trackingReportsModal table {
+  min-width: 1080px !important;
+  width: 100% !important;
+  table-layout: fixed !important;
+}
+
+#trackingReportsModal thead th,
+#trackingReportsModal th {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 3 !important;
+  padding: 9px 14px !important;
+  font-size: 11.5px !important;
+}
+
+#trackingReportsModal td {
+  padding: 8px 14px !important;
+  font-size: 12.5px !important;
+  line-height: 1.15 !important;
+}
+
+#trackingReportsModal .tracking-report-status-badge {
+  min-height: 21px !important;
+  padding: 4px 9px !important;
+  font-size: 10.8px !important;
+}
+
+#trackingReportsModal .tracking-report-status-note {
+  margin-top: 3px !important;
+  font-size: 10.3px !important;
+  line-height: 1.15 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+#trackingReportsModal td .view-all-btn.small,
+#trackingReportsModal td button.view-all-btn.small {
+  min-height: 30px !important;
+  height: 30px !important;
+  padding: 0 12px !important;
+  font-size: 11.2px !important;
+}
+
+@media (max-width: 1100px) {
+  #trackingReportsModal.custom-modal:not(.hidden) {
+    padding: 10px !important;
+  }
+
+  #trackingReportsModal .custom-modal-content {
+    width: calc(100vw - 20px) !important;
+    height: calc(100dvh - 20px) !important;
+    max-height: calc(100dvh - 20px) !important;
+  }
+
+  #trackingReportsModal .custom-modal-body {
+    padding: 10px 16px 10px !important;
+  }
+}
+
+/* =========================================================
+   TRACKING ROUTE MODAL - MAP ONLY VIEW
+   Keeps the modal focused on the route map when clicking View.
+   Do not show session summary cards above the map.
+========================================================= */
+#trackingReportModal .tracking-report-summary-panel {
+  display: none !important;
+}
+
+#trackingReportModal.custom-modal:not(.hidden) {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 22px !important;
+}
+
+#trackingReportModal .custom-modal-content {
+  width: min(1280px, calc(100vw - 64px)) !important;
+  height: min(820px, calc(100vh - 64px)) !important;
+  max-width: none !important;
+  max-height: none !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+  border-radius: 24px !important;
+  background: #ffffff !important;
+}
+
+#trackingReportModal .custom-modal-header {
+  flex: 0 0 auto !important;
+  min-height: 76px !important;
+  padding: 20px 28px !important;
+  border-bottom: 1px solid #e5e7eb !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 16px !important;
+}
+
+#trackingReportModal .custom-modal-header h3 {
+  margin: 0 !important;
+  color: #123826 !important;
+  font-size: 24px !important;
+  font-weight: 900 !important;
+  letter-spacing: -0.02em !important;
+}
+
+#trackingReportModal .modal-close-btn {
+  width: 46px !important;
+  height: 46px !important;
+  min-width: 46px !important;
+  border-radius: 999px !important;
+  background: #eef2f7 !important;
+  color: #334155 !important;
+  font-size: 24px !important;
+  font-weight: 900 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+#trackingReportModal .custom-modal-body {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  width: 100% !important;
+  height: auto !important;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  background: #eef2f1 !important;
+}
+
+#trackingReportModal #trackingReportMap {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: #eef2f1 !important;
+}
+
+#trackingReportModal .tracking-report-map-empty {
+  height: 100% !important;
+  min-height: 480px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  margin: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: #f8fafc !important;
+  color: #64748b !important;
+  font-size: 15px !important;
+  font-weight: 700 !important;
+}
+
+#trackingReportModal .leaflet-container {
+  font-family: inherit !important;
+}
+
+#trackingReportModal .leaflet-control-zoom {
+  border: 0 !important;
+  box-shadow: 0 12px 26px rgba(15, 23, 42, 0.16) !important;
+}
+
+#trackingReportModal .leaflet-control-zoom a {
+  width: 38px !important;
+  height: 38px !important;
+  line-height: 38px !important;
+  color: #123826 !important;
+  border-color: #e5e7eb !important;
+}
+
+@media (max-width: 900px) {
+  #trackingReportModal.custom-modal:not(.hidden) {
+    padding: 10px !important;
+  }
+
+  #trackingReportModal .custom-modal-content {
+    width: calc(100vw - 20px) !important;
+    height: calc(100vh - 20px) !important;
+    border-radius: 18px !important;
+  }
+
+  #trackingReportModal .custom-modal-header {
+    min-height: 64px !important;
+    padding: 14px 16px !important;
+  }
+
+  #trackingReportModal .custom-modal-header h3 {
+    font-size: 20px !important;
+  }
+
+  #trackingReportModal .modal-close-btn {
+    width: 42px !important;
+    height: 42px !important;
+    min-width: 42px !important;
+  }
+}
+
