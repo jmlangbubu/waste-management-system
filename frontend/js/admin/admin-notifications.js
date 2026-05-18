@@ -127,7 +127,13 @@ function getNotificationType(notif = {}) {
     ""
   );
 
+  const normalizedRawType = rawType
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .trim();
+
   const combined = [
+    normalizedRawType,
     rawType,
     notif.title,
     notif.subject,
@@ -141,6 +147,36 @@ function getNotificationType(notif = {}) {
     .join(" ")
     .toLowerCase();
 
+  /*
+    Important ordering:
+    Waste validation notifications use backend type "waste_report".
+    The old logic checked the generic word "report" before checking "waste",
+    so "New Validated Waste Record" was wrongly displayed as Complaint.
+  */
+  if (
+    normalizedRawType === "waste report" ||
+    normalizedRawType === "waste record" ||
+    normalizedRawType === "validated waste record" ||
+    combined.includes("validated waste") ||
+    combined.includes("waste record") ||
+    combined.includes("waste submission") ||
+    combined.includes("waste validation") ||
+    combined.includes("validated waste submission") ||
+    (
+      combined.includes("waste") &&
+      (
+        combined.includes("validated") ||
+        combined.includes("validation") ||
+        combined.includes("qr") ||
+        combined.includes("record") ||
+        combined.includes("submission") ||
+        combined.includes("report")
+      )
+    )
+  ) {
+    return "waste record";
+  }
+
   if (
     combined.includes("resolution") ||
     combined.includes("resolved") ||
@@ -152,7 +188,8 @@ function getNotificationType(notif = {}) {
   if (
     combined.includes("complaint") ||
     combined.includes("concern") ||
-    combined.includes("report")
+    combined.includes("citizen report") ||
+    combined.includes("complaint report")
   ) {
     return "complaint";
   }
@@ -181,7 +218,7 @@ function getNotificationType(notif = {}) {
     combined.includes("validated") ||
     combined.includes("qr")
   ) {
-    return "waste";
+    return "waste record";
   }
 
   return rawType || "system";
@@ -407,6 +444,15 @@ function getNotificationToneClass(notif = {}) {
 
   if (combined.includes("overdue") || combined.includes("rejected")) {
     return "danger";
+  }
+
+  if (
+    combined.includes("waste") ||
+    combined.includes("validation") ||
+    combined.includes("validated") ||
+    combined.includes("qr")
+  ) {
+    return "success";
   }
 
   if (combined.includes("complaint") || combined.includes("concern")) {
