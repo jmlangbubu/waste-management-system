@@ -268,17 +268,12 @@ function buildTrackingMarkerIcon(statusMeta) {
   return L.divIcon({
     className: `custom-truck-marker ${statusMeta?.className || ""}`,
     html: `
-      <div class="truck-marker-shell ${pulse}" style="
-        width:22px;
-        height:22px;
-        border-radius:50%;
-        background:${color};
-        border:3px solid #ffffff;
-        box-shadow:0 3px 12px rgba(0,0,0,0.28);
-      "></div>
+      <div class="truck-marker-shell ${pulse}" style="--truck-marker-color:${color};">
+        ${getTrackingInlineIcon("truck")}
+      </div>
     `,
-    iconSize: [22, 22],
-    iconAnchor: [11, 11]
+    iconSize: [38, 38],
+    iconAnchor: [19, 19]
   });
 }
 
@@ -356,14 +351,36 @@ async function loadActiveTrucks() {
   }
 }
 
+function getTrackingInlineIcon(name = "truck") {
+  const icons = {
+    truck: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M3 7h11v8H3z"></path>
+        <path d="M14 10h3.5L21 13.5V15h-7z"></path>
+        <path d="M7 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM17 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"></path>
+      </svg>
+    `,
+    route: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M6 5a2 2 0 1 0 0 4 2 2 0 0 0 0-4ZM18 15a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z"></path>
+        <path d="M8 7h5.5a3.5 3.5 0 0 1 0 7H10a3 3 0 0 0 0 6h6"></path>
+      </svg>
+    `
+  };
+
+  return icons[name] || icons.truck;
+}
+
 function renderActiveTruckList(trucks) {
   const container = document.getElementById("activeTruckList");
   if (!container) return;
 
   if (!Array.isArray(trucks) || !trucks.length) {
     container.innerHTML = `
-      <div class="empty-state">
-        No active tracking sessions yet.
+      <div class="tracking-empty-state">
+        <span class="tracking-empty-icon">${getTrackingInlineIcon("truck")}</span>
+        <strong>No active tracking sessions</strong>
+        <small>Active trucks will appear here once enforcer tracking starts.</small>
       </div>
     `;
     return;
@@ -379,13 +396,17 @@ function renderActiveTruckList(trucks) {
         class="active-truck-item ${isSelected ? "active" : ""} ${statusMeta.className}"
         onclick="selectTruck(${truck.session_id}, '${escapeHtml(truck.truck_id)}')"
       >
-        <div class="truck-list-topline">
-          <strong>Truck ${escapeHtml(truck.truck_id || "-")}</strong>
-          <small class="truck-status-label ${statusMeta.className}">${escapeHtml(statusMeta.label)}</small>
+        <span class="truck-item-icon">${getTrackingInlineIcon("truck")}</span>
+
+        <div class="truck-item-body">
+          <div class="truck-list-topline">
+            <strong>Truck ${escapeHtml(truck.truck_id || "-")}</strong>
+            <small class="truck-status-label ${statusMeta.className}">${escapeHtml(statusMeta.label)}</small>
+          </div>
+          <small>${escapeHtml(truck.enforcer_name || "-")}</small><br>
+          <small class="truck-sync-note">${escapeHtml(statusMeta.description)}</small><br>
+          <small class="truck-last-sync">Last sync: ${escapeHtml(formatTrackingTimeSafe(lastUpdated))}</small>
         </div>
-        <small>${escapeHtml(truck.enforcer_name || "-")}</small><br>
-        <small class="truck-sync-note">${escapeHtml(statusMeta.description)}</small><br>
-        <small class="truck-last-sync">Last sync: ${escapeHtml(formatTrackingTimeSafe(lastUpdated))}</small>
       </div>
     `;
   }).join("");
