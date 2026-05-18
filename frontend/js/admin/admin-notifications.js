@@ -15,6 +15,8 @@
      requiring HTML changes.
   5. Automatically closes the notification dropdown when the page/main content
      scrolls, so it does not stay floating on mobile/tablet view.
+  6. Plays a soft bell chime only when a truly new notification arrives
+     after the admin has interacted with the page.
 */
 
 const NOTIF_DISMISSED_STORAGE_KEY = "wmoDismissedNotificationKeys";
@@ -24,6 +26,166 @@ let notificationRealtimeSocket = null;
 let notificationRealtimeStarted = false;
 let notificationRealtimeRefreshTimer = null;
 let notificationInitialLoadStarted = false;
+
+let notificationSoundContext = null;
+let notificationSoundUnlocked = false;
+let notificationSoundUnlockBound = false;
+let notificationSoundKnownKeysInitialized = false;
+let notificationSoundKnownKeys = new Set();
+let notificationLastSoundAt = 0;
+
+const NOTIFICATION_SOUND_MIN_INTERVAL_MS = 1200;
+
+
+function getNotificationAudioContext() {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+
+  if (!AudioContextClass) {
+    return null;
+  }
+
+  if (!notificationSoundContext) {
+    notificationSoundContext = new AudioContextClass();
+  }
+
+  return notificationSoundContext;
+}
+
+function unlockNotificationSound() {
+  try {
+    const audioContext = getNotificationAudioContext();
+
+    if (!audioContext) {
+      return;
+    }
+
+    const markUnlocked = () => {
+      notificationSoundUnlocked = true;
+    };
+
+    if (audioContext.state === "suspended" && typeof audioContext.resume === "function") {
+      audioContext.resume().then(markUnlocked).catch((error) => {
+        console.warn("Notification sound unlock failed:", error);
+      });
+    } else {
+      markUnlocked();
+    }
+  } catch (error) {
+    console.warn("Notification sound is unavailable:", error);
+  }
+}
+
+function bindNotificationSoundUnlock() {
+  if (notificationSoundUnlockBound) return;
+  notificationSoundUnlockBound = true;
+
+  const unlockOnce = () => {
+    unlockNotificationSound();
+  };
+
+  ["pointerdown", "mousedown", "touchstart", "keydown", "click"].forEach((eventName) => {
+    document.addEventListener(eventName, unlockOnce, {
+      passive: true,
+      once: false
+    });
+  });
+}
+
+function playSoftNotificationBell() {
+  if (!notificationSoundUnlocked) return;
+
+  try {
+    const audioContext = getNotificationAudioContext();
+    if (!audioContext) return;
+
+    const scheduleBell = () => {
+      const startTime = audioContext.currentTime + 0.02;
+      const masterGain = audioContext.createGain();
+
+      masterGain.gain.setValueAtTime(0.0001, startTime);
+      masterGain.gain.exponentialRampToValueAtTime(0.42, startTime + 0.03);
+      masterGain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.95);
+      masterGain.connect(audioContext.destination);
+
+      const bellTones = [
+        { frequency: 880, delay: 0, peak: 0.055, duration: 0.55 },
+        { frequency: 1320, delay: 0.12, peak: 0.032, duration: 0.45 }
+      ];
+
+      bellTones.forEach((tone) => {
+        const oscillator = audioContext.createOscillator();
+        const toneGain = audioContext.createGain();
+        const toneStart = startTime + tone.delay;
+        const toneEnd = toneStart + tone.duration;
+
+        oscillator.type = "sine";
+        oscillator.frequency.setValueAtTime(tone.frequency, toneStart);
+
+        toneGain.gain.setValueAtTime(0.0001, toneStart);
+        toneGain.gain.exponentialRampToValueAtTime(tone.peak, toneStart + 0.025);
+        toneGain.gain.exponentialRampToValueAtTime(0.0001, toneEnd);
+
+        oscillator.connect(toneGain);
+        toneGain.connect(masterGain);
+
+        oscillator.start(toneStart);
+        oscillator.stop(toneEnd + 0.04);
+      });
+    };
+
+    if (audioContext.state === "suspended" && typeof audioContext.resume === "function") {
+      audioContext.resume().then(() => {
+        notificationSoundUnlocked = true;
+        scheduleBell();
+      }).catch((error) => {
+        console.warn("Notification sound play failed:", error);
+      });
+      return;
+    }
+
+    scheduleBell();
+  } catch (error) {
+    console.warn("Notification sound play failed:", error);
+  }
+}
+
+function updateNotificationSoundKnownKeys(list = []) {
+  const dismissedKeys = getDismissedNotificationIds();
+  const visibleNotifications = (Array.isArray(list) ? list : []).filter((notif) => {
+    const key = getNotificationStableKey(notif);
+    return key && !dismissedKeys.includes(key);
+  });
+
+  const nextKeys = new Set(
+    visibleNotifications
+      .map((notif) => getNotificationStableKey(notif))
+      .filter(Boolean)
+  );
+
+  if (!notificationSoundKnownKeysInitialized) {
+    notificationSoundKnownKeysInitialized = true;
+    notificationSoundKnownKeys = nextKeys;
+    return [];
+  }
+
+  const newNotifications = visibleNotifications.filter((notif) => {
+    const key = getNotificationStableKey(notif);
+    return key && !notificationSoundKnownKeys.has(key);
+  });
+
+  notificationSoundKnownKeys = nextKeys;
+  return newNotifications;
+}
+
+function maybePlayNotificationSound(newNotifications = []) {
+  if (!Array.isArray(newNotifications) || newNotifications.length === 0) return;
+
+  const now = Date.now();
+  if (now - notificationLastSoundAt < NOTIFICATION_SOUND_MIN_INTERVAL_MS) return;
+
+  notificationLastSoundAt = now;
+  playSoftNotificationBell();
+}
 
 function safeNotificationText(value) {
   if (value === null || value === undefined) return "";
@@ -1196,7 +1358,7 @@ function scheduleRealtimeNotificationRefresh(reason = "realtime") {
   }
 
   notificationRealtimeRefreshTimer = setTimeout(() => {
-    loadNotifications(false).catch((error) => {
+    loadNotifications(true).catch((error) => {
       console.warn("Realtime notification refresh failed:", reason, error);
     });
   }, 250);
@@ -1308,6 +1470,12 @@ async function loadNotifications(playSound = true) {
       ...complaintNotifications
     ]));
 
+    const newSoundNotifications = updateNotificationSoundKnownKeys(notificationFeedItems);
+
+    if (playSound) {
+      maybePlayNotificationSound(newSoundNotifications);
+    }
+
     renderNotificationsFromFeed(notificationFeedItems);
   } catch (error) {
     console.error("loadNotifications error:", error);
@@ -1326,7 +1494,7 @@ function startNotificationPolling() {
   }
 
   notificationPollingInterval = setInterval(() => {
-    loadNotifications(false);
+    loadNotifications(true);
   }, 3000);
 }
 
@@ -1435,6 +1603,7 @@ function bindNotificationActions() {
 
   if (!notificationBtn || !notificationDropdown) return;
 
+  bindNotificationSoundUnlock();
   setupAdminNotificationRealtime();
   startNotificationPolling();
 
