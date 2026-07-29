@@ -84,6 +84,7 @@ io.on("connection", (socket) => {
 });
 
 /* ROUTES */
+const db = require("../config/db");
 const wasteRoutes = require("../routes/wasteRoutes");
 const authRoutes = require("../routes/authRoutes");
 const webAuthRoutes = require("../routes/webAuthRoutes");
@@ -153,9 +154,26 @@ app.get("/", (req, res) => {
 });
 
 app.get("/health", (req, res) => {
-  return res.status(200).json({
-    success: true,
-    message: "Server is healthy"
+  db.healthCheck((error) => {
+    if (error) {
+      console.warn(
+        "[Health] Database check failed:",
+        error.code || "UNKNOWN_DB_ERROR",
+        error.message
+      );
+
+      return res.status(503).json({
+        success: false,
+        message: "Server is running, but the database is temporarily unavailable.",
+        database: "unavailable"
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Server is healthy",
+      database: "connected"
+    });
   });
 });
 

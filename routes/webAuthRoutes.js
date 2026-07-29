@@ -29,9 +29,21 @@ router.post("/login", (req, res) => {
   `;
 
   // ⚠️ IMPORTANT: async callback para pwede gamitin await
-  db.query(sql, [username], async (err, results) => {
+  db.queryReadOnly(sql, [username], async (err, results) => {
     if (err) {
-      console.error("WEB LOGIN DB ERROR:", err);
+      console.error(
+        "WEB LOGIN DB ERROR:",
+        err.code || "UNKNOWN_DB_ERROR",
+        err.message
+      );
+
+      if (db.shouldReturnServiceUnavailable(err)) {
+        return res.status(503).json({
+          success: false,
+          message: "Database service is temporarily unavailable. Please try again."
+        });
+      }
+
       return res.status(500).json({
         success: false,
         message: "Server error during web login."
