@@ -3770,12 +3770,20 @@ async function cleanupAcceptedComplaintZeroDateValues() {
       );
     }
   } catch (error) {
-    console.error(
-      "cleanupAcceptedComplaintZeroDateValues failed:",
+    if (db.isTransientError(error)) {
+      console.warn(
+        "cleanupAcceptedComplaintZeroDateValues temporarily failed; a later scheduler cycle will retry:",
+        error.code || "UNKNOWN_DB_ERROR",
+        error.message
+      );
+      throw error;
+    }
+
+    console.warn(
+      "cleanupAcceptedComplaintZeroDateValues warning; continuing with guarded overdue queries:",
       error.code || "UNKNOWN_DB_ERROR",
       error.message
     );
-    throw error;
   }
 }
 
@@ -4061,9 +4069,23 @@ function startOverdueAcceptedComplaintScheduler(app) {
 
   overdueAcceptedComplaintSchedulerStarted = true;
 
+  let schedulerTimer = null;
+
+  const scheduleNextRun = (delay) => {
+    if (schedulerTimer) {
+      clearTimeout(schedulerTimer);
+    }
+
+    schedulerTimer = setTimeout(() => {
+      schedulerTimer = null;
+      runCheck();
+    }, delay);
+  };
+
   const runCheck = async () => {
     if (schedulerRunInProgress) {
       console.warn("[Complaint Scheduler] Skipped overlapping overdue complaint check.");
+      scheduleNextRun(5 * 60 * 1000);
       return;
     }
 
@@ -4085,7 +4107,7 @@ function startOverdueAcceptedComplaintScheduler(app) {
       );
     } finally {
       schedulerRunInProgress = false;
-      setTimeout(runCheck, 5 * 60 * 1000);
+      scheduleNextRun(5 * 60 * 1000);
     }
   };
 
@@ -4093,7 +4115,7 @@ function startOverdueAcceptedComplaintScheduler(app) {
     Run once after startup, then wait 5 minutes after each completed run.
     This gives a maximum delay of around 5 minutes after the 24-hour deadline.
   */
-  setTimeout(runCheck, 15000);
+  scheduleNextRun(15000);
 
   console.log("[Complaint Scheduler] 24-hour accepted complaint overdue checker started.");
 }
