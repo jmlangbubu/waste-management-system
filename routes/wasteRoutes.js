@@ -34,9 +34,13 @@ function cleanText(value) {
 function getScanHistoryColumnSet(callback) {
   const sql = `SHOW COLUMNS FROM scan_history`;
 
-  db.query(sql, (err, rows) => {
+  db.queryReadOnly(sql, (err, rows) => {
     if (err) {
-      console.error("[DB] Failed to inspect scan_history columns:", err);
+      console.warn(
+        "[DB] Failed to inspect scan_history columns:",
+        err.code || "UNKNOWN_DB_ERROR",
+        err.message
+      );
       return callback(err, new Set());
     }
 
@@ -374,7 +378,11 @@ function ensureScanHistoryOptionalColumns(callback) {
 
 ensureScanHistoryOptionalColumns((err) => {
   if (err) {
-    console.error("[DB] scan_history optional column check failed:", err.message);
+    console.warn(
+      "[DB] scan_history optional column check failed:",
+      err.code || "UNKNOWN_DB_ERROR",
+      err.message
+    );
   } else {
     console.log("[DB] scan_history optional columns ready.");
   }

@@ -3646,7 +3646,11 @@ router.get("/detect-barangay", (req, res) => {
 
 function dbQueryAsync(sql, values = []) {
   return new Promise((resolve, reject) => {
-    db.query(sql, values, (err, rows) => {
+    const query = db.isReadOnlyQuery(sql)
+      ? db.queryReadOnly
+      : db.query.bind(db);
+
+    query(sql, values, (err, rows) => {
       if (err) return reject(err);
       return resolve(rows);
     });
@@ -3766,11 +3770,35 @@ async function cleanupAcceptedComplaintZeroDateValues() {
       );
     }
   } catch (error) {
-    console.error("cleanupAcceptedComplaintZeroDateValues warning:", error);
-    /*
-      Do not block the checker if cleanup fails. The main overdue queries use
-      CAST/NULLIF guards so zero-date rows will not crash the route.
-    */
+    console.error(
+      "cleanupAcceptedComplaintZeroDateValues failed:",
+      error.code || "UNKNOWN_DB_ERROR",
+      error.message
+    );
+    throw error;
+  }
+}
+
+let acceptedComplaintPreparationComplete = false;
+let acceptedComplaintPreparationPromise = null;
+
+async function prepareAcceptedComplaintDeadlineData() {
+  if (acceptedComplaintPreparationComplete) {
+    return;
+  }
+
+  if (!acceptedComplaintPreparationPromise) {
+    acceptedComplaintPreparationPromise = (async () => {
+      await ensureAcceptedComplaintDeadlineColumns();
+      await cleanupAcceptedComplaintZeroDateValues();
+      acceptedComplaintPreparationComplete = true;
+    })();
+  }
+
+  try {
+    await acceptedComplaintPreparationPromise;
+  } finally {
+    acceptedComplaintPreparationPromise = null;
   }
 }
 
@@ -3958,8 +3986,7 @@ async function processOverdueAcceptedComplaint(app, complaint) {
 }
 
 async function markOverdueAcceptedComplaints(app = null) {
-  await ensureAcceptedComplaintDeadlineColumns();
-  await cleanupAcceptedComplaintZeroDateValues();
+  await prepareAcceptedComplaintDeadlineData();
 
   const rows = await dbQueryAsync(
     `
@@ -4025,6 +4052,7 @@ async function autoRejectOverdueAcceptedComplaints(app = null) {
 }
 
 let overdueAcceptedComplaintSchedulerStarted = false;
+let schedulerRunInProgress = false;
 
 function startOverdueAcceptedComplaintScheduler(app) {
   if (overdueAcceptedComplaintSchedulerStarted) {
@@ -4033,26 +4061,39 @@ function startOverdueAcceptedComplaintScheduler(app) {
 
   overdueAcceptedComplaintSchedulerStarted = true;
 
-  const runCheck = () => {
-    markOverdueAcceptedComplaints(app)
-      .then((result) => {
-        if (result.processed > 0) {
-          console.log(
-            `[Complaint Scheduler] Marked ${result.processed} accepted complaint(s) as overdue.`
-          );
-        }
-      })
-      .catch((error) => {
-        console.error("[Complaint Scheduler] Overdue accepted complaint check failed:", error);
-      });
+  const runCheck = async () => {
+    if (schedulerRunInProgress) {
+      console.warn("[Complaint Scheduler] Skipped overlapping overdue complaint check.");
+      return;
+    }
+
+    schedulerRunInProgress = true;
+
+    try {
+      const result = await markOverdueAcceptedComplaints(app);
+
+      if (result.processed > 0) {
+        console.log(
+          `[Complaint Scheduler] Marked ${result.processed} accepted complaint(s) as overdue.`
+        );
+      }
+    } catch (error) {
+      console.error(
+        "[Complaint Scheduler] Overdue accepted complaint check failed:",
+        error.code || "UNKNOWN_DB_ERROR",
+        error.message
+      );
+    } finally {
+      schedulerRunInProgress = false;
+      setTimeout(runCheck, 5 * 60 * 1000);
+    }
   };
 
   /*
-    Run once after startup, then every 5 minutes.
+    Run once after startup, then wait 5 minutes after each completed run.
     This gives a maximum delay of around 5 minutes after the 24-hour deadline.
   */
   setTimeout(runCheck, 15000);
-  setInterval(runCheck, 5 * 60 * 1000);
 
   console.log("[Complaint Scheduler] 24-hour accepted complaint overdue checker started.");
 }
