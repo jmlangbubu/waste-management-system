@@ -1,0 +1,1955 @@
+const db = require("../config/dbPromise");
+
+const TICKET_STATUSES = new Set([
+  "prepared",
+  "dispatched",
+  "in_progress",
+  "returning_to_wmo",
+  "completed",
+  "cancelled"
+]);
+
+const STOP_STATUSES = new Set([
+  "pending",
+  "on_the_way",
+  "arrived",
+  "completed",
+  "skipped"
+]);
+
+const TERMINAL_STOP_STATUSES = new Set(["completed", "skipped"]);
+const DISPATCH_TABLE_NAMES = new Set([
+  "dispatch_ticket_sequences",
+  "dispatch_tickets",
+  "dispatch_route_stops",
+  "dispatch_tracking_sessions",
+  "dispatch_events"
+]);
+
+class DispatchServiceError extends Error {
+  constructor(message, statusCode = 400, code = "DISPATCH_ERROR") {
+    super(message);
+    this.name = "DispatchServiceError";
+    this.statusCode = statusCode;
+    this.code = code;
+  }
+}
+
+class DispatchDatabaseUnavailableError extends DispatchServiceError {
+  constructor(cause) {
+    super(
+      "Dispatch database setup is required",
+      503,
+      "DISPATCH_DATABASE_SETUP_REQUIRED"
+    );
+    this.name = "DispatchDatabaseUnavailableError";
+    this.cause = cause;
+  }
+}
+
+function isDispatchTableMissingError(error) {
+  if (!error) return false;
+  if (error.code === "DISPATCH_DATABASE_SETUP_REQUIRED") return true;
+  if (error.cause && error.cause !== error) {
+    return isDispatchTableMissingError(error.cause);
+  }
+  if (["ER_NO_SUCH_TABLE", "ER_BAD_TABLE_ERROR"].includes(error.code)) return true;
+
+  const message = String(error.message || "").toLowerCase();
+  return (
+    message.includes("doesn't exist") &&
+    [...DISPATCH_TABLE_NAMES].some((tableName) => message.includes(tableName))
+  );
+}
+
+function normalizeDispatchError(error) {
+  if (isDispatchTableMissingError(error)) {
+    return new DispatchDatabaseUnavailableError(error);
+  }
+  return error;
+}
+
+function cleanText(value, maxLength = 255) {
+  if (value === null || value === undefined) return "";
+  return String(value).trim().slice(0, maxLength);
+}
+
+function nullableText(value, maxLength = 255) {
+  const text = cleanText(value, maxLength);
+  return text || null;
+}
+
+function requiredId(value, label) {
+  const id = Number(value);
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new DispatchServiceError(`${label} must be a positive integer`);
+  }
+  return id;
+}
+
+function optionalId(value, label) {
+  if (value === null || value === undefined || value === "") return null;
+  return requiredId(value, label);
+}
+
+function requiredCoordinate(value, label, min, max) {
+  if (
+    value === null ||
+    value === undefined ||
+    (typeof value === "string" && value.trim() === "")
+  ) {
+    throw new DispatchServiceError(`${label} is required`);
+  }
+  const coordinate = Number(value);
+  if (!Number.isFinite(coordinate) || coordinate < min || coordinate > max) {
+    throw new DispatchServiceError(`${label} must be between ${min} and ${max}`);
+  }
+  return coordinate;
+}
+
+function optionalDateTime(value, label) {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new DispatchServiceError(`${label} must be a valid date and time`);
+  }
+  return parsed;
+}
+
+function dateOnly(value, label) {
+  const text = cleanText(value, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    throw new DispatchServiceError(`${label} must use YYYY-MM-DD format`);
+  }
+  const parsed = new Date(`${text}T00:00:00Z`);
+  if (
+    Number.isNaN(parsed.getTime()) ||
+    parsed.toISOString().slice(0, 10) !== text
+  ) {
+    throw new DispatchServiceError(`${label} must be a valid date`);
+  }
+  return text;
+}
+
+function normalizeActor(payload = {}, fallbackType = "web_user") {
+  return {
+    actor_type: cleanText(payload.actor_type || payload.actorType || fallbackType, 40),
+    actor_id: optionalId(payload.actor_id || payload.actorId, "actor_id"),
+    actor_name: nullableText(payload.actor_name || payload.actorName, 255)
+  };
+}
+
+function haversineMeters(latitudeA, longitudeA, latitudeB, longitudeB) {
+  const toRadians = (degrees) => (degrees * Math.PI) / 180;
+  const earthRadiusMeters = 6371000;
+  const latitudeDelta = toRadians(latitudeB - latitudeA);
+  const longitudeDelta = toRadians(longitudeB - longitudeA);
+  const a =
+    Math.sin(latitudeDelta / 2) ** 2 +
+    Math.cos(toRadians(latitudeA)) *
+      Math.cos(toRadians(latitudeB)) *
+      Math.sin(longitudeDelta / 2) ** 2;
+
+  return earthRadiusMeters * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function validateTicketInput(payload = {}, options = {}) {
+  const truckId = cleanText(payload.truck_id || payload.truckId, 100);
+  const truckName = cleanText(
+    payload.truck_name_snapshot || payload.truckNameSnapshot,
+    255
+  );
+  const routeName = cleanText(payload.route_name || payload.routeName, 255);
+
+  if (!truckId) throw new DispatchServiceError("truck_id is required");
+  if (!truckName) {
+    throw new DispatchServiceError("truck_name_snapshot is required");
+  }
+  if (!routeName) throw new DispatchServiceError("route_name is required");
+
+  const dispatchDate = dateOnly(
+    payload.dispatch_date || payload.dispatchDate,
+    "dispatch_date"
+  );
+  const scheduledStartAt = optionalDateTime(
+    payload.scheduled_start_at || payload.scheduledStartAt,
+    "scheduled_start_at"
+  );
+  const expectedReturnAt = optionalDateTime(
+    payload.expected_return_at || payload.expectedReturnAt,
+    "expected_return_at"
+  );
+
+  if (
+    scheduledStartAt &&
+    expectedReturnAt &&
+    expectedReturnAt.getTime() <= scheduledStartAt.getTime()
+  ) {
+    throw new DispatchServiceError(
+      "expected_return_at must be later than scheduled_start_at"
+    );
+  }
+
+  const rawStops = payload.stops;
+  if (!Array.isArray(rawStops) || rawStops.length === 0) {
+    throw new DispatchServiceError("At least one route stop is required");
+  }
+
+  const seenOrders = new Set();
+  const stops = rawStops.map((rawStop, index) => {
+    const stopOrder = Number(rawStop.stop_order || rawStop.stopOrder || index + 1);
+    if (!Number.isInteger(stopOrder) || stopOrder <= 0) {
+      throw new DispatchServiceError("Each stop_order must be a positive integer");
+    }
+    if (seenOrders.has(stopOrder)) {
+      throw new DispatchServiceError(`Duplicate stop_order: ${stopOrder}`);
+    }
+    seenOrders.add(stopOrder);
+
+    const locationName = cleanText(
+      rawStop.location_name || rawStop.locationName,
+      255
+    );
+    if (!locationName) {
+      throw new DispatchServiceError(
+        `location_name is required for stop ${stopOrder}`
+      );
+    }
+
+    const geofenceRadius = Number(
+      rawStop.geofence_radius_meters ||
+        rawStop.geofenceRadiusMeters ||
+        100
+    );
+    if (!Number.isFinite(geofenceRadius) || geofenceRadius < 25 || geofenceRadius > 5000) {
+      throw new DispatchServiceError(
+        `geofence_radius_meters for stop ${stopOrder} must be between 25 and 5000`
+      );
+    }
+
+    return {
+      stop_order: stopOrder,
+      location_name: locationName,
+      address_reference: nullableText(
+        rawStop.address_reference || rawStop.addressReference,
+        500
+      ),
+      latitude: requiredCoordinate(
+        rawStop.latitude,
+        `latitude for stop ${stopOrder}`,
+        -90,
+        90
+      ),
+      longitude: requiredCoordinate(
+        rawStop.longitude,
+        `longitude for stop ${stopOrder}`,
+        -180,
+        180
+      ),
+      geofence_radius_meters: Math.round(geofenceRadius),
+      expected_arrival_at: optionalDateTime(
+        rawStop.expected_arrival_at || rawStop.expectedArrivalAt,
+        `expected_arrival_at for stop ${stopOrder}`
+      )
+    };
+  });
+
+  stops.sort((a, b) => a.stop_order - b.stop_order);
+  let previousExpectedArrival = scheduledStartAt;
+  for (const stop of stops) {
+    if (!stop.expected_arrival_at) continue;
+    if (
+      previousExpectedArrival &&
+      stop.expected_arrival_at.getTime() < previousExpectedArrival.getTime()
+    ) {
+      throw new DispatchServiceError(
+        `expected_arrival_at for stop ${stop.stop_order} is earlier than the preceding schedule`
+      );
+    }
+    if (
+      expectedReturnAt &&
+      stop.expected_arrival_at.getTime() > expectedReturnAt.getTime()
+    ) {
+      throw new DispatchServiceError(
+        `expected_arrival_at for stop ${stop.stop_order} is later than expected_return_at`
+      );
+    }
+    previousExpectedArrival = stop.expected_arrival_at;
+  }
+
+  return {
+    truck_id: truckId,
+    truck_name_snapshot: truckName,
+    assigned_personnel_id: optionalId(
+      payload.assigned_personnel_id || payload.assignedPersonnelId,
+      "assigned_personnel_id"
+    ),
+    assigned_personnel_name: nullableText(
+      payload.assigned_personnel_name || payload.assignedPersonnelName,
+      255
+    ),
+    dispatch_date: dispatchDate,
+    scheduled_start_at: scheduledStartAt,
+    expected_return_at: expectedReturnAt,
+    route_name: routeName,
+    route_description: nullableText(
+      payload.route_description || payload.routeDescription,
+      2000
+    ),
+    notes: nullableText(payload.notes, 2000),
+    created_by_user_id: options.includeCreator
+      ? optionalId(
+          payload.created_by_user_id || payload.createdByUserId,
+          "created_by_user_id"
+        )
+      : undefined,
+    created_by_name: options.includeCreator
+      ? nullableText(payload.created_by_name || payload.createdByName, 255)
+      : undefined,
+    stops
+  };
+}
+
+class DispatchService {
+  constructor(pool = db) {
+    this.db = pool;
+  }
+
+  async withTransaction(work) {
+    const connection = await this.db.getConnection();
+    try {
+      await connection.beginTransaction();
+      const result = await work(connection);
+      await connection.commit();
+      return result;
+    } catch (error) {
+      try {
+        await connection.rollback();
+      } catch (rollbackError) {
+        console.warn(
+          "[Dispatch] Transaction rollback warning:",
+          rollbackError.code || rollbackError.message
+        );
+      }
+      throw normalizeDispatchError(error);
+    } finally {
+      connection.release();
+    }
+  }
+
+  async query(sql, parameters = []) {
+    try {
+      return await this.db.query(sql, parameters);
+    } catch (error) {
+      throw normalizeDispatchError(error);
+    }
+  }
+
+  async generateTicketNumber(connection, dispatchYear) {
+    await connection.query(
+      `
+        INSERT INTO dispatch_ticket_sequences (
+          dispatch_year,
+          last_value,
+          updated_at
+        )
+        VALUES (?, 0, NOW())
+        ON DUPLICATE KEY UPDATE updated_at = updated_at
+      `,
+      [dispatchYear]
+    );
+
+    const [sequenceRows] = await connection.query(
+      `
+        SELECT last_value
+        FROM dispatch_ticket_sequences
+        WHERE dispatch_year = ?
+        FOR UPDATE
+      `,
+      [dispatchYear]
+    );
+
+    if (sequenceRows.length !== 1) {
+      throw new DispatchServiceError(
+        "Unable to reserve the next dispatch ticket number",
+        500,
+        "DISPATCH_SEQUENCE_ERROR"
+      );
+    }
+
+    const nextValue = Number(sequenceRows[0].last_value || 0) + 1;
+    await connection.query(
+      `
+        UPDATE dispatch_ticket_sequences
+        SET last_value = ?,
+            updated_at = NOW()
+        WHERE dispatch_year = ?
+      `,
+      [nextValue, dispatchYear]
+    );
+
+    return `DPT-${dispatchYear}-${String(nextValue).padStart(4, "0")}`;
+  }
+
+  async insertStops(connection, ticketId, stops) {
+    for (const stop of stops) {
+      await connection.query(
+        `
+          INSERT INTO dispatch_route_stops (
+            dispatch_ticket_id,
+            stop_order,
+            location_name,
+            address_reference,
+            latitude,
+            longitude,
+            geofence_radius_meters,
+            expected_arrival_at,
+            stop_status,
+            created_at,
+            updated_at
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', NOW(), NOW())
+        `,
+        [
+          ticketId,
+          stop.stop_order,
+          stop.location_name,
+          stop.address_reference,
+          stop.latitude,
+          stop.longitude,
+          stop.geofence_radius_meters,
+          stop.expected_arrival_at
+        ]
+      );
+    }
+  }
+
+  async insertEvent(connection, event = {}) {
+    const eventType = cleanText(event.event_type || event.eventType, 80);
+    if (!eventType) {
+      throw new DispatchServiceError("event_type is required");
+    }
+
+    const details =
+      event.details === null || event.details === undefined
+        ? null
+        : JSON.stringify(event.details);
+
+    const [result] = await connection.query(
+      `
+        INSERT INTO dispatch_events (
+          dispatch_ticket_id,
+          dispatch_route_stop_id,
+          tracking_session_id,
+          event_type,
+          event_at,
+          event_source,
+          actor_type,
+          actor_id,
+          actor_name,
+          latitude,
+          longitude,
+          accuracy_meters,
+          details,
+          idempotency_key,
+          created_at
+        )
+        VALUES (?, ?, ?, ?, COALESCE(?, NOW()), ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+      `,
+      [
+        requiredId(event.dispatch_ticket_id, "dispatch_ticket_id"),
+        optionalId(event.dispatch_route_stop_id, "dispatch_route_stop_id"),
+        optionalId(event.tracking_session_id, "tracking_session_id"),
+        eventType,
+        event.event_at || null,
+        cleanText(event.event_source || "system", 40),
+        cleanText(event.actor_type || "system", 40),
+        optionalId(event.actor_id, "actor_id"),
+        nullableText(event.actor_name, 255),
+        event.latitude === undefined ? null : event.latitude,
+        event.longitude === undefined ? null : event.longitude,
+        event.accuracy_meters === undefined ? null : event.accuracy_meters,
+        details,
+        nullableText(event.idempotency_key, 255)
+      ]
+    );
+
+    return result.insertId;
+  }
+
+  async getTicketForUpdate(connection, ticketId) {
+    const [rows] = await connection.query(
+      `
+        SELECT *
+        FROM dispatch_tickets
+        WHERE id = ?
+        FOR UPDATE
+      `,
+      [requiredId(ticketId, "ticket id")]
+    );
+
+    if (!rows.length) {
+      throw new DispatchServiceError(
+        "Dispatch ticket not found",
+        404,
+        "DISPATCH_TICKET_NOT_FOUND"
+      );
+    }
+    return rows[0];
+  }
+
+  async createTicket(payload = {}) {
+    const ticketData = validateTicketInput(payload, { includeCreator: true });
+
+    const ticketId = await this.withTransaction(async (connection) => {
+      const dispatchYear = Number(ticketData.dispatch_date.slice(0, 4));
+      const ticketNumber = await this.generateTicketNumber(connection, dispatchYear);
+      const [ticketResult] = await connection.query(
+        `
+          INSERT INTO dispatch_tickets (
+            ticket_number,
+            truck_id,
+            truck_name_snapshot,
+            assigned_personnel_id,
+            assigned_personnel_name,
+            dispatch_date,
+            scheduled_start_at,
+            expected_return_at,
+            route_name,
+            route_description,
+            status,
+            notes,
+            created_by_user_id,
+            created_by_name,
+            created_at,
+            updated_at
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'prepared', ?, ?, ?, NOW(), NOW())
+        `,
+        [
+          ticketNumber,
+          ticketData.truck_id,
+          ticketData.truck_name_snapshot,
+          ticketData.assigned_personnel_id,
+          ticketData.assigned_personnel_name,
+          ticketData.dispatch_date,
+          ticketData.scheduled_start_at,
+          ticketData.expected_return_at,
+          ticketData.route_name,
+          ticketData.route_description,
+          ticketData.notes,
+          ticketData.created_by_user_id,
+          ticketData.created_by_name
+        ]
+      );
+
+      await this.insertStops(connection, ticketResult.insertId, ticketData.stops);
+      await this.insertEvent(connection, {
+        dispatch_ticket_id: ticketResult.insertId,
+        event_type: "dispatch_prepared",
+        event_source: "web",
+        actor_type: "web_user",
+        actor_id: ticketData.created_by_user_id,
+        actor_name: ticketData.created_by_name,
+        idempotency_key: `dispatch-prepared:${ticketResult.insertId}`
+      });
+
+      return ticketResult.insertId;
+    });
+
+    return this.getTicketDetails(ticketId);
+  }
+
+  async listTickets(filters = {}) {
+    const clauses = [];
+    const parameters = [];
+
+    if (filters.status) {
+      const status = cleanText(filters.status, 40);
+      if (!TICKET_STATUSES.has(status)) {
+        throw new DispatchServiceError("Invalid dispatch ticket status");
+      }
+      clauses.push("dt.status = ?");
+      parameters.push(status);
+    }
+
+    if (filters.date) {
+      clauses.push("dt.dispatch_date = ?");
+      parameters.push(dateOnly(filters.date, "date"));
+    }
+
+    if (filters.truck) {
+      clauses.push("(dt.truck_id = ? OR dt.truck_name_snapshot LIKE ?)");
+      parameters.push(
+        cleanText(filters.truck, 100),
+        `%${cleanText(filters.truck, 100)}%`
+      );
+    }
+
+    if (filters.search) {
+      const search = `%${cleanText(filters.search, 255)}%`;
+      clauses.push(
+        "(dt.ticket_number LIKE ? OR dt.route_name LIKE ? OR dt.assigned_personnel_name LIKE ?)"
+      );
+      parameters.push(search, search, search);
+    }
+
+    const [rows] = await this.query(
+      `
+        SELECT
+          dt.id,
+          dt.ticket_number,
+          dt.truck_id,
+          dt.truck_name_snapshot,
+          dt.assigned_personnel_id,
+          dt.assigned_personnel_name,
+          dt.dispatch_date,
+          dt.scheduled_start_at,
+          dt.expected_return_at,
+          dt.route_name,
+          dt.status,
+          dt.actual_start_at,
+          dt.actual_end_at,
+          dt.updated_at,
+          COUNT(drs.id) AS total_stops,
+          SUM(CASE WHEN drs.stop_status = 'completed' THEN 1 ELSE 0 END) AS completed_stops,
+          SUM(CASE WHEN drs.stop_status = 'skipped' THEN 1 ELSE 0 END) AS skipped_stops
+        FROM dispatch_tickets dt
+        LEFT JOIN dispatch_route_stops drs
+          ON drs.dispatch_ticket_id = dt.id
+        ${clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""}
+        GROUP BY dt.id
+        ORDER BY dt.dispatch_date DESC, dt.created_at DESC, dt.id DESC
+      `,
+      parameters
+    );
+
+    return rows;
+  }
+
+  async getTicketDetails(ticketId) {
+    const id = requiredId(ticketId, "ticket id");
+    const [[ticketRows], [stops], [sessions], [events]] = await Promise.all([
+      this.query("SELECT * FROM dispatch_tickets WHERE id = ? LIMIT 1", [id]),
+      this.query(
+        `
+          SELECT *
+          FROM dispatch_route_stops
+          WHERE dispatch_ticket_id = ?
+          ORDER BY stop_order ASC, id ASC
+        `,
+        [id]
+      ),
+      this.query(
+        `
+          SELECT
+            dts.*,
+            tts.truck_id,
+            tts.enforcer_name,
+            tts.session_status,
+            tts.started_at,
+            tts.ended_at,
+            tts.end_latitude,
+            tts.end_longitude,
+            tts.last_latitude,
+            tts.last_longitude,
+            tts.last_updated_at
+          FROM dispatch_tracking_sessions dts
+          INNER JOIN truck_tracking_sessions tts
+            ON tts.id = dts.tracking_session_id
+          WHERE dts.dispatch_ticket_id = ?
+            AND dts.unlinked_at IS NULL
+          ORDER BY dts.is_primary DESC, dts.linked_at DESC, dts.id DESC
+        `,
+        [id]
+      ),
+      this.query(
+        `
+          SELECT *
+          FROM dispatch_events
+          WHERE dispatch_ticket_id = ?
+          ORDER BY event_at ASC, id ASC
+        `,
+        [id]
+      )
+    ]);
+
+    if (!ticketRows.length) {
+      throw new DispatchServiceError(
+        "Dispatch ticket not found",
+        404,
+        "DISPATCH_TICKET_NOT_FOUND"
+      );
+    }
+
+    const ticket = ticketRows[0];
+    const warnings = [];
+    const allStopsTerminal =
+      stops.length > 0 &&
+      stops.every((stop) => TERMINAL_STOP_STATUSES.has(stop.stop_status));
+    const latestSession = sessions[0];
+
+    if (
+      ticket.status === "returning_to_wmo" &&
+      allStopsTerminal &&
+      latestSession &&
+      latestSession.session_status !== "active"
+    ) {
+      warnings.push(
+        latestSession.end_latitude !== null || latestSession.last_latitude !== null
+          ? "Tracking ended outside the WMO return geofence. The dispatch remains returning to WMO and requires review."
+          : "Tracking ended without a final WMO location. Manual review is required."
+      );
+    }
+
+    const progress = {
+      total_stops: stops.length,
+      completed_stops: stops.filter(
+        (stop) => stop.stop_status === "completed"
+      ).length,
+      skipped_stops: stops.filter((stop) => stop.stop_status === "skipped").length,
+      terminal_stops: stops.filter((stop) =>
+        TERMINAL_STOP_STATUSES.has(stop.stop_status)
+      ).length
+    };
+
+    return {
+      ticket,
+      stops,
+      tracking_sessions: sessions,
+      progress,
+      events,
+      warnings
+    };
+  }
+
+  async updatePreparedTicket(ticketId, payload = {}) {
+    const ticketData = validateTicketInput(payload);
+
+    await this.withTransaction(async (connection) => {
+      const ticket = await this.getTicketForUpdate(connection, ticketId);
+      if (ticket.status !== "prepared") {
+        throw new DispatchServiceError(
+          "Only prepared dispatch tickets can be edited",
+          409,
+          "DISPATCH_TICKET_NOT_EDITABLE"
+        );
+      }
+
+      await connection.query(
+        `
+          UPDATE dispatch_tickets
+          SET truck_id = ?,
+              truck_name_snapshot = ?,
+              assigned_personnel_id = ?,
+              assigned_personnel_name = ?,
+              dispatch_date = ?,
+              scheduled_start_at = ?,
+              expected_return_at = ?,
+              route_name = ?,
+              route_description = ?,
+              notes = ?,
+              updated_at = NOW()
+          WHERE id = ?
+        `,
+        [
+          ticketData.truck_id,
+          ticketData.truck_name_snapshot,
+          ticketData.assigned_personnel_id,
+          ticketData.assigned_personnel_name,
+          ticketData.dispatch_date,
+          ticketData.scheduled_start_at,
+          ticketData.expected_return_at,
+          ticketData.route_name,
+          ticketData.route_description,
+          ticketData.notes,
+          ticket.id
+        ]
+      );
+
+      await connection.query(
+        "DELETE FROM dispatch_route_stops WHERE dispatch_ticket_id = ?",
+        [ticket.id]
+      );
+      await this.insertStops(connection, ticket.id, ticketData.stops);
+    });
+
+    return this.getTicketDetails(ticketId);
+  }
+
+  async issueTicket(ticketId, payload = {}) {
+    const actor = normalizeActor(payload);
+    await this.withTransaction(async (connection) => {
+      const ticket = await this.getTicketForUpdate(connection, ticketId);
+      if (ticket.status === "dispatched") return;
+      if (ticket.status !== "prepared") {
+        throw new DispatchServiceError(
+          "Only a prepared ticket can be issued",
+          409,
+          "DISPATCH_TICKET_NOT_PREPARED"
+        );
+      }
+
+      await connection.query(
+        `
+          UPDATE dispatch_tickets
+          SET status = 'dispatched',
+              issued_at = COALESCE(issued_at, NOW()),
+              dispatched_at = COALESCE(dispatched_at, NOW()),
+              updated_at = NOW()
+          WHERE id = ?
+        `,
+        [ticket.id]
+      );
+      await this.insertEvent(connection, {
+        dispatch_ticket_id: ticket.id,
+        event_type: "ticket_issued",
+        event_source: "web",
+        ...actor,
+        idempotency_key: `dispatch-issued:${ticket.id}`
+      });
+    });
+    return this.getTicketDetails(ticketId);
+  }
+
+  async cancelTicket(ticketId, payload = {}) {
+    const reason = cleanText(payload.reason || payload.cancellation_reason, 1000);
+    if (!reason) {
+      throw new DispatchServiceError("Cancellation reason is required");
+    }
+    const actor = normalizeActor(payload);
+
+    await this.withTransaction(async (connection) => {
+      const ticket = await this.getTicketForUpdate(connection, ticketId);
+      if (ticket.status === "cancelled") return;
+      if (ticket.status === "completed") {
+        throw new DispatchServiceError(
+          "A completed dispatch ticket cannot be cancelled",
+          409,
+          "DISPATCH_TICKET_COMPLETED"
+        );
+      }
+
+      await connection.query(
+        `
+          UPDATE dispatch_tickets
+          SET status = 'cancelled',
+              cancelled_at = NOW(),
+              cancellation_reason = ?,
+              updated_at = NOW()
+          WHERE id = ?
+        `,
+        [reason, ticket.id]
+      );
+      await this.insertEvent(connection, {
+        dispatch_ticket_id: ticket.id,
+        event_type: "ticket_cancelled",
+        event_source: "web",
+        ...actor,
+        details: { reason },
+        idempotency_key: `dispatch-cancelled:${ticket.id}`
+      });
+    });
+    return this.getTicketDetails(ticketId);
+  }
+
+  async linkSessionInTransaction(
+    connection,
+    ticketId,
+    trackingSessionId,
+    linkSource,
+    actor
+  ) {
+    const ticket = await this.getTicketForUpdate(connection, ticketId);
+    if (!["dispatched", "in_progress"].includes(ticket.status)) {
+      throw new DispatchServiceError(
+        "Issue the dispatch ticket before linking a tracking session",
+        409,
+        "DISPATCH_TICKET_NOT_ISSUED"
+      );
+    }
+
+    const sessionId = requiredId(trackingSessionId, "tracking_session_id");
+    const [sessionRows] = await connection.query(
+      `
+        SELECT id, truck_id, enforcer_id, enforcer_name, session_status, started_at
+        FROM truck_tracking_sessions
+        WHERE id = ?
+        LIMIT 1
+        FOR UPDATE
+      `,
+      [sessionId]
+    );
+    if (!sessionRows.length) {
+      throw new DispatchServiceError(
+        "Tracking session not found",
+        404,
+        "TRACKING_SESSION_NOT_FOUND"
+      );
+    }
+
+    const session = sessionRows[0];
+    if (
+      linkSource === "active_truck_match" &&
+      session.session_status !== "active"
+    ) {
+      throw new DispatchServiceError(
+        "The matching tracking session is no longer active",
+        409,
+        "ACTIVE_TRACKING_SESSION_ENDED"
+      );
+    }
+    if (String(session.truck_id) !== String(ticket.truck_id)) {
+      throw new DispatchServiceError(
+        "Tracking session truck does not match the dispatch ticket",
+        409,
+        "DISPATCH_TRUCK_MISMATCH"
+      );
+    }
+
+    const [existingRows] = await connection.query(
+      `
+        SELECT dispatch_ticket_id
+        FROM dispatch_tracking_sessions
+        WHERE tracking_session_id = ?
+          AND unlinked_at IS NULL
+        LIMIT 1
+      `,
+      [sessionId]
+    );
+    if (existingRows.length) {
+      if (Number(existingRows[0].dispatch_ticket_id) === Number(ticket.id)) {
+        return { ticket, session, alreadyLinked: true };
+      }
+      throw new DispatchServiceError(
+        "Tracking session is already linked to another dispatch ticket",
+        409,
+        "TRACKING_SESSION_ALREADY_LINKED"
+      );
+    }
+
+    await connection.query(
+      `
+        UPDATE dispatch_tracking_sessions
+        SET is_primary = 0
+        WHERE dispatch_ticket_id = ?
+          AND unlinked_at IS NULL
+      `,
+      [ticket.id]
+    );
+    await connection.query(
+      `
+        INSERT INTO dispatch_tracking_sessions (
+          dispatch_ticket_id,
+          tracking_session_id,
+          is_primary,
+          link_source,
+          linked_at,
+          created_at
+        )
+        VALUES (?, ?, 1, ?, NOW(), NOW())
+      `,
+      [ticket.id, sessionId, cleanText(linkSource, 40)]
+    );
+    await connection.query(
+      `
+        UPDATE dispatch_tickets
+        SET status = 'in_progress',
+            actual_start_at = COALESCE(actual_start_at, ?),
+            updated_at = NOW()
+        WHERE id = ?
+      `,
+      [session.started_at || new Date(), ticket.id]
+    );
+    await connection.query(
+      `
+        UPDATE dispatch_route_stops
+        SET stop_status = 'on_the_way',
+            updated_at = NOW()
+        WHERE dispatch_ticket_id = ?
+          AND stop_status = 'pending'
+        ORDER BY stop_order ASC
+        LIMIT 1
+      `,
+      [ticket.id]
+    );
+    await this.insertEvent(connection, {
+      dispatch_ticket_id: ticket.id,
+      tracking_session_id: sessionId,
+      event_type: "tracking_started",
+      event_at: session.started_at,
+      event_source: "web",
+      ...actor,
+      details: { link_source: linkSource },
+      idempotency_key: `tracking-linked:${ticket.id}:${sessionId}`
+    });
+
+    return { ticket, session, alreadyLinked: false };
+  }
+
+  async linkSession(ticketId, payload = {}) {
+    const actor = normalizeActor(payload);
+    const trackingSessionId =
+      payload.tracking_session_id || payload.trackingSessionId;
+
+    await this.withTransaction((connection) =>
+      this.linkSessionInTransaction(
+        connection,
+        ticketId,
+        trackingSessionId,
+        "manual",
+        actor
+      )
+    );
+    return this.getTicketDetails(ticketId);
+  }
+
+  async linkActiveSession(ticketId, payload = {}) {
+    const actor = normalizeActor(payload);
+    await this.withTransaction(async (connection) => {
+      const ticket = await this.getTicketForUpdate(connection, ticketId);
+      const [activeRows] = await connection.query(
+        `
+          SELECT id
+          FROM truck_tracking_sessions
+          WHERE truck_id = ?
+            AND session_status = 'active'
+          ORDER BY started_at DESC, id DESC
+        `,
+        [ticket.truck_id]
+      );
+
+      if (activeRows.length === 0) {
+        throw new DispatchServiceError(
+          "No active tracking session matches this ticket's truck",
+          404,
+          "ACTIVE_TRACKING_SESSION_NOT_FOUND"
+        );
+      }
+      if (activeRows.length !== 1) {
+        throw new DispatchServiceError(
+          "Multiple active sessions match this truck; link a session explicitly",
+          409,
+          "AMBIGUOUS_ACTIVE_TRACKING_SESSION"
+        );
+      }
+
+      await this.linkSessionInTransaction(
+        connection,
+        ticket.id,
+        activeRows[0].id,
+        "active_truck_match",
+        actor
+      );
+    });
+    return this.getTicketDetails(ticketId);
+  }
+
+  async getLiveDispatches() {
+    const [rows] = await this.query(
+      `
+        SELECT
+          dt.id AS dispatch_ticket_id,
+          dt.ticket_number,
+          dt.truck_id,
+          dt.truck_name_snapshot,
+          dt.route_name,
+          dt.assigned_personnel_id,
+          dt.assigned_personnel_name,
+          dt.status AS dispatch_status,
+          dt.actual_start_at,
+          dt.returning_to_wmo_at,
+          dts.tracking_session_id,
+          dts.linked_at,
+          tts.session_status AS tracking_session_status,
+          tts.started_at AS tracking_started_at,
+          tts.last_updated_at AS tracking_last_updated_at,
+          tll.latitude AS last_latitude,
+          tll.longitude AS last_longitude,
+          tll.last_updated_at AS last_gps_update,
+          tll.status AS gps_status,
+          current_stop.id AS current_stop_id,
+          current_stop.stop_order AS current_stop_order,
+          current_stop.location_name AS current_stop_name,
+          current_stop.latitude AS current_stop_latitude,
+          current_stop.longitude AS current_stop_longitude,
+          current_stop.geofence_radius_meters,
+          current_stop.stop_status AS current_stop_status,
+          next_stop.id AS next_stop_id,
+          next_stop.stop_order AS next_stop_order,
+          next_stop.location_name AS next_stop_name,
+          next_stop.latitude AS next_stop_latitude,
+          next_stop.longitude AS next_stop_longitude,
+          next_stop.stop_status AS next_stop_status,
+          totals.total_stops,
+          totals.completed_stops,
+          totals.skipped_stops
+        FROM dispatch_tickets dt
+        INNER JOIN dispatch_tracking_sessions dts
+          ON dts.dispatch_ticket_id = dt.id
+         AND dts.unlinked_at IS NULL
+         AND dts.is_primary = 1
+        INNER JOIN truck_tracking_sessions tts
+          ON tts.id = dts.tracking_session_id
+        LEFT JOIN truck_last_locations tll
+          ON tll.session_id = dts.tracking_session_id
+        LEFT JOIN dispatch_route_stops current_stop
+          ON current_stop.id = (
+            SELECT drs_current.id
+            FROM dispatch_route_stops drs_current
+            WHERE drs_current.dispatch_ticket_id = dt.id
+              AND drs_current.stop_status NOT IN ('completed', 'skipped')
+            ORDER BY drs_current.stop_order ASC, drs_current.id ASC
+            LIMIT 1
+          )
+        LEFT JOIN dispatch_route_stops next_stop
+          ON next_stop.id = (
+            SELECT drs_next.id
+            FROM dispatch_route_stops drs_next
+            WHERE drs_next.dispatch_ticket_id = dt.id
+              AND drs_next.stop_status NOT IN ('completed', 'skipped')
+              AND drs_next.stop_order > COALESCE(current_stop.stop_order, 0)
+            ORDER BY drs_next.stop_order ASC, drs_next.id ASC
+            LIMIT 1
+          )
+        LEFT JOIN (
+          SELECT
+            dispatch_ticket_id,
+            COUNT(*) AS total_stops,
+            SUM(stop_status = 'completed') AS completed_stops,
+            SUM(stop_status = 'skipped') AS skipped_stops
+          FROM dispatch_route_stops
+          GROUP BY dispatch_ticket_id
+        ) totals
+          ON totals.dispatch_ticket_id = dt.id
+        WHERE dt.status IN ('dispatched', 'in_progress', 'returning_to_wmo')
+        ORDER BY dt.updated_at DESC, dt.id DESC
+      `
+    );
+
+    return rows.reduce((result, row) => {
+      result[String(row.tracking_session_id)] = row;
+      return result;
+    }, {});
+  }
+
+  async getTicketByTrackingSession(trackingSessionId) {
+    const sessionId = requiredId(trackingSessionId, "tracking session id");
+    const [rows] = await this.query(
+      `
+        SELECT dispatch_ticket_id
+        FROM dispatch_tracking_sessions
+        WHERE tracking_session_id = ?
+          AND unlinked_at IS NULL
+        ORDER BY is_primary DESC, linked_at DESC, id DESC
+        LIMIT 1
+      `,
+      [sessionId]
+    );
+    if (!rows.length) {
+      throw new DispatchServiceError(
+        "No dispatch ticket is linked to this tracking session",
+        404,
+        "DISPATCH_LINK_NOT_FOUND"
+      );
+    }
+    return this.getTicketDetails(rows[0].dispatch_ticket_id);
+  }
+
+  async getTicketEvents(ticketId) {
+    const id = requiredId(ticketId, "ticket id");
+    const [rows] = await this.query(
+      `
+        SELECT *
+        FROM dispatch_events
+        WHERE dispatch_ticket_id = ?
+        ORDER BY event_at ASC, id ASC
+      `,
+      [id]
+    );
+    return rows;
+  }
+
+  async getStopForUpdate(connection, ticketId, stopId) {
+    const [rows] = await connection.query(
+      `
+        SELECT *
+        FROM dispatch_route_stops
+        WHERE id = ?
+          AND dispatch_ticket_id = ?
+        FOR UPDATE
+      `,
+      [
+        requiredId(stopId, "stop id"),
+        requiredId(ticketId, "ticket id")
+      ]
+    );
+    if (!rows.length) {
+      throw new DispatchServiceError(
+        "Dispatch route stop not found",
+        404,
+        "DISPATCH_STOP_NOT_FOUND"
+      );
+    }
+    return rows[0];
+  }
+
+  async updateNextStop(connection, ticketId) {
+    await connection.query(
+      `
+        UPDATE dispatch_route_stops
+        SET stop_status = 'on_the_way',
+            updated_at = NOW()
+        WHERE dispatch_ticket_id = ?
+          AND stop_status = 'pending'
+        ORDER BY stop_order ASC, id ASC
+        LIMIT 1
+      `,
+      [ticketId]
+    );
+  }
+
+  async moveTicketToReturningIfDone(
+    connection,
+    ticketId,
+    eventSource,
+    actor,
+    trackingSessionId = null
+  ) {
+    const [remainingRows] = await connection.query(
+      `
+        SELECT id
+        FROM dispatch_route_stops
+        WHERE dispatch_ticket_id = ?
+          AND stop_status NOT IN ('completed', 'skipped')
+        LIMIT 1
+      `,
+      [ticketId]
+    );
+    if (remainingRows.length) return false;
+
+    const [ticketRows] = await connection.query(
+      "SELECT status FROM dispatch_tickets WHERE id = ? FOR UPDATE",
+      [ticketId]
+    );
+    if (!ticketRows.length || ["completed", "cancelled"].includes(ticketRows[0].status)) {
+      return false;
+    }
+
+    const alreadyReturning = ticketRows[0].status === "returning_to_wmo";
+    await connection.query(
+      `
+        UPDATE dispatch_tickets
+        SET status = 'returning_to_wmo',
+            returning_to_wmo_at = COALESCE(returning_to_wmo_at, NOW()),
+            updated_at = NOW()
+        WHERE id = ?
+      `,
+      [ticketId]
+    );
+    if (!alreadyReturning) {
+      await this.insertEvent(connection, {
+        dispatch_ticket_id: ticketId,
+        tracking_session_id: trackingSessionId,
+        event_type: "returning_to_wmo",
+        event_source: eventSource,
+        ...actor,
+        idempotency_key: `returning-to-wmo:${ticketId}`
+      });
+    }
+    return true;
+  }
+
+  async arriveAtStop(ticketId, stopId, payload = {}) {
+    const actor = normalizeActor(payload);
+    await this.withTransaction(async (connection) => {
+      await this.getTicketForUpdate(connection, ticketId);
+      const stop = await this.getStopForUpdate(connection, ticketId, stopId);
+      if (stop.stop_status === "arrived") return;
+      if (TERMINAL_STOP_STATUSES.has(stop.stop_status)) {
+        throw new DispatchServiceError(
+          "A terminal stop cannot be marked arrived",
+          409,
+          "DISPATCH_STOP_TERMINAL"
+        );
+      }
+
+      await connection.query(
+        `
+          UPDATE dispatch_route_stops
+          SET stop_status = 'arrived',
+              actual_arrival_at = COALESCE(actual_arrival_at, NOW()),
+              arrival_source = 'manual',
+              arrival_candidate_at = NULL,
+              arrival_candidate_count = 0,
+              updated_at = NOW()
+          WHERE id = ?
+        `,
+        [stop.id]
+      );
+      await connection.query(
+        `
+          UPDATE dispatch_tickets
+          SET status = 'in_progress',
+              updated_at = NOW()
+          WHERE id = ?
+            AND status = 'dispatched'
+        `,
+        [ticketId]
+      );
+      await this.insertEvent(connection, {
+        dispatch_ticket_id: ticketId,
+        dispatch_route_stop_id: stop.id,
+        event_type: "arrived_at_stop",
+        event_source: "manual",
+        ...actor,
+        idempotency_key: `manual-arrive:${ticketId}:${stop.id}`
+      });
+    });
+    return this.getTicketDetails(ticketId);
+  }
+
+  async completeStop(ticketId, stopId, payload = {}) {
+    const actor = normalizeActor(payload);
+    await this.withTransaction(async (connection) => {
+      await this.getTicketForUpdate(connection, ticketId);
+      const stop = await this.getStopForUpdate(connection, ticketId, stopId);
+      if (stop.stop_status === "completed") return;
+      if (stop.stop_status === "skipped") {
+        throw new DispatchServiceError(
+          "A skipped stop cannot be completed",
+          409,
+          "DISPATCH_STOP_SKIPPED"
+        );
+      }
+
+      await connection.query(
+        `
+          UPDATE dispatch_route_stops
+          SET stop_status = 'completed',
+              actual_departure_at = COALESCE(actual_departure_at, NOW()),
+              departure_source = 'manual',
+              stop_duration_seconds = CASE
+                WHEN actual_arrival_at IS NULL THEN stop_duration_seconds
+                ELSE TIMESTAMPDIFF(
+                  SECOND,
+                  actual_arrival_at,
+                  COALESCE(actual_departure_at, NOW())
+                )
+              END,
+              completed_at = COALESCE(completed_at, NOW()),
+              departure_candidate_at = NULL,
+              departure_candidate_count = 0,
+              updated_at = NOW()
+          WHERE id = ?
+        `,
+        [stop.id]
+      );
+      await this.insertEvent(connection, {
+        dispatch_ticket_id: ticketId,
+        dispatch_route_stop_id: stop.id,
+        event_type: "stop_completed",
+        event_source: "manual",
+        ...actor,
+        idempotency_key: `manual-complete:${ticketId}:${stop.id}`
+      });
+      await this.updateNextStop(connection, ticketId);
+      await this.moveTicketToReturningIfDone(
+        connection,
+        ticketId,
+        "manual",
+        actor
+      );
+    });
+    return this.getTicketDetails(ticketId);
+  }
+
+  async skipStop(ticketId, stopId, payload = {}) {
+    const reason = cleanText(payload.reason || payload.skip_reason, 1000);
+    if (!reason) throw new DispatchServiceError("Skip reason is required");
+    const actor = normalizeActor(payload);
+
+    await this.withTransaction(async (connection) => {
+      await this.getTicketForUpdate(connection, ticketId);
+      const stop = await this.getStopForUpdate(connection, ticketId, stopId);
+      if (stop.stop_status === "skipped") return;
+      if (stop.stop_status === "completed") {
+        throw new DispatchServiceError(
+          "A completed stop cannot be skipped",
+          409,
+          "DISPATCH_STOP_COMPLETED"
+        );
+      }
+
+      await connection.query(
+        `
+          UPDATE dispatch_route_stops
+          SET stop_status = 'skipped',
+              skip_reason = ?,
+              skipped_at = COALESCE(skipped_at, NOW()),
+              updated_at = NOW()
+          WHERE id = ?
+        `,
+        [reason, stop.id]
+      );
+      await this.insertEvent(connection, {
+        dispatch_ticket_id: ticketId,
+        dispatch_route_stop_id: stop.id,
+        event_type: "stop_skipped",
+        event_source: "manual",
+        ...actor,
+        details: { reason },
+        idempotency_key: `manual-skip:${ticketId}:${stop.id}`
+      });
+      await this.updateNextStop(connection, ticketId);
+      await this.moveTicketToReturningIfDone(
+        connection,
+        ticketId,
+        "manual",
+        actor
+      );
+    });
+    return this.getTicketDetails(ticketId);
+  }
+
+  async markReturning(ticketId, payload = {}) {
+    const actor = normalizeActor(payload);
+    await this.withTransaction(async (connection) => {
+      const ticket = await this.getTicketForUpdate(connection, ticketId);
+      if (ticket.status === "returning_to_wmo") return;
+      if (["completed", "cancelled", "prepared"].includes(ticket.status)) {
+        throw new DispatchServiceError(
+          "This dispatch ticket cannot be marked as returning",
+          409,
+          "DISPATCH_RETURN_NOT_ALLOWED"
+        );
+      }
+      await connection.query(
+        `
+          UPDATE dispatch_tickets
+          SET status = 'returning_to_wmo',
+              returning_to_wmo_at = COALESCE(returning_to_wmo_at, NOW()),
+              updated_at = NOW()
+          WHERE id = ?
+        `,
+        [ticket.id]
+      );
+      await this.insertEvent(connection, {
+        dispatch_ticket_id: ticket.id,
+        event_type: "returning_to_wmo",
+        event_source: "manual",
+        ...actor,
+        idempotency_key: `returning-to-wmo:${ticket.id}`
+      });
+    });
+    return this.getTicketDetails(ticketId);
+  }
+
+  async getReports(filters = {}) {
+    const clauses = ["dt.status IN ('completed', 'cancelled')"];
+    const parameters = [];
+    if (filters.date_from) {
+      clauses.push("dt.dispatch_date >= ?");
+      parameters.push(dateOnly(filters.date_from, "date_from"));
+    }
+    if (filters.date_to) {
+      clauses.push("dt.dispatch_date <= ?");
+      parameters.push(dateOnly(filters.date_to, "date_to"));
+    }
+    if (filters.truck) {
+      clauses.push("(dt.truck_id = ? OR dt.truck_name_snapshot LIKE ?)");
+      parameters.push(
+        cleanText(filters.truck, 100),
+        `%${cleanText(filters.truck, 100)}%`
+      );
+    }
+
+    const [rows] = await this.query(
+      `
+        SELECT
+          dt.id,
+          dt.ticket_number,
+          dt.truck_id,
+          dt.truck_name_snapshot,
+          dt.assigned_personnel_id,
+          dt.assigned_personnel_name,
+          dt.dispatch_date,
+          dt.route_name,
+          dt.status,
+          dt.actual_start_at,
+          dt.actual_end_at,
+          dt.completed_at,
+          dt.cancelled_at,
+          dt.cancellation_reason,
+          COUNT(drs.id) AS total_stops,
+          SUM(drs.stop_status = 'completed') AS completed_stops,
+          SUM(drs.stop_status = 'skipped') AS skipped_stops,
+          SUM(COALESCE(drs.stop_duration_seconds, 0)) AS total_stop_duration_seconds,
+          TIMESTAMPDIFF(
+            SECOND,
+            dt.actual_start_at,
+            dt.actual_end_at
+          ) AS total_dispatch_duration_seconds
+        FROM dispatch_tickets dt
+        LEFT JOIN dispatch_route_stops drs
+          ON drs.dispatch_ticket_id = dt.id
+        WHERE ${clauses.join(" AND ")}
+        GROUP BY dt.id
+        ORDER BY dt.dispatch_date DESC, dt.updated_at DESC, dt.id DESC
+      `,
+      parameters
+    );
+    return rows;
+  }
+
+  async processAutomaticLocationLog(relationId, locationLog) {
+    const relationKey = requiredId(relationId, "dispatch tracking relation id");
+    const logId = requiredId(locationLog.id, "location log id");
+    const latitude = Number(locationLog.latitude);
+    const longitude = Number(locationLog.longitude);
+    const accuracy = Number(locationLog.accuracy);
+    const recordedAt = locationLog.recorded_at;
+
+    await this.withTransaction(async (connection) => {
+      const [relationRows] = await connection.query(
+        `
+          SELECT
+            dts.*,
+            dt.status AS dispatch_status
+          FROM dispatch_tracking_sessions dts
+          INNER JOIN dispatch_tickets dt
+            ON dt.id = dts.dispatch_ticket_id
+          WHERE dts.id = ?
+            AND dts.unlinked_at IS NULL
+          FOR UPDATE
+        `,
+        [relationKey]
+      );
+      if (!relationRows.length) return;
+
+      const relation = relationRows[0];
+      if (["completed", "cancelled"].includes(relation.dispatch_status)) {
+        await connection.query(
+          `
+            UPDATE dispatch_tracking_sessions
+            SET last_processed_location_log_id = GREATEST(
+              COALESCE(last_processed_location_log_id, 0),
+              ?
+            )
+            WHERE id = ?
+          `,
+          [logId, relationKey]
+        );
+        return;
+      }
+
+      const [stopRows] = await connection.query(
+        `
+          SELECT *
+          FROM dispatch_route_stops
+          WHERE dispatch_ticket_id = ?
+            AND stop_status NOT IN ('completed', 'skipped')
+          ORDER BY stop_order ASC, id ASC
+          LIMIT 1
+          FOR UPDATE
+        `,
+        [relation.dispatch_ticket_id]
+      );
+
+      const stop = stopRows[0];
+      const accurate =
+        Number.isFinite(accuracy) && accuracy > 0 && accuracy <= 50;
+      const validCoordinates =
+        Number.isFinite(latitude) &&
+        Number.isFinite(longitude) &&
+        latitude >= -90 &&
+        latitude <= 90 &&
+        longitude >= -180 &&
+        longitude <= 180;
+
+      if (stop && validCoordinates) {
+        const distance = haversineMeters(
+          latitude,
+          longitude,
+          Number(stop.latitude),
+          Number(stop.longitude)
+        );
+
+        if (stop.stop_status !== "arrived") {
+          const arrivalQualifies =
+            accurate && distance <= Number(stop.geofence_radius_meters);
+          await this.advanceArrivalCandidate(
+            connection,
+            relation,
+            stop,
+            locationLog,
+            arrivalQualifies,
+            distance
+          );
+        } else {
+          const departureQualifies =
+            accurate &&
+            distance > Number(stop.geofence_radius_meters) + 25;
+          await this.advanceDepartureCandidate(
+            connection,
+            relation,
+            stop,
+            locationLog,
+            departureQualifies,
+            distance
+          );
+        }
+      }
+
+      await connection.query(
+        `
+          UPDATE dispatch_tracking_sessions
+          SET last_processed_location_log_id = GREATEST(
+            COALESCE(last_processed_location_log_id, 0),
+            ?
+          )
+          WHERE id = ?
+        `,
+        [logId, relationKey]
+      );
+    });
+  }
+
+  async getPreviousLocationLog(connection, locationLog) {
+    const [rows] = await connection.query(
+      `
+        SELECT id, recorded_at
+        FROM truck_location_logs
+        WHERE session_id = ?
+          AND (
+            recorded_at < ?
+            OR (recorded_at = ? AND id < ?)
+          )
+        ORDER BY recorded_at DESC, id DESC
+        LIMIT 1
+      `,
+      [
+        locationLog.session_id,
+        locationLog.recorded_at,
+        locationLog.recorded_at,
+        locationLog.id
+      ]
+    );
+    return rows[0] || null;
+  }
+
+  async advanceArrivalCandidate(
+    connection,
+    relation,
+    stop,
+    locationLog,
+    qualifies,
+    distance
+  ) {
+    if (!qualifies) {
+      await connection.query(
+        `
+          UPDATE dispatch_route_stops
+          SET arrival_candidate_at = NULL,
+              arrival_candidate_count = 0,
+              updated_at = NOW()
+          WHERE id = ?
+        `,
+        [stop.id]
+      );
+      return;
+    }
+
+    const previousLog = await this.getPreviousLocationLog(connection, locationLog);
+    const previousTime = previousLog ? new Date(previousLog.recorded_at).getTime() : 0;
+    const currentTime = new Date(locationLog.recorded_at).getTime();
+    const hasLongGap =
+      previousTime > 0 &&
+      currentTime > previousTime &&
+      currentTime - previousTime > 90000;
+    const candidateAt =
+      stop.arrival_candidate_at && !hasLongGap
+        ? stop.arrival_candidate_at
+        : locationLog.recorded_at;
+    const candidateCount =
+      stop.arrival_candidate_at && !hasLongGap
+        ? Number(stop.arrival_candidate_count || 0) + 1
+        : 1;
+    const elapsedSeconds = Math.max(
+      0,
+      (currentTime - new Date(candidateAt).getTime()) / 1000
+    );
+
+    if (candidateCount >= 3 && elapsedSeconds >= 60) {
+      await connection.query(
+        `
+          UPDATE dispatch_route_stops
+          SET stop_status = 'arrived',
+              actual_arrival_at = COALESCE(actual_arrival_at, ?),
+              arrival_source = 'automatic',
+              arrival_candidate_at = NULL,
+              arrival_candidate_count = 0,
+              updated_at = NOW()
+          WHERE id = ?
+            AND stop_status NOT IN ('arrived', 'completed', 'skipped')
+        `,
+        [locationLog.recorded_at, stop.id]
+      );
+      await connection.query(
+        `
+          UPDATE dispatch_tickets
+          SET status = 'in_progress',
+              updated_at = NOW()
+          WHERE id = ?
+            AND status = 'dispatched'
+        `,
+        [relation.dispatch_ticket_id]
+      );
+      await this.insertEvent(connection, {
+        dispatch_ticket_id: relation.dispatch_ticket_id,
+        dispatch_route_stop_id: stop.id,
+        tracking_session_id: relation.tracking_session_id,
+        event_type: "arrived_at_stop",
+        event_at: locationLog.recorded_at,
+        event_source: "automatic",
+        actor_type: "system",
+        latitude: locationLog.latitude,
+        longitude: locationLog.longitude,
+        accuracy_meters: locationLog.accuracy,
+        details: { distance_meters: Math.round(distance) },
+        idempotency_key: `auto-arrive:${relation.dispatch_ticket_id}:${stop.id}`
+      });
+      return;
+    }
+
+    await connection.query(
+      `
+        UPDATE dispatch_route_stops
+        SET arrival_candidate_at = ?,
+            arrival_candidate_count = ?,
+            updated_at = NOW()
+        WHERE id = ?
+      `,
+      [candidateAt, candidateCount, stop.id]
+    );
+  }
+
+  async advanceDepartureCandidate(
+    connection,
+    relation,
+    stop,
+    locationLog,
+    qualifies,
+    distance
+  ) {
+    if (!qualifies) {
+      await connection.query(
+        `
+          UPDATE dispatch_route_stops
+          SET departure_candidate_at = NULL,
+              departure_candidate_count = 0,
+              updated_at = NOW()
+          WHERE id = ?
+        `,
+        [stop.id]
+      );
+      return;
+    }
+
+    const previousLog = await this.getPreviousLocationLog(connection, locationLog);
+    const previousTime = previousLog ? new Date(previousLog.recorded_at).getTime() : 0;
+    const currentTime = new Date(locationLog.recorded_at).getTime();
+    const hasLongGap =
+      previousTime > 0 &&
+      currentTime > previousTime &&
+      currentTime - previousTime > 60000;
+    const candidateAt =
+      stop.departure_candidate_at && !hasLongGap
+        ? stop.departure_candidate_at
+        : locationLog.recorded_at;
+    const candidateCount =
+      stop.departure_candidate_at && !hasLongGap
+        ? Number(stop.departure_candidate_count || 0) + 1
+        : 1;
+    const elapsedSeconds = Math.max(
+      0,
+      (currentTime - new Date(candidateAt).getTime()) / 1000
+    );
+
+    if (candidateCount >= 3 && elapsedSeconds >= 30) {
+      await connection.query(
+        `
+          UPDATE dispatch_route_stops
+          SET stop_status = 'completed',
+              actual_departure_at = COALESCE(actual_departure_at, ?),
+              departure_source = 'automatic',
+              stop_duration_seconds = CASE
+                WHEN actual_arrival_at IS NULL THEN stop_duration_seconds
+                ELSE TIMESTAMPDIFF(SECOND, actual_arrival_at, ?)
+              END,
+              completed_at = COALESCE(completed_at, ?),
+              departure_candidate_at = NULL,
+              departure_candidate_count = 0,
+              updated_at = NOW()
+          WHERE id = ?
+            AND stop_status = 'arrived'
+        `,
+        [
+          locationLog.recorded_at,
+          locationLog.recorded_at,
+          locationLog.recorded_at,
+          stop.id
+        ]
+      );
+      await this.insertEvent(connection, {
+        dispatch_ticket_id: relation.dispatch_ticket_id,
+        dispatch_route_stop_id: stop.id,
+        tracking_session_id: relation.tracking_session_id,
+        event_type: "departed_stop",
+        event_at: locationLog.recorded_at,
+        event_source: "automatic",
+        actor_type: "system",
+        latitude: locationLog.latitude,
+        longitude: locationLog.longitude,
+        accuracy_meters: locationLog.accuracy,
+        details: { distance_meters: Math.round(distance) },
+        idempotency_key: `auto-depart:${relation.dispatch_ticket_id}:${stop.id}`
+      });
+      await this.updateNextStop(connection, relation.dispatch_ticket_id);
+      await this.moveTicketToReturningIfDone(
+        connection,
+        relation.dispatch_ticket_id,
+        "automatic",
+        { actor_type: "system", actor_id: null, actor_name: null },
+        relation.tracking_session_id
+      );
+      return;
+    }
+
+    await connection.query(
+      `
+        UPDATE dispatch_route_stops
+        SET departure_candidate_at = ?,
+            departure_candidate_count = ?,
+            updated_at = NOW()
+        WHERE id = ?
+      `,
+      [candidateAt, candidateCount, stop.id]
+    );
+  }
+
+  async reconcileEndedTrackingSession(relationId, wmoLocation) {
+    const relationKey = requiredId(relationId, "dispatch tracking relation id");
+    const wmoLatitude = Number(wmoLocation && wmoLocation.latitude);
+    const wmoLongitude = Number(wmoLocation && wmoLocation.longitude);
+    const wmoRadiusMeters = Number(wmoLocation && wmoLocation.radiusMeters);
+    if (
+      !Number.isFinite(wmoLatitude) ||
+      !Number.isFinite(wmoLongitude) ||
+      !Number.isFinite(wmoRadiusMeters)
+    ) {
+      throw new DispatchServiceError(
+        "Dispatch monitor WMO geofence is invalid",
+        500,
+        "DISPATCH_MONITOR_CONFIGURATION_ERROR"
+      );
+    }
+    await this.withTransaction(async (connection) => {
+      const [rows] = await connection.query(
+        `
+          SELECT
+            dts.id,
+            dts.dispatch_ticket_id,
+            dts.tracking_session_id,
+            dt.status AS dispatch_status,
+            tts.session_status,
+            tts.ended_at,
+            tts.end_latitude,
+            tts.end_longitude,
+            tts.last_latitude,
+            tts.last_longitude
+          FROM dispatch_tracking_sessions dts
+          INNER JOIN dispatch_tickets dt
+            ON dt.id = dts.dispatch_ticket_id
+          INNER JOIN truck_tracking_sessions tts
+            ON tts.id = dts.tracking_session_id
+          WHERE dts.id = ?
+            AND dts.unlinked_at IS NULL
+          FOR UPDATE
+        `,
+        [relationKey]
+      );
+      if (!rows.length) return;
+      const relation = rows[0];
+      if (relation.session_status === "active") return;
+      if (["completed", "cancelled"].includes(relation.dispatch_status)) return;
+
+      const allTerminal = await this.moveTicketToReturningIfDone(
+        connection,
+        relation.dispatch_ticket_id,
+        "automatic",
+        { actor_type: "system", actor_id: null, actor_name: null },
+        relation.tracking_session_id
+      );
+      if (!allTerminal) return;
+
+      const latitude = Number(relation.end_latitude ?? relation.last_latitude);
+      const longitude = Number(relation.end_longitude ?? relation.last_longitude);
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+
+      const distanceToWmo = haversineMeters(
+        latitude,
+        longitude,
+        wmoLatitude,
+        wmoLongitude
+      );
+      if (distanceToWmo > wmoRadiusMeters) return;
+
+      await connection.query(
+        `
+          UPDATE dispatch_tickets
+          SET status = 'completed',
+              actual_end_at = COALESCE(actual_end_at, ?, NOW()),
+              completed_at = COALESCE(completed_at, NOW()),
+              updated_at = NOW()
+          WHERE id = ?
+            AND status = 'returning_to_wmo'
+        `,
+        [relation.ended_at, relation.dispatch_ticket_id]
+      );
+      await this.insertEvent(connection, {
+        dispatch_ticket_id: relation.dispatch_ticket_id,
+        tracking_session_id: relation.tracking_session_id,
+        event_type: "returned_to_wmo",
+        event_at: relation.ended_at,
+        event_source: "automatic",
+        actor_type: "system",
+        latitude,
+        longitude,
+        details: { distance_meters: Math.round(distanceToWmo) },
+        idempotency_key: `returned-to-wmo:${relation.dispatch_ticket_id}`
+      });
+      await this.insertEvent(connection, {
+        dispatch_ticket_id: relation.dispatch_ticket_id,
+        tracking_session_id: relation.tracking_session_id,
+        event_type: "dispatch_completed",
+        event_at: relation.ended_at,
+        event_source: "automatic",
+        actor_type: "system",
+        idempotency_key: `dispatch-completed:${relation.dispatch_ticket_id}`
+      });
+    });
+  }
+}
+
+const dispatchService = new DispatchService();
+
+module.exports = dispatchService;
+module.exports.DispatchService = DispatchService;
+module.exports.DispatchServiceError = DispatchServiceError;
+module.exports.DispatchDatabaseUnavailableError =
+  DispatchDatabaseUnavailableError;
+module.exports.isDispatchTableMissingError = isDispatchTableMissingError;
+module.exports.normalizeDispatchError = normalizeDispatchError;
+module.exports.TICKET_STATUSES = TICKET_STATUSES;
+module.exports.STOP_STATUSES = STOP_STATUSES;

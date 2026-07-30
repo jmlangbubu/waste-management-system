@@ -91,10 +91,12 @@ const webAuthRoutes = require("../routes/webAuthRoutes");
 const webUserRoutes = require("../routes/webUserRoutes");
 const appointmentRoutes = require("../routes/appointmentRoutes");
 const trackingRoutes = require("../routes/trackingRoutes");
+const dispatchRoutes = require("../routes/dispatchRoutes");
 const notificationRoutes = require("../routes/notificationRoutes");
 const complaintRoutes = require("../routes/complaintRoutes");
 const certificateRoutes = require("../routes/certificateRoutes");
 const invoiceRoutes = require("../routes/invoiceRoutes");
+const dispatchMonitorService = require("../services/dispatchMonitorService");
 
 /* =========================
    PATHS
@@ -257,6 +259,7 @@ app.use("/api/web-auth", webAuthRoutes);
 app.use("/api/web-users", webUserRoutes);
 app.use("/api/appointments", appointmentRoutes);
 app.use("/api/tracking", trackingRoutes);
+app.use("/api/dispatch", dispatchRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/complaints", complaintRoutes);
 app.use("/api/certificates", certificateRoutes);
@@ -268,6 +271,8 @@ app.use("/api/invoices", invoiceRoutes);
 if (typeof complaintRoutes.startOverdueAcceptedComplaintScheduler === "function") {
   complaintRoutes.startOverdueAcceptedComplaintScheduler(app);
 }
+
+dispatchMonitorService.start();
 
 
 /* =========================

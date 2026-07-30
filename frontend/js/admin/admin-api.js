@@ -108,6 +108,30 @@ function getTrackingReportDetailsApiUrl(sessionId) {
 }
 
 // =========================
+// DISPATCH
+// =========================
+
+function getDispatchTicketsApiUrl() {
+  return `${getAppApiBase()}/dispatch/tickets`;
+}
+
+function getDispatchTicketApiUrl(ticketId) {
+  return `${getDispatchTicketsApiUrl()}/${encodeURIComponent(ticketId)}`;
+}
+
+function getDispatchLiveApiUrl() {
+  return `${getAppApiBase()}/dispatch/live`;
+}
+
+function getDispatchTrackingSessionApiUrl(sessionId) {
+  return `${getAppApiBase()}/dispatch/tracking-sessions/${encodeURIComponent(sessionId)}`;
+}
+
+function getDispatchReportsApiUrl() {
+  return `${getAppApiBase()}/dispatch/reports`;
+}
+
+// =========================
 // COMPLAINTS
 // =========================
 
