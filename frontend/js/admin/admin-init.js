@@ -36,6 +36,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     // Tracking module
     safeRun(initializeTruckMap, "initializeTruckMap");
+    safeRun(setupDispatchModule, "setupDispatchModule");
     safeRun(startTrackingAutoRefresh, "startTrackingAutoRefresh");
     await safeRun(loadTrackingReports, "loadTrackingReports");
 

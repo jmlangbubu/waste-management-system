@@ -302,12 +302,24 @@ function getTrackingRouteNotice(routeLogs = []) {
 
 async function loadActiveTrucks() {
   try {
-    const res = await fetch(getTrackingActiveApiUrl());
+    const [res] = await Promise.all([
+      fetch(getTrackingActiveApiUrl()),
+      typeof loadDispatchLiveData === "function"
+        ? loadDispatchLiveData()
+        : Promise.resolve({})
+    ]);
     const data = await res.json();
 
-    const trucks = Array.isArray(data)
+    const trackingTrucks = Array.isArray(data)
       ? data
       : (data.data || []);
+    const trucks = trackingTrucks.map((truck) => ({
+      ...truck,
+      dispatch:
+        typeof getDispatchLiveForSession === "function"
+          ? getDispatchLiveForSession(truck.session_id)
+          : null
+    }));
 
     renderActiveTruckList(trucks);
     updateTruckMarkers(trucks);
@@ -324,6 +336,9 @@ async function loadActiveTrucks() {
       }
 
       await loadTruckRoute(selectedSessionId, { keepView: true });
+      if (typeof loadDispatchForTrackingSession === "function") {
+        await loadDispatchForTrackingSession(selectedSessionId);
+      }
 
       const selectedLabel = document.getElementById("selectedTruckLabel");
       if (selectedLabel) {
@@ -390,6 +405,16 @@ function renderActiveTruckList(trucks) {
     const isSelected = String(selectedSessionId) === String(truck.session_id);
     const statusMeta = getTrackingStatusMeta(truck);
     const lastUpdated = getTruckLastUpdateValue(truck);
+    const dispatchLabel = truck.dispatch
+      ? `
+          <small class="dispatch-truck-ticket">${escapeHtml(truck.dispatch.ticket_number)} · ${escapeHtml(truck.dispatch.route_name)}</small><br>
+          <small>Assigned: ${escapeHtml(truck.dispatch.assigned_personnel_name || "Not assigned")}</small><br>
+          <small>Current: ${escapeHtml(truck.dispatch.current_stop_name || "Returning to WMO")}</small><br>
+          <small>Next: ${escapeHtml(truck.dispatch.next_stop_name || "WMO return")}</small><br>
+          <small>${Number(truck.dispatch.completed_stops || 0)}/${Number(truck.dispatch.total_stops || 0)} completed · ${escapeHtml(dispatchStatusLabel(truck.dispatch.dispatch_status))}</small><br>
+          <small>Tracking start: ${escapeHtml(formatTrackingTimeSafe(truck.dispatch.tracking_started_at))}</small><br>
+        `
+      : "";
 
     return `
       <div
@@ -404,6 +429,7 @@ function renderActiveTruckList(trucks) {
             <small class="truck-status-label ${statusMeta.className}">${escapeHtml(statusMeta.label)}</small>
           </div>
           <small>${escapeHtml(truck.enforcer_name || "-")}</small><br>
+          ${dispatchLabel}
           <small class="truck-sync-note">${escapeHtml(statusMeta.description)}</small><br>
           <small class="truck-last-sync">Last sync: ${escapeHtml(formatTrackingTimeSafe(lastUpdated))}</small>
         </div>
@@ -650,6 +676,9 @@ function resetTrackingView() {
 
   selectedSessionId = null;
   selectedTruckId = null;
+  if (typeof clearDispatchTrackingSelection === "function") {
+    clearDispatchTrackingSelection();
+  }
 
   const selectedLabel = document.getElementById("selectedTruckLabel");
   if (selectedLabel) {

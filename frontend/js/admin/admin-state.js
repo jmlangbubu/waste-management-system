@@ -34,6 +34,15 @@ let selectedCurrentMarker = null;
 let trackingPollInterval = null;
 let isTruckMapInitialized = false;
 
+// Dispatch planning (kept separate from legacy tracking layers)
+let dispatchLiveBySession = {};
+let selectedDispatchTicket = null;
+let dispatchPlannedLayerGroup = null;
+let dispatchPlanningMap = null;
+let dispatchPlanningLayerGroup = null;
+let dispatchTicketRows = [];
+let dispatchSetupRequired = false;
+
 // Charts
 let wasteTrendChartInstance = null;
 let submissionSourcesChartInstance = null;
