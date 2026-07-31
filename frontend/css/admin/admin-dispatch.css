@@ -521,3 +521,818 @@
     grid-column: auto;
   }
 }
+
+/* =========================================================
+   LIVE TRACKING + DISPATCH WORKSPACE
+   Scoped to the tracking section so unrelated admin modules
+   retain their existing layout and responsive behavior.
+========================================================= */
+#trackingSection .live-tracking-card {
+  padding: 18px;
+}
+
+#trackingSection .tracking-page-heading {
+  margin-bottom: 12px;
+}
+
+#trackingSection .tracking-compact-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #2f6f4c;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+#trackingSection .tracking-compact-link:hover {
+  background: #edf8f1;
+}
+
+#trackingSection .tracking-compact-link svg,
+#trackingSection .dispatch-inline-action svg,
+#trackingSection .dispatch-selected-truck-icon svg,
+#trackingSection .dispatch-map-instruction svg,
+#trackingSection .dispatch-stop-row-actions svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+#trackingSection .tracking-summary-row {
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 10px;
+}
+
+#trackingSection .tracking-mini-card {
+  min-height: 58px;
+  padding: 9px 10px;
+}
+
+#trackingSection .tracking-mini-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+}
+
+#trackingSection .tracking-summary-actions,
+#trackingSection .tracking-summary-row > .dashboard-header-actions {
+  min-width: 200px;
+  gap: 7px;
+}
+
+#trackingSection .tracking-summary-row .view-all-btn,
+#trackingSection .danger-stop-btn {
+  min-height: 36px;
+  padding: 8px 11px;
+  border-radius: 10px;
+  font-size: 11px;
+}
+
+#trackingSection .tracking-layout {
+  align-items: stretch;
+  min-height: 440px;
+}
+
+#trackingSection .tracking-map-wrap,
+#trackingSection #truckMap,
+#trackingSection .tracking-side-panel {
+  height: 100%;
+  min-height: 440px;
+}
+
+#trackingSection .tracking-map-wrap {
+  border-radius: 16px;
+}
+
+#trackingSection #truckMap {
+  transition: cursor 0.15s ease;
+}
+
+#trackingSection .tracking-live-map .leaflet-marker-pane .leaflet-marker-icon {
+  transition: transform 0.45s linear;
+}
+
+#trackingSection .tracking-map-wrap.dispatch-add-destination-mode #truckMap,
+#trackingSection .tracking-map-wrap.dispatch-add-destination-mode .leaflet-container {
+  cursor: crosshair !important;
+}
+
+#trackingSection .dispatch-map-instruction {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  z-index: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 190px);
+  padding: 9px 13px;
+  transform: translateX(-50%);
+  border: 1px solid #86d39c;
+  border-radius: 999px;
+  background: rgba(239, 253, 244, 0.96);
+  color: #145c31;
+  box-shadow: 0 10px 24px rgba(20, 92, 49, 0.18);
+  font-size: 12px;
+  font-weight: 850;
+  pointer-events: none;
+}
+
+#trackingSection .dispatch-map-instruction.hidden {
+  display: none;
+}
+
+#trackingSection .tracking-legend-line.planned {
+  border-color: #66736d;
+  border-top-style: dashed;
+}
+
+#trackingSection .tracking-route-endpoint {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border: 3px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 2px 9px rgba(15, 23, 42, 0.3);
+}
+
+#trackingSection .tracking-route-endpoint.start {
+  background: #198754;
+}
+
+#trackingSection .tracking-route-endpoint.current {
+  width: 20px;
+  height: 20px;
+  background: #dc3545;
+}
+
+#trackingSection .tracking-dispatch-workspace {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 12px;
+  border-radius: 16px;
+}
+
+#trackingSection .tracking-dispatch-workspace .tracking-panel-header {
+  margin-bottom: 10px;
+}
+
+#trackingSection .tracking-dispatch-workspace .tracking-panel-title-left p {
+  margin-top: 2px;
+}
+
+#trackingSection .tracking-workspace-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid #dce9e0;
+  border-radius: 11px;
+  background: #f4f8f5;
+}
+
+#trackingSection .tracking-workspace-tab {
+  min-width: 0;
+  padding: 8px 3px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #607168;
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+#trackingSection .tracking-workspace-tab.active {
+  background: #fff;
+  color: #17633a;
+  box-shadow: 0 3px 10px rgba(31, 98, 58, 0.12);
+}
+
+#trackingSection .tracking-workspace-scroll {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 10px 3px 2px;
+  scrollbar-width: thin;
+  scrollbar-color: #bdd1c4 #f3f7f4;
+}
+
+#trackingSection .tracking-workspace-view[hidden] {
+  display: none !important;
+}
+
+#trackingSection .tracking-workspace-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+#trackingSection .tracking-workspace-section-heading strong,
+#trackingSection .tracking-workspace-section-heading small {
+  display: block;
+}
+
+#trackingSection .tracking-workspace-section-heading strong {
+  color: #173c2c;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+#trackingSection .tracking-workspace-section-heading small {
+  margin-top: 2px;
+  color: #718077;
+  font-size: 10.5px;
+  line-height: 1.35;
+}
+
+#trackingSection .active-truck-list {
+  max-height: none;
+  gap: 8px;
+  padding-right: 1px;
+}
+
+#trackingSection .active-truck-item {
+  width: 100%;
+  padding: 10px;
+  border-radius: 13px;
+  font: inherit;
+  text-align: left;
+}
+
+#trackingSection .active-truck-item .truck-item-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+}
+
+#trackingSection .active-truck-item small {
+  font-size: 10.5px;
+  line-height: 1.35;
+}
+
+#trackingSection .truck-sync-note {
+  margin-top: 4px;
+}
+
+#trackingSection .dispatch-selected-truck {
+  padding: 10px;
+  border: 1px solid #cfe7d6;
+  border-radius: 13px;
+  background: linear-gradient(145deg, #f1fbf4, #fff);
+}
+
+#trackingSection .dispatch-selected-truck.is-empty {
+  border-style: dashed;
+  background: #f8faf9;
+}
+
+#trackingSection .dispatch-selected-truck-heading {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+#trackingSection .dispatch-selected-truck-icon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 10px;
+  background: #dff3e5;
+  color: #247546;
+}
+
+#trackingSection .dispatch-selected-truck-heading small,
+#trackingSection .dispatch-selected-truck-heading strong {
+  display: block;
+}
+
+#trackingSection .dispatch-selected-truck-heading small {
+  color: #6b7b72;
+  font-size: 9.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+#trackingSection .dispatch-selected-truck-heading strong {
+  overflow: hidden;
+  color: #153d2b;
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#trackingSection .dispatch-selected-truck-meta,
+#trackingSection .dispatch-inline-list-card dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin: 9px 0 0;
+}
+
+#trackingSection .dispatch-selected-truck-meta > div,
+#trackingSection .dispatch-inline-list-card dl > div {
+  min-width: 0;
+}
+
+#trackingSection .dispatch-selected-truck-meta .wide {
+  grid-column: 1 / -1;
+}
+
+#trackingSection .dispatch-selected-truck-meta dt,
+#trackingSection .dispatch-inline-list-card dt {
+  color: #809087;
+  font-size: 8.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+#trackingSection .dispatch-selected-truck-meta dd,
+#trackingSection .dispatch-inline-list-card dd {
+  overflow: hidden;
+  margin: 2px 0 0;
+  color: #29483a;
+  font-size: 10.5px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+}
+
+#trackingSection .dispatch-session-warning {
+  margin-bottom: 8px;
+  padding: 9px 10px;
+  border: 1px solid #f5c66d;
+  border-radius: 10px;
+  background: #fff8e7;
+  color: #8b5a00;
+  font-size: 10.5px;
+  font-weight: 750;
+  line-height: 1.4;
+}
+
+#trackingSection .dispatch-inline-planner {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #e4ece7;
+}
+
+#trackingSection .dispatch-inline-field,
+#trackingSection .dispatch-stop-field {
+  display: grid;
+  gap: 4px;
+  color: #4b6357;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+#trackingSection .dispatch-inline-field > small,
+#trackingSection .dispatch-stop-field > small {
+  display: inline;
+  color: #8a9790;
+  font-size: 9px;
+  font-weight: 650;
+}
+
+#trackingSection .dispatch-inline-field input,
+#trackingSection .dispatch-inline-field textarea,
+#trackingSection .dispatch-stop-field input,
+#trackingSection .dispatch-inline-filters input,
+#trackingSection .dispatch-inline-filters select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #cadbd1;
+  border-radius: 8px;
+  background: #fff;
+  color: #203d2f;
+  padding: 7px 8px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+#trackingSection .dispatch-inline-field textarea {
+  min-height: 54px;
+  resize: vertical;
+}
+
+#trackingSection .dispatch-inline-field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+  margin-top: 7px;
+}
+
+#trackingSection .dispatch-inline-route-toolbar,
+#trackingSection .dispatch-inline-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+}
+
+#trackingSection .dispatch-inline-form-actions {
+  justify-content: flex-end;
+}
+
+#trackingSection .dispatch-inline-action {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border: 1px solid #add3b9;
+  border-radius: 8px;
+  background: #eef9f1;
+  color: #17633a;
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+#trackingSection .dispatch-inline-action:hover:not(:disabled),
+#trackingSection .dispatch-inline-action.active {
+  border-color: #4ca86a;
+  background: #dcf5e4;
+}
+
+#trackingSection .dispatch-inline-action.primary {
+  border-color: #237b46;
+  background: #237b46;
+  color: #fff;
+}
+
+#trackingSection .dispatch-inline-action.secondary {
+  border-color: #d4dfd8;
+  background: #fff;
+  color: #456054;
+}
+
+#trackingSection .dispatch-inline-action:disabled {
+  border-color: #dfe6e2;
+  background: #edf1ef;
+  color: #96a19b;
+  cursor: not-allowed;
+}
+
+#trackingSection .dispatch-destination-hint {
+  margin: 7px 0;
+  color: #6c7e74;
+  font-size: 9.5px;
+  line-height: 1.4;
+}
+
+#trackingSection .dispatch-inline-stop-rows {
+  gap: 7px;
+}
+
+#trackingSection .dispatch-stop-row {
+  padding: 9px;
+  border-radius: 10px;
+}
+
+#trackingSection .dispatch-stop-row-header {
+  margin-bottom: 7px;
+}
+
+#trackingSection .dispatch-stop-row-actions button {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  padding: 0;
+}
+
+#trackingSection .dispatch-stop-row-actions button:last-child {
+  color: #b42318;
+}
+
+#trackingSection .dispatch-stop-fields {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+#trackingSection .dispatch-stop-location-field {
+  grid-column: 1 / -1;
+}
+
+#trackingSection .dispatch-input-suffix {
+  display: flex;
+  align-items: center;
+  border: 1px solid #cadbd1;
+  border-radius: 8px;
+  background: #fff;
+}
+
+#trackingSection .dispatch-input-suffix input {
+  border: 0;
+}
+
+#trackingSection .dispatch-input-suffix span {
+  padding-right: 8px;
+  color: #73847a;
+  font-size: 9px;
+}
+
+#trackingSection .dispatch-stop-location-status {
+  display: block;
+  margin-top: 6px;
+  color: #77887f;
+  font-size: 9px;
+  line-height: 1.35;
+}
+
+#trackingSection .dispatch-route-empty {
+  padding: 16px 10px;
+  border: 1px dashed #cddbd3;
+  border-radius: 10px;
+  background: #fafcfb;
+  color: #74827a;
+  font-size: 10.5px;
+  text-align: center;
+}
+
+#trackingSection .dispatch-route-empty.error {
+  border-color: #efb7b3;
+  background: #fff7f6;
+  color: #a33a32;
+}
+
+#trackingSection .dispatch-form-error,
+#trackingSection .dispatch-workflow-result {
+  margin-top: 8px;
+  padding: 8px 9px;
+  border-radius: 9px;
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
+#trackingSection .dispatch-form-error,
+#trackingSection .dispatch-workflow-result.error {
+  border: 1px solid #efb7b3;
+  background: #fff4f3;
+  color: #9e3030;
+}
+
+#trackingSection .dispatch-workflow-result.success {
+  border: 1px solid #b7ddc1;
+  background: #f0faf3;
+  color: #22663d;
+}
+
+#trackingSection .dispatch-workflow-result .dispatch-inline-action {
+  margin-top: 7px;
+}
+
+#trackingSection .dispatch-inline-filters {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+#trackingSection .dispatch-inline-filters .dispatch-inline-action {
+  grid-column: 1 / -1;
+}
+
+#trackingSection .dispatch-inline-list {
+  display: grid;
+  gap: 8px;
+}
+
+#trackingSection .dispatch-inline-list-card {
+  padding: 10px;
+  border: 1px solid #dce7e1;
+  border-radius: 11px;
+  background: #fff;
+}
+
+#trackingSection .dispatch-inline-list-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+#trackingSection .dispatch-inline-list-heading strong,
+#trackingSection .dispatch-inline-list-heading small {
+  display: block;
+}
+
+#trackingSection .dispatch-inline-list-heading strong {
+  color: #173c2c;
+  font-size: 11.5px;
+}
+
+#trackingSection .dispatch-inline-list-heading small {
+  margin-top: 2px;
+  color: #6f7f76;
+  font-size: 9.5px;
+}
+
+#trackingSection .dispatch-inline-list-card .dispatch-inline-action {
+  width: 100%;
+  margin-top: 8px;
+}
+
+#trackingSection .dispatch-inline-details {
+  margin-top: 10px;
+  border-radius: 11px;
+}
+
+#trackingSection .dispatch-inline-details .dispatch-current-header,
+#trackingSection .dispatch-inline-details .dispatch-current-body {
+  padding: 10px;
+}
+
+#trackingSection .dispatch-inline-details .dispatch-current-body {
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+#trackingSection .dispatch-inline-details .dispatch-current-header {
+  align-items: flex-start;
+  gap: 7px;
+}
+
+#trackingSection .dispatch-inline-details .dispatch-ticket-heading h3 {
+  font-size: 13px;
+}
+
+#trackingSection .dispatch-inline-details .dispatch-ticket-heading p,
+#trackingSection .dispatch-inline-details .dispatch-stop-card small,
+#trackingSection .dispatch-inline-details .dispatch-event-item small {
+  font-size: 9px;
+}
+
+#trackingSection .dispatch-inline-details .dispatch-progress-summary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+
+#trackingSection .dispatch-route-marker.current {
+  background: #e47d1b;
+  box-shadow: 0 0 0 6px rgba(228, 125, 27, 0.2), 0 2px 8px rgba(20, 48, 35, 0.28);
+}
+
+@media (min-width: 993px) {
+  #trackingSection .tracking-summary-row {
+    grid-template-columns: repeat(5, minmax(92px, 1fr)) minmax(190px, auto) !important;
+  }
+
+  #trackingSection .tracking-summary-actions,
+  #trackingSection .tracking-summary-row > .dashboard-header-actions {
+    grid-column: auto !important;
+  }
+
+  #trackingSection .tracking-layout,
+  .admin-layout:not(.sidebar-collapsed) #trackingSection .tracking-layout,
+  .admin-layout.sidebar-collapsed #trackingSection .tracking-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(350px, 390px) !important;
+    height: clamp(440px, calc(100vh - 300px), 680px);
+    gap: 12px !important;
+  }
+
+  .admin-layout.sidebar-collapsed #trackingSection .tracking-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(370px, 410px) !important;
+  }
+
+  #trackingSection .tracking-map-wrap,
+  #trackingSection #truckMap,
+  #trackingSection .tracking-side-panel,
+  .admin-layout.sidebar-collapsed #trackingSection .tracking-map-wrap,
+  .admin-layout.sidebar-collapsed #trackingSection #truckMap {
+    height: 100% !important;
+    min-height: 440px !important;
+  }
+}
+
+@media (min-width: 993px) and (max-width: 1320px) {
+  #trackingSection .tracking-layout,
+  .admin-layout:not(.sidebar-collapsed) #trackingSection .tracking-layout,
+  .admin-layout.sidebar-collapsed #trackingSection .tracking-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(330px, 350px) !important;
+  }
+
+  #trackingSection .tracking-summary-row {
+    grid-template-columns: repeat(5, minmax(72px, 1fr)) minmax(185px, auto) !important;
+  }
+
+  #trackingSection .tracking-summary-actions {
+    grid-column: auto !important;
+    min-width: 0;
+    justify-content: flex-end;
+  }
+}
+
+@media (max-height: 800px) and (min-width: 993px) {
+  #trackingSection .live-tracking-card {
+    padding: 12px;
+  }
+
+  #trackingSection .tracking-heading-copy p,
+  #trackingSection .tracking-panel-title-left p {
+    display: none;
+  }
+
+  #trackingSection .tracking-page-heading {
+    margin-bottom: 7px;
+  }
+
+  #trackingSection .tracking-summary-row {
+    margin-bottom: 8px;
+    padding: 7px;
+  }
+
+  #trackingSection .tracking-mini-card {
+    min-height: 48px;
+    padding: 6px 8px;
+  }
+
+  #trackingSection .tracking-mini-icon {
+    width: 28px;
+    height: 28px;
+  }
+
+  #trackingSection .tracking-layout,
+  .admin-layout:not(.sidebar-collapsed) #trackingSection .tracking-layout,
+  .admin-layout.sidebar-collapsed #trackingSection .tracking-layout {
+    height: max(390px, calc(100vh - 350px));
+    min-height: 390px;
+  }
+
+  #trackingSection .tracking-map-wrap,
+  #trackingSection #truckMap,
+  #trackingSection .tracking-side-panel,
+  .admin-layout.sidebar-collapsed #trackingSection .tracking-map-wrap,
+  .admin-layout.sidebar-collapsed #trackingSection #truckMap {
+    min-height: 390px !important;
+  }
+}
+
+@media (max-width: 992px) {
+  #trackingSection .tracking-layout {
+    grid-template-columns: 1fr !important;
+    height: auto;
+  }
+
+  #trackingSection .tracking-map-wrap,
+  #trackingSection #truckMap {
+    height: 420px !important;
+    min-height: 420px !important;
+  }
+
+  #trackingSection .tracking-side-panel {
+    height: min(620px, 75vh);
+    min-height: 440px;
+  }
+}
+
+@media (max-width: 620px) {
+  #trackingSection .live-tracking-card {
+    padding: 10px;
+  }
+
+  #trackingSection .tracking-workspace-tabs {
+    position: sticky;
+    top: -10px;
+    z-index: 5;
+  }
+
+  #trackingSection .dispatch-inline-field-row,
+  #trackingSection .dispatch-stop-fields,
+  #trackingSection .dispatch-selected-truck-meta,
+  #trackingSection .dispatch-inline-filters {
+    grid-template-columns: 1fr;
+  }
+
+  #trackingSection .dispatch-selected-truck-meta .wide,
+  #trackingSection .dispatch-stop-location-field {
+    grid-column: auto;
+  }
+
+  #trackingSection .dispatch-map-instruction {
+    top: 52px;
+    max-width: calc(100% - 24px);
+    border-radius: 12px;
+  }
+}

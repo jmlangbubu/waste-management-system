@@ -13,7 +13,6 @@
 <link rel="stylesheet" href="css/admin/admin-appointments.css">
 <link rel="stylesheet" href="css/admin/admin-tracking.css">
 <link rel="stylesheet" href="css/admin/admin-tracking-offline-sync.css">
-<link rel="stylesheet" href="css/admin/admin-dispatch.css">
 <link rel="stylesheet" href="css/admin/admin-users.css">
 <link rel="stylesheet" href="css/admin/admin-modals.css">
 <link rel="stylesheet" href="css/admin/admin-responsive.css">
@@ -22,6 +21,7 @@
 <link rel="stylesheet" href="css/admin/admin-waste-records.css">
 <link rel="stylesheet" href="css/admin/admin-complaints.css">
 <link rel="stylesheet" href="css/admin/admin-profile.css">
+<link rel="stylesheet" href="css/admin/admin-dispatch.css">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
 
@@ -861,17 +861,9 @@
       </div>
 
       <div class="dashboard-header-actions tracking-header-actions">
-        <button type="button" class="view-all-btn small" id="dispatchCreateTicketBtn">
-          Create Dispatch Ticket
-        </button>
-        <button type="button" class="view-all-btn small" id="dispatchTicketsBtn">
-          Dispatch Tickets
-        </button>
-        <button type="button" class="view-all-btn small" id="dispatchReportsBtn">
-          Dispatch Reports
-        </button>
-        <button type="button" class="view-all-btn small" onclick="openTrackingReportsModal()">
-          View Tracking Reports
+        <button type="button" class="tracking-compact-link" onclick="openTrackingReportsModal()">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></svg>
+          Tracking reports
         </button>
       </div>
     </div>
@@ -930,223 +922,186 @@
 
     <div class="tracking-layout">
       <div class="tracking-map-wrap">
-        <div id="truckMap"></div>
+        <div id="truckMap" class="tracking-live-map"></div>
+
+        <div id="dispatchMapInstruction" class="dispatch-map-instruction hidden" role="status">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M2 12h20"/><circle cx="12" cy="12" r="5"/></svg>
+          Click a street or location on the map to add a destination.
+        </div>
 
         <div class="tracking-map-legend" aria-label="Map legend">
           <span><i class="tracking-legend-dot start"></i> Start</span>
           <span><i class="tracking-legend-dot current"></i> Current / last synced</span>
-          <span><i class="tracking-legend-line actual"></i> Synced route</span>
-          <span><i class="tracking-legend-line gap"></i> Connected sync gap</span>
+          <span><i class="tracking-legend-line actual"></i> Reliable GPS trail</span>
+          <span><i class="tracking-legend-line gap"></i> Confirmed sync gap</span>
+          <span><i class="tracking-legend-line planned"></i> Planned route</span>
         </div>
       </div>
 
-      <aside class="tracking-side-panel" aria-label="Active truck list">
+      <aside class="tracking-side-panel tracking-dispatch-workspace" aria-label="Live tracking and dispatch workspace">
         <div class="tracking-panel-header">
           <div class="tracking-panel-title-left">
             <span class="tracking-panel-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h11v8H3z"/><path d="M14 10h3.5L21 13.5V15h-7z"/><path d="M7 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM17 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/></svg></span>
             <div>
-              <h4>Active Trucks</h4>
-              <p>Live sessions currently available for monitoring.</p>
+              <h4>Field Workspace</h4>
+              <p>Track a truck and plan its dispatch in one place.</p>
             </div>
           </div>
-          <span class="tracking-live-chip">Live List</span>
+          <span class="tracking-live-chip">Live</span>
         </div>
 
-        <div id="activeTruckList" class="active-truck-list">
-          <div class="tracking-empty-state">
-            <span class="tracking-empty-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h11v8H3z"/><path d="M14 10h3.5L21 13.5V15h-7z"/><path d="M7 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM17 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/></svg></span>
-            <strong>No active tracking sessions</strong>
-            <small>Active trucks will appear here once enforcer tracking starts.</small>
-          </div>
+        <div class="tracking-workspace-tabs" role="tablist" aria-label="Tracking workspace views">
+          <button type="button" class="tracking-workspace-tab active" data-tracking-workspace-tab="live" role="tab" aria-selected="true">Live</button>
+          <button type="button" class="tracking-workspace-tab" data-tracking-workspace-tab="dispatch" role="tab" aria-selected="false">Dispatch</button>
+          <button type="button" class="tracking-workspace-tab" data-tracking-workspace-tab="tickets" role="tab" aria-selected="false">Tickets</button>
+          <button type="button" class="tracking-workspace-tab" data-tracking-workspace-tab="reports" role="tab" aria-selected="false">Reports</button>
+        </div>
+
+        <div class="tracking-workspace-scroll">
+          <section class="tracking-workspace-view active" data-tracking-workspace-view="live" role="tabpanel">
+            <div class="tracking-workspace-section-heading">
+              <div>
+                <strong>Active Trucks</strong>
+                <small>Select an online truck to begin dispatch planning.</small>
+              </div>
+            </div>
+            <div id="activeTruckList" class="active-truck-list">
+              <div class="tracking-empty-state">
+                <span class="tracking-empty-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h11v8H3z"/><path d="M14 10h3.5L21 13.5V15h-7z"/><path d="M7 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM17 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/></svg></span>
+                <strong>No active tracking sessions</strong>
+                <small>Active trucks will appear here once enforcer tracking starts.</small>
+              </div>
+            </div>
+          </section>
+
+          <section class="tracking-workspace-view" data-tracking-workspace-view="dispatch" role="tabpanel" hidden>
+            <div id="dispatchSessionWarning" class="dispatch-session-warning hidden" role="alert"></div>
+
+            <article id="dispatchSelectedTruckSummary" class="dispatch-selected-truck is-empty">
+              <div class="dispatch-selected-truck-heading">
+                <span class="dispatch-selected-truck-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h11v8H3z"/><path d="M14 10h3.5L21 13.5V15h-7z"/><path d="M7 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM17 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/></svg></span>
+                <div>
+                  <small>Selected truck</small>
+                  <strong id="dispatchSelectedTruckName">Choose a truck from Live</strong>
+                </div>
+                <span id="dispatchSelectedTruckStatus" class="tracking-live-chip">Waiting</span>
+              </div>
+              <dl class="dispatch-selected-truck-meta">
+                <div><dt>Session</dt><dd id="dispatchSelectedSessionLabel">--</dd></div>
+                <div><dt>Personnel</dt><dd id="dispatchSelectedPersonnelLabel">--</dd></div>
+                <div><dt>Tracking start</dt><dd id="dispatchSelectedStartLabel">--</dd></div>
+                <div><dt>Latest GPS</dt><dd id="dispatchSelectedGpsLabel">--</dd></div>
+                <div class="wide"><dt>Current reliable coordinates</dt><dd id="dispatchSelectedCoordinatesLabel">--</dd></div>
+              </dl>
+            </article>
+
+            <form id="dispatchTicketForm" class="dispatch-inline-planner" novalidate>
+              <input type="hidden" id="dispatchEditingTicketId">
+              <input type="hidden" id="dispatchTrackingSessionId">
+              <input type="hidden" id="dispatchTruckId">
+              <input type="hidden" id="dispatchTruckName">
+              <input type="hidden" id="dispatchPersonnelId">
+              <input type="hidden" id="dispatchPersonnelName">
+              <input type="hidden" id="dispatchDate">
+              <input type="hidden" id="dispatchScheduledStart">
+              <input type="hidden" id="dispatchRouteDescription">
+
+              <div class="tracking-workspace-section-heading">
+                <div>
+                  <strong id="dispatchTicketEditorTitle">Dispatch Planner</strong>
+                  <small>Add destinations directly from the live map.</small>
+                </div>
+              </div>
+
+              <label class="dispatch-inline-field">
+                Route name
+                <input type="text" id="dispatchRouteName" maxlength="255" required placeholder="Truck route for today">
+              </label>
+              <div class="dispatch-inline-field-row">
+                <label class="dispatch-inline-field">
+                  Expected return <small>Optional</small>
+                  <input type="datetime-local" id="dispatchExpectedReturn">
+                </label>
+                <label class="dispatch-inline-field">
+                  Notes <small>Optional</small>
+                  <textarea id="dispatchNotes" rows="2" maxlength="2000" placeholder="Instructions for the field team"></textarea>
+                </label>
+              </div>
+
+              <div class="dispatch-inline-route-toolbar">
+                <button type="button" class="dispatch-inline-action" id="dispatchAddStopBtn" aria-pressed="false">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+                  <span data-dispatch-add-label>Add Destination</span>
+                </button>
+                <button type="button" class="dispatch-inline-action secondary" id="dispatchClearRouteBtn">Clear Route</button>
+              </div>
+              <p id="dispatchDestinationHint" class="dispatch-destination-hint">Select a live truck, then enable Add Destination and click the map.</p>
+
+              <div id="dispatchStopRows" class="dispatch-stop-rows dispatch-inline-stop-rows">
+                <div class="dispatch-route-empty">No destinations added yet.</div>
+              </div>
+
+              <div id="dispatchTicketFormError" class="dispatch-form-error hidden" role="alert"></div>
+              <div id="dispatchWorkflowResult" class="dispatch-workflow-result hidden" aria-live="polite"></div>
+              <div class="dispatch-form-actions dispatch-inline-form-actions">
+                <button type="submit" class="dispatch-inline-action secondary" id="dispatchSaveTicketBtn">Save Draft</button>
+                <button type="button" class="dispatch-inline-action primary" id="dispatchNowBtn" disabled>Dispatch Now</button>
+              </div>
+            </form>
+
+            <section id="dispatchCurrentPanel" class="dispatch-current-panel dispatch-inline-details" aria-live="polite">
+              <div class="dispatch-panel-empty">
+                <div>
+                  <strong>No dispatch ticket selected</strong>
+                  <p>A saved or active ticket will appear here.</p>
+                </div>
+              </div>
+            </section>
+          </section>
+
+          <section class="tracking-workspace-view" data-tracking-workspace-view="tickets" role="tabpanel" hidden>
+            <div class="tracking-workspace-section-heading">
+              <div><strong>Dispatch Tickets</strong><small>Prepared and active field operations.</small></div>
+            </div>
+            <div class="dispatch-inline-filters">
+              <input type="search" id="dispatchTicketSearch" placeholder="Search ticket or route">
+              <select id="dispatchTicketStatusFilter" aria-label="Ticket status">
+                <option value="">All statuses</option>
+                <option value="prepared">Prepared</option>
+                <option value="dispatched">Dispatched</option>
+                <option value="in_progress">In progress</option>
+                <option value="returning_to_wmo">Returning</option>
+              </select>
+              <input type="date" id="dispatchTicketDateFilter" aria-label="Ticket date">
+              <input type="search" id="dispatchTicketTruckFilter" placeholder="Truck ID or name">
+              <button type="button" class="dispatch-inline-action secondary" id="dispatchTicketFilterBtn">Apply</button>
+            </div>
+            <div id="dispatchTicketsSetupNotice" class="dispatch-setup-notice hidden">Dispatch database setup is required.</div>
+            <div id="dispatchTicketsList" class="dispatch-inline-list">
+              <div class="dispatch-route-empty">Open this tab to load dispatch tickets.</div>
+            </div>
+          </section>
+
+          <section class="tracking-workspace-view" data-tracking-workspace-view="reports" role="tabpanel" hidden>
+            <div class="tracking-workspace-section-heading">
+              <div><strong>Dispatch Reports</strong><small>Completed and cancelled field operations.</small></div>
+            </div>
+            <div class="dispatch-inline-filters">
+              <input type="date" id="dispatchReportDateFrom" aria-label="Report date from">
+              <input type="date" id="dispatchReportDateTo" aria-label="Report date to">
+              <input type="search" id="dispatchReportTruck" placeholder="Truck ID or name">
+              <button type="button" class="dispatch-inline-action secondary" id="dispatchReportFilterBtn">Apply</button>
+            </div>
+            <div id="dispatchReportsSetupNotice" class="dispatch-setup-notice hidden">Dispatch database setup is required.</div>
+            <div id="dispatchReportsList" class="dispatch-inline-list">
+              <div class="dispatch-route-empty">Open this tab to load dispatch reports.</div>
+            </div>
+          </section>
         </div>
       </aside>
     </div>
-
-    <section id="dispatchCurrentPanel" class="dispatch-current-panel" aria-live="polite">
-      <div class="dispatch-panel-empty">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M5 4h14v16H5z"></path>
-          <path d="M8 8h8M8 12h8M8 16h5"></path>
-        </svg>
-        <div>
-          <strong>No dispatch ticket selected</strong>
-          <p>Select an active truck or open a dispatch ticket to view its planned route and stop progress.</p>
-        </div>
-      </div>
-    </section>
   </div>
 </section>
-
-<div id="dispatchTicketEditorModal" class="custom-modal hidden">
-  <div class="custom-modal-overlay" data-dispatch-close="dispatchTicketEditorModal"></div>
-  <div class="custom-modal-content dispatch-editor-content">
-    <div class="custom-modal-header">
-      <div>
-        <span class="dispatch-modal-eyebrow">Route planning</span>
-        <h3 id="dispatchTicketEditorTitle">Create Dispatch Ticket</h3>
-      </div>
-      <button type="button" class="modal-close-btn" data-dispatch-close="dispatchTicketEditorModal" aria-label="Close">&times;</button>
-    </div>
-    <form id="dispatchTicketForm" class="custom-modal-body dispatch-ticket-form">
-      <input type="hidden" id="dispatchEditingTicketId">
-      <div class="dispatch-form-grid">
-        <label>
-          Truck ID
-          <input type="text" id="dispatchTruckId" maxlength="100" required>
-        </label>
-        <label>
-          Truck name
-          <input type="text" id="dispatchTruckName" maxlength="255" required>
-        </label>
-        <label>
-          Personnel ID
-          <input type="number" id="dispatchPersonnelId" min="1">
-        </label>
-        <label>
-          Assigned personnel
-          <input type="text" id="dispatchPersonnelName" maxlength="255">
-        </label>
-        <label>
-          Dispatch date
-          <input type="date" id="dispatchDate" required>
-        </label>
-        <label>
-          Scheduled start
-          <input type="datetime-local" id="dispatchScheduledStart">
-        </label>
-        <label>
-          Expected return
-          <input type="datetime-local" id="dispatchExpectedReturn">
-        </label>
-        <label>
-          Route name
-          <input type="text" id="dispatchRouteName" maxlength="255" required>
-        </label>
-        <label class="dispatch-form-wide">
-          Route description
-          <textarea id="dispatchRouteDescription" rows="2" maxlength="2000"></textarea>
-        </label>
-        <label class="dispatch-form-wide">
-          Notes
-          <textarea id="dispatchNotes" rows="2" maxlength="2000"></textarea>
-        </label>
-      </div>
-
-      <div class="dispatch-stop-editor-heading">
-        <div>
-          <h4>Ordered route stops</h4>
-          <p>Use the map or enter coordinates. The route begins and ends at WMO.</p>
-        </div>
-        <button type="button" class="view-all-btn small" id="dispatchAddStopBtn">Add Stop</button>
-      </div>
-      <div class="dispatch-planning-layout">
-        <div id="dispatchStopRows" class="dispatch-stop-rows"></div>
-        <div class="dispatch-planning-map-wrap">
-          <div id="dispatchPlanningMap" aria-label="Dispatch route planning map"></div>
-          <small>Click the map to set coordinates for the focused stop.</small>
-        </div>
-      </div>
-      <div id="dispatchTicketFormError" class="dispatch-form-error hidden"></div>
-      <div class="dispatch-form-actions">
-        <button type="button" class="view-all-btn" data-dispatch-close="dispatchTicketEditorModal">Cancel</button>
-        <button type="submit" class="action-btn approve" id="dispatchSaveTicketBtn">Save Prepared Ticket</button>
-      </div>
-    </form>
-  </div>
-</div>
-
-<div id="dispatchTicketsModal" class="custom-modal hidden">
-  <div class="custom-modal-overlay" data-dispatch-close="dispatchTicketsModal"></div>
-  <div class="custom-modal-content dispatch-list-content">
-    <div class="custom-modal-header">
-      <div>
-        <span class="dispatch-modal-eyebrow">Operations</span>
-        <h3>Dispatch Tickets</h3>
-      </div>
-      <button type="button" class="modal-close-btn" data-dispatch-close="dispatchTicketsModal" aria-label="Close">&times;</button>
-    </div>
-    <div class="custom-modal-body">
-      <div class="dispatch-list-filters">
-        <input type="search" id="dispatchTicketSearch" placeholder="Search ticket, route, personnel">
-        <select id="dispatchTicketStatusFilter">
-          <option value="">All statuses</option>
-          <option value="prepared">Prepared</option>
-          <option value="dispatched">Dispatched</option>
-          <option value="in_progress">In progress</option>
-          <option value="returning_to_wmo">Returning to WMO</option>
-          <option value="completed">Completed</option>
-          <option value="cancelled">Cancelled</option>
-        </select>
-        <input type="date" id="dispatchTicketDateFilter">
-        <input type="search" id="dispatchTicketTruckFilter" placeholder="Truck ID or name">
-        <button type="button" class="view-all-btn small" id="dispatchTicketFilterBtn">Apply</button>
-      </div>
-      <div id="dispatchTicketsSetupNotice" class="dispatch-setup-notice hidden">
-        Dispatch database setup is required.
-      </div>
-      <div class="table-wrapper">
-        <table class="data-table dispatch-table">
-          <thead>
-            <tr>
-              <th>Ticket</th>
-              <th>Date</th>
-              <th>Truck</th>
-              <th>Route</th>
-              <th>Progress</th>
-              <th>Status</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody id="dispatchTicketsTableBody">
-            <tr><td colspan="7" class="loading-state">Loading dispatch tickets...</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-</div>
-
-<div id="dispatchReportsModal" class="custom-modal hidden">
-  <div class="custom-modal-overlay" data-dispatch-close="dispatchReportsModal"></div>
-  <div class="custom-modal-content dispatch-list-content">
-    <div class="custom-modal-header">
-      <div>
-        <span class="dispatch-modal-eyebrow">Completed operations</span>
-        <h3>Dispatch Reports</h3>
-      </div>
-      <button type="button" class="modal-close-btn" data-dispatch-close="dispatchReportsModal" aria-label="Close">&times;</button>
-    </div>
-    <div class="custom-modal-body">
-      <div class="dispatch-list-filters">
-        <input type="date" id="dispatchReportDateFrom" aria-label="Report date from">
-        <input type="date" id="dispatchReportDateTo" aria-label="Report date to">
-        <input type="search" id="dispatchReportTruck" placeholder="Truck ID or name">
-        <button type="button" class="view-all-btn small" id="dispatchReportFilterBtn">Apply</button>
-      </div>
-      <div id="dispatchReportsSetupNotice" class="dispatch-setup-notice hidden">
-        Dispatch database setup is required.
-      </div>
-      <div class="table-wrapper">
-        <table class="data-table dispatch-table">
-          <thead>
-            <tr>
-              <th>Ticket</th>
-              <th>Date</th>
-              <th>Truck</th>
-              <th>Route</th>
-              <th>Stops</th>
-              <th>Duration</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody id="dispatchReportsTableBody">
-            <tr><td colspan="7" class="loading-state">Loading dispatch reports...</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-</div>
 
 
 

@@ -33,6 +33,10 @@ let selectedStartMarker = null;
 let selectedCurrentMarker = null;
 let trackingPollInterval = null;
 let isTruckMapInitialized = false;
+let activeTrackingTrucks = [];
+let selectedTrackingTruck = null;
+let selectedReliableRoutePoint = null;
+let trackingMarkerStateBySession = {};
 
 // Dispatch planning (kept separate from legacy tracking layers)
 let dispatchLiveBySession = {};
@@ -42,6 +46,9 @@ let dispatchPlanningMap = null;
 let dispatchPlanningLayerGroup = null;
 let dispatchTicketRows = [];
 let dispatchSetupRequired = false;
+let dispatchSelectedSessionActive = false;
+let dispatchAddDestinationMode = false;
+let dispatchPendingLinkTicketId = null;
 
 // Charts
 let wasteTrendChartInstance = null;

@@ -131,6 +131,14 @@ function getDispatchReportsApiUrl() {
   return `${getAppApiBase()}/dispatch/reports`;
 }
 
+function getDispatchLocationLabelApiUrl(latitude, longitude) {
+  const parameters = new URLSearchParams({
+    latitude: String(latitude),
+    longitude: String(longitude)
+  });
+  return `${getAppApiBase()}/complaints/detect-barangay?${parameters}`;
+}
+
 // =========================
 // COMPLAINTS
 // =========================
