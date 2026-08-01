@@ -1,0 +1,110 @@
+{
+  "metadata": {
+    "city": "General Santos City",
+    "purpose": "Developer-reviewed operational road-section definitions. Coordinates are resolved only from matching OpenStreetMap ways by the importer.",
+    "popular_segment_keys": [
+      "pendatun-avenue",
+      "santiago-boulevard",
+      "pioneer-avenue",
+      "jose-catolico-avenue"
+    ]
+  },
+  "definitions": [
+    {
+      "segment_key": "south-osmena-street",
+      "display_label": "South Osmeña Street",
+      "official_road_name": "Osmeña Street",
+      "barangay": null,
+      "aliases": ["South Osmena", "South Osmeña", "S Osmena", "S. Osmeña", "Osmena South"],
+      "source_osm_way_ids": [],
+      "start_reference": null,
+      "end_reference": null,
+      "verification_notes": "OSM currently names the source ways Osmeña Street without an official South subdivision. Manually verify the southern endpoint intersection and the boundary intersection where South becomes Central.",
+      "is_verified": false
+    },
+    {
+      "segment_key": "central-osmena-street",
+      "display_label": "Central Osmeña Street",
+      "official_road_name": "Osmeña Street",
+      "barangay": null,
+      "aliases": ["Central Osmena", "Central Osmeña", "Osmena Central"],
+      "source_osm_way_ids": [],
+      "start_reference": null,
+      "end_reference": null,
+      "verification_notes": "OSM currently names the source ways Osmeña Street without an official Central subdivision. Manually verify both boundary intersections separating Central from South and North.",
+      "is_verified": false
+    },
+    {
+      "segment_key": "north-osmena-street",
+      "display_label": "North Osmeña Street",
+      "official_road_name": "Osmeña Street",
+      "barangay": null,
+      "aliases": ["North Osmena", "North Osmeña", "N Osmena", "N. Osmeña", "Osmena North"],
+      "source_osm_way_ids": [],
+      "start_reference": null,
+      "end_reference": null,
+      "verification_notes": "OSM currently names the source ways Osmeña Street without an official North subdivision. Manually verify the boundary intersection where Central becomes North and the northern endpoint intersection.",
+      "is_verified": false
+    },
+    {
+      "segment_key": "pendatun-avenue",
+      "display_label": "Pendatun Avenue",
+      "official_road_name": "Pendatun Avenue",
+      "barangay": null,
+      "aliases": ["Pendatun", "Pendatun Ave"],
+      "source_osm_way_ids": [791211456, 791211459, 888364289, 888364296, 888364298],
+      "start_reference": null,
+      "end_reference": null,
+      "verification_notes": "Exact OSM way IDs are pinned; the importer must still prove that they form one unbranched connected section.",
+      "is_verified": true
+    },
+    {
+      "segment_key": "national-highway-lagao",
+      "display_label": "National Highway – Lagao Section",
+      "official_road_name": "General Santos-Polomolok National Highway",
+      "barangay": "Lagao",
+      "aliases": ["National Highway Lagao", "National Highway - Lagao", "Lagao National Highway"],
+      "source_osm_way_ids": [866240963],
+      "start_reference": null,
+      "end_reference": null,
+      "verification_notes": "The OSM way is named General Santos-Polomolok National Highway, but the Lagao subdivision and its operational boundaries require manual verification.",
+      "is_verified": false
+    },
+    {
+      "segment_key": "santiago-boulevard",
+      "display_label": "Santiago Boulevard",
+      "official_road_name": "Irineo Santiago Boulevard",
+      "barangay": null,
+      "aliases": ["Santiago Blvd", "Irineo Santiago Boulevard", "Irineo Santiago Blvd"],
+      "source_osm_way_ids": [33274783],
+      "start_reference": null,
+      "end_reference": null,
+      "verification_notes": "One complete named OSM carriageway way is pinned; geometry endpoints remain importer-enforced.",
+      "is_verified": true
+    },
+    {
+      "segment_key": "pioneer-avenue",
+      "display_label": "Pioneer Avenue",
+      "official_road_name": "Pioneer Avenue",
+      "barangay": null,
+      "aliases": ["Pioneer", "Pioneer Ave"],
+      "source_osm_way_ids": [153958916],
+      "start_reference": null,
+      "end_reference": null,
+      "verification_notes": "One complete named OSM carriageway way is pinned; geometry endpoints remain importer-enforced.",
+      "is_verified": true
+    },
+    {
+      "segment_key": "jose-catolico-avenue",
+      "display_label": "Jose Catolico Avenue",
+      "official_road_name": "Jose Catolico Sr. Avenue",
+      "barangay": null,
+      "aliases": ["Jose Catolico", "Jose Catolico Ave", "Jose Catolico Sr Avenue"],
+      "source_osm_way_ids": [1287970427],
+      "start_reference": null,
+      "end_reference": null,
+      "verification_notes": "One complete named OSM carriageway way is pinned; geometry endpoints remain importer-enforced.",
+      "is_verified": true
+    }
+  ]
+}

@@ -3,6 +3,8 @@ const dispatchController = require("../controllers/dispatchController");
 
 const router = express.Router();
 
+router.get("/destinations", dispatchController.listDestinations);
+router.get("/destinations/:id", dispatchController.getDestination);
 router.post("/tickets", dispatchController.createTicket);
 router.get("/tickets", dispatchController.listTickets);
 router.get("/live", dispatchController.getLiveDispatches);

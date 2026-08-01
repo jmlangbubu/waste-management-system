@@ -23,6 +23,12 @@ function initializeTruckMap() {
 const TRACKING_LIVE_WINDOW_MS = 60 * 1000;
 const TRACKING_SYNC_PENDING_WINDOW_MS = 5 * 60 * 1000;
 const TRACKING_ROUTE_GAP_MS = 90 * 1000;
+const TRACKING_MAX_RELIABLE_ACCURACY_METERS = 50;
+const TRACKING_STATIONARY_RADIUS_METERS = 8;
+const TRACKING_STATIONARY_WINDOW_MS = 2 * 60 * 1000;
+const TRACKING_MAX_DISPLAY_SPEED_METERS_PER_SECOND = 35;
+const TRACKING_MIN_JUMP_DISTANCE_METERS = 200;
+const TRACKING_FALLBACK_RECENT_POINT_LIMIT = 12;
 
 function parseTrackingDate(value) {
   if (!value) return null;
@@ -215,16 +221,224 @@ function updateTrackingSummaryCards(trucks) {
   }
 
   if (trackingSignalStatus) {
-    const summary = getTrackingSignalSummary(safeTrucks);
-    trackingSignalStatus.textContent = summary.text;
-    trackingSignalStatus.className = `tracking-signal-status ${summary.className}`;
+    const selectedTruck = safeTrucks.find(
+      (truck) => String(truck.session_id) === String(selectedSessionId)
+    );
+    if (selectedTruck) {
+      const selectedStatus = getTrackingStatusMeta(selectedTruck);
+      trackingSignalStatus.textContent = selectedStatus.label;
+      trackingSignalStatus.className = `tracking-signal-status ${selectedStatus.className}`;
+    } else {
+      const summary = getTrackingSignalSummary(safeTrucks);
+      trackingSignalStatus.textContent = summary.text;
+      trackingSignalStatus.className = `tracking-signal-status ${summary.className}`;
+    }
   }
 }
 
-function updateTrackingRouteStats(routeLogs = []) {
+function trackingHaversineMeters(pointA, pointB) {
+  const latitudeA = Number(pointA?.lat);
+  const longitudeA = Number(pointA?.lng);
+  const latitudeB = Number(pointB?.lat);
+  const longitudeB = Number(pointB?.lng);
+  if (![latitudeA, longitudeA, latitudeB, longitudeB].every(Number.isFinite)) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  const toRadians = (degrees) => (degrees * Math.PI) / 180;
+  const earthRadiusMeters = 6371000;
+  const latitudeDelta = toRadians(latitudeB - latitudeA);
+  const longitudeDelta = toRadians(longitudeB - longitudeA);
+  const a =
+    Math.sin(latitudeDelta / 2) ** 2 +
+    Math.cos(toRadians(latitudeA)) *
+      Math.cos(toRadians(latitudeB)) *
+      Math.sin(longitudeDelta / 2) ** 2;
+  return earthRadiusMeters * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function parseTrackingCoordinate(value) {
+  if (value === null || value === undefined || String(value).trim() === "") {
+    return Number.NaN;
+  }
+  return Number(value);
+}
+
+function getTrackingPointAccuracy(point) {
+  if (point?.accuracy === null || point?.accuracy === undefined || point?.accuracy === "") {
+    return null;
+  }
+  const accuracy = Number(point.accuracy);
+  return Number.isFinite(accuracy) && accuracy >= 0
+    ? accuracy
+    : Number.POSITIVE_INFINITY;
+}
+
+function isTrackingPointReliable(point) {
+  const accuracy = getTrackingPointAccuracy(point);
+  return accuracy === null || accuracy <= TRACKING_MAX_RELIABLE_ACCURACY_METERS;
+}
+
+function normalizeTrackingRoutePoints(routeLogs = []) {
+  const seen = new Set();
+  return (Array.isArray(routeLogs) ? routeLogs : [])
+    .map((point, sourceIndex) => ({
+      ...point,
+      lat: parseTrackingCoordinate(point?.latitude),
+      lng: parseTrackingCoordinate(point?.longitude),
+      timestamp: getRoutePointTimestamp(point),
+      stableId: Number.isFinite(Number(point?.id)) ? Number(point.id) : sourceIndex,
+      sourceIndex,
+      accuracyMeters: getTrackingPointAccuracy(point)
+    }))
+    .filter(
+      (point) =>
+        Number.isFinite(point.lat) &&
+        Number.isFinite(point.lng) &&
+        point.lat >= -90 &&
+        point.lat <= 90 &&
+        point.lng >= -180 &&
+        point.lng <= 180 &&
+        !(point.lat === 0 && point.lng === 0)
+    )
+    .sort((pointA, pointB) => {
+      if (pointA.timestamp !== pointB.timestamp) {
+        return pointA.timestamp - pointB.timestamp;
+      }
+      if (pointA.stableId !== pointB.stableId) {
+        return pointA.stableId - pointB.stableId;
+      }
+      return pointA.sourceIndex - pointB.sourceIndex;
+    })
+    .filter((point) => {
+      const duplicateKey = `${point.timestamp}|${point.lat.toFixed(7)}|${point.lng.toFixed(7)}`;
+      if (seen.has(duplicateKey)) return false;
+      seen.add(duplicateKey);
+      return true;
+    });
+}
+
+function buildTrackingDisplayRoute(routeLogs = []) {
+  const rawCount = Array.isArray(routeLogs) ? routeLogs.length : 0;
+  const normalizedPoints = normalizeTrackingRoutePoints(routeLogs);
+  const reliablePoints = normalizedPoints.filter(isTrackingPointReliable);
+  let candidates = reliablePoints;
+  let fallbackUsed = false;
+
+  if (candidates.length < 2 && normalizedPoints.length > candidates.length) {
+    fallbackUsed = true;
+    const recentPoints = normalizedPoints.slice(-TRACKING_FALLBACK_RECENT_POINT_LIMIT);
+    const bestAccuracy = Math.min(
+      ...recentPoints.map((point) => point.accuracyMeters ?? Number.POSITIVE_INFINITY)
+    );
+    const fallbackAccuracyCeiling = Number.isFinite(bestAccuracy)
+      ? bestAccuracy + 10
+      : Number.POSITIVE_INFINITY;
+    const fallbackCandidates = recentPoints.filter(
+      (point) => (point.accuracyMeters ?? Number.POSITIVE_INFINITY) <= fallbackAccuracyCeiling
+    );
+    candidates = fallbackCandidates.length >= 2
+      ? fallbackCandidates
+      : recentPoints.slice(-2);
+  }
+
+  const displayedPoints = [];
+  let collapsedCount = 0;
+  let rejectedJumpCount = 0;
+
+  candidates.forEach((point) => {
+    const previous = displayedPoints[displayedPoints.length - 1];
+    if (!previous) {
+      displayedPoints.push({ ...point, collapsedPointCount: 0 });
+      return;
+    }
+
+    const distanceMeters = trackingHaversineMeters(previous, point);
+    const elapsedMs = point.timestamp && previous.timestamp
+      ? point.timestamp - previous.timestamp
+      : 0;
+    const elapsedSeconds = elapsedMs > 0 ? elapsedMs / 1000 : 0;
+    const impliedSpeed = elapsedSeconds > 0
+      ? distanceMeters / elapsedSeconds
+      : Number.POSITIVE_INFINITY;
+
+    if (
+      distanceMeters >= TRACKING_MIN_JUMP_DISTANCE_METERS &&
+      (elapsedSeconds <= 0 ||
+        impliedSpeed > TRACKING_MAX_DISPLAY_SPEED_METERS_PER_SECOND)
+    ) {
+      rejectedJumpCount++;
+      return;
+    }
+
+    if (
+      elapsedMs >= 0 &&
+      elapsedMs <= TRACKING_STATIONARY_WINDOW_MS &&
+      distanceMeters <= TRACKING_STATIONARY_RADIUS_METERS
+    ) {
+      displayedPoints[displayedPoints.length - 1] = {
+        ...point,
+        lat: previous.lat,
+        lng: previous.lng,
+        collapsedPointCount: Number(previous.collapsedPointCount || 0) + 1
+      };
+      collapsedCount++;
+      return;
+    }
+
+    displayedPoints.push({ ...point, collapsedPointCount: 0 });
+  });
+
+  return {
+    rawCount,
+    validCount: normalizedPoints.length,
+    reliableCount: reliablePoints.length,
+    displayedPoints,
+    markerPoint:
+      [...displayedPoints].reverse().find(isTrackingPointReliable) || null,
+    fallbackUsed,
+    rejectedAccuracyCount: normalizedPoints.length - reliablePoints.length,
+    rejectedJumpCount,
+    collapsedCount,
+    gapCount: displayedPoints.reduce((count, point, index) => {
+      if (!index) return count;
+      const previous = displayedPoints[index - 1];
+      return point.timestamp && previous.timestamp &&
+        point.timestamp - previous.timestamp > TRACKING_ROUTE_GAP_MS
+        ? count + 1
+        : count;
+    }, 0)
+  };
+}
+
+function updateTrackingRouteStats(routeResult = {}) {
   const routePointCount = document.getElementById("trackingRoutePointCount");
+  const rawPointCount = document.getElementById("trackingRawPointCount");
+  const filteredPointCount = document.getElementById("trackingFilteredPointCount");
+  const routeGapCount = document.getElementById("trackingRouteGapCount");
+  const diagnosticsNotice = document.getElementById("trackingDiagnosticsNotice");
   if (routePointCount) {
-    routePointCount.textContent = String(Array.isArray(routeLogs) ? routeLogs.length : 0);
+    if (Array.isArray(routeResult)) {
+      routePointCount.textContent = String(routeResult.length);
+      return;
+    }
+    const rawCount = Number(routeResult.rawCount || 0);
+    const mappedCount = Array.isArray(routeResult.displayedPoints)
+      ? routeResult.displayedPoints.length
+      : 0;
+    routePointCount.textContent = String(mappedCount);
+    if (rawPointCount) rawPointCount.textContent = String(rawCount);
+    if (filteredPointCount) {
+      filteredPointCount.textContent = String(Math.max(0, rawCount - mappedCount));
+    }
+    if (routeGapCount) routeGapCount.textContent = String(routeResult.gapCount || 0);
+    if (diagnosticsNotice) {
+      diagnosticsNotice.textContent = routeResult.fallbackUsed
+        ? "Showing the best recent low-accuracy route points; the truck marker remains on its latest reliable position."
+        : rawCount
+          ? "Raw GPS data remains unchanged; filtering applies only to this map."
+          : "Select a truck to inspect its route.";
+    }
   }
 }
 
@@ -320,6 +534,7 @@ async function loadActiveTrucks() {
           ? getDispatchLiveForSession(truck.session_id)
           : null
     }));
+    activeTrackingTrucks = trucks;
 
     renderActiveTruckList(trucks);
     updateTruckMarkers(trucks);
@@ -331,8 +546,17 @@ async function loadActiveTrucks() {
       );
 
       if (!selectedTruck) {
-        resetTrackingView();
+        dispatchSelectedSessionActive = false;
+        if (typeof handleDispatchSelectedSessionEnded === "function") {
+          handleDispatchSelectedSessionEnded();
+        }
         return;
+      }
+
+      selectedTrackingTruck = selectedTruck;
+      dispatchSelectedSessionActive = true;
+      if (typeof updateDispatchSelectedTruckContext === "function") {
+        updateDispatchSelectedTruckContext(selectedTruck);
       }
 
       await loadTruckRoute(selectedSessionId, { keepView: true });
@@ -342,8 +566,9 @@ async function loadActiveTrucks() {
 
       const selectedLabel = document.getElementById("selectedTruckLabel");
       if (selectedLabel) {
-        const statusMeta = getTrackingStatusMeta(selectedTruck);
-        selectedLabel.textContent = `Truck ${selectedTruck.truck_id} (${statusMeta.label})`;
+        selectedLabel.textContent = selectedTruck.truck_name ||
+          selectedTruck.truck_display_name ||
+          `Truck ${selectedTruck.truck_id}`;
       }
 
       const lastUpdated = document.getElementById("trackingLastUpdated");
@@ -353,7 +578,7 @@ async function loadActiveTrucks() {
         );
       }
     } else {
-      updateTrackingRouteStats([]);
+      updateTrackingRouteStats({ rawCount: 0, displayedPoints: [] });
     }
   } catch (error) {
     console.error("Error loading active trucks:", error);
@@ -405,78 +630,181 @@ function renderActiveTruckList(trucks) {
     const isSelected = String(selectedSessionId) === String(truck.session_id);
     const statusMeta = getTrackingStatusMeta(truck);
     const lastUpdated = getTruckLastUpdateValue(truck);
+    const truckName = truck.truck_name || truck.truck_display_name || `Truck ${truck.truck_id || "-"}`;
     const dispatchLabel = truck.dispatch
-      ? `
-          <small class="dispatch-truck-ticket">${escapeHtml(truck.dispatch.ticket_number)} · ${escapeHtml(truck.dispatch.route_name)}</small><br>
-          <small>Assigned: ${escapeHtml(truck.dispatch.assigned_personnel_name || "Not assigned")}</small><br>
-          <small>Current: ${escapeHtml(truck.dispatch.current_stop_name || "Returning to WMO")}</small><br>
-          <small>Next: ${escapeHtml(truck.dispatch.next_stop_name || "WMO return")}</small><br>
-          <small>${Number(truck.dispatch.completed_stops || 0)}/${Number(truck.dispatch.total_stops || 0)} completed · ${escapeHtml(dispatchStatusLabel(truck.dispatch.dispatch_status))}</small><br>
-          <small>Tracking start: ${escapeHtml(formatTrackingTimeSafe(truck.dispatch.tracking_started_at))}</small><br>
-        `
+      ? `<small class="dispatch-truck-ticket">${escapeHtml(truck.dispatch.ticket_number)} · ${Number(truck.dispatch.completed_stops || 0)}/${Number(truck.dispatch.total_stops || 0)} stops</small>`
       : "";
 
     return `
-      <div
+      <button
+        type="button"
         class="active-truck-item ${isSelected ? "active" : ""} ${statusMeta.className}"
-        onclick="selectTruck(${truck.session_id}, '${escapeHtml(truck.truck_id)}')"
+        data-tracking-session-id="${typeof dispatchEscape === "function" ? dispatchEscape(truck.session_id) : escapeHtml(truck.session_id)}"
+        data-tracking-truck-id="${escapeHtml(truck.truck_id || "")}"
       >
         <span class="truck-item-icon">${getTrackingInlineIcon("truck")}</span>
 
         <div class="truck-item-body">
           <div class="truck-list-topline">
-            <strong>Truck ${escapeHtml(truck.truck_id || "-")}</strong>
+            <div>
+              <strong>${escapeHtml(truckName)}</strong>
+              <small class="truck-id-line">ID ${escapeHtml(truck.truck_id || "-")}</small>
+            </div>
             <small class="truck-status-label ${statusMeta.className}">${escapeHtml(statusMeta.label)}</small>
           </div>
-          <small>${escapeHtml(truck.enforcer_name || "-")}</small><br>
+          <small class="truck-personnel">${escapeHtml(truck.enforcer_name || "Personnel not assigned")}</small>
           ${dispatchLabel}
-          <small class="truck-sync-note">${escapeHtml(statusMeta.description)}</small><br>
           <small class="truck-last-sync">Last sync: ${escapeHtml(formatTrackingTimeSafe(lastUpdated))}</small>
         </div>
-      </div>
+      </button>
     `;
   }).join("");
 }
 
 function updateTruckMarkers(trucks) {
   if (!truckMap) return;
-
-  Object.keys(truckMarkers).forEach((id) => {
-    if (truckMarkers[id]) {
-      truckMap.removeLayer(truckMarkers[id]);
-    }
-  });
-  truckMarkers = {};
-
-  if (!selectedSessionId) {
-    return;
-  }
-
-  const selectedTruck = trucks.find(
-    (truck) => String(truck.session_id) === String(selectedSessionId)
+  const safeTrucks = Array.isArray(trucks) ? trucks : [];
+  const activeSessionIds = new Set(
+    safeTrucks.map((truck) => String(truck.session_id))
   );
 
-  if (!selectedTruck) {
-    return;
+  Object.keys(truckMarkers).forEach((sessionId) => {
+    if (activeSessionIds.has(String(sessionId))) return;
+    if (truckMarkers[sessionId]) truckMap.removeLayer(truckMarkers[sessionId]);
+    delete truckMarkers[sessionId];
+    delete trackingMarkerStateBySession[sessionId];
+  });
+
+  safeTrucks.forEach((truck) => {
+    const sessionId = String(truck.session_id);
+    const point = {
+      lat: parseTrackingCoordinate(truck.latitude),
+      lng: parseTrackingCoordinate(truck.longitude),
+      timestamp: getRoutePointTimestamp({ recorded_at: getTruckLastUpdateValue(truck) }),
+      accuracy: truck.accuracy
+    };
+    const hasCoordinates =
+      Number.isFinite(point.lat) &&
+      Number.isFinite(point.lng) &&
+      point.lat >= -90 &&
+      point.lat <= 90 &&
+      point.lng >= -180 &&
+      point.lng <= 180 &&
+      !(point.lat === 0 && point.lng === 0);
+    const reliable = hasCoordinates && isTrackingPointReliable(point);
+    const statusMeta = getTrackingStatusMeta(truck);
+    const previousState = trackingMarkerStateBySession[sessionId] || {};
+    let marker = truckMarkers[sessionId];
+    let movementPlausible = true;
+
+    if (
+      marker &&
+      reliable &&
+      Number.isFinite(previousState.lat) &&
+      Number.isFinite(previousState.lng)
+    ) {
+      const distanceMeters = trackingHaversineMeters(previousState, point);
+      const elapsedSeconds =
+        point.timestamp > previousState.timestamp
+          ? (point.timestamp - previousState.timestamp) / 1000
+          : 0;
+      movementPlausible = !(
+        distanceMeters >= TRACKING_MIN_JUMP_DISTANCE_METERS &&
+        (elapsedSeconds <= 0 ||
+          distanceMeters / elapsedSeconds > TRACKING_MAX_DISPLAY_SPEED_METERS_PER_SECOND)
+      );
+    }
+
+    if (!marker && reliable) {
+      marker = L.marker([point.lat, point.lng], {
+        icon: buildTrackingMarkerIcon(statusMeta),
+        riseOnHover: true
+      }).addTo(truckMap);
+      truckMarkers[sessionId] = marker;
+      trackingMarkerStateBySession[sessionId] = {
+        lat: point.lat,
+        lng: point.lng,
+        timestamp: point.timestamp,
+        statusKey: statusMeta.key
+      };
+    } else if (marker && reliable && movementPlausible) {
+      const isNewer = !previousState.timestamp || point.timestamp >= previousState.timestamp;
+      const changedPosition =
+        point.lat !== previousState.lat || point.lng !== previousState.lng;
+      if (isNewer && changedPosition) {
+        marker.setLatLng([point.lat, point.lng]);
+      }
+      if (isNewer) {
+        trackingMarkerStateBySession[sessionId] = {
+          ...previousState,
+          lat: point.lat,
+          lng: point.lng,
+          timestamp: point.timestamp,
+          statusKey: statusMeta.key
+        };
+      }
+    }
+
+    if (!marker) return;
+    const currentState = trackingMarkerStateBySession[sessionId] || previousState;
+    if (currentState.statusKey !== statusMeta.key) {
+      marker.setIcon(buildTrackingMarkerIcon(statusMeta));
+      trackingMarkerStateBySession[sessionId] = {
+        ...currentState,
+        statusKey: statusMeta.key
+      };
+    }
+    const accuracyNote = reliable
+      ? movementPlausible
+        ? `Accuracy: ${getTrackingPointAccuracy(point) ?? "not reported"}${getTrackingPointAccuracy(point) === null ? "" : " m"}`
+        : "Latest point ignored because the implied movement is not plausible"
+      : `Latest point ignored for map movement (accuracy above ${TRACKING_MAX_RELIABLE_ACCURACY_METERS} m or invalid)`;
+    if (!marker.getPopup()) marker.bindPopup("");
+    marker.setPopupContent(`
+      <strong>Truck ${escapeHtml(truck.truck_id || "-")}</strong><br>
+      Status: ${escapeHtml(statusMeta.label)}<br>
+      ${escapeHtml(statusMeta.description)}<br>
+      ${escapeHtml(accuracyNote)}<br>
+      Last sync: ${escapeHtml(formatTrackingTimeSafe(getTruckLastUpdateValue(truck)))}
+    `);
+  });
+}
+
+function updateTruckMarkerWithReliableRoutePoint(sessionId, point) {
+  if (!truckMap || !point || !isTrackingPointReliable(point)) return;
+  const sessionKey = String(sessionId);
+  const truck = activeTrackingTrucks.find(
+    (item) => String(item.session_id) === sessionKey
+  ) || selectedTrackingTruck;
+  if (!truck) return;
+
+  const statusMeta = getTrackingStatusMeta(truck);
+  const previousState = trackingMarkerStateBySession[sessionKey] || {};
+  if (previousState.timestamp && point.timestamp < previousState.timestamp) return;
+  let marker = truckMarkers[sessionKey];
+  if (!marker) {
+    marker = L.marker([point.lat, point.lng], {
+      icon: buildTrackingMarkerIcon(statusMeta),
+      riseOnHover: true
+    }).addTo(truckMap).bindPopup("");
+    truckMarkers[sessionKey] = marker;
+  } else {
+    marker.setLatLng([point.lat, point.lng]);
   }
-
-  const { latitude, longitude, session_id, truck_id } = selectedTruck;
-
-  if (latitude == null || longitude == null) return;
-
-  const statusMeta = getTrackingStatusMeta(selectedTruck);
-  const marker = L.marker([latitude, longitude], {
-    icon: buildTrackingMarkerIcon(statusMeta)
-  }).addTo(truckMap);
-
-  marker.bindPopup(`
-    <strong>Truck ${escapeHtml(truck_id || "-")}</strong><br>
+  trackingMarkerStateBySession[sessionKey] = {
+    lat: point.lat,
+    lng: point.lng,
+    timestamp: point.timestamp,
+    statusKey: statusMeta.key
+  };
+  if (!marker.getPopup()) marker.bindPopup("");
+  marker.setPopupContent(`
+    <strong>Truck ${escapeHtml(truck.truck_id || "-")}</strong><br>
     Status: ${escapeHtml(statusMeta.label)}<br>
     ${escapeHtml(statusMeta.description)}<br>
-    Last sync: ${escapeHtml(formatTrackingTimeSafe(getTruckLastUpdateValue(selectedTruck)))}
+    Accuracy: ${escapeHtml(getTrackingPointAccuracy(point) ?? "not reported")}${getTrackingPointAccuracy(point) === null ? "" : " m"}<br>
+    Last reliable point: ${escapeHtml(formatTrackingTimeSafe(point.recorded_at || point.created_at || point.createdAt))}
   `);
-
-  truckMarkers[session_id] = marker;
 }
 
 async function loadTruckRoute(sessionId, options = {}) {
@@ -492,13 +820,8 @@ async function loadTruckRoute(sessionId, options = {}) {
       ? data.data.route_logs
       : [];
 
-    const orderedRouteLogs = routeLogs
-      .slice()
-      .sort((a, b) => {
-        const aTime = getRoutePointTimestamp(a);
-        const bTime = getRoutePointTimestamp(b);
-        return aTime - bTime;
-      });
+    const routeResult = buildTrackingDisplayRoute(routeLogs);
+    const routePoints = routeResult.displayedPoints;
 
     if (selectedRoutePolyline) {
       truckMap.removeLayer(selectedRoutePolyline);
@@ -507,19 +830,9 @@ async function loadTruckRoute(sessionId, options = {}) {
 
     clearTrackingGapPolylines();
 
-    if (selectedStartMarker) {
-      truckMap.removeLayer(selectedStartMarker);
-      selectedStartMarker = null;
-    }
+    updateTrackingRouteStats(routeResult);
 
-    if (selectedCurrentMarker) {
-      truckMap.removeLayer(selectedCurrentMarker);
-      selectedCurrentMarker = null;
-    }
-
-    updateTrackingRouteStats(orderedRouteLogs);
-
-    if (!orderedRouteLogs.length) {
+    if (!routePoints.length) {
       const lastUpdated = document.getElementById("trackingLastUpdated");
       if (lastUpdated) {
         lastUpdated.textContent = "--";
@@ -527,123 +840,112 @@ async function loadTruckRoute(sessionId, options = {}) {
       return;
     }
 
-    const routePoints = orderedRouteLogs
-      .filter((p) => p.latitude != null && p.longitude != null)
-      .map((p) => ({
-        ...p,
-        lat: parseFloat(p.latitude),
-        lng: parseFloat(p.longitude),
-        timestamp: getRoutePointTimestamp(p)
-      }))
-      .filter((p) => !Number.isNaN(p.lat) && !Number.isNaN(p.lng));
-
     const latlngs = routePoints.map((p) => [p.lat, p.lng]);
-
-    if (!latlngs.length) return;
-
-    if (latlngs.length >= 2) {
-      selectedRoutePolyline = L.polyline(latlngs, {
+    selectedRoutePolyline = L.featureGroup().addTo(truckMap);
+    let solidSegment = [latlngs[0]];
+    const addSolidSegment = (segment) => {
+      if (segment.length < 2) return;
+      L.polyline(segment, {
         color: "#0d6efd",
         weight: 5,
-        opacity: 0.9
-      }).addTo(truckMap);
+        opacity: 0.9,
+        lineCap: "round",
+        lineJoin: "round"
+      }).addTo(selectedRoutePolyline);
+    };
 
-      for (let i = 1; i < routePoints.length; i++) {
-        const prev = routePoints[i - 1];
-        const current = routePoints[i];
+    for (let index = 1; index < routePoints.length; index++) {
+      const previous = routePoints[index - 1];
+      const current = routePoints[index];
+      const hasConfirmedGap =
+        previous.timestamp &&
+        current.timestamp &&
+        current.timestamp - previous.timestamp > TRACKING_ROUTE_GAP_MS;
 
-        if (prev.timestamp && current.timestamp && current.timestamp - prev.timestamp > TRACKING_ROUTE_GAP_MS) {
-          const gapLine = L.polyline(
-            [
-              [prev.lat, prev.lng],
-              [current.lat, current.lng]
-            ],
-            {
-              color: "#0d6efd",
-              weight: 4,
-              opacity: 0.65,
-              dashArray: "8, 10"
-            }
-          ).addTo(truckMap);
+      if (hasConfirmedGap) {
+        addSolidSegment(solidSegment);
+        const gapLine = L.polyline(
+          [
+            [previous.lat, previous.lng],
+            [current.lat, current.lng]
+          ],
+          {
+            color: "#0d6efd",
+            weight: 4,
+            opacity: 0.7,
+            dashArray: "8, 10"
+          }
+        ).addTo(truckMap);
+        gapLine.bindPopup("Connected display segment after a confirmed synchronization gap.");
+        window.trackingGapPolylines.push(gapLine);
+        solidSegment = [[current.lat, current.lng]];
+      } else {
+        solidSegment.push([current.lat, current.lng]);
+      }
+    }
+    addSolidSegment(solidSegment);
 
-          gapLine.bindPopup("Estimated/connected route segment after mobile sync gap.");
-          window.trackingGapPolylines.push(gapLine);
-        }
+    const startPoint = latlngs[0];
+    const currentReliablePoint = routeResult.markerPoint;
+
+    if (!selectedStartMarker) {
+      const startIcon = L.divIcon({
+        className: "custom-start-marker",
+        html: '<span class="tracking-route-endpoint start"></span>',
+        iconSize: [18, 18],
+        iconAnchor: [9, 9]
+      });
+      selectedStartMarker = L.marker(startPoint, { icon: startIcon })
+        .addTo(truckMap)
+        .bindPopup("Reliable route start");
+    } else {
+      selectedStartMarker.setLatLng(startPoint);
+    }
+
+    if (currentReliablePoint) {
+      const currentPoint = [currentReliablePoint.lat, currentReliablePoint.lng];
+      selectedReliableRoutePoint = currentReliablePoint;
+      if (!selectedCurrentMarker) {
+        const currentIcon = L.divIcon({
+          className: "custom-current-marker",
+          html: '<span class="tracking-route-endpoint current"></span>',
+          iconSize: [20, 20],
+          iconAnchor: [10, 10]
+        });
+        selectedCurrentMarker = L.marker(currentPoint, { icon: currentIcon })
+          .addTo(truckMap)
+          .bindPopup("");
+      } else {
+        selectedCurrentMarker.setLatLng(currentPoint);
+      }
+      selectedCurrentMarker.setPopupContent("Current reliable location");
+      updateTruckMarkerWithReliableRoutePoint(sessionId, currentReliablePoint);
+      if (typeof updateDispatchSelectedTruckContext === "function") {
+        updateDispatchSelectedTruckContext(selectedTrackingTruck);
+      }
+      if (typeof renderDispatchDraftOnLiveMap === "function") {
+        renderDispatchDraftOnLiveMap();
       }
     }
 
-    const startPoint = latlngs[0];
-    const currentPoint = latlngs[latlngs.length - 1];
-
-    const startIcon = L.divIcon({
-      className: "custom-start-marker",
-      html: `
-        <div style="
-          width:18px;
-          height:18px;
-          border-radius:50%;
-          background:#198754;
-          border:3px solid #ffffff;
-          box-shadow:0 2px 8px rgba(0,0,0,0.25);
-        "></div>
-      `,
-      iconSize: [18, 18],
-      iconAnchor: [9, 9]
-    });
-
-    const currentIcon = L.divIcon({
-      className: "custom-current-marker",
-      html: `
-        <div style="
-          width:20px;
-          height:20px;
-          border-radius:50%;
-          background:#dc3545;
-          border:3px solid #ffffff;
-          box-shadow:0 2px 10px rgba(0,0,0,0.3);
-        "></div>
-      `,
-      iconSize: [20, 20],
-      iconAnchor: [10, 10]
-    });
-
-    const routeNotice = getTrackingRouteNotice(orderedRouteLogs);
-
-    selectedStartMarker = L.marker(startPoint, { icon: startIcon })
-      .addTo(truckMap)
-      .bindPopup("Start Point");
-
-    selectedCurrentMarker = L.marker(currentPoint, { icon: currentIcon })
-      .addTo(truckMap)
-      .bindPopup(routeNotice ? `Current Location<br>${escapeHtml(routeNotice)}` : "Current Location");
-
-    if (truckMarkers[sessionId]) {
-      truckMarkers[sessionId].setLatLng(currentPoint);
-    }
-
     if (!keepView) {
-      if (selectedRoutePolyline) {
+      if (selectedRoutePolyline.getLayers().length) {
         truckMap.fitBounds(selectedRoutePolyline.getBounds(), {
           padding: [20, 20]
         });
       } else {
-        truckMap.setView(currentPoint, 17);
+        truckMap.setView(startPoint, 17);
       }
     }
 
     const lastUpdated = document.getElementById("trackingLastUpdated");
     if (lastUpdated) {
-      const lastPoint = orderedRouteLogs[orderedRouteLogs.length - 1];
+      const lastPoint = currentReliablePoint || routePoints[routePoints.length - 1];
       lastUpdated.textContent = formatTrackingTimeSafe(
         lastPoint.recorded_at || lastPoint.created_at || lastPoint.createdAt
       );
     }
 
-    const trackingSignalStatus = document.getElementById("trackingSignalStatus");
-    if (trackingSignalStatus && routeNotice) {
-      trackingSignalStatus.textContent = routeNotice;
-      trackingSignalStatus.className = "tracking-signal-status warning";
-    }
   } catch (error) {
     console.error("Error loading route:", error);
   }
@@ -667,22 +969,18 @@ function resetTrackingView() {
     selectedCurrentMarker = null;
   }
 
-  Object.keys(truckMarkers).forEach((id) => {
-    if (truckMarkers[id] && truckMap) {
-      truckMap.removeLayer(truckMarkers[id]);
-    }
-  });
-  truckMarkers = {};
-
   selectedSessionId = null;
   selectedTruckId = null;
+  selectedTrackingTruck = null;
+  selectedReliableRoutePoint = null;
+  dispatchSelectedSessionActive = false;
   if (typeof clearDispatchTrackingSelection === "function") {
     clearDispatchTrackingSelection();
   }
 
   const selectedLabel = document.getElementById("selectedTruckLabel");
   if (selectedLabel) {
-    selectedLabel.textContent = "None";
+    selectedLabel.textContent = "No truck selected";
   }
 
   const lastUpdated = document.getElementById("trackingLastUpdated");
@@ -690,7 +988,7 @@ function resetTrackingView() {
     lastUpdated.textContent = "--";
   }
 
-  updateTrackingRouteStats([]);
+  updateTrackingRouteStats({ rawCount: 0, displayedPoints: [] });
 
   const trackingSignalStatus = document.getElementById("trackingSignalStatus");
   if (trackingSignalStatus) {
@@ -699,6 +997,7 @@ function resetTrackingView() {
   }
 
   updateTrackingActionButtons();
+  if (truckMap) truckMap.setView([6.1164, 125.1716], 13);
   loadActiveTrucks();
 }
 
@@ -1020,17 +1319,53 @@ function bindTruckAnalyticsModalActions() {
 }
 
 function selectTruck(sessionId, truckId) {
+  const isDifferentSession = String(selectedSessionId || "") !== String(sessionId);
+  if (isDifferentSession) {
+    if (selectedRoutePolyline && truckMap) truckMap.removeLayer(selectedRoutePolyline);
+    selectedRoutePolyline = null;
+    clearTrackingGapPolylines();
+    if (selectedStartMarker && truckMap) truckMap.removeLayer(selectedStartMarker);
+    if (selectedCurrentMarker && truckMap) truckMap.removeLayer(selectedCurrentMarker);
+    selectedStartMarker = null;
+    selectedCurrentMarker = null;
+    selectedReliableRoutePoint = null;
+  }
+
   selectedSessionId = sessionId;
   selectedTruckId = truckId;
+  selectedTrackingTruck = activeTrackingTrucks.find(
+    (truck) => String(truck.session_id) === String(sessionId)
+  ) || null;
+  dispatchSelectedSessionActive = Boolean(selectedTrackingTruck);
 
   const selectedLabel = document.getElementById("selectedTruckLabel");
   if (selectedLabel) {
-    selectedLabel.textContent = `Truck ${truckId}`;
+    selectedLabel.textContent = selectedTrackingTruck?.truck_name ||
+      selectedTrackingTruck?.truck_display_name ||
+      `Truck ${truckId}`;
   }
 
   updateTrackingActionButtons();
-  loadActiveTrucks();
-  loadTruckRoute(sessionId);
+  renderActiveTruckList(activeTrackingTrucks);
+  updateTrackingSummaryCards(activeTrackingTrucks);
+  if (typeof prepareDispatchPlannerForTruck === "function") {
+    prepareDispatchPlannerForTruck(selectedTrackingTruck);
+  }
+  void loadTruckRoute(sessionId, { keepView: false });
+  if (typeof loadDispatchForTrackingSession === "function") {
+    void loadDispatchForTrackingSession(sessionId);
+  }
+}
+
+function bindActiveTruckSelection() {
+  const list = document.getElementById("activeTruckList");
+  if (!list || list.dataset.bound === "true") return;
+  list.dataset.bound = "true";
+  list.addEventListener("click", (event) => {
+    const card = event.target.closest("[data-tracking-session-id]");
+    if (!card) return;
+    selectTruck(card.dataset.trackingSessionId, card.dataset.trackingTruckId);
+  });
 }
 
 function updateTrackingActionButtons() {
@@ -1090,6 +1425,8 @@ function startTrackingAutoRefresh() {
     clearInterval(trackingPollInterval);
   }
 
+  bindActiveTruckSelection();
+  updateTrackingActionButtons();
   loadActiveTrucks();
 
   trackingPollInterval = setInterval(() => {

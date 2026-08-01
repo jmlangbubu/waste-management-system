@@ -131,6 +131,27 @@ function getDispatchReportsApiUrl() {
   return `${getAppApiBase()}/dispatch/reports`;
 }
 
+function getDispatchDestinationsApiUrl(filters = {}) {
+  const parameters = new URLSearchParams();
+  if (filters.q) parameters.set("q", filters.q);
+  if (filters.barangay) parameters.set("barangay", filters.barangay);
+  if (filters.type) parameters.set("type", filters.type);
+  parameters.set("limit", String(filters.limit || 10));
+  return `${getAppApiBase()}/dispatch/destinations?${parameters}`;
+}
+
+function getDispatchDestinationApiUrl(destinationId) {
+  return `${getAppApiBase()}/dispatch/destinations/${encodeURIComponent(destinationId)}`;
+}
+
+function getDispatchLocationLabelApiUrl(latitude, longitude) {
+  const parameters = new URLSearchParams({
+    latitude: String(latitude),
+    longitude: String(longitude)
+  });
+  return `${getAppApiBase()}/complaints/detect-barangay?${parameters}`;
+}
+
 // =========================
 // COMPLAINTS
 // =========================

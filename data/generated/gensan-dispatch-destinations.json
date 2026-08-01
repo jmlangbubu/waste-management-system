@@ -1,0 +1,703 @@
+{
+  "metadata": {
+    "city": "General Santos City",
+    "country": "Philippines",
+    "source": "OpenStreetMap Overpass API",
+    "source_url": "https://overpass-api.de/api/interpreter",
+    "source_license": "ODbL 1.0",
+    "generated_at": "2026-08-01T05:25:42.716Z",
+    "review_required_before_database_import": true,
+    "summary": {
+      "raw_elements": 901,
+      "unique_osm_objects": 901,
+      "duplicate_osm_objects_removed": 0,
+      "requested_road_sections": 8,
+      "verified_road_sections": 4,
+      "unverified_road_sections": 4,
+      "barangay_halls": 1,
+      "roads_without_geometry": 0,
+      "rejected_hall_candidates": 26,
+      "missing_barangay_halls": [
+        "Apopong",
+        "Baluan",
+        "Batomelong",
+        "Buayan",
+        "Bula",
+        "Calumpang",
+        "City Heights",
+        "Conel",
+        "Dadiangas East",
+        "Dadiangas North",
+        "Dadiangas South",
+        "Dadiangas West",
+        "Fatima",
+        "Katangawan",
+        "Lagao",
+        "Ligaya",
+        "Mabuhay",
+        "Olympog",
+        "San Isidro",
+        "San Jose",
+        "Siguel",
+        "Sinawal",
+        "Tambler",
+        "Tinagacan",
+        "Upper Labay"
+      ]
+    }
+  },
+  "destinations": [
+    {
+      "destination_type": "barangay_hall",
+      "name": "Sangguniang Barangay ng Labangal",
+      "barangay": "Labangal",
+      "display_label": "Sangguniang Barangay ng Labangal, Labangal",
+      "latitude": 6.0943913,
+      "longitude": 125.1521597,
+      "aliases": [],
+      "search_keywords": [
+        "sangguniang ng labangal",
+        "labangal",
+        "hall",
+        "general santos city"
+      ],
+      "osm_type": "node",
+      "osm_id": "9598831852",
+      "is_verified": 1,
+      "is_active": 1,
+      "points": [
+        {
+          "point_order": 1,
+          "point_type": "anchor",
+          "latitude": 6.0943913,
+          "longitude": 125.1521597
+        }
+      ]
+    },
+    {
+      "segment_key": "santiago-boulevard",
+      "destination_type": "road_segment",
+      "name": "Irineo Santiago Boulevard",
+      "barangay": null,
+      "display_label": "Santiago Boulevard",
+      "latitude": 6.112837496694275,
+      "longitude": 125.17953226679606,
+      "aliases": [
+        "Santiago Blvd",
+        "Irineo Santiago Boulevard",
+        "Irineo Santiago Blvd"
+      ],
+      "search_keywords": [
+        "santiago boulevard",
+        "irineo santiago boulevard",
+        "santiago blvd",
+        "irineo santiago blvd",
+        "general santos city"
+      ],
+      "osm_type": "way",
+      "osm_id": "33274783",
+      "source_osm_ids": [
+        "33274783"
+      ],
+      "is_verified": 1,
+      "is_active": 1,
+      "points": [
+        {
+          "point_order": 1,
+          "point_type": "entry",
+          "latitude": 6.1163568,
+          "longitude": 125.1795101
+        },
+        {
+          "point_order": 2,
+          "point_type": "geometry",
+          "latitude": 6.1162121,
+          "longitude": 125.1795057
+        },
+        {
+          "point_order": 3,
+          "point_type": "geometry",
+          "latitude": 6.1161631,
+          "longitude": 125.1795084
+        },
+        {
+          "point_order": 4,
+          "point_type": "geometry",
+          "latitude": 6.1159723,
+          "longitude": 125.1795191
+        },
+        {
+          "point_order": 5,
+          "point_type": "geometry",
+          "latitude": 6.1155539,
+          "longitude": 125.1795209
+        },
+        {
+          "point_order": 6,
+          "point_type": "geometry",
+          "latitude": 6.1151647,
+          "longitude": 125.1795225
+        },
+        {
+          "point_order": 7,
+          "point_type": "geometry",
+          "latitude": 6.1150974,
+          "longitude": 125.1795228
+        },
+        {
+          "point_order": 8,
+          "point_type": "geometry",
+          "latitude": 6.1146889,
+          "longitude": 125.1795245
+        },
+        {
+          "point_order": 9,
+          "point_type": "geometry",
+          "latitude": 6.1140705,
+          "longitude": 125.1795271
+        },
+        {
+          "point_order": 10,
+          "point_type": "geometry",
+          "latitude": 6.1136679,
+          "longitude": 125.1795288
+        },
+        {
+          "point_order": 11,
+          "point_type": "geometry",
+          "latitude": 6.1136095,
+          "longitude": 125.179529
+        },
+        {
+          "point_order": 12,
+          "point_type": "geometry",
+          "latitude": 6.1120498,
+          "longitude": 125.1795356
+        },
+        {
+          "point_order": 13,
+          "point_type": "geometry",
+          "latitude": 6.1117856,
+          "longitude": 125.1795326
+        },
+        {
+          "point_order": 14,
+          "point_type": "geometry",
+          "latitude": 6.1112697,
+          "longitude": 125.1795268
+        },
+        {
+          "point_order": 15,
+          "point_type": "geometry",
+          "latitude": 6.1110788,
+          "longitude": 125.1795276
+        },
+        {
+          "point_order": 16,
+          "point_type": "geometry",
+          "latitude": 6.1109412,
+          "longitude": 125.1795281
+        },
+        {
+          "point_order": 17,
+          "point_type": "geometry",
+          "latitude": 6.1108453,
+          "longitude": 125.1795292
+        },
+        {
+          "point_order": 18,
+          "point_type": "geometry",
+          "latitude": 6.1108012,
+          "longitude": 125.1795294
+        },
+        {
+          "point_order": 19,
+          "point_type": "geometry",
+          "latitude": 6.1106765,
+          "longitude": 125.1795309
+        },
+        {
+          "point_order": 20,
+          "point_type": "geometry",
+          "latitude": 6.109366,
+          "longitude": 125.1795468
+        },
+        {
+          "point_order": 21,
+          "point_type": "exit",
+          "latitude": 6.1093179,
+          "longitude": 125.179547
+        }
+      ]
+    },
+    {
+      "segment_key": "jose-catolico-avenue",
+      "destination_type": "road_segment",
+      "name": "Jose Catolico Sr. Avenue",
+      "barangay": null,
+      "display_label": "Jose Catolico Avenue",
+      "latitude": 6.116145892391359,
+      "longitude": 125.18482625111514,
+      "aliases": [
+        "Jose Catolico",
+        "Jose Catolico Ave",
+        "Jose Catolico Sr Avenue",
+        "Jose Catolico Sr. Avenue"
+      ],
+      "search_keywords": [
+        "jose catolico avenue",
+        "jose catolico sr avenue",
+        "jose catolico",
+        "jose catolico ave",
+        "general santos city"
+      ],
+      "osm_type": "way",
+      "osm_id": "1287970427",
+      "source_osm_ids": [
+        "1287970427"
+      ],
+      "is_verified": 1,
+      "is_active": 1,
+      "points": [
+        {
+          "point_order": 1,
+          "point_type": "entry",
+          "latitude": 6.1174587,
+          "longitude": 125.1861243
+        },
+        {
+          "point_order": 2,
+          "point_type": "geometry",
+          "latitude": 6.1172421,
+          "longitude": 125.1859102
+        },
+        {
+          "point_order": 3,
+          "point_type": "geometry",
+          "latitude": 6.1171331,
+          "longitude": 125.1858054
+        },
+        {
+          "point_order": 4,
+          "point_type": "geometry",
+          "latitude": 6.1164917,
+          "longitude": 125.1851671
+        },
+        {
+          "point_order": 5,
+          "point_type": "geometry",
+          "latitude": 6.1164451,
+          "longitude": 125.1851212
+        },
+        {
+          "point_order": 6,
+          "point_type": "geometry",
+          "latitude": 6.1159814,
+          "longitude": 125.1846641
+        },
+        {
+          "point_order": 7,
+          "point_type": "geometry",
+          "latitude": 6.11597,
+          "longitude": 125.184653
+        },
+        {
+          "point_order": 8,
+          "point_type": "geometry",
+          "latitude": 6.1156029,
+          "longitude": 125.184284
+        },
+        {
+          "point_order": 9,
+          "point_type": "geometry",
+          "latitude": 6.115565,
+          "longitude": 125.1842447
+        },
+        {
+          "point_order": 10,
+          "point_type": "geometry",
+          "latitude": 6.1154873,
+          "longitude": 125.1841649
+        },
+        {
+          "point_order": 11,
+          "point_type": "geometry",
+          "latitude": 6.1152406,
+          "longitude": 125.1839098
+        },
+        {
+          "point_order": 12,
+          "point_type": "geometry",
+          "latitude": 6.115165,
+          "longitude": 125.1838356
+        },
+        {
+          "point_order": 13,
+          "point_type": "geometry",
+          "latitude": 6.1150884,
+          "longitude": 125.1837605
+        },
+        {
+          "point_order": 14,
+          "point_type": "geometry",
+          "latitude": 6.1150019,
+          "longitude": 125.1836754
+        },
+        {
+          "point_order": 15,
+          "point_type": "geometry",
+          "latitude": 6.1149099,
+          "longitude": 125.1835836
+        },
+        {
+          "point_order": 16,
+          "point_type": "exit",
+          "latitude": 6.1148688,
+          "longitude": 125.1834994
+        }
+      ]
+    },
+    {
+      "segment_key": "pendatun-avenue",
+      "destination_type": "road_segment",
+      "name": "Pendatun Avenue",
+      "barangay": null,
+      "display_label": "Pendatun Avenue",
+      "latitude": 6.114836429798545,
+      "longitude": 125.17028487766576,
+      "aliases": [
+        "Pendatun",
+        "Pendatun Ave"
+      ],
+      "search_keywords": [
+        "pendatun avenue",
+        "pendatun",
+        "pendatun ave",
+        "general santos city"
+      ],
+      "osm_type": "way",
+      "osm_id": "791211456",
+      "source_osm_ids": [
+        "791211456",
+        "791211459",
+        "888364289",
+        "888364296",
+        "888364298"
+      ],
+      "is_verified": 1,
+      "is_active": 1,
+      "points": [
+        {
+          "point_order": 1,
+          "point_type": "entry",
+          "latitude": 6.1115535,
+          "longitude": 125.1716522
+        },
+        {
+          "point_order": 2,
+          "point_type": "geometry",
+          "latitude": 6.1115722,
+          "longitude": 125.1715293
+        },
+        {
+          "point_order": 3,
+          "point_type": "geometry",
+          "latitude": 6.1116047,
+          "longitude": 125.1713279
+        },
+        {
+          "point_order": 4,
+          "point_type": "geometry",
+          "latitude": 6.1116173,
+          "longitude": 125.171291
+        },
+        {
+          "point_order": 5,
+          "point_type": "geometry",
+          "latitude": 6.1116307,
+          "longitude": 125.1712517
+        },
+        {
+          "point_order": 6,
+          "point_type": "geometry",
+          "latitude": 6.1117349,
+          "longitude": 125.1710363
+        },
+        {
+          "point_order": 7,
+          "point_type": "geometry",
+          "latitude": 6.1117652,
+          "longitude": 125.1709925
+        },
+        {
+          "point_order": 8,
+          "point_type": "geometry",
+          "latitude": 6.1118417,
+          "longitude": 125.1708821
+        },
+        {
+          "point_order": 9,
+          "point_type": "geometry",
+          "latitude": 6.111959,
+          "longitude": 125.1707574
+        },
+        {
+          "point_order": 10,
+          "point_type": "geometry",
+          "latitude": 6.1120844,
+          "longitude": 125.1706414
+        },
+        {
+          "point_order": 11,
+          "point_type": "geometry",
+          "latitude": 6.1122271,
+          "longitude": 125.1705448
+        },
+        {
+          "point_order": 12,
+          "point_type": "geometry",
+          "latitude": 6.1123856,
+          "longitude": 125.1704599
+        },
+        {
+          "point_order": 13,
+          "point_type": "geometry",
+          "latitude": 6.1124391,
+          "longitude": 125.1704349
+        },
+        {
+          "point_order": 14,
+          "point_type": "geometry",
+          "latitude": 6.1125531,
+          "longitude": 125.1703792
+        },
+        {
+          "point_order": 15,
+          "point_type": "geometry",
+          "latitude": 6.1125925,
+          "longitude": 125.1703651
+        },
+        {
+          "point_order": 16,
+          "point_type": "geometry",
+          "latitude": 6.1126765,
+          "longitude": 125.1703352
+        },
+        {
+          "point_order": 17,
+          "point_type": "geometry",
+          "latitude": 6.112784,
+          "longitude": 125.170322
+        },
+        {
+          "point_order": 18,
+          "point_type": "geometry",
+          "latitude": 6.1135772,
+          "longitude": 125.170315
+        },
+        {
+          "point_order": 19,
+          "point_type": "geometry",
+          "latitude": 6.1148773,
+          "longitude": 125.1702839
+        },
+        {
+          "point_order": 20,
+          "point_type": "geometry",
+          "latitude": 6.115848,
+          "longitude": 125.1702839
+        },
+        {
+          "point_order": 21,
+          "point_type": "geometry",
+          "latitude": 6.1163399,
+          "longitude": 125.1702758
+        },
+        {
+          "point_order": 22,
+          "point_type": "geometry",
+          "latitude": 6.1172103,
+          "longitude": 125.1702889
+        },
+        {
+          "point_order": 23,
+          "point_type": "geometry",
+          "latitude": 6.1173188,
+          "longitude": 125.1702906
+        },
+        {
+          "point_order": 24,
+          "point_type": "geometry",
+          "latitude": 6.1173729,
+          "longitude": 125.1702905
+        },
+        {
+          "point_order": 25,
+          "point_type": "geometry",
+          "latitude": 6.1179683,
+          "longitude": 125.1702891
+        },
+        {
+          "point_order": 26,
+          "point_type": "geometry",
+          "latitude": 6.1182963,
+          "longitude": 125.1702884
+        },
+        {
+          "point_order": 27,
+          "point_type": "geometry",
+          "latitude": 6.1184665,
+          "longitude": 125.1702873
+        },
+        {
+          "point_order": 28,
+          "point_type": "geometry",
+          "latitude": 6.1185248,
+          "longitude": 125.1702872
+        },
+        {
+          "point_order": 29,
+          "point_type": "geometry",
+          "latitude": 6.1185363,
+          "longitude": 125.1702872
+        },
+        {
+          "point_order": 30,
+          "point_type": "geometry",
+          "latitude": 6.1185438,
+          "longitude": 125.1702871
+        },
+        {
+          "point_order": 31,
+          "point_type": "geometry",
+          "latitude": 6.1185582,
+          "longitude": 125.1702871
+        },
+        {
+          "point_order": 32,
+          "point_type": "geometry",
+          "latitude": 6.1186977,
+          "longitude": 125.1702867
+        },
+        {
+          "point_order": 33,
+          "point_type": "geometry",
+          "latitude": 6.1187624,
+          "longitude": 125.1702866
+        },
+        {
+          "point_order": 34,
+          "point_type": "exit",
+          "latitude": 6.1188383,
+          "longitude": 125.1702865
+        }
+      ]
+    },
+    {
+      "segment_key": "pioneer-avenue",
+      "destination_type": "road_segment",
+      "name": "Pioneer Avenue",
+      "barangay": null,
+      "display_label": "Pioneer Avenue",
+      "latitude": 6.109331548346744,
+      "longitude": 125.17170460076336,
+      "aliases": [
+        "Pioneer",
+        "Pioneer Ave"
+      ],
+      "search_keywords": [
+        "pioneer avenue",
+        "pioneer",
+        "pioneer ave",
+        "general santos city"
+      ],
+      "osm_type": "way",
+      "osm_id": "153958916",
+      "source_osm_ids": [
+        "153958916"
+      ],
+      "is_verified": 1,
+      "is_active": 1,
+      "points": [
+        {
+          "point_order": 1,
+          "point_type": "entry",
+          "latitude": 6.1115535,
+          "longitude": 125.1716522
+        },
+        {
+          "point_order": 2,
+          "point_type": "geometry",
+          "latitude": 6.1114176,
+          "longitude": 125.1716504
+        },
+        {
+          "point_order": 3,
+          "point_type": "geometry",
+          "latitude": 6.1113536,
+          "longitude": 125.1716538
+        },
+        {
+          "point_order": 4,
+          "point_type": "geometry",
+          "latitude": 6.1112228,
+          "longitude": 125.1716574
+        },
+        {
+          "point_order": 5,
+          "point_type": "geometry",
+          "latitude": 6.1098814,
+          "longitude": 125.1716989
+        },
+        {
+          "point_order": 6,
+          "point_type": "geometry",
+          "latitude": 6.10952,
+          "longitude": 125.1717027
+        },
+        {
+          "point_order": 7,
+          "point_type": "geometry",
+          "latitude": 6.1093413,
+          "longitude": 125.1717045
+        },
+        {
+          "point_order": 8,
+          "point_type": "geometry",
+          "latitude": 6.10908,
+          "longitude": 125.1717072
+        },
+        {
+          "point_order": 9,
+          "point_type": "geometry",
+          "latitude": 6.1077952,
+          "longitude": 125.1717205
+        },
+        {
+          "point_order": 10,
+          "point_type": "geometry",
+          "latitude": 6.1074271,
+          "longitude": 125.1717241
+        },
+        {
+          "point_order": 11,
+          "point_type": "geometry",
+          "latitude": 6.1073772,
+          "longitude": 125.1717248
+        },
+        {
+          "point_order": 12,
+          "point_type": "geometry",
+          "latitude": 6.1072143,
+          "longitude": 125.1717265
+        },
+        {
+          "point_order": 13,
+          "point_type": "exit",
+          "latitude": 6.1071089,
+          "longitude": 125.1717275
+        }
+      ]
+    }
+  ]
+}
