@@ -2,7 +2,10 @@ const dispatchService = require("../services/dispatchService");
 
 function sendDispatchError(res, error, actionLabel) {
   const statusCode = Number(error.statusCode) || 500;
-  const isExpected = statusCode < 500 || error.code === "DISPATCH_DATABASE_SETUP_REQUIRED";
+  const isExpected =
+    statusCode < 500 ||
+    error.code === "DISPATCH_DATABASE_SETUP_REQUIRED" ||
+    error.code === "DISPATCH_DESTINATION_CATALOG_SETUP_REQUIRED";
 
   if (!isExpected) {
     console.error(`[Dispatch] ${actionLabel} failed:`, error);
@@ -13,7 +16,9 @@ function sendDispatchError(res, error, actionLabel) {
     message:
       error.code === "DISPATCH_DATABASE_SETUP_REQUIRED"
         ? "Dispatch database setup is required"
-        : error.message || `Unable to ${actionLabel}`,
+        : error.code === "DISPATCH_DESTINATION_CATALOG_SETUP_REQUIRED"
+          ? "Dispatch destination catalog setup is required"
+          : error.message || `Unable to ${actionLabel}`,
     code: error.code || "DISPATCH_REQUEST_FAILED"
   });
 }
@@ -42,6 +47,22 @@ exports.listTickets = async (req, res) => {
     return sendData(res, await dispatchService.listTickets(req.query));
   } catch (error) {
     return sendDispatchError(res, error, "load dispatch tickets");
+  }
+};
+
+exports.listDestinations = async (req, res) => {
+  try {
+    return sendData(res, await dispatchService.listDestinations(req.query));
+  } catch (error) {
+    return sendDispatchError(res, error, "search dispatch destinations");
+  }
+};
+
+exports.getDestination = async (req, res) => {
+  try {
+    return sendData(res, await dispatchService.getDestination(req.params.id));
+  } catch (error) {
+    return sendDispatchError(res, error, "load dispatch destination");
   }
 };
 

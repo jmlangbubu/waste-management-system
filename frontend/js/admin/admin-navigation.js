@@ -11,6 +11,7 @@ function setActiveNavButton(sectionId) {
 
 function setPageTitleFromSection(sectionId) {
   const pageTitle = document.getElementById("pageTitle");
+  const pageSubtitle = document.getElementById("pageSubtitle");
   if (!pageTitle) return;
 
   const titleMap = {
@@ -19,11 +20,16 @@ function setPageTitleFromSection(sectionId) {
     [SECTION_IDS.appointments]: "Appointments",
     [SECTION_IDS.orientation]: "Orientation",
     [SECTION_IDS.complaints]: "Complaints",
-    [SECTION_IDS.tracking]: "Live Tracking",
+    [SECTION_IDS.tracking]: "Live Truck Tracking",
     [SECTION_IDS.userManagement]: "User Management"
   };
 
   pageTitle.textContent = titleMap[sectionId] || "Admin Panel";
+  if (pageSubtitle) {
+    pageSubtitle.textContent = sectionId === SECTION_IDS.tracking
+      ? "Monitor active trucks and plan collection routes."
+      : "Centralized monitoring and administration panel.";
+  }
 }
 
 function showSection(sectionId) {

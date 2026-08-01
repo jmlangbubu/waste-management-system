@@ -1,0 +1,422 @@
+{
+  "metadata": {
+    "city": "General Santos City",
+    "country": "Philippines",
+    "source": "OpenStreetMap Overpass API",
+    "source_url": "https://overpass-api.de/api/interpreter",
+    "generated_at": "2026-08-01T05:25:42.716Z",
+    "definition_file": "data/gensan-road-segment-definitions.json",
+    "note": "Only road sections with verification_status=verified are included in the generated catalog and seed SQL."
+  },
+  "road_sections": [
+    {
+      "segment_key": "south-osmena-street",
+      "requested_road_section": "South Osmeña Street",
+      "official_road_name": "Osmeña Street",
+      "matched_osm_road_name": "Osmeña Street",
+      "matched_osm_ids": [
+        "511058699",
+        "736777779"
+      ],
+      "ordered_osm_ids": [
+        "511058699",
+        "736777779"
+      ],
+      "barangay": null,
+      "geometry_point_count": 5,
+      "entry_coordinate": {
+        "latitude": 6.1127974,
+        "longitude": 125.1731882
+      },
+      "exit_coordinate": {
+        "latitude": 6.1128109,
+        "longitude": 125.1781466
+      },
+      "verification_status": "unverified",
+      "reason": "OSM currently names the source ways Osmeña Street without an official South subdivision. Manually verify the southern endpoint intersection and the boundary intersection where South becomes Central.",
+      "possible_duplicate_or_ambiguous_matches": {
+        "unselected_matching_osm_ids": [],
+        "connected_components": [
+          [
+            "511058699",
+            "736777779"
+          ]
+        ],
+        "selected_way_details": [
+          {
+            "osm_id": "511058699",
+            "geometry_point_count": 4,
+            "start_node_id": "377934403",
+            "end_node_id": "747172305"
+          },
+          {
+            "osm_id": "736777779",
+            "geometry_point_count": 2,
+            "start_node_id": "747172305",
+            "end_node_id": "747172258"
+          }
+        ]
+      }
+    },
+    {
+      "segment_key": "central-osmena-street",
+      "requested_road_section": "Central Osmeña Street",
+      "official_road_name": "Osmeña Street",
+      "matched_osm_road_name": "Osmeña Street",
+      "matched_osm_ids": [
+        "511058699",
+        "736777779"
+      ],
+      "ordered_osm_ids": [
+        "511058699",
+        "736777779"
+      ],
+      "barangay": null,
+      "geometry_point_count": 5,
+      "entry_coordinate": {
+        "latitude": 6.1127974,
+        "longitude": 125.1731882
+      },
+      "exit_coordinate": {
+        "latitude": 6.1128109,
+        "longitude": 125.1781466
+      },
+      "verification_status": "unverified",
+      "reason": "OSM currently names the source ways Osmeña Street without an official Central subdivision. Manually verify both boundary intersections separating Central from South and North.",
+      "possible_duplicate_or_ambiguous_matches": {
+        "unselected_matching_osm_ids": [],
+        "connected_components": [
+          [
+            "511058699",
+            "736777779"
+          ]
+        ],
+        "selected_way_details": [
+          {
+            "osm_id": "511058699",
+            "geometry_point_count": 4,
+            "start_node_id": "377934403",
+            "end_node_id": "747172305"
+          },
+          {
+            "osm_id": "736777779",
+            "geometry_point_count": 2,
+            "start_node_id": "747172305",
+            "end_node_id": "747172258"
+          }
+        ]
+      }
+    },
+    {
+      "segment_key": "north-osmena-street",
+      "requested_road_section": "North Osmeña Street",
+      "official_road_name": "Osmeña Street",
+      "matched_osm_road_name": "Osmeña Street",
+      "matched_osm_ids": [
+        "511058699",
+        "736777779"
+      ],
+      "ordered_osm_ids": [
+        "511058699",
+        "736777779"
+      ],
+      "barangay": null,
+      "geometry_point_count": 5,
+      "entry_coordinate": {
+        "latitude": 6.1127974,
+        "longitude": 125.1731882
+      },
+      "exit_coordinate": {
+        "latitude": 6.1128109,
+        "longitude": 125.1781466
+      },
+      "verification_status": "unverified",
+      "reason": "OSM currently names the source ways Osmeña Street without an official North subdivision. Manually verify the boundary intersection where Central becomes North and the northern endpoint intersection.",
+      "possible_duplicate_or_ambiguous_matches": {
+        "unselected_matching_osm_ids": [],
+        "connected_components": [
+          [
+            "511058699",
+            "736777779"
+          ]
+        ],
+        "selected_way_details": [
+          {
+            "osm_id": "511058699",
+            "geometry_point_count": 4,
+            "start_node_id": "377934403",
+            "end_node_id": "747172305"
+          },
+          {
+            "osm_id": "736777779",
+            "geometry_point_count": 2,
+            "start_node_id": "747172305",
+            "end_node_id": "747172258"
+          }
+        ]
+      }
+    },
+    {
+      "segment_key": "pendatun-avenue",
+      "requested_road_section": "Pendatun Avenue",
+      "official_road_name": "Pendatun Avenue",
+      "matched_osm_road_name": "Pendatun Avenue",
+      "matched_osm_ids": [
+        "791211456",
+        "791211459",
+        "888364289",
+        "888364296",
+        "888364298"
+      ],
+      "ordered_osm_ids": [
+        "791211459",
+        "888364296",
+        "888364298",
+        "888364289",
+        "791211456"
+      ],
+      "barangay": null,
+      "geometry_point_count": 34,
+      "entry_coordinate": {
+        "latitude": 6.1115535,
+        "longitude": 125.1716522
+      },
+      "exit_coordinate": {
+        "latitude": 6.1188383,
+        "longitude": 125.1702865
+      },
+      "verification_status": "verified",
+      "reason": "Pinned OSM ways form one connected, unbranched section with two endpoints.",
+      "possible_duplicate_or_ambiguous_matches": {
+        "unselected_matching_osm_ids": [],
+        "connected_components": [
+          [
+            "791211456",
+            "888364289",
+            "888364298",
+            "888364296",
+            "791211459"
+          ]
+        ],
+        "selected_way_details": [
+          {
+            "osm_id": "791211456",
+            "geometry_point_count": 2,
+            "start_node_id": "8259335155",
+            "end_node_id": "8259335156"
+          },
+          {
+            "osm_id": "791211459",
+            "geometry_point_count": 26,
+            "start_node_id": "748596325",
+            "end_node_id": "377934715"
+          },
+          {
+            "osm_id": "888364289",
+            "geometry_point_count": 3,
+            "start_node_id": "8259335156",
+            "end_node_id": "8259335163"
+          },
+          {
+            "osm_id": "888364296",
+            "geometry_point_count": 3,
+            "start_node_id": "8259335175",
+            "end_node_id": "748596325"
+          },
+          {
+            "osm_id": "888364298",
+            "geometry_point_count": 4,
+            "start_node_id": "8259335163",
+            "end_node_id": "8259335175"
+          }
+        ]
+      }
+    },
+    {
+      "segment_key": "national-highway-lagao",
+      "requested_road_section": "National Highway – Lagao Section",
+      "official_road_name": "General Santos-Polomolok National Highway",
+      "matched_osm_road_name": "General Santos-Polomolok National Highway",
+      "matched_osm_ids": [
+        "866240963"
+      ],
+      "ordered_osm_ids": [
+        "866240963"
+      ],
+      "barangay": "Lagao",
+      "geometry_point_count": 3,
+      "entry_coordinate": {
+        "latitude": 6.14577,
+        "longitude": 125.1336328
+      },
+      "exit_coordinate": {
+        "latitude": 6.1463498,
+        "longitude": 125.1332159
+      },
+      "verification_status": "unverified",
+      "reason": "The OSM way is named General Santos-Polomolok National Highway, but the Lagao subdivision and its operational boundaries require manual verification.",
+      "possible_duplicate_or_ambiguous_matches": {
+        "unselected_matching_osm_ids": [],
+        "connected_components": [
+          [
+            "866240963"
+          ]
+        ],
+        "selected_way_details": [
+          {
+            "osm_id": "866240963",
+            "geometry_point_count": 3,
+            "start_node_id": "8074193858",
+            "end_node_id": "5918036726"
+          }
+        ]
+      }
+    },
+    {
+      "segment_key": "santiago-boulevard",
+      "requested_road_section": "Santiago Boulevard",
+      "official_road_name": "Irineo Santiago Boulevard",
+      "matched_osm_road_name": "Irineo Santiago Boulevard",
+      "matched_osm_ids": [
+        "33274783"
+      ],
+      "ordered_osm_ids": [
+        "33274783"
+      ],
+      "barangay": null,
+      "geometry_point_count": 21,
+      "entry_coordinate": {
+        "latitude": 6.1163568,
+        "longitude": 125.1795101
+      },
+      "exit_coordinate": {
+        "latitude": 6.1093179,
+        "longitude": 125.179547
+      },
+      "verification_status": "verified",
+      "reason": "Pinned OSM ways form one connected, unbranched section with two endpoints.",
+      "possible_duplicate_or_ambiguous_matches": {
+        "unselected_matching_osm_ids": [
+          "724017869",
+          "826947228",
+          "826947229",
+          "1490011860",
+          "1518654442",
+          "1529668841",
+          "1529668842",
+          "1529668845",
+          "1529668846",
+          "1529668847",
+          "1529668848"
+        ],
+        "connected_components": [
+          [
+            "33274783"
+          ]
+        ],
+        "selected_way_details": [
+          {
+            "osm_id": "33274783",
+            "geometry_point_count": 21,
+            "start_node_id": "378161457",
+            "end_node_id": "13942480192"
+          }
+        ]
+      }
+    },
+    {
+      "segment_key": "pioneer-avenue",
+      "requested_road_section": "Pioneer Avenue",
+      "official_road_name": "Pioneer Avenue",
+      "matched_osm_road_name": "Pioneer Avenue",
+      "matched_osm_ids": [
+        "153958916"
+      ],
+      "ordered_osm_ids": [
+        "153958916"
+      ],
+      "barangay": null,
+      "geometry_point_count": 13,
+      "entry_coordinate": {
+        "latitude": 6.1115535,
+        "longitude": 125.1716522
+      },
+      "exit_coordinate": {
+        "latitude": 6.1071089,
+        "longitude": 125.1717275
+      },
+      "verification_status": "verified",
+      "reason": "Pinned OSM ways form one connected, unbranched section with two endpoints.",
+      "possible_duplicate_or_ambiguous_matches": {
+        "unselected_matching_osm_ids": [
+          "153958927"
+        ],
+        "connected_components": [
+          [
+            "153958916"
+          ]
+        ],
+        "selected_way_details": [
+          {
+            "osm_id": "153958916",
+            "geometry_point_count": 13,
+            "start_node_id": "377934715",
+            "end_node_id": "7678800437"
+          }
+        ]
+      }
+    },
+    {
+      "segment_key": "jose-catolico-avenue",
+      "requested_road_section": "Jose Catolico Avenue",
+      "official_road_name": "Jose Catolico Sr. Avenue",
+      "matched_osm_road_name": "Jose Catolico Sr. Avenue",
+      "matched_osm_ids": [
+        "1287970427"
+      ],
+      "ordered_osm_ids": [
+        "1287970427"
+      ],
+      "barangay": null,
+      "geometry_point_count": 16,
+      "entry_coordinate": {
+        "latitude": 6.1174587,
+        "longitude": 125.1861243
+      },
+      "exit_coordinate": {
+        "latitude": 6.1148688,
+        "longitude": 125.1834994
+      },
+      "verification_status": "verified",
+      "reason": "Pinned OSM ways form one connected, unbranched section with two endpoints.",
+      "possible_duplicate_or_ambiguous_matches": {
+        "unselected_matching_osm_ids": [
+          "33274785",
+          "141915340",
+          "251478382",
+          "302994019",
+          "629959283",
+          "725748719",
+          "826970077",
+          "826970078",
+          "1287970430",
+          "1287970431",
+          "1287970432"
+        ],
+        "connected_components": [
+          [
+            "1287970427"
+          ]
+        ],
+        "selected_way_details": [
+          {
+            "osm_id": "1287970427",
+            "geometry_point_count": 16,
+            "start_node_id": "1642727980",
+            "end_node_id": "1426840717"
+          }
+        ]
+      }
+    }
+  ]
+}

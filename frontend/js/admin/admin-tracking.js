@@ -221,9 +221,18 @@ function updateTrackingSummaryCards(trucks) {
   }
 
   if (trackingSignalStatus) {
-    const summary = getTrackingSignalSummary(safeTrucks);
-    trackingSignalStatus.textContent = summary.text;
-    trackingSignalStatus.className = `tracking-signal-status ${summary.className}`;
+    const selectedTruck = safeTrucks.find(
+      (truck) => String(truck.session_id) === String(selectedSessionId)
+    );
+    if (selectedTruck) {
+      const selectedStatus = getTrackingStatusMeta(selectedTruck);
+      trackingSignalStatus.textContent = selectedStatus.label;
+      trackingSignalStatus.className = `tracking-signal-status ${selectedStatus.className}`;
+    } else {
+      const summary = getTrackingSignalSummary(safeTrucks);
+      trackingSignalStatus.textContent = summary.text;
+      trackingSignalStatus.className = `tracking-signal-status ${summary.className}`;
+    }
   }
 }
 
@@ -390,12 +399,24 @@ function buildTrackingDisplayRoute(routeLogs = []) {
     fallbackUsed,
     rejectedAccuracyCount: normalizedPoints.length - reliablePoints.length,
     rejectedJumpCount,
-    collapsedCount
+    collapsedCount,
+    gapCount: displayedPoints.reduce((count, point, index) => {
+      if (!index) return count;
+      const previous = displayedPoints[index - 1];
+      return point.timestamp && previous.timestamp &&
+        point.timestamp - previous.timestamp > TRACKING_ROUTE_GAP_MS
+        ? count + 1
+        : count;
+    }, 0)
   };
 }
 
 function updateTrackingRouteStats(routeResult = {}) {
   const routePointCount = document.getElementById("trackingRoutePointCount");
+  const rawPointCount = document.getElementById("trackingRawPointCount");
+  const filteredPointCount = document.getElementById("trackingFilteredPointCount");
+  const routeGapCount = document.getElementById("trackingRouteGapCount");
+  const diagnosticsNotice = document.getElementById("trackingDiagnosticsNotice");
   if (routePointCount) {
     if (Array.isArray(routeResult)) {
       routePointCount.textContent = String(routeResult.length);
@@ -405,7 +426,19 @@ function updateTrackingRouteStats(routeResult = {}) {
     const mappedCount = Array.isArray(routeResult.displayedPoints)
       ? routeResult.displayedPoints.length
       : 0;
-    routePointCount.textContent = `${rawCount} raw · ${mappedCount} mapped`;
+    routePointCount.textContent = String(mappedCount);
+    if (rawPointCount) rawPointCount.textContent = String(rawCount);
+    if (filteredPointCount) {
+      filteredPointCount.textContent = String(Math.max(0, rawCount - mappedCount));
+    }
+    if (routeGapCount) routeGapCount.textContent = String(routeResult.gapCount || 0);
+    if (diagnosticsNotice) {
+      diagnosticsNotice.textContent = routeResult.fallbackUsed
+        ? "Showing the best recent low-accuracy route points; the truck marker remains on its latest reliable position."
+        : rawCount
+          ? "Raw GPS data remains unchanged; filtering applies only to this map."
+          : "Select a truck to inspect its route.";
+    }
   }
 }
 
@@ -533,8 +566,9 @@ async function loadActiveTrucks() {
 
       const selectedLabel = document.getElementById("selectedTruckLabel");
       if (selectedLabel) {
-        const statusMeta = getTrackingStatusMeta(selectedTruck);
-        selectedLabel.textContent = `Truck ${selectedTruck.truck_id} (${statusMeta.label})`;
+        selectedLabel.textContent = selectedTruck.truck_name ||
+          selectedTruck.truck_display_name ||
+          `Truck ${selectedTruck.truck_id}`;
       }
 
       const lastUpdated = document.getElementById("trackingLastUpdated");
@@ -596,15 +630,9 @@ function renderActiveTruckList(trucks) {
     const isSelected = String(selectedSessionId) === String(truck.session_id);
     const statusMeta = getTrackingStatusMeta(truck);
     const lastUpdated = getTruckLastUpdateValue(truck);
+    const truckName = truck.truck_name || truck.truck_display_name || `Truck ${truck.truck_id || "-"}`;
     const dispatchLabel = truck.dispatch
-      ? `
-          <small class="dispatch-truck-ticket">${escapeHtml(truck.dispatch.ticket_number)} · ${escapeHtml(truck.dispatch.route_name)}</small><br>
-          <small>Assigned: ${escapeHtml(truck.dispatch.assigned_personnel_name || "Not assigned")}</small><br>
-          <small>Current: ${escapeHtml(truck.dispatch.current_stop_name || "Returning to WMO")}</small><br>
-          <small>Next: ${escapeHtml(truck.dispatch.next_stop_name || "WMO return")}</small><br>
-          <small>${Number(truck.dispatch.completed_stops || 0)}/${Number(truck.dispatch.total_stops || 0)} completed · ${escapeHtml(dispatchStatusLabel(truck.dispatch.dispatch_status))}</small><br>
-          <small>Tracking start: ${escapeHtml(formatTrackingTimeSafe(truck.dispatch.tracking_started_at))}</small><br>
-        `
+      ? `<small class="dispatch-truck-ticket">${escapeHtml(truck.dispatch.ticket_number)} · ${Number(truck.dispatch.completed_stops || 0)}/${Number(truck.dispatch.total_stops || 0)} stops</small>`
       : "";
 
     return `
@@ -618,12 +646,14 @@ function renderActiveTruckList(trucks) {
 
         <div class="truck-item-body">
           <div class="truck-list-topline">
-            <strong>Truck ${escapeHtml(truck.truck_id || "-")}</strong>
+            <div>
+              <strong>${escapeHtml(truckName)}</strong>
+              <small class="truck-id-line">ID ${escapeHtml(truck.truck_id || "-")}</small>
+            </div>
             <small class="truck-status-label ${statusMeta.className}">${escapeHtml(statusMeta.label)}</small>
           </div>
-          <small>${escapeHtml(truck.enforcer_name || "-")}</small><br>
+          <small class="truck-personnel">${escapeHtml(truck.enforcer_name || "Personnel not assigned")}</small>
           ${dispatchLabel}
-          <small class="truck-sync-note">${escapeHtml(statusMeta.description)}</small><br>
           <small class="truck-last-sync">Last sync: ${escapeHtml(formatTrackingTimeSafe(lastUpdated))}</small>
         </div>
       </button>
@@ -872,7 +902,6 @@ async function loadTruckRoute(sessionId, options = {}) {
       selectedStartMarker.setLatLng(startPoint);
     }
 
-    const routeNotice = getTrackingRouteNotice(routePoints);
     if (currentReliablePoint) {
       const currentPoint = [currentReliablePoint.lat, currentReliablePoint.lng];
       selectedReliableRoutePoint = currentReliablePoint;
@@ -889,11 +918,7 @@ async function loadTruckRoute(sessionId, options = {}) {
       } else {
         selectedCurrentMarker.setLatLng(currentPoint);
       }
-      selectedCurrentMarker.setPopupContent(
-        routeNotice
-          ? `Current reliable location<br>${escapeHtml(routeNotice)}`
-          : "Current reliable location"
-      );
+      selectedCurrentMarker.setPopupContent("Current reliable location");
       updateTruckMarkerWithReliableRoutePoint(sessionId, currentReliablePoint);
       if (typeof updateDispatchSelectedTruckContext === "function") {
         updateDispatchSelectedTruckContext(selectedTrackingTruck);
@@ -921,14 +946,6 @@ async function loadTruckRoute(sessionId, options = {}) {
       );
     }
 
-    const trackingSignalStatus = document.getElementById("trackingSignalStatus");
-    if (trackingSignalStatus && routeNotice) {
-      trackingSignalStatus.textContent = routeNotice;
-      trackingSignalStatus.className = "tracking-signal-status warning";
-    } else if (trackingSignalStatus && routeResult.fallbackUsed) {
-      trackingSignalStatus.textContent = "Showing best available low-accuracy points";
-      trackingSignalStatus.className = "tracking-signal-status warning";
-    }
   } catch (error) {
     console.error("Error loading route:", error);
   }
@@ -963,7 +980,7 @@ function resetTrackingView() {
 
   const selectedLabel = document.getElementById("selectedTruckLabel");
   if (selectedLabel) {
-    selectedLabel.textContent = "None";
+    selectedLabel.textContent = "No truck selected";
   }
 
   const lastUpdated = document.getElementById("trackingLastUpdated");
@@ -1323,11 +1340,14 @@ function selectTruck(sessionId, truckId) {
 
   const selectedLabel = document.getElementById("selectedTruckLabel");
   if (selectedLabel) {
-    selectedLabel.textContent = `Truck ${truckId}`;
+    selectedLabel.textContent = selectedTrackingTruck?.truck_name ||
+      selectedTrackingTruck?.truck_display_name ||
+      `Truck ${truckId}`;
   }
 
   updateTrackingActionButtons();
   renderActiveTruckList(activeTrackingTrucks);
+  updateTrackingSummaryCards(activeTrackingTrucks);
   if (typeof prepareDispatchPlannerForTruck === "function") {
     prepareDispatchPlannerForTruck(selectedTrackingTruck);
   }

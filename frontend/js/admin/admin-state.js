@@ -46,9 +46,27 @@ let dispatchPlanningMap = null;
 let dispatchPlanningLayerGroup = null;
 let dispatchTicketRows = [];
 let dispatchSetupRequired = false;
+let dispatchDestinationCatalogSetupRequired = false;
 let dispatchSelectedSessionActive = false;
 let dispatchAddDestinationMode = false;
 let dispatchPendingLinkTicketId = null;
+let dispatchDestinationMode = "road_segment";
+let dispatchDestinationSearchController = null;
+let dispatchDestinationSearchTimer = null;
+let dispatchDestinationResults = [];
+let dispatchPopularDestinationResults = [];
+let dispatchDestinationResultIndex = -1;
+let dispatchDestinationPreview = null;
+let dispatchPreviewMarker = null;
+let dispatchPreviewGeometryLayer = null;
+let dispatchStopMetadataSequence = 0;
+const dispatchStopMetadata = new Map();
+let dispatchLastAddedStopRow = null;
+let dispatchRoutingRequestTimer = null;
+let dispatchRoutingGeneration = 0;
+let dispatchLastRoutingStart = null;
+let dispatchLastRoutingSignature = "";
+const dispatchRoutingCache = new Map();
 
 // Charts
 let wasteTrendChartInstance = null;

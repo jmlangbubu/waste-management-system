@@ -25,6 +25,13 @@ const DISPATCH_TABLE_NAMES = new Set([
   "dispatch_tracking_sessions",
   "dispatch_events"
 ]);
+const DESTINATION_CATALOG_TABLE_NAMES = new Set([
+  "gensan_dispatch_destinations",
+  "gensan_dispatch_destination_points"
+]);
+const DESTINATION_TYPES = new Set(["road_segment", "barangay_hall"]);
+const DEFAULT_DESTINATION_LIMIT = 20;
+const MAX_DESTINATION_LIMIT = 50;
 
 class DispatchServiceError extends Error {
   constructor(message, statusCode = 400, code = "DISPATCH_ERROR") {
@@ -47,6 +54,33 @@ class DispatchDatabaseUnavailableError extends DispatchServiceError {
   }
 }
 
+class DispatchDestinationCatalogUnavailableError extends DispatchServiceError {
+  constructor(cause) {
+    super(
+      "Dispatch destination catalog setup is required",
+      503,
+      "DISPATCH_DESTINATION_CATALOG_SETUP_REQUIRED"
+    );
+    this.name = "DispatchDestinationCatalogUnavailableError";
+    this.cause = cause;
+  }
+}
+
+function isDestinationCatalogTableMissingError(error) {
+  if (!error) return false;
+  if (error.code === "DISPATCH_DESTINATION_CATALOG_SETUP_REQUIRED") return true;
+  if (error.cause && error.cause !== error) {
+    return isDestinationCatalogTableMissingError(error.cause);
+  }
+  if (!["ER_NO_SUCH_TABLE", "ER_BAD_TABLE_ERROR"].includes(error.code)) {
+    return false;
+  }
+  const message = String(error.message || "").toLowerCase();
+  return [...DESTINATION_CATALOG_TABLE_NAMES].some((tableName) =>
+    message.includes(tableName)
+  );
+}
+
 function isDispatchTableMissingError(error) {
   if (!error) return false;
   if (error.code === "DISPATCH_DATABASE_SETUP_REQUIRED") return true;
@@ -63,10 +97,29 @@ function isDispatchTableMissingError(error) {
 }
 
 function normalizeDispatchError(error) {
+  if (isDestinationCatalogTableMissingError(error)) {
+    return new DispatchDestinationCatalogUnavailableError(error);
+  }
   if (isDispatchTableMissingError(error)) {
     return new DispatchDatabaseUnavailableError(error);
   }
   return error;
+}
+
+function normalizeDestinationSearchText(value) {
+  return cleanText(value, 255)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function destinationLimit(value) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed <= 0) return DEFAULT_DESTINATION_LIMIT;
+  return Math.min(parsed, MAX_DESTINATION_LIMIT);
 }
 
 function cleanText(value, maxLength = 255) {
@@ -389,6 +442,182 @@ class DispatchService {
     );
 
     return `DPT-${dispatchYear}-${String(nextValue).padStart(4, "0")}`;
+  }
+
+  async listDestinations(filters = {}) {
+    const destinationType = cleanText(filters.type, 40).toLowerCase();
+    if (!DESTINATION_TYPES.has(destinationType)) {
+      throw new DispatchServiceError(
+        "type must be road_segment or barangay_hall",
+        400,
+        "INVALID_DESTINATION_TYPE"
+      );
+    }
+
+    const query = normalizeDestinationSearchText(filters.q);
+    const barangay = normalizeDestinationSearchText(filters.barangay);
+    const limit = destinationLimit(filters.limit);
+    const searchable = `
+      LOWER(CONVERT(CONCAT_WS(' ',
+        gdd.name,
+        gdd.display_label,
+        COALESCE(gdd.barangay, ''),
+        COALESCE(gdd.aliases, ''),
+        COALESCE(gdd.search_keywords, '')
+      ) USING utf8mb4)) COLLATE utf8mb4_unicode_ci
+    `;
+    const nameSearch =
+      "LOWER(CONVERT(gdd.name USING utf8mb4)) COLLATE utf8mb4_unicode_ci";
+    const displaySearch =
+      "LOWER(CONVERT(gdd.display_label USING utf8mb4)) COLLATE utf8mb4_unicode_ci";
+    const clauses = ["gdd.is_active = 1", "gdd.is_verified = 1"];
+    const parameters = [];
+    if (destinationType === "road_segment") {
+      clauses.push("gdd.destination_type IN ('road_segment', 'road')");
+    } else {
+      clauses.push("gdd.destination_type = ?");
+      parameters.push(destinationType);
+    }
+
+    if (barangay) {
+      clauses.push(
+        "LOWER(CONVERT(gdd.barangay USING utf8mb4)) COLLATE utf8mb4_unicode_ci = ?"
+      );
+      parameters.push(barangay);
+    }
+    if (query) {
+      clauses.push(`${searchable} LIKE ?`);
+      parameters.push(`%${query}%`);
+    }
+
+    const rankingSql = query
+      ? `CASE
+          WHEN ${displaySearch} = ? OR ${nameSearch} = ? THEN 0
+          WHEN ${displaySearch} LIKE ? OR ${nameSearch} LIKE ? THEN 1
+          ELSE 2
+        END ASC,`
+      : "";
+    if (query) parameters.push(query, query, `${query}%`, `${query}%`);
+    parameters.push(limit);
+
+    const [rows] = await this.query(
+      `
+        SELECT
+          gdd.id,
+          CASE
+            WHEN gdd.destination_type = 'road' THEN 'road_segment'
+            ELSE gdd.destination_type
+          END AS destination_type,
+          gdd.name,
+          gdd.barangay,
+          gdd.display_label,
+          gdd.latitude,
+          gdd.longitude,
+          gdd.aliases,
+          gdd.is_verified,
+          EXISTS (
+            SELECT 1
+            FROM gensan_dispatch_destination_points gddp
+            WHERE gddp.destination_id = gdd.id
+              AND gddp.point_type IN ('geometry', 'entry', 'middle', 'exit')
+          ) AS has_geometry,
+          (
+            SELECT COUNT(*)
+            FROM gensan_dispatch_destination_points gddpc
+            WHERE gddpc.destination_id = gdd.id
+              AND gddpc.point_type IN ('geometry', 'entry', 'middle', 'exit')
+          ) AS geometry_point_count
+        FROM gensan_dispatch_destinations gdd
+        WHERE ${clauses.join(" AND ")}
+        ORDER BY
+          ${rankingSql}
+          gdd.is_verified DESC,
+          gdd.name ASC,
+          gdd.id ASC
+        LIMIT ?
+      `,
+      parameters
+    );
+
+    return rows.map((row) => ({
+      ...row,
+      latitude: Number(row.latitude),
+      longitude: Number(row.longitude),
+      is_verified: Boolean(Number(row.is_verified)),
+      has_geometry: Boolean(Number(row.has_geometry)),
+      geometry_point_count: Number(row.geometry_point_count || 0)
+    }));
+  }
+
+  async getDestination(destinationId) {
+    const id = requiredId(destinationId, "destination id");
+    const [[destinations], [points]] = await Promise.all([
+      this.query(
+        `
+          SELECT
+            id,
+            CASE
+              WHEN destination_type = 'road' THEN 'road_segment'
+              ELSE destination_type
+            END AS destination_type,
+            name,
+            barangay,
+            display_label,
+            latitude,
+            longitude,
+            aliases,
+            search_keywords,
+            osm_type,
+            osm_id,
+            is_verified,
+            is_active
+          FROM gensan_dispatch_destinations
+          WHERE id = ?
+            AND is_active = 1
+            AND is_verified = 1
+          LIMIT 1
+        `,
+        [id]
+      ),
+      this.query(
+        `
+          SELECT id, destination_id, point_order, point_type, latitude, longitude
+          FROM gensan_dispatch_destination_points
+          WHERE destination_id = ?
+          ORDER BY point_order ASC, id ASC
+        `,
+        [id]
+      )
+    ]);
+
+    if (!destinations.length) {
+      throw new DispatchServiceError(
+        "Dispatch destination not found",
+        404,
+        "DISPATCH_DESTINATION_NOT_FOUND"
+      );
+    }
+
+    const destination = destinations[0];
+    destination.latitude = Number(destination.latitude);
+    destination.longitude = Number(destination.longitude);
+    destination.is_verified = Boolean(Number(destination.is_verified));
+    destination.is_active = Boolean(Number(destination.is_active));
+    const normalizedPoints = points.map((point) => ({
+      ...point,
+      latitude: Number(point.latitude),
+      longitude: Number(point.longitude)
+    }));
+    return {
+      destination,
+      points: normalizedPoints,
+      has_geometry: normalizedPoints.some((point) =>
+        ["geometry", "entry", "middle", "exit"].includes(point.point_type)
+      ),
+      geometry_point_count: normalizedPoints.filter((point) =>
+        ["geometry", "entry", "middle", "exit"].includes(point.point_type)
+      ).length
+    };
   }
 
   async insertStops(connection, ticketId, stops) {
@@ -1949,7 +2178,14 @@ module.exports.DispatchService = DispatchService;
 module.exports.DispatchServiceError = DispatchServiceError;
 module.exports.DispatchDatabaseUnavailableError =
   DispatchDatabaseUnavailableError;
+module.exports.DispatchDestinationCatalogUnavailableError =
+  DispatchDestinationCatalogUnavailableError;
 module.exports.isDispatchTableMissingError = isDispatchTableMissingError;
+module.exports.isDestinationCatalogTableMissingError =
+  isDestinationCatalogTableMissingError;
 module.exports.normalizeDispatchError = normalizeDispatchError;
+module.exports.normalizeDestinationSearchText = normalizeDestinationSearchText;
+module.exports.destinationLimit = destinationLimit;
+module.exports.DESTINATION_TYPES = DESTINATION_TYPES;
 module.exports.TICKET_STATUSES = TICKET_STATUSES;
 module.exports.STOP_STATUSES = STOP_STATUSES;

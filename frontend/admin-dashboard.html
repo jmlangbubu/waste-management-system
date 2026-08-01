@@ -130,7 +130,7 @@
           <button id="mobileSidebarToggleBtn" class="sidebar-toggle-btn mobile-sidebar-toggle" type="button" aria-label="Open sidebar" title="Open sidebar">☰</button>
           <div>
             <h1 id="pageTitle">Dashboard Overview</h1>
-            <p class="topbar-subtitle">Centralized monitoring and administration panel.</p>
+            <p class="topbar-subtitle" id="pageSubtitle">Centralized monitoring and administration panel.</p>
           </div>
         </div>
 
@@ -853,70 +853,42 @@
 <!-- TRACKING -->
 <section id="trackingSection" class="content-section">
   <div class="page-card live-tracking-card">
-    <div class="page-card-header dashboard-header-row tracking-page-heading">
-      <div class="tracking-heading-copy">
-        <span class="tracking-eyebrow">WMO field operations</span>
-        <h2>Live Truck Tracking</h2>
-        <p>Monitor active garbage trucks, enforcer GPS status, and route activity.</p>
-      </div>
-
-      <div class="dashboard-header-actions tracking-header-actions">
-        <button type="button" class="tracking-compact-link" onclick="openTrackingReportsModal()">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></svg>
-          Tracking reports
-        </button>
-      </div>
+    <div class="tracking-module-toolbar">
+      <span class="tracking-eyebrow">WMO operations workspace</span>
+      <button type="button" class="tracking-compact-link" onclick="openTrackingReportsModal()">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></svg>
+        Tracking reports
+      </button>
     </div>
 
-    <div class="tracking-summary-row" aria-label="Live tracking summary">
-      <div class="tracking-mini-card tracking-card-sessions">
-        <span class="tracking-mini-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5h16M4 12h16M4 17.5h10"/><path d="M7 4v5M17 9V4M7 14v6M17 12v8"/></svg></span>
-        <div class="tracking-mini-content">
-          <span>Active Sessions</span>
-          <strong id="activeTruckCount">0</strong>
-        </div>
+    <div class="tracking-status-ribbon" aria-label="Live tracking status">
+      <div class="tracking-status-items">
+        <span><strong id="activeTruckCount">0</strong> Active</span>
+        <i aria-hidden="true"></i>
+        <span id="selectedTruckLabel">No truck selected</span>
+        <i aria-hidden="true"></i>
+        <span id="trackingSignalStatus" class="tracking-signal-status idle">No active sessions</span>
+        <i aria-hidden="true"></i>
+        <span>Last sync <strong id="trackingLastUpdated">--</strong></span>
+        <i aria-hidden="true"></i>
+        <span><strong id="trackingRoutePointCount">0</strong> mapped points</span>
       </div>
 
-      <div class="tracking-mini-card tracking-card-truck">
-        <span class="tracking-mini-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h11v8H3z"/><path d="M14 10h3.5L21 13.5V15h-7z"/><path d="M7 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM17 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/></svg></span>
-        <div class="tracking-mini-content">
-          <span>Selected Truck</span>
-          <strong id="selectedTruckLabel">None</strong>
-        </div>
-      </div>
-
-      <div class="tracking-mini-card tracking-card-sync">
-        <span class="tracking-mini-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s6-5.1 6-11a6 6 0 1 0-12 0c0 5.9 6 11 6 11Z"/><path d="M12 12.5a2.2 2.2 0 1 0 0-4.4 2.2 2.2 0 0 0 0 4.4Z"/></svg></span>
-        <div class="tracking-mini-content">
-          <span>Last Synced Point</span>
-          <strong id="trackingLastUpdated">--</strong>
-        </div>
-      </div>
-
-      <div class="tracking-mini-card tracking-card-signal">
-        <span class="tracking-mini-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h2v-4H4v4Zm5 0h2v-7H9v7Zm5 0h2V9h-2v10Zm5 0h2V5h-2v14Z"/></svg></span>
-        <div class="tracking-mini-content">
-          <span>Signal / Sync</span>
-          <strong id="trackingSignalStatus" class="tracking-signal-status idle">No active sessions</strong>
-        </div>
-      </div>
-
-      <div class="tracking-mini-card tracking-card-route">
-        <span class="tracking-mini-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5a2 2 0 1 0 0 4 2 2 0 0 0 0-4ZM18 15a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z"/><path d="M8 7h5.5a3.5 3.5 0 0 1 0 7H10a3 3 0 0 0 0 6h6"/></svg></span>
-        <div class="tracking-mini-content">
-          <span>Route Points</span>
-          <strong id="trackingRoutePointCount">0</strong>
-        </div>
-      </div>
-
-      <div class="dashboard-header-actions tracking-summary-actions">
-        <button type="button" class="view-all-btn small" id="resetTrackingViewBtn">
-          Reset View
-        </button>
-
-        <button type="button" class="danger-stop-btn" id="forceStopTruckBtn" disabled>
-          Stop Selected Truck
-        </button>
+      <div class="tracking-ribbon-actions">
+        <details class="tracking-diagnostics">
+          <summary>Diagnostics</summary>
+          <div class="tracking-diagnostics-popover">
+            <strong>Route diagnostics</strong>
+            <dl>
+              <div><dt>Raw points</dt><dd id="trackingRawPointCount">0</dd></div>
+              <div><dt>Filtered</dt><dd id="trackingFilteredPointCount">0</dd></div>
+              <div><dt>Sync gaps</dt><dd id="trackingRouteGapCount">0</dd></div>
+            </dl>
+            <p id="trackingDiagnosticsNotice">Select a truck to inspect its route.</p>
+          </div>
+        </details>
+        <button type="button" class="tracking-ribbon-button" id="resetTrackingViewBtn">Reset View</button>
+        <button type="button" class="tracking-ribbon-button danger" id="forceStopTruckBtn" disabled>Stop Truck</button>
       </div>
     </div>
 
@@ -930,11 +902,10 @@
         </div>
 
         <div class="tracking-map-legend" aria-label="Map legend">
-          <span><i class="tracking-legend-dot start"></i> Start</span>
-          <span><i class="tracking-legend-dot current"></i> Current / last synced</span>
-          <span><i class="tracking-legend-line actual"></i> Reliable GPS trail</span>
-          <span><i class="tracking-legend-line gap"></i> Confirmed sync gap</span>
+          <span><i class="tracking-legend-line actual"></i> Actual route</span>
           <span><i class="tracking-legend-line planned"></i> Planned route</span>
+          <span><i class="tracking-legend-dot current"></i> Current truck</span>
+          <span><i class="tracking-legend-destination">1</i> Destination</span>
         </div>
       </div>
 
@@ -943,22 +914,39 @@
           <div class="tracking-panel-title-left">
             <span class="tracking-panel-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h11v8H3z"/><path d="M14 10h3.5L21 13.5V15h-7z"/><path d="M7 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM17 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/></svg></span>
             <div>
-              <h4>Field Workspace</h4>
-              <p>Track a truck and plan its dispatch in one place.</p>
+              <h4>Operations Workspace</h4>
+              <p>Select a truck, choose stops, then dispatch.</p>
             </div>
           </div>
           <span class="tracking-live-chip">Live</span>
         </div>
 
-        <div class="tracking-workspace-tabs" role="tablist" aria-label="Tracking workspace views">
-          <button type="button" class="tracking-workspace-tab active" data-tracking-workspace-tab="live" role="tab" aria-selected="true">Live</button>
-          <button type="button" class="tracking-workspace-tab" data-tracking-workspace-tab="dispatch" role="tab" aria-selected="false">Dispatch</button>
-          <button type="button" class="tracking-workspace-tab" data-tracking-workspace-tab="tickets" role="tab" aria-selected="false">Tickets</button>
-          <button type="button" class="tracking-workspace-tab" data-tracking-workspace-tab="reports" role="tab" aria-selected="false">Reports</button>
+        <article id="dispatchSelectedTruckSummary" class="dispatch-selected-truck is-empty">
+          <div class="dispatch-selected-truck-heading">
+            <span class="dispatch-selected-truck-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h11v8H3z"/><path d="M14 10h3.5L21 13.5V15h-7z"/><path d="M7 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM17 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/></svg></span>
+            <div>
+              <small>Selected truck</small>
+              <strong id="dispatchSelectedTruckName">Choose a truck</strong>
+            </div>
+            <span id="dispatchSelectedTruckStatus" class="tracking-live-chip">Waiting</span>
+          </div>
+          <dl class="dispatch-selected-truck-meta">
+            <div><dt>Truck ID</dt><dd id="dispatchSelectedTruckIdLabel">--</dd></div>
+            <div><dt>Session</dt><dd id="dispatchSelectedSessionLabel">--</dd></div>
+            <div><dt>Personnel</dt><dd id="dispatchSelectedPersonnelLabel">--</dd></div>
+            <div><dt>GPS status</dt><dd id="dispatchSelectedGpsStatusLabel">--</dd></div>
+            <div><dt>Latest sync</dt><dd id="dispatchSelectedGpsLabel">--</dd></div>
+          </dl>
+        </article>
+
+        <div class="dispatch-workspace-actions" aria-label="Dispatch workspace actions">
+          <button type="button" data-dispatch-workspace-action="monitor">Back to Trucks</button>
+          <button type="button" data-dispatch-workspace-action="tickets">Tickets</button>
+          <button type="button" data-dispatch-workspace-action="reports">Reports</button>
         </div>
 
         <div class="tracking-workspace-scroll">
-          <section class="tracking-workspace-view active" data-tracking-workspace-view="live" role="tabpanel">
+          <section class="tracking-workspace-view active" data-tracking-workspace-view="monitor" role="tabpanel">
             <div class="tracking-workspace-section-heading">
               <div>
                 <strong>Active Trucks</strong>
@@ -974,26 +962,8 @@
             </div>
           </section>
 
-          <section class="tracking-workspace-view" data-tracking-workspace-view="dispatch" role="tabpanel" hidden>
+          <section class="tracking-workspace-view" data-tracking-workspace-view="plan" role="tabpanel" hidden>
             <div id="dispatchSessionWarning" class="dispatch-session-warning hidden" role="alert"></div>
-
-            <article id="dispatchSelectedTruckSummary" class="dispatch-selected-truck is-empty">
-              <div class="dispatch-selected-truck-heading">
-                <span class="dispatch-selected-truck-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h11v8H3z"/><path d="M14 10h3.5L21 13.5V15h-7z"/><path d="M7 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM17 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/></svg></span>
-                <div>
-                  <small>Selected truck</small>
-                  <strong id="dispatchSelectedTruckName">Choose a truck from Live</strong>
-                </div>
-                <span id="dispatchSelectedTruckStatus" class="tracking-live-chip">Waiting</span>
-              </div>
-              <dl class="dispatch-selected-truck-meta">
-                <div><dt>Session</dt><dd id="dispatchSelectedSessionLabel">--</dd></div>
-                <div><dt>Personnel</dt><dd id="dispatchSelectedPersonnelLabel">--</dd></div>
-                <div><dt>Tracking start</dt><dd id="dispatchSelectedStartLabel">--</dd></div>
-                <div><dt>Latest GPS</dt><dd id="dispatchSelectedGpsLabel">--</dd></div>
-                <div class="wide"><dt>Current reliable coordinates</dt><dd id="dispatchSelectedCoordinatesLabel">--</dd></div>
-              </dl>
-            </article>
 
             <form id="dispatchTicketForm" class="dispatch-inline-planner" novalidate>
               <input type="hidden" id="dispatchEditingTicketId">
@@ -1009,7 +979,7 @@
               <div class="tracking-workspace-section-heading">
                 <div>
                   <strong id="dispatchTicketEditorTitle">Dispatch Planner</strong>
-                  <small>Add destinations directly from the live map.</small>
+                  <small>Choose each verified destination once to add it to the route.</small>
                 </div>
               </div>
 
@@ -1017,84 +987,134 @@
                 Route name
                 <input type="text" id="dispatchRouteName" maxlength="255" required placeholder="Truck route for today">
               </label>
-              <div class="dispatch-inline-field-row">
-                <label class="dispatch-inline-field">
-                  Expected return <small>Optional</small>
-                  <input type="datetime-local" id="dispatchExpectedReturn">
+
+              <div class="dispatch-destination-picker">
+                <div class="dispatch-picker-heading">
+                  <strong>Choose Destination</strong>
+                  <span>General Santos City catalog</span>
+                </div>
+                <div class="dispatch-destination-modes" role="group" aria-label="Destination type">
+                  <button type="button" class="active" data-dispatch-destination-mode="road_segment" aria-pressed="true">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3 5 21M16 3l3 18M12 3v4M12 11v4M12 19v2"/></svg>
+                    Road Section
+                  </button>
+                  <button type="button" data-dispatch-destination-mode="barangay_hall" aria-pressed="false">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 9 9-5 9 5M5 10v9M9 10v9M15 10v9M19 10v9M3 20h18"/></svg>
+                    Barangay Hall
+                  </button>
+                </div>
+                <div class="dispatch-popular-section">
+                  <div class="dispatch-picker-subheading">
+                    <strong id="dispatchPopularDestinationHeading">Popular Road Sections</strong>
+                    <small>Verified catalog entries</small>
+                  </div>
+                  <div id="dispatchPopularDestinations" class="dispatch-popular-destinations" aria-live="polite"></div>
+                </div>
+                <label class="dispatch-inline-field" id="dispatchDestinationSearchField">
+                  <span id="dispatchDestinationSearchLabel">Search Road Sections</span>
+                  <div class="dispatch-combobox" id="dispatchDestinationSearchWrap">
+                    <input type="search" id="dispatchDestinationSearch" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="dispatchDestinationSuggestions" autocomplete="off" placeholder="Search verified road sections...">
+                    <button type="button" class="dispatch-combobox-clear" id="dispatchDestinationSearchClearBtn" aria-label="Clear destination search">×</button>
+                    <div id="dispatchDestinationSuggestions" class="dispatch-combobox-options dispatch-destination-results hidden" role="listbox"></div>
+                  </div>
                 </label>
-                <label class="dispatch-inline-field">
-                  Notes <small>Optional</small>
-                  <textarea id="dispatchNotes" rows="2" maxlength="2000" placeholder="Instructions for the field team"></textarea>
-                </label>
+                <div id="dispatchDestinationCatalogNotice" class="dispatch-setup-notice hidden" role="alert">Destination catalog setup is required. Custom map points remain available.</div>
+                <details class="dispatch-more-options">
+                  <summary>More options</summary>
+                  <div class="dispatch-custom-point-option">
+                    <span><strong>Location not listed?</strong><small>Select a custom point on the map.</small></span>
+                    <button type="button" class="dispatch-inline-action secondary" id="dispatchAddStopBtn" aria-pressed="false">
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s6-5.1 6-11a6 6 0 1 0-12 0c0 5.9 6 11 6 11Z"/><circle cx="12" cy="10" r="2"/></svg>
+                      <span data-dispatch-add-label>Add Unlisted Location</span>
+                    </button>
+                  </div>
+                  <div id="dispatchDestinationPreview" class="dispatch-destination-preview hidden" aria-live="polite">
+                    <div class="dispatch-preview-heading">
+                      <div><small>Custom location</small><strong id="dispatchPreviewName">Destination preview</strong></div>
+                      <button type="button" id="dispatchClearPreviewBtn">Clear</button>
+                    </div>
+                    <p id="dispatchPreviewMeta">Name this custom point before adding it.</p>
+                    <label class="dispatch-inline-field hidden" id="dispatchCustomLabelField">
+                      Location label
+                      <input type="text" id="dispatchPreviewLabel" maxlength="255">
+                    </label>
+                    <button type="button" class="dispatch-inline-action secondary" id="dispatchConfirmDestinationBtn" disabled>
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+                      Add Custom Point
+                    </button>
+                  </div>
+                </details>
+                <p id="dispatchDestinationHint" class="dispatch-destination-hint">Select a truck before planning destinations.</p>
               </div>
 
-              <div class="dispatch-inline-route-toolbar">
-                <button type="button" class="dispatch-inline-action" id="dispatchAddStopBtn" aria-pressed="false">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-                  <span data-dispatch-add-label>Add Destination</span>
-                </button>
+              <div class="dispatch-inline-route-toolbar dispatch-route-list-heading">
+                <strong>Ordered route stops</strong>
                 <button type="button" class="dispatch-inline-action secondary" id="dispatchClearRouteBtn">Clear Route</button>
               </div>
-              <p id="dispatchDestinationHint" class="dispatch-destination-hint">Select a live truck, then enable Add Destination and click the map.</p>
 
               <div id="dispatchStopRows" class="dispatch-stop-rows dispatch-inline-stop-rows">
                 <div class="dispatch-route-empty">No destinations added yet.</div>
               </div>
+              <div class="dispatch-wmo-return" aria-label="Required final route point">
+                <span class="dispatch-route-marker wmo">W</span>
+                <div><strong>Return to WMO</strong><small>Required final point · added automatically</small></div>
+                <span class="dispatch-locked-badge">Required</span>
+              </div>
+              <div id="dispatchRoutePreviewNotice" class="dispatch-route-preview-notice hidden" role="alert"></div>
 
               <div id="dispatchTicketFormError" class="dispatch-form-error hidden" role="alert"></div>
               <div id="dispatchWorkflowResult" class="dispatch-workflow-result hidden" aria-live="polite"></div>
+
+              <section id="dispatchCurrentPanel" class="dispatch-current-panel dispatch-inline-details" aria-live="polite">
+                <div class="dispatch-panel-empty">
+                  <div>
+                    <strong>No dispatch ticket selected</strong>
+                    <p>A saved or active ticket will appear here.</p>
+                  </div>
+                </div>
+              </section>
+
               <div class="dispatch-form-actions dispatch-inline-form-actions">
                 <button type="submit" class="dispatch-inline-action secondary" id="dispatchSaveTicketBtn">Save Draft</button>
                 <button type="button" class="dispatch-inline-action primary" id="dispatchNowBtn" disabled>Dispatch Now</button>
               </div>
             </form>
-
-            <section id="dispatchCurrentPanel" class="dispatch-current-panel dispatch-inline-details" aria-live="polite">
-              <div class="dispatch-panel-empty">
-                <div>
-                  <strong>No dispatch ticket selected</strong>
-                  <p>A saved or active ticket will appear here.</p>
-                </div>
-              </div>
-            </section>
           </section>
 
-          <section class="tracking-workspace-view" data-tracking-workspace-view="tickets" role="tabpanel" hidden>
+          <section class="tracking-workspace-view" data-tracking-workspace-view="records" role="tabpanel" hidden>
             <div class="tracking-workspace-section-heading">
-              <div><strong>Dispatch Tickets</strong><small>Prepared and active field operations.</small></div>
+              <div><strong>Dispatch Records</strong><small>Review current tickets and completed operations.</small></div>
             </div>
+
+            <div class="dispatch-record-tabs" role="tablist" aria-label="Dispatch record types">
+              <button type="button" class="active" data-dispatch-record-tab="active">Active Tickets</button>
+              <button type="button" data-dispatch-record-tab="prepared">Prepared Tickets</button>
+              <button type="button" data-dispatch-record-tab="reports">Completed / Cancelled</button>
+            </div>
+
             <div class="dispatch-inline-filters">
               <input type="search" id="dispatchTicketSearch" placeholder="Search ticket or route">
-              <select id="dispatchTicketStatusFilter" aria-label="Ticket status">
-                <option value="">All statuses</option>
-                <option value="prepared">Prepared</option>
-                <option value="dispatched">Dispatched</option>
-                <option value="in_progress">In progress</option>
-                <option value="returning_to_wmo">Returning</option>
-              </select>
               <input type="date" id="dispatchTicketDateFilter" aria-label="Ticket date">
               <input type="search" id="dispatchTicketTruckFilter" placeholder="Truck ID or name">
               <button type="button" class="dispatch-inline-action secondary" id="dispatchTicketFilterBtn">Apply</button>
             </div>
             <div id="dispatchTicketsSetupNotice" class="dispatch-setup-notice hidden">Dispatch database setup is required.</div>
-            <div id="dispatchTicketsList" class="dispatch-inline-list">
-              <div class="dispatch-route-empty">Open this tab to load dispatch tickets.</div>
-            </div>
-          </section>
 
-          <section class="tracking-workspace-view" data-tracking-workspace-view="reports" role="tabpanel" hidden>
-            <div class="tracking-workspace-section-heading">
-              <div><strong>Dispatch Reports</strong><small>Completed and cancelled field operations.</small></div>
+            <div class="dispatch-record-view active" data-dispatch-record-view="active">
+              <div id="dispatchActiveTicketsList" class="dispatch-inline-list">
+                <div class="dispatch-route-empty">Open Records to load active tickets.</div>
+              </div>
             </div>
-            <div class="dispatch-inline-filters">
-              <input type="date" id="dispatchReportDateFrom" aria-label="Report date from">
-              <input type="date" id="dispatchReportDateTo" aria-label="Report date to">
-              <input type="search" id="dispatchReportTruck" placeholder="Truck ID or name">
-              <button type="button" class="dispatch-inline-action secondary" id="dispatchReportFilterBtn">Apply</button>
+            <div class="dispatch-record-view" data-dispatch-record-view="prepared" hidden>
+              <div id="dispatchPreparedTicketsList" class="dispatch-inline-list">
+                <div class="dispatch-route-empty">Open Records to load prepared tickets.</div>
+              </div>
             </div>
-            <div id="dispatchReportsSetupNotice" class="dispatch-setup-notice hidden">Dispatch database setup is required.</div>
-            <div id="dispatchReportsList" class="dispatch-inline-list">
-              <div class="dispatch-route-empty">Open this tab to load dispatch reports.</div>
+            <div class="dispatch-record-view" data-dispatch-record-view="reports" hidden>
+              <div id="dispatchReportsSetupNotice" class="dispatch-setup-notice hidden">Dispatch database setup is required.</div>
+              <div id="dispatchReportsList" class="dispatch-inline-list">
+                <div class="dispatch-route-empty">Open Completed / Cancelled to load reports.</div>
+              </div>
             </div>
           </section>
         </div>
