@@ -93,7 +93,7 @@ async function testBarangayHallSearch() {
     limit: 999
   });
   assert.match(calls[0].sql, /gdd\.barangay.* = \?/i);
-  assert.deepEqual(calls[0].parameters, ["barangay_hall", "lagao", 50]);
+  assert.deepEqual(calls[0].parameters, ["barangay_hall", "lagao", 999]);
 }
 
 function testAccentNormalizationAndLimits() {
@@ -103,7 +103,7 @@ function testAccentNormalizationAndLimits() {
   assert.equal(destinationLimit(undefined), 20);
   assert.equal(destinationLimit("0"), 20);
   assert.equal(destinationLimit("10"), 10);
-  assert.equal(destinationLimit("5000"), 50);
+  assert.equal(destinationLimit("5000"), 1000);
 }
 
 async function testOrderedDestinationPointRetrieval() {

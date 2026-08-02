@@ -42,6 +42,15 @@ const OFFICIAL_BARANGAYS = Object.freeze([
   "Labangal", "Lagao", "Ligaya", "Mabuhay", "Olympog", "San Isidro",
   "San Jose", "Siguel", "Sinawal", "Tambler", "Tinagacan", "Upper Labay"
 ]);
+const DRIVABLE_HIGHWAY_CLASSES = new Set([
+  "motorway", "motorway_link", "trunk", "trunk_link", "primary",
+  "primary_link", "secondary", "secondary_link", "tertiary",
+  "tertiary_link", "residential", "unclassified", "living_street", "service"
+]);
+const NON_PUBLIC_ACCESS_VALUES = new Set(["no", "private"]);
+const NON_DRIVABLE_SERVICE_TYPES = new Set([
+  "driveway", "parking_aisle", "drive-through", "emergency_access"
+]);
 
 const OVERPASS_QUERY = `
 [out:json][timeout:180];
@@ -100,6 +109,16 @@ function normalizeRoadName(value) {
     .trim();
 }
 
+function normalizeRoadKey(value) {
+  return normalizeSearchText(value)
+    .replace(/\b(?:street|st)\b/g, "street")
+    .replace(/\b(?:avenue|ave)\b/g, "avenue")
+    .replace(/\b(?:boulevard|blvd)\b/g, "boulevard")
+    .replace(/\b(?:road|rd)\b/g, "road")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function aliasesForName(name) {
   const aliases = new Set();
   const asciiName = name.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -120,6 +139,35 @@ function aliasesForName(name) {
   }
   aliases.delete(name);
   return [...aliases].sort((a, b) => a.localeCompare(b, "en", { sensitivity: "base" }));
+}
+
+function classifyRoadWay(element) {
+  const tags = element?.tags || {};
+  const name = normalizeRoadName(tags.name);
+  const highway = String(tags.highway || "").toLowerCase();
+  if (!name) return { included: false, reason: "unnamed" };
+  if (!DRIVABLE_HIGHWAY_CLASSES.has(highway)) {
+    return { included: false, reason: `non_drivable_highway:${highway || "missing"}` };
+  }
+  if (String(tags.area || "").toLowerCase() === "yes") {
+    return { included: false, reason: "highway_area" };
+  }
+  if (tags.construction || highway === "construction") {
+    return { included: false, reason: "construction" };
+  }
+  for (const key of ["access", "vehicle", "motor_vehicle", "motorcar"]) {
+    const value = String(tags[key] || "").toLowerCase();
+    if (NON_PUBLIC_ACCESS_VALUES.has(value)) {
+      return { included: false, reason: `${key}:${value}` };
+    }
+  }
+  if (
+    highway === "service" &&
+    NON_DRIVABLE_SERVICE_TYPES.has(String(tags.service || "").toLowerCase())
+  ) {
+    return { included: false, reason: `service:${String(tags.service).toLowerCase()}` };
+  }
+  return { included: true, reason: "named_drivable" };
 }
 
 function radians(value) {
@@ -171,7 +219,7 @@ function validPoint(point) {
 function isBarangayHall(element) {
   const name = String(element.tags?.name || "");
   const tags = element.tags || {};
-  const namesBarangay = /\bbarangay\b|\bbrgy\.?/i.test(name);
+  const namesBarangay = /\bbarangay\b|\bbrgy\.?|pambarangay|sangguniang/i.test(name);
   const hallMeaning =
     /\b(hall|office)\b/i.test(name) ||
     tags.amenity === "townhall" ||
@@ -184,11 +232,25 @@ function elementKey(element) {
   return `${element.type}/${element.id}`;
 }
 
+function hallPoint(element) {
+  if (validPoint(element)) return { lat: Number(element.lat), lon: Number(element.lon) };
+  if (validPoint(element?.center)) {
+    return { lat: Number(element.center.lat), lon: Number(element.center.lon) };
+  }
+  const geometry = (Array.isArray(element?.geometry) ? element.geometry : [])
+    .filter(validPoint);
+  if (!geometry.length) return null;
+  return {
+    lat: geometry.reduce((total, point) => total + Number(point.lat), 0) / geometry.length,
+    lon: geometry.reduce((total, point) => total + Number(point.lon), 0) / geometry.length
+  };
+}
+
 function hallRecord(element) {
   if (!isBarangayHall(element)) return null;
   const name = normalizeRoadName(element.tags?.name);
   const barangay = canonicalBarangay(element.tags, name);
-  const point = validPoint(element) ? element : element.center;
+  const point = hallPoint(element);
   if (!name || !barangay || !validPoint(point)) return null;
   const aliases = aliasesForName(name);
   return {
@@ -210,6 +272,42 @@ function hallRecord(element) {
       latitude: Number(point.lat),
       longitude: Number(point.lon)
     }]
+  };
+}
+
+function reviewBarangayHallCandidate(element) {
+  const tags = element?.tags || {};
+  const name = normalizeRoadName(tags.name);
+  const barangay = canonicalBarangay(tags, name);
+  const point = hallPoint(element);
+  const record = hallRecord(element);
+  let reason = "Verified OpenStreetMap barangay-hall record with an official barangay name and usable coordinate.";
+  if (!isBarangayHall(element)) {
+    reason = "The OpenStreetMap feature does not clearly identify an actual barangay hall or office.";
+  } else if (!barangay) {
+    reason = "The OpenStreetMap name/address could not be matched to an official General Santos barangay.";
+  } else if (!validPoint(point)) {
+    reason = "The OpenStreetMap feature has no usable point or center coordinate.";
+  }
+  return {
+    record,
+    review: {
+      osm_type: element?.type || null,
+      osm_id: element?.id === undefined ? null : String(element.id),
+      name: name || null,
+      barangay: barangay || null,
+      coordinate: validPoint(point)
+        ? { latitude: Number(point.lat), longitude: Number(point.lon) }
+        : null,
+      source_tags: {
+        amenity: tags.amenity || null,
+        office: tags.office || null,
+        government: tags.government || null,
+        addr_barangay: tags["addr:barangay"] || null
+      },
+      verification_status: record ? "verified" : "unverified",
+      reason
+    }
   };
 }
 
@@ -236,12 +334,12 @@ function wayDescriptor(element) {
   };
 }
 
-function connectedWayComponents(ways) {
-  const endpointToWays = new Map();
+function connectedWayGroups(ways) {
+  const nodeToWays = new Map();
   ways.forEach((way, index) => {
-    [way.start, way.end].forEach((endpoint) => {
-      if (!endpointToWays.has(endpoint)) endpointToWays.set(endpoint, []);
-      endpointToWays.get(endpoint).push(index);
+    new Set(way.nodes).forEach((node) => {
+      if (!nodeToWays.has(node)) nodeToWays.set(node, []);
+      nodeToWays.get(node).push(index);
     });
   });
   const remaining = new Set(ways.map((_, index) => index));
@@ -254,16 +352,22 @@ function connectedWayComponents(ways) {
     while (queue.length) {
       const index = queue.shift();
       const way = ways[index];
-      component.push(way.id);
-      [way.start, way.end].forEach((endpoint) => {
-        (endpointToWays.get(endpoint) || []).forEach((neighbor) => {
+      component.push(way);
+      new Set(way.nodes).forEach((node) => {
+        (nodeToWays.get(node) || []).forEach((neighbor) => {
           if (remaining.delete(neighbor)) queue.push(neighbor);
         });
       });
     }
-    components.push(component);
+    components.push(component.sort((first, second) => first.id.localeCompare(second.id, "en", { numeric: true })));
   }
-  return components;
+  return components.sort((first, second) =>
+    first[0].id.localeCompare(second[0].id, "en", { numeric: true })
+  );
+}
+
+function connectedWayComponents(ways) {
+  return connectedWayGroups(ways).map((component) => component.map((way) => way.id));
 }
 
 function orderConnectedWayGeometry(elements, startReference = null) {
@@ -283,7 +387,7 @@ function orderConnectedWayGeometry(elements, startReference = null) {
 
   const endpointToWays = new Map();
   ways.forEach((way, index) => {
-    [way.start, way.end].forEach((endpoint) => {
+    new Set([way.start, way.end]).forEach((endpoint) => {
       if (!endpointToWays.has(endpoint)) endpointToWays.set(endpoint, []);
       endpointToWays.get(endpoint).push(index);
     });
@@ -300,10 +404,11 @@ function orderConnectedWayGeometry(elements, startReference = null) {
   const endpoints = [...endpointToWays.entries()]
     .filter(([, indexes]) => indexes.length === 1)
     .map(([endpoint]) => endpoint);
-  if (endpoints.length !== 2) {
+  const isLoop = endpoints.length === 0 && [...endpointToWays.values()].every((indexes) => indexes.length === 2);
+  if (endpoints.length !== 2 && !isLoop) {
     return {
       verified: false,
-      reason: "Matched OSM ways do not expose exactly two unambiguous section endpoints.",
+      reason: "Matched OSM ways do not expose one unambiguous path or closed loop.",
       geometry: [],
       components
     };
@@ -312,13 +417,18 @@ function orderConnectedWayGeometry(elements, startReference = null) {
   const requestedStart = String(startReference?.osm_node_id || "");
   let currentEndpoint = endpoints.includes(requestedStart)
     ? requestedStart
-    : [...endpoints].sort()[0];
+    : isLoop
+      ? [...endpointToWays.keys()].sort()[0]
+      : [...endpoints].sort()[0];
   const unused = new Set(ways.map((_, index) => index));
   const orderedWayIds = [];
   const geometry = [];
   while (unused.size) {
     const matches = (endpointToWays.get(currentEndpoint) || []).filter((index) => unused.has(index));
-    if (matches.length !== 1) {
+    const usableMatches = [...new Set(matches)].sort((first, second) =>
+      ways[first].id.localeCompare(ways[second].id, "en", { numeric: true })
+    );
+    if (!usableMatches.length || (geometry.length && usableMatches.length !== 1)) {
       return {
         verified: false,
         reason: "OSM way ordering became ambiguous while traversing the requested section.",
@@ -326,7 +436,7 @@ function orderConnectedWayGeometry(elements, startReference = null) {
         components
       };
     }
-    const index = matches[0];
+    const index = usableMatches[0];
     const way = ways[index];
     const forward = way.start === currentEndpoint;
     const orderedGeometry = forward ? way.geometry : [...way.geometry].reverse();
@@ -338,10 +448,16 @@ function orderConnectedWayGeometry(elements, startReference = null) {
 
   return {
     verified: true,
-    reason: "Pinned OSM ways form one connected, unbranched section with two endpoints.",
+    reason: isLoop
+      ? "Named OSM ways form one connected, unbranched closed loop."
+      : "Named OSM ways form one connected, unbranched section with two endpoints.",
     geometry,
     ordered_way_ids: orderedWayIds,
-    entry_node_id: endpoints.includes(requestedStart) ? requestedStart : [...endpoints].sort()[0],
+    entry_node_id: endpoints.includes(requestedStart)
+      ? requestedStart
+      : isLoop
+        ? geometry.length ? ways.find((way) => way.id === orderedWayIds[0])?.start || null : null
+        : [...endpoints].sort()[0],
     exit_node_id: currentEndpoint,
     components
   };
@@ -436,17 +552,194 @@ function evaluateRoadDefinition(definition, roadWays) {
     source_osm_ids: matchedIds,
     is_verified: 1,
     is_active: 1,
-    points: geometry.map((point, index) => ({
-      point_order: index + 1,
-      point_type: index === 0 ? "entry" : index === geometry.length - 1 ? "exit" : "geometry",
-      latitude: point.lat,
-      longitude: point.lon
-    }))
+    points: geometryPointRecords(geometry)
   };
   return { record, review };
 }
 
-function buildCatalog(elements, definitions = []) {
+function commonComponentBarangay(ways) {
+  const barangays = new Set(
+    ways
+      .map((way) => canonicalBarangay(way.element.tags, way.name))
+      .filter(Boolean)
+  );
+  return barangays.size === 1 ? [...barangays][0] : "";
+}
+
+function preferredComponentRoadName(ways) {
+  const counts = new Map();
+  ways.forEach((way) => {
+    const name = normalizeRoadName(way.name);
+    if (name) counts.set(name, (counts.get(name) || 0) + 1);
+  });
+  return [...counts.entries()]
+    .sort(([firstName, firstCount], [secondName, secondCount]) =>
+      secondCount - firstCount ||
+      Number(/[^\x00-\x7F]/.test(secondName)) - Number(/[^\x00-\x7F]/.test(firstName)) ||
+      firstName.localeCompare(secondName, "en", { sensitivity: "base" })
+    )[0]?.[0] || "";
+}
+
+function matchingVerifiedDefinition(definitions, componentWays, normalizedName) {
+  const componentIds = new Set(componentWays.map((way) => way.id));
+  return definitions.find((definition) => {
+    if (!definition.is_verified) return false;
+    if (normalizeRoadKey(definition.official_road_name) !== normalizedName) return false;
+    const pinnedIds = (definition.source_osm_way_ids || []).map(String);
+    return pinnedIds.length > 0 && pinnedIds.every((id) => componentIds.has(id));
+  }) || null;
+}
+
+function geometryPointRecords(geometry) {
+  if (!geometry.length) return [];
+  let middleIndex = -1;
+  if (geometry.length > 2) {
+    const anchor = geometryAnchor(geometry);
+    let closestDistance = Number.POSITIVE_INFINITY;
+    for (let index = 1; index < geometry.length - 1; index += 1) {
+      const distance = distanceMeters(geometry[index], anchor);
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        middleIndex = index;
+      }
+    }
+  }
+  return geometry.map((point, index) => ({
+    point_order: index + 1,
+    point_type:
+      index === 0
+        ? "entry"
+        : index === geometry.length - 1
+          ? "exit"
+          : index === middleIndex
+            ? "middle"
+            : "geometry",
+    latitude: point.lat,
+    longitude: point.lon
+  }));
+}
+
+function buildAutomatedRoadCatalog(roadWays, definitions = []) {
+  const groupedByName = new Map();
+  roadWays.forEach((element) => {
+    const descriptor = wayDescriptor(element);
+    const key = normalizeRoadKey(descriptor.name);
+    if (!groupedByName.has(key)) groupedByName.set(key, []);
+    groupedByName.get(key).push(descriptor);
+  });
+
+  const records = [];
+  const reviews = [];
+  const matchedDefinitionKeys = new Set();
+  [...groupedByName.entries()]
+    .sort(([first], [second]) => first.localeCompare(second))
+    .forEach(([normalizedName, namedWays]) => {
+      const components = connectedWayGroups(namedWays);
+      components.forEach((componentWays, componentIndex) => {
+        const elements = componentWays.map((way) => way.element);
+        const ordered = orderConnectedWayGeometry(elements);
+        const matchedDefinition = matchingVerifiedDefinition(
+          definitions,
+          componentWays,
+          normalizedName
+        );
+        const definition = ordered.verified ? matchedDefinition : null;
+        if (definition) matchedDefinitionKeys.add(definition.segment_key);
+        const sourceIds = componentWays
+          .map((way) => way.id)
+          .sort((first, second) => first.localeCompare(second, "en", { numeric: true }));
+        const orderedIds = ordered.ordered_way_ids || [];
+        const primaryOsmId = definition
+          ? String(definition.source_osm_way_ids[0])
+          : sourceIds[0];
+        const canonicalName = definition?.official_road_name || preferredComponentRoadName(componentWays);
+        const barangay = definition?.barangay || commonComponentBarangay(componentWays) || null;
+        const componentLabel = components.length === 1
+          ? canonicalName
+          : `${canonicalName} — ${barangay ? `${barangay} Section ${componentIndex + 1}` : `Section ${componentIndex + 1}`}`;
+        const displayLabel = definition?.display_label || componentLabel;
+        const segmentKey = definition?.segment_key || `${normalizedName.replace(/\s+/g, "-")}-${primaryOsmId}`;
+        const review = {
+          segment_key: segmentKey,
+          requested_road_section: displayLabel,
+          official_road_name: canonicalName,
+          matched_osm_road_name: preferredComponentRoadName(componentWays),
+          matched_osm_ids: sourceIds,
+          ordered_osm_ids: orderedIds,
+          source_osm_way_ids: sourceIds,
+          source_highway_classes: [...new Set(componentWays.map((way) => way.element.tags?.highway).filter(Boolean))].sort(),
+          barangay,
+          normalized_road_key: normalizedName,
+          connected_component_index: componentIndex + 1,
+          connected_component_count: components.length,
+          geometry_point_count: ordered.geometry?.length || 0,
+          entry_coordinate: ordered.geometry?.length
+            ? { latitude: ordered.geometry[0].lat, longitude: ordered.geometry[0].lon }
+            : null,
+          exit_coordinate: ordered.geometry?.length
+            ? {
+                latitude: ordered.geometry[ordered.geometry.length - 1].lat,
+                longitude: ordered.geometry[ordered.geometry.length - 1].lon
+              }
+            : null,
+          verification_status: ordered.verified ? "verified" : "unverified",
+          reason: ordered.verified
+            ? "All source ways are named, drivable, connected, and form one unambiguous path or loop."
+            : ordered.reason,
+          possible_duplicate_or_ambiguous_matches: {
+            connected_components: components.map((component) => component.map((way) => way.id)),
+            selected_way_details: componentWays.map((way) => ({
+              osm_id: way.id,
+              geometry_point_count: way.geometry.length,
+              start_node_id: way.start || null,
+              end_node_id: way.end || null
+            }))
+          }
+        };
+        reviews.push(review);
+        if (!ordered.verified || !ordered.geometry?.length) return;
+
+        const sourceNames = [...new Set(componentWays.map((way) => way.name).filter(Boolean))];
+        const aliases = [...new Set([
+          ...(definition?.aliases || []),
+          ...sourceNames,
+          ...sourceNames.flatMap(aliasesForName),
+          ...aliasesForName(displayLabel)
+        ])]
+          .filter((alias) => alias && alias !== displayLabel)
+          .sort((first, second) => first.localeCompare(second, "en", { sensitivity: "base" }));
+        const anchor = geometryAnchor(ordered.geometry);
+        records.push({
+          segment_key: segmentKey,
+          destination_type: "road_segment",
+          name: normalizeRoadName(canonicalName),
+          barangay,
+          display_label: displayLabel,
+          latitude: anchor.lat,
+          longitude: anchor.lon,
+          aliases,
+          search_keywords: [...new Set([
+            displayLabel,
+            canonicalName,
+            segmentKey,
+            ...aliases,
+            barangay,
+            "General Santos City"
+          ].map(normalizeSearchText).filter(Boolean))],
+          osm_type: "way",
+          osm_id: primaryOsmId,
+          source_osm_ids: sourceIds,
+          is_verified: 1,
+          is_active: 1,
+          points: geometryPointRecords(ordered.geometry)
+        });
+      });
+    });
+
+  return { records, reviews, matchedDefinitionKeys };
+}
+
+function buildCatalog(elements, definitions = [], options = {}) {
   const uniqueElements = new Map();
   let duplicateObjects = 0;
   for (const element of elements) {
@@ -456,26 +749,53 @@ function buildCatalog(elements, definitions = []) {
   }
 
   const roadWays = [];
+  const roadExclusions = [];
   const hallRecords = [];
+  const hallCandidateReviews = [];
   let roadsWithoutGeometry = 0;
   let rejectedHallCandidates = 0;
   for (const element of uniqueElements.values()) {
     if (element.type === "way" && element.tags?.highway && element.tags?.name) {
       const descriptor = wayDescriptor(element);
-      if (descriptor.geometry.length >= 2) roadWays.push(element);
-      else roadsWithoutGeometry += 1;
+      const classification = classifyRoadWay(element);
+      if (descriptor.geometry.length < 2) {
+        roadsWithoutGeometry += 1;
+        roadExclusions.push({
+          osm_id: String(element.id),
+          name: normalizeRoadName(element.tags.name),
+          highway: element.tags.highway,
+          reason: "missing_complete_geometry"
+        });
+      } else if (classification.included) {
+        roadWays.push(element);
+      } else {
+        roadExclusions.push({
+          osm_id: String(element.id),
+          name: normalizeRoadName(element.tags.name),
+          highway: element.tags.highway,
+          reason: classification.reason
+        });
+      }
       continue;
     }
-    const record = hallRecord(element);
-    if (record) hallRecords.push(record);
+    const hallCandidate = reviewBarangayHallCandidate(element);
+    hallCandidateReviews.push(hallCandidate.review);
+    if (hallCandidate.record) hallRecords.push(hallCandidate.record);
     else rejectedHallCandidates += 1;
   }
 
-  const roadEvaluations = definitions.map((definition) =>
-    evaluateRoadDefinition(definition, roadWays)
+  const automatedRoads = buildAutomatedRoadCatalog(roadWays, definitions);
+  const unmatchedDefinitionResults = definitions
+    .filter((definition) => !automatedRoads.matchedDefinitionKeys.has(definition.segment_key))
+    .map((definition) => evaluateRoadDefinition(definition, roadWays));
+  const roads = [
+    ...automatedRoads.records,
+    ...unmatchedDefinitionResults.map((result) => result.record).filter(Boolean)
+  ];
+  const definitionReviews = unmatchedDefinitionResults.map((result) => result.review);
+  const roadReviews = [...automatedRoads.reviews, ...definitionReviews].sort(
+    (first, second) => String(first.segment_key).localeCompare(String(second.segment_key))
   );
-  const roads = roadEvaluations.map(({ record }) => record).filter(Boolean);
-  const roadReviews = roadEvaluations.map(({ review }) => review);
   const hallByBarangay = new Map();
   hallRecords
     .sort((first, second) =>
@@ -487,7 +807,44 @@ function buildCatalog(elements, definitions = []) {
         hallByBarangay.set(record.barangay, record);
       }
     });
+  (options.existingHallRecords || []).forEach((record) => {
+    if (
+      record?.destination_type === "barangay_hall" &&
+      record.is_verified &&
+      record.is_active &&
+      record.barangay &&
+      !hallByBarangay.has(record.barangay)
+    ) {
+      hallByBarangay.set(record.barangay, record);
+    }
+  });
   const uniqueHalls = [...hallByBarangay.values()];
+  const selectedHallKeys = new Set(
+    uniqueHalls.map((record) => `${record.osm_type}/${record.osm_id}`)
+  );
+  const hallReviews = hallCandidateReviews.map((review) => {
+    const key = `${review.osm_type}/${review.osm_id}`;
+    if (review.verification_status !== "verified" || selectedHallKeys.has(key)) return review;
+    return {
+      ...review,
+      verification_status: "unverified",
+      reason: "Another verified catalog record already represents this barangay; manual duplicate review is required."
+    };
+  });
+  uniqueHalls.forEach((record) => {
+    const key = `${record.osm_type}/${record.osm_id}`;
+    if (hallReviews.some((review) => `${review.osm_type}/${review.osm_id}` === key)) return;
+    hallReviews.push({
+      osm_type: record.osm_type,
+      osm_id: record.osm_id,
+      name: record.name,
+      barangay: record.barangay,
+      coordinate: { latitude: record.latitude, longitude: record.longitude },
+      source_tags: null,
+      verification_status: "verified",
+      reason: "Preserved from the existing reviewed project destination catalog."
+    });
+  });
   const records = [...roads, ...uniqueHalls];
   records.sort((a, b) =>
     a.destination_type.localeCompare(b.destination_type) ||
@@ -497,6 +854,58 @@ function buildCatalog(elements, definitions = []) {
   const foundHalls = new Set(
     records.filter((record) => record.destination_type === "barangay_hall").map((record) => record.barangay)
   );
+  const exclusionReasons = roadExclusions.reduce((counts, exclusion) => {
+    counts[exclusion.reason] = (counts[exclusion.reason] || 0) + 1;
+    return counts;
+  }, {});
+  const roadReviewsByName = new Map();
+  automatedRoads.reviews.forEach((review) => {
+    const key = review.normalized_road_key || normalizeRoadKey(review.official_road_name);
+    if (!roadReviewsByName.has(key)) roadReviewsByName.set(key, []);
+    roadReviewsByName.get(key).push(review);
+  });
+  const duplicateRoadNameGroups = [...roadReviewsByName.entries()]
+    .filter(([, componentReviews]) => componentReviews.length > 1)
+    .map(([normalizedRoadKey, componentReviews]) => ({
+      normalized_road_key: normalizedRoadKey,
+      official_display_names: [...new Set(componentReviews.map((review) => review.official_road_name))],
+      component_count: componentReviews.length,
+      components: componentReviews.map((review) => ({
+        segment_key: review.segment_key,
+        display_label: review.requested_road_section,
+        verification_status: review.verification_status,
+        source_osm_way_ids: review.source_osm_way_ids
+      }))
+    }));
+  const missingBarangayHalls = OFFICIAL_BARANGAYS.filter((barangay) => !foundHalls.has(barangay));
+  const reviewSummary = {
+    total_named_drivable_road_components: automatedRoads.reviews.length,
+    total_verified_road_records: roads.length,
+    total_geometry_points: roads.reduce((total, road) => total + road.points.length, 0),
+    source_osm_way_ids: [...new Set(
+      roadReviews.flatMap((review) => review.source_osm_way_ids || review.matched_osm_ids || [])
+    )].sort((first, second) => String(first).localeCompare(String(second), "en", { numeric: true })),
+    duplicate_road_name_groups: duplicateRoadNameGroups,
+    disconnected_components: duplicateRoadNameGroups,
+    roads_excluded: roadExclusions.length,
+    road_exclusions_by_reason: exclusionReasons,
+    verified_barangay_halls: uniqueHalls.map((record) => ({
+      barangay: record.barangay,
+      name: record.name,
+      osm_type: record.osm_type,
+      osm_id: record.osm_id
+    })),
+    unverified_barangay_hall_candidates: hallReviews
+      .filter((review) => review.verification_status !== "verified")
+      .map((review) => ({
+        name: review.name,
+        barangay: review.barangay,
+        osm_type: review.osm_type,
+        osm_id: review.osm_id,
+        reason: review.reason
+      })),
+    missing_barangay_halls: missingBarangayHalls
+  };
   return {
     records,
     summary: {
@@ -504,14 +913,21 @@ function buildCatalog(elements, definitions = []) {
       unique_osm_objects: uniqueElements.size,
       duplicate_osm_objects_removed: duplicateObjects,
       requested_road_sections: definitions.length,
+      eligible_named_drivable_ways: roadWays.length,
       verified_road_sections: roads.length,
       unverified_road_sections: roadReviews.filter((review) => review.verification_status !== "verified").length,
+      excluded_named_highway_ways: roadExclusions.length,
+      excluded_road_reasons: exclusionReasons,
       barangay_halls: uniqueHalls.length,
       roads_without_geometry: roadsWithoutGeometry,
       rejected_hall_candidates: rejectedHallCandidates,
-      missing_barangay_halls: OFFICIAL_BARANGAYS.filter((barangay) => !foundHalls.has(barangay))
+      total_geometry_points: records.reduce((total, record) => total + record.points.length, 0),
+      missing_barangay_halls: missingBarangayHalls
     },
-    roadReviews
+    roadReviews,
+    roadExclusions,
+    hallReviews,
+    reviewSummary
   };
 }
 
@@ -532,6 +948,7 @@ function buildSeedSql(records, generatedAt) {
     `-- Generated from OpenStreetMap Overpass data at ${generatedAt}`,
     "-- Review before manual execution. This script does not create or alter tables.",
     "-- Idempotency key: (osm_type, osm_id); destination points: (destination_id, point_order).",
+    "-- Obsolete point orders are removed only from the matching catalog destination.",
     "START TRANSACTION;",
     ""
   ];
@@ -577,6 +994,12 @@ function buildSeedSql(records, generatedAt) {
         "UPDATE gensan_dispatch_destination_points",
         `SET point_type = ${sqlString(point.point_type)}, latitude = ${sqlNumber(point.latitude)}, longitude = ${sqlNumber(point.longitude)}`,
         `WHERE destination_id = @destination_id AND point_order = ${point.point_order};`
+      );
+    }
+    if (record.points.length) {
+      lines.push(
+        "DELETE FROM gensan_dispatch_destination_points",
+        `WHERE destination_id = @destination_id AND point_order > ${record.points.length};`
       );
     }
     lines.push("");
@@ -630,6 +1053,17 @@ async function run() {
   if (!definitions.length) {
     throw new Error(`No road section definitions were found in ${ROAD_DEFINITIONS_PATH}.`);
   }
+  let existingHallRecords = [];
+  if (fs.existsSync(JSON_OUTPUT)) {
+    try {
+      const existingCatalog = JSON.parse(fs.readFileSync(JSON_OUTPUT, "utf8"));
+      existingHallRecords = (existingCatalog.destinations || []).filter(
+        (record) => record.destination_type === "barangay_hall"
+      );
+    } catch (error) {
+      console.warn(`Existing catalog could not be read for hall preservation: ${error.message}`);
+    }
+  }
   let response = null;
   let sourceUrl = "";
   let lastError = null;
@@ -645,9 +1079,10 @@ async function run() {
     }
   }
   if (!response) throw lastError || new Error("No Overpass endpoint was available.");
-  const { records, summary, roadReviews } = buildCatalog(
+  const { records, summary, roadReviews, roadExclusions, hallReviews, reviewSummary } = buildCatalog(
     Array.isArray(response.elements) ? response.elements : [],
-    definitions
+    definitions,
+    { existingHallRecords }
   );
   printSummary(summary);
   if (!records.length) throw new Error("Overpass returned no usable General Santos destinations; no output was written.");
@@ -677,9 +1112,19 @@ async function run() {
       source_url: sourceUrl,
       generated_at: generatedAt,
       definition_file: path.relative(path.join(__dirname, ".."), ROAD_DEFINITIONS_PATH).replace(/\\/g, "/"),
-      note: "Only road sections with verification_status=verified are included in the generated catalog and seed SQL."
+      note: "Only named, drivable road components with verification_status=verified are included in the generated catalog and seed SQL.",
+      boundary_rule: "OpenStreetMap administrative area named General Santos or General Santos City.",
+      summary: reviewSummary
     },
-    road_sections: roadReviews
+    road_sections: roadReviews,
+    excluded_ways: roadExclusions,
+    barangay_hall_candidates: hallReviews,
+    missing_barangay_halls: reviewSummary.missing_barangay_halls.map((barangay) => ({
+      barangay,
+      verification_status: "missing",
+      coordinate: null,
+      reason: "No verified barangay-hall source record was available; manual location verification is required."
+    }))
   };
   fs.mkdirSync(path.dirname(JSON_OUTPUT), { recursive: true });
   fs.mkdirSync(path.dirname(SQL_OUTPUT), { recursive: true });
@@ -702,10 +1147,16 @@ module.exports = {
   OVERPASS_URLS,
   OVERPASS_QUERY,
   OFFICIAL_BARANGAYS,
+  DRIVABLE_HIGHWAY_CLASSES,
   normalizeSearchText,
+  normalizeRoadKey,
+  classifyRoadWay,
+  reviewBarangayHallCandidate,
   geometryAnchor,
+  connectedWayGroups,
   orderConnectedWayGeometry,
   evaluateRoadDefinition,
+  buildAutomatedRoadCatalog,
   buildCatalog,
   buildSeedSql,
   ROAD_DEFINITIONS_PATH,

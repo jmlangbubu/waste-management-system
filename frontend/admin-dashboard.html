@@ -1005,19 +1005,29 @@
                 </div>
                 <div class="dispatch-popular-section">
                   <div class="dispatch-picker-subheading">
-                    <strong id="dispatchPopularDestinationHeading">Popular Road Sections</strong>
+                    <strong id="dispatchPopularDestinationHeading">Popular Roads</strong>
                     <small>Verified catalog entries</small>
                   </div>
                   <div id="dispatchPopularDestinations" class="dispatch-popular-destinations" aria-live="polite"></div>
                 </div>
                 <label class="dispatch-inline-field" id="dispatchDestinationSearchField">
-                  <span id="dispatchDestinationSearchLabel">Search Road Sections</span>
+                  <span id="dispatchDestinationSearchLabel">Search All Gensan Roads</span>
                   <div class="dispatch-combobox" id="dispatchDestinationSearchWrap">
                     <input type="search" id="dispatchDestinationSearch" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="dispatchDestinationSuggestions" autocomplete="off" placeholder="Search verified road sections...">
                     <button type="button" class="dispatch-combobox-clear" id="dispatchDestinationSearchClearBtn" aria-label="Clear destination search">×</button>
                     <div id="dispatchDestinationSuggestions" class="dispatch-combobox-options dispatch-destination-results hidden" role="listbox"></div>
                   </div>
                 </label>
+                <button type="button" class="dispatch-browse-all-trigger" id="dispatchBrowseAllBtn">
+                  Browse All Gensan Roads
+                </button>
+                <section id="dispatchBrowseAllPanel" class="dispatch-browse-all-panel hidden" aria-live="polite">
+                  <div class="dispatch-browse-all-heading">
+                    <strong id="dispatchBrowseAllCount">All Gensan Roads</strong>
+                    <button type="button" id="dispatchBrowseAllCloseBtn" aria-label="Close all roads list">Close</button>
+                  </div>
+                  <div id="dispatchBrowseAllList" class="dispatch-browse-all-list"></div>
+                </section>
                 <div id="dispatchDestinationCatalogNotice" class="dispatch-setup-notice hidden" role="alert">Destination catalog setup is required. Custom map points remain available.</div>
                 <details class="dispatch-more-options">
                   <summary>More options</summary>
@@ -1048,16 +1058,22 @@
               </div>
 
               <div class="dispatch-inline-route-toolbar dispatch-route-list-heading">
-                <strong>Ordered route stops</strong>
-                <button type="button" class="dispatch-inline-action secondary" id="dispatchClearRouteBtn">Clear Route</button>
+                <div>
+                  <strong>Optimized Route</strong>
+                  <small>Order automatically optimized from live truck location.</small>
+                </div>
+                <div class="dispatch-route-list-actions">
+                  <button type="button" class="dispatch-inline-action secondary" id="dispatchRefreshRouteBtn">Refresh Route</button>
+                  <button type="button" class="dispatch-inline-action secondary" id="dispatchClearRouteBtn">Clear Route</button>
+                </div>
               </div>
 
               <div id="dispatchStopRows" class="dispatch-stop-rows dispatch-inline-stop-rows">
                 <div class="dispatch-route-empty">No destinations added yet.</div>
               </div>
               <div class="dispatch-wmo-return" aria-label="Required final route point">
-                <span class="dispatch-route-marker wmo">W</span>
-                <div><strong>Return to WMO</strong><small>Required final point · added automatically</small></div>
+                <span class="dispatch-stop-order" data-dispatch-wmo-order>1</span>
+                <div><strong>Return to WMO</strong><small>Required final point · optimized as the final endpoint</small></div>
                 <span class="dispatch-locked-badge">Required</span>
               </div>
               <div id="dispatchRoutePreviewNotice" class="dispatch-route-preview-notice hidden" role="alert"></div>
