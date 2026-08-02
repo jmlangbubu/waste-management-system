@@ -5,6 +5,10 @@ function initializeTruckMap() {
 
   truckMap = L.map("truckMap").setView([6.1164, 125.1716], 13);
 
+  const plannedRoutePane = truckMap.createPane("dispatchPlannedRoutePane");
+  plannedRoutePane.style.zIndex = "450";
+  plannedRoutePane.style.pointerEvents = "none";
+
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution: "&copy; OpenStreetMap contributors"
   }).addTo(truckMap);

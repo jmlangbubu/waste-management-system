@@ -31,7 +31,7 @@ const DESTINATION_CATALOG_TABLE_NAMES = new Set([
 ]);
 const DESTINATION_TYPES = new Set(["road_segment", "barangay_hall"]);
 const DEFAULT_DESTINATION_LIMIT = 20;
-const MAX_DESTINATION_LIMIT = 50;
+const MAX_DESTINATION_LIMIT = 1000;
 
 class DispatchServiceError extends Error {
   constructor(message, statusCode = 400, code = "DISPATCH_ERROR") {

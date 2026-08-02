@@ -4,68 +4,367 @@ const path = require("node:path");
 
 const {
   DISPATCH_WMO_LOCATION,
+  DISPATCH_ROUTING_MOVEMENT_METERS,
+  DISPATCH_ROUTING_OFF_ROUTE_METERS,
+  DISPATCH_ROUTING_OFF_ROUTE_HOLD_MS,
+  buildDispatchPlannedJourney,
   chooseDispatchSegmentOrientation,
+  dispatchCatalogStopFromDetail,
   dispatchCatalogDestinationIsSelected,
-  dispatchRoutingFailureState
+  dispatchDistanceToRouteMeters,
+  dispatchRoutingFailureState,
+  dispatchRoutingResponseIsCurrent,
+  dispatchRoutingResponsePreservesOrder,
+  dispatchSegmentColor,
+  dispatchWmoStopOrder,
+  evaluateDispatchDynamicReroute,
+  matchDispatchCatalogCandidateForStop,
+  requestDispatchRoadCostMatrix,
+  splitDispatchOperationalStops
 } = require("../frontend/js/admin/admin-dispatch");
 
-function testForwardAndReverseOrientation() {
+function roadStop(id, clickOrder, geometry) {
+  return {
+    stop: {
+      id,
+      stop_order: clickOrder,
+      metadata_key: `stop-${id}`,
+      location_name: `Road ${id}`,
+      latitude: geometry[Math.floor(geometry.length / 2)].latitude,
+      longitude: geometry[Math.floor(geometry.length / 2)].longitude,
+      stop_status: "pending"
+    },
+    metadata: { catalog_id: id },
+    geometry
+  };
+}
+
+function pointStop(id, clickOrder, latitude, longitude) {
+  return {
+    stop: {
+      id,
+      stop_order: clickOrder,
+      metadata_key: `stop-${id}`,
+      location_name: `Point ${id}`,
+      latitude,
+      longitude,
+      stop_status: "pending"
+    },
+    metadata: { catalog_id: id, destination_type: "barangay_hall" },
+    geometry: []
+  };
+}
+
+function keyedRoadCost(costs, fallback = 10000) {
+  return (start, end) => {
+    if (start.lat === end.lat && start.lng === end.lng) return 0;
+    return costs.get(`${start.lat},${start.lng}>${end.lat},${end.lng}`) ?? fallback;
+  };
+}
+
+function testOrientationHelperDoesNotMutateGeometry() {
   const segment = [
     { latitude: 6.1, longitude: 125.1 },
     { latitude: 6.1, longitude: 125.2 }
   ];
-  const forward = chooseDispatchSegmentOrientation(
-    { lat: 6.1, lng: 125.09 },
-    { lat: 6.1, lng: 125.21 },
-    segment
-  );
-  assert.equal(forward[0].longitude, 125.1);
-
-  const reverse = chooseDispatchSegmentOrientation(
+  const reversed = chooseDispatchSegmentOrientation(
     { lat: 6.1, lng: 125.21 },
     { lat: 6.1, lng: 125.09 },
     segment
   );
-  assert.equal(reverse[0].longitude, 125.2);
-  assert.equal(segment[0].longitude, 125.1, "orientation must not mutate stored geometry");
+  assert.equal(reversed[0].longitude, 125.2);
+  assert.equal(segment[0].longitude, 125.1);
 }
 
-function testDuplicateCatalogSelection() {
-  const metadata = new Map([
-    ["stop-1", { catalog_id: 42 }],
-    ["stop-2", { catalog_id: null }]
+function testClickOrderDoesNotForceOptimizedOrder() {
+  const start = { lat: 6.1, lng: 125.1 };
+  const wmo = { lat: 6.5, lng: 125.5 };
+  const clickedFirstButExpensive = pointStop(1, 1, 6.2, 125.2);
+  const clickedSecondButPractical = pointStop(2, 2, 6.11, 125.11);
+  const costs = new Map([
+    ["6.1,125.1>6.2,125.2", 900],
+    ["6.1,125.1>6.11,125.11", 100],
+    ["6.11,125.11>6.2,125.2", 100],
+    ["6.2,125.2>6.11,125.11", 700],
+    ["6.2,125.2>6.5,125.5", 100],
+    ["6.11,125.11>6.5,125.5", 900]
   ]);
-  assert.equal(dispatchCatalogDestinationIsSelected(42, metadata), true);
-  assert.equal(dispatchCatalogDestinationIsSelected("42", metadata), true);
-  assert.equal(dispatchCatalogDestinationIsSelected(43, metadata), false);
+  const journey = buildDispatchPlannedJourney(
+    start,
+    wmo,
+    [clickedFirstButExpensive, clickedSecondButPractical],
+    { costLookup: keyedRoadCost(costs) }
+  );
+  assert.deepEqual(journey.plannedStops.map((item) => item.metadata.catalog_id), [2, 1]);
+  assert.equal(journey.connectorLegs[0].destination_stop_order, 1);
+  assert.equal(journey.connectorLegs.at(-1).is_wmo_return, true);
+  assert.deepEqual(journey.connectorLegs.at(-1).end, wmo);
 }
 
-function testRequiredWmoReturnDisplay() {
+function testOptimizerStartsFromChangedTruckPosition() {
+  const wmo = { lat: 6.5, lng: 125.5 };
+  const first = pointStop(1, 1, 6.11, 125.11);
+  const second = pointStop(2, 2, 6.21, 125.21);
+  const fromFirst = buildDispatchPlannedJourney({ lat: 6.1, lng: 125.1 }, wmo, [second, first]);
+  const fromSecond = buildDispatchPlannedJourney({ lat: 6.22, lng: 125.22 }, wmo, [first, second]);
+  assert.equal(fromFirst.plannedStops[0].metadata.catalog_id, 1);
+  assert.equal(fromSecond.plannedStops[0].metadata.catalog_id, 2);
+}
+
+function testContinuousJourneyAndFixedWmo() {
+  const start = { lat: 6.1, lng: 125.1 };
+  const wmo = { lat: DISPATCH_WMO_LOCATION.latitude, lng: DISPATCH_WMO_LOCATION.longitude };
+  const selected = [
+    roadStop(1, 1, [{ latitude: 6.15, longitude: 125.15 }, { latitude: 6.16, longitude: 125.16 }]),
+    pointStop(5, 2, 6.12, 125.12),
+    roadStop(2, 3, [{ latitude: 6.13, longitude: 125.13 }, { latitude: 6.14, longitude: 125.14 }]),
+    roadStop(3, 4, [{ latitude: 6.17, longitude: 125.17 }, { latitude: 6.18, longitude: 125.18 }])
+  ];
+  const journey = buildDispatchPlannedJourney(start, wmo, selected);
+  assert.equal(journey.plannedStops.length, 4);
+  assert.equal(journey.connectorLegs.length, 5);
+  assert.equal(journey.orderedLegs.length, 9);
+  journey.plannedStops.forEach((stop, index) => {
+    assert.deepEqual(journey.connectorLegs[index].end, stop.geometry[0]);
+    if (index) assert.deepEqual(journey.connectorLegs[index].start, journey.plannedStops[index - 1].geometry.at(-1));
+  });
+  assert.deepEqual(journey.connectorLegs.at(-1).end, wmo);
+}
+
+function testRoadOrientationUsesApproachAndDepartureCosts() {
+  const start = { lat: 6.1, lng: 125.1 };
+  const wmo = { lat: 6.4, lng: 125.4 };
+  const road = roadStop(1, 1, [
+    { latitude: 6.2, longitude: 125.2 },
+    { latitude: 6.3, longitude: 125.3 }
+  ]);
+  const costs = new Map([
+    ["6.1,125.1>6.2,125.2", 800],
+    ["6.1,125.1>6.3,125.3", 100],
+    ["6.3,125.3>6.4,125.4", 800],
+    ["6.2,125.2>6.4,125.4", 100]
+  ]);
+  const journey = buildDispatchPlannedJourney(start, wmo, [road], {
+    costLookup: keyedRoadCost(costs)
+  });
+  assert.equal(journey.plannedStops[0].orientation, "reverse");
+  assert.equal(road.geometry[0].latitude, 6.2, "stored geometry must remain unchanged");
+}
+
+function testCompletedCurrentRemainingAndSkippedPartition() {
+  const stops = [
+    { id: 1, stop_order: 2, stop_status: "completed", completed_at: "2026-08-02T02:00:00Z" },
+    { id: 2, stop_order: 1, stop_status: "completed", completed_at: "2026-08-02T01:00:00Z" },
+    { id: 3, stop_order: 3, stop_status: "on_the_way" },
+    { id: 4, stop_order: 4, stop_status: "pending" },
+    { id: 5, stop_order: 5, stop_status: "skipped" }
+  ];
+  const groups = splitDispatchOperationalStops(stops);
+  assert.deepEqual(groups.completedStops.map((stop) => stop.id), [2, 1]);
+  assert.equal(groups.currentStop.id, 3);
+  assert.deepEqual(groups.remainingStops.map((stop) => stop.id), [4]);
+  assert.deepEqual(groups.skippedStops.map((stop) => stop.id), [5]);
+}
+
+function testCurrentStopIsLockedAndRemainingStopsReoptimize() {
+  const start = { lat: 6.1, lng: 125.1 };
+  const wmo = { lat: 6.5, lng: 125.5 };
+  const current = pointStop(10, 1, 6.3, 125.3);
+  const far = pointStop(11, 2, 6.4, 125.4);
+  const nearAfterCurrent = pointStop(12, 3, 6.31, 125.31);
+  const journey = buildDispatchPlannedJourney(start, wmo, [current, far, nearAfterCurrent], {
+    lockedPrefixCount: 1
+  });
+  assert.equal(journey.plannedStops[0].metadata.catalog_id, 10);
+  assert.equal(journey.plannedStops[1].metadata.catalog_id, 12);
+}
+
+function testDynamicRerouteThresholdsAndJitterProtection() {
+  const route = [{ lat: 6.1, lng: 125.1 }, { lat: 6.1, lng: 125.2 }];
+  const lastStart = { lat: 6.1, lng: 125.1 };
+  const jitter = evaluateDispatchDynamicReroute({ lat: 6.1001, lng: 125.1 }, "same", {
+    lastSignature: "same", lastStart, routeCoordinates: route, now: 1000
+  });
+  assert.equal(jitter.shouldReroute, false);
+  const moved = evaluateDispatchDynamicReroute({ lat: 6.1006, lng: 125.1 }, "same", {
+    lastSignature: "same", lastStart, routeCoordinates: route, now: 1000
+  });
+  assert.equal(moved.shouldReroute, true);
+  assert.equal(moved.reason, "truck_moved");
+  assert.equal(DISPATCH_ROUTING_MOVEMENT_METERS, 50);
+}
+
+function testSustainedOffRouteTrigger() {
+  const route = [{ lat: 6.1, lng: 125.1 }, { lat: 6.1, lng: 125.2 }];
+  const offRoutePoint = { lat: 6.10042, lng: 125.15 };
+  assert.ok(dispatchDistanceToRouteMeters(offRoutePoint, route) >= DISPATCH_ROUTING_OFF_ROUTE_METERS);
+  const pending = evaluateDispatchDynamicReroute(offRoutePoint, "same", {
+    lastSignature: "same",
+    lastStart: offRoutePoint,
+    routeCoordinates: route,
+    now: 1000,
+    offRouteSince: null
+  });
+  assert.equal(pending.shouldReroute, false);
+  const sustained = evaluateDispatchDynamicReroute(offRoutePoint, "same", {
+    lastSignature: "same",
+    lastStart: offRoutePoint,
+    routeCoordinates: route,
+    now: 1000 + DISPATCH_ROUTING_OFF_ROUTE_HOLD_MS,
+    offRouteSince: pending.offRouteSince
+  });
+  assert.equal(sustained.shouldReroute, true);
+  assert.equal(sustained.reason, "sustained_off_route");
+}
+
+async function testRoadCostMatrixUsesExistingOsrmProvider() {
+  let requestedUrl = "";
+  const points = [
+    { lat: 6.701001, lng: 125.701001 },
+    { lat: 6.702002, lng: 125.702002 },
+    { lat: 6.703003, lng: 125.703003 }
+  ];
+  const lookup = await requestDispatchRoadCostMatrix(points, new AbortController().signal, {
+    fetchImplementation: async (url) => {
+      requestedUrl = url;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ distances: [[0, 10, 20], [11, 0, 12], [21, 13, 0]] })
+      };
+    }
+  });
+  assert.match(requestedUrl, /router\.project-osrm\.org\/table\/v1\/driving/);
+  assert.equal(lookup(points[0], points[1]), 10);
+}
+
+function testCatalogSelectionAndDetailConversion() {
+  const metadata = new Map([["stop-1", { catalog_id: 42 }]]);
+  assert.equal(dispatchCatalogDestinationIsSelected("42", metadata), true);
+  const stop = dispatchCatalogStopFromDetail({
+    destination: {
+      id: 71, destination_type: "road_segment", name: "Pendatun Avenue",
+      display_label: "Pendatun Avenue", barangay: null,
+      latitude: 6.115, longitude: 125.17, is_verified: true
+    },
+    points: [
+      { point_order: 1, point_type: "entry", latitude: 6.11, longitude: 125.16 },
+      { point_order: 2, point_type: "exit", latitude: 6.12, longitude: 125.18 }
+    ]
+  }, 1);
+  assert.equal(stop.catalog_id, 71);
+  assert.equal(stop.geometry_segments[0].length, 2);
+}
+
+function testPersistedRoadStopRehydratesOnlyTheMatchingCatalogComponent() {
+  const stop = {
+    location_name: "1st Street - Section 2",
+    latitude: 6.11,
+    longitude: 125.18
+  };
+  const candidates = [
+    {
+      id: 1,
+      display_label: "1st Street - Section 2",
+      latitude: 6.2,
+      longitude: 125.3
+    },
+    {
+      id: 2,
+      display_label: "1st Street - Section 2",
+      latitude: 6.11001,
+      longitude: 125.18001
+    },
+    {
+      id: 3,
+      display_label: "1st Street - Section 1",
+      latitude: 6.11,
+      longitude: 125.18
+    }
+  ];
+  assert.equal(matchDispatchCatalogCandidateForStop(stop, candidates)?.id, 2);
+  assert.equal(matchDispatchCatalogCandidateForStop(stop, [candidates[0]]), null);
+}
+
+function testFailureStateStaleResponsesAndActualGpsIndependence() {
+  assert.deepEqual(dispatchRoutingFailureState(), {
+    message: "Route preview unavailable",
+    preserveSelectedStops: true,
+    preservePreviousRoute: true,
+    drawStraightFallback: false
+  });
+  const layer = {};
+  assert.equal(dispatchRoutingResponseIsCurrent(4, layer, 4, layer), true);
+  assert.equal(dispatchRoutingResponseIsCurrent(3, layer, 4, layer), false);
+  const source = fs.readFileSync(
+    path.join(__dirname, "..", "frontend", "js", "admin", "admin-dispatch.js"),
+    "utf8"
+  );
+  const clearFunction = source.match(/function clearDispatchPlannedRoute\([^)]*\)[\s\S]*?function createDispatchPlannedLayerGroups/);
+  const ticketDetailsFunction = source.match(/function renderDispatchTicketDetails\(details\)[\s\S]*?function openDispatchModal/);
+  assert.ok(clearFunction);
+  assert.ok(ticketDetailsFunction);
+  assert.doesNotMatch(clearFunction[0], /selectedRoutePolyline/);
+  assert.doesNotMatch(ticketDetailsFunction[0], /dispatchEscape\(stop\.latitude\)|dispatchEscape\(stop\.longitude\)/);
+  assert.match(source, /activateDispatchPlannedLayerGroups\(layers\)[\s\S]*dispatchLastSuccessfulRouteState = journey/);
+  assert.match(source, /if \(dispatchPlannedLayerGroup\) return;/);
+}
+
+function testRoutingResponseOrderAndUiRequirements() {
+  const start = { lat: 6.1, lng: 125.1 };
+  const end = { lat: 6.2, lng: 125.2 };
+  assert.equal(dispatchRoutingResponsePreservesOrder(start, end, [
+    [6.1001, 125.1001], [6.1999, 125.1999]
+  ]), true);
+  assert.equal(dispatchRoutingResponsePreservesOrder(start, end, [
+    [6.1999, 125.1999], [6.1001, 125.1001]
+  ]), false);
+  const source = fs.readFileSync(
+    path.join(__dirname, "..", "frontend", "js", "admin", "admin-dispatch.js"),
+    "utf8"
+  );
+  const dashboard = fs.readFileSync(
+    path.join(__dirname, "..", "frontend", "admin-dashboard.html"),
+    "utf8"
+  );
+  assert.match(source, /route\/v1\/driving/);
+  assert.match(source, /table\/v1\/driving/);
+  assert.doesNotMatch(source, /trip\/v1/);
+  assert.match(source, /DISPATCH_BROWSE_DESTINATION_BATCH_SIZE = 20/);
+  assert.match(source, /label: "Selected"/);
+  assert.doesNotMatch(source, /data-dispatch-stop-move=/);
+  assert.match(dashboard, /Optimized Route/i);
+  assert.match(dashboard, /Order automatically optimized from live truck location/);
+  assert.match(dashboard, /Return to WMO/);
+  assert.equal(dispatchWmoStopOrder(4), 5);
+  assert.equal(dispatchSegmentColor({ stop_status: "completed" }, false), "#2e8b57");
+  assert.equal(dispatchSegmentColor({ stop_status: "skipped" }, false), "#c44747");
+}
+
+async function run() {
+  testOrientationHelperDoesNotMutateGeometry();
+  testClickOrderDoesNotForceOptimizedOrder();
+  testOptimizerStartsFromChangedTruckPosition();
+  testContinuousJourneyAndFixedWmo();
+  testRoadOrientationUsesApproachAndDepartureCosts();
+  testCompletedCurrentRemainingAndSkippedPartition();
+  testCurrentStopIsLockedAndRemainingStopsReoptimize();
+  testDynamicRerouteThresholdsAndJitterProtection();
+  testSustainedOffRouteTrigger();
+  await testRoadCostMatrixUsesExistingOsrmProvider();
+  testCatalogSelectionAndDetailConversion();
+  testPersistedRoadStopRehydratesOnlyTheMatchingCatalogComponent();
+  testFailureStateStaleResponsesAndActualGpsIndependence();
+  testRoutingResponseOrderAndUiRequirements();
   assert.deepEqual(DISPATCH_WMO_LOCATION, {
     latitude: 6.1060875,
     longitude: 125.1816406,
     radiusMeters: 100
   });
-  const dashboard = fs.readFileSync(
-    path.join(__dirname, "..", "frontend", "admin-dashboard.html"),
-    "utf8"
-  );
-  const wmoBlock = dashboard.match(/<div class="dispatch-wmo-return"[\s\S]*?<\/div>\s*<div id="dispatchRoutePreviewNotice"/);
-  assert.ok(wmoBlock, "the planner must show the required WMO return block");
-  assert.match(wmoBlock[0], /Return to WMO/);
-  assert.doesNotMatch(wmoBlock[0], /data-dispatch-stop-remove/);
+  console.log("Dispatch dynamic route optimization tests passed");
 }
 
-function testRoutingFailurePreservesPlan() {
-  assert.deepEqual(dispatchRoutingFailureState(), {
-    message: "Road route preview unavailable",
-    preserveSelectedStops: true,
-    drawStraightFallback: false
-  });
-}
-
-testForwardAndReverseOrientation();
-testDuplicateCatalogSelection();
-testRequiredWmoReturnDisplay();
-testRoutingFailurePreservesPlan();
-console.log("Dispatch route planning tests passed");
+run().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
