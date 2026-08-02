@@ -184,6 +184,21 @@ function dateOnly(value, label) {
   return text;
 }
 
+function currentManilaDate(now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(now);
+  const values = Object.fromEntries(
+    parts
+      .filter((part) => ["year", "month", "day"].includes(part.type))
+      .map((part) => [part.type, part.value])
+  );
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
 function normalizeActor(payload = {}, fallbackType = "web_user") {
   return {
     actor_type: cleanText(payload.actor_type || payload.actorType || fallbackType, 40),
@@ -220,8 +235,11 @@ function validateTicketInput(payload = {}, options = {}) {
   }
   if (!routeName) throw new DispatchServiceError("route_name is required");
 
+  const authoritativeNow = typeof options.now === "function"
+    ? options.now()
+    : options.now;
   const dispatchDate = dateOnly(
-    payload.dispatch_date || payload.dispatchDate,
+    options.dispatchDate || currentManilaDate(authoritativeNow),
     "dispatch_date"
   );
   const scheduledStartAt = optionalDateTime(
@@ -364,8 +382,9 @@ function validateTicketInput(payload = {}, options = {}) {
 }
 
 class DispatchService {
-  constructor(pool = db) {
+  constructor(pool = db, options = {}) {
     this.db = pool;
+    this.now = typeof options.now === "function" ? options.now : () => new Date();
   }
 
   async withTransaction(work) {
@@ -403,7 +422,7 @@ class DispatchService {
       `
         INSERT INTO dispatch_ticket_sequences (
           dispatch_year,
-          last_value,
+          \`last_value\`,
           updated_at
         )
         VALUES (?, 0, NOW())
@@ -414,7 +433,7 @@ class DispatchService {
 
     const [sequenceRows] = await connection.query(
       `
-        SELECT last_value
+        SELECT \`last_value\`
         FROM dispatch_ticket_sequences
         WHERE dispatch_year = ?
         FOR UPDATE
@@ -434,7 +453,7 @@ class DispatchService {
     await connection.query(
       `
         UPDATE dispatch_ticket_sequences
-        SET last_value = ?,
+        SET \`last_value\` = ?,
             updated_at = NOW()
         WHERE dispatch_year = ?
       `,
@@ -728,7 +747,10 @@ class DispatchService {
   }
 
   async createTicket(payload = {}) {
-    const ticketData = validateTicketInput(payload, { includeCreator: true });
+    const ticketData = validateTicketInput(payload, {
+      includeCreator: true,
+      now: this.now()
+    });
 
     const ticketId = await this.withTransaction(async (connection) => {
       const dispatchYear = Number(ticketData.dispatch_date.slice(0, 4));
@@ -953,7 +975,7 @@ class DispatchService {
   }
 
   async updatePreparedTicket(ticketId, payload = {}) {
-    const ticketData = validateTicketInput(payload);
+    const ticketData = validateTicketInput(payload, { now: this.now() });
 
     await this.withTransaction(async (connection) => {
       const ticket = await this.getTicketForUpdate(connection, ticketId);
@@ -964,6 +986,7 @@ class DispatchService {
           "DISPATCH_TICKET_NOT_EDITABLE"
         );
       }
+      ticketData.dispatch_date = ticket.dispatch_date;
 
       await connection.query(
         `
@@ -2186,6 +2209,7 @@ module.exports.isDestinationCatalogTableMissingError =
 module.exports.normalizeDispatchError = normalizeDispatchError;
 module.exports.normalizeDestinationSearchText = normalizeDestinationSearchText;
 module.exports.destinationLimit = destinationLimit;
+module.exports.currentManilaDate = currentManilaDate;
 module.exports.DESTINATION_TYPES = DESTINATION_TYPES;
 module.exports.TICKET_STATUSES = TICKET_STATUSES;
 module.exports.STOP_STATUSES = STOP_STATUSES;

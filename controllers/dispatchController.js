@@ -11,6 +11,10 @@ function sendDispatchError(res, error, actionLabel) {
     console.error(`[Dispatch] ${actionLabel} failed:`, error);
   }
 
+  const safeUnexpectedMessage = actionLabel === "prepare dispatch ticket"
+    ? "Dispatch ticket could not be created. Your route is still saved. Please retry."
+    : `Unable to ${actionLabel}`;
+
   return res.status(statusCode).json({
     success: false,
     message:
@@ -18,8 +22,10 @@ function sendDispatchError(res, error, actionLabel) {
         ? "Dispatch database setup is required"
         : error.code === "DISPATCH_DESTINATION_CATALOG_SETUP_REQUIRED"
           ? "Dispatch destination catalog setup is required"
-          : error.message || `Unable to ${actionLabel}`,
-    code: error.code || "DISPATCH_REQUEST_FAILED"
+          : isExpected
+            ? error.message || `Unable to ${actionLabel}`
+            : safeUnexpectedMessage,
+    code: isExpected ? error.code || "DISPATCH_REQUEST_FAILED" : "DISPATCH_REQUEST_FAILED"
   });
 }
 

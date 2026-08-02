@@ -155,8 +155,11 @@ function testOnePlannedPolylineAndSeparateLayerGroups() {
   assert.deepEqual(layers.destinations.layers.map((layer) => layer.value), [
     [6.11, 125.16], [6.12, 125.17]
   ]);
+  assert.match(layers.destinations.layers[0].options.icon.html, />1</);
+  assert.match(layers.destinations.layers[1].options.icon.html, />2</);
   assert.equal(layers.wmo.layers.length, 1);
   assert.deepEqual(layers.wmo.layers[0].value, [6.1060875, 125.1816406]);
+  assert.match(layers.wmo.layers[0].options.icon.html, />W</);
   assert.ok(layers.geometry.layers.every((layer) => layer.kind === "polyline"));
   assert.deepEqual(layers.root.layers, [
     layers.geometry, layers.connectors, layers.destinations, layers.wmo, layers.start
@@ -201,6 +204,25 @@ function testFailureRetainsSelectionsAndPreviousRoute() {
   assert.match(dispatchSource, /if \(!dispatchPlannedLayerGroup\) \{\s*renderDispatchSelectionFallback/);
   assert.match(dispatchSource, /previous_route_retained: Boolean\(dispatchPlannedLayerGroup\)/);
   assert.doesNotMatch(dispatchSource, /drawStraightFallback\s*:\s*true/);
+  assert.match(dispatchSource, /restoreDispatchRoutePreviewState\(routeSnapshot\)/);
+  assert.match(dispatchSource, /Your route is still saved\. Please retry\./);
+}
+
+function testDrawerRecordsAndTicketFailureDoNotClearRoute() {
+  const drawerFunctions = dispatchSource.match(
+    /function openDispatchPlannerDrawer[\s\S]*?function setDispatchWorkspaceTab/
+  )?.[0] || "";
+  const workspaceActions = dispatchSource.match(
+    /workspace\.querySelectorAll\("\[data-dispatch-workspace-action\]"\)[\s\S]*?dispatchPlannerBackBtn/
+  )?.[0] || "";
+  const saveDraft = dispatchSource.match(
+    /async function saveDispatchDraft[\s\S]*?async function submitDispatchTicketForm/
+  )?.[0] || "";
+  assert.doesNotMatch(drawerFunctions, /clearDispatchPlannedRoute|resetDispatchTicketForm/);
+  assert.doesNotMatch(workspaceActions, /clearDispatchPlannedRoute|resetDispatchTicketForm/);
+  assert.match(saveDraft, /captureDispatchRoutePreviewState/);
+  assert.match(saveDraft, /restoreDispatchRoutePreviewState/);
+  assert.doesNotMatch(saveDraft, /clearDispatchPlannedRoute/);
 }
 
 function testDiagnosticsAndExplicitClearReasons() {
@@ -226,6 +248,7 @@ async function run() {
   testPollingRetainsPlannedRouteAndMapView();
   testStaleResponseRejection();
   testFailureRetainsSelectionsAndPreviousRoute();
+  testDrawerRecordsAndTicketFailureDoNotClearRoute();
   testDiagnosticsAndExplicitClearReasons();
   console.log("Dispatch planned-route lifecycle tests passed");
 }

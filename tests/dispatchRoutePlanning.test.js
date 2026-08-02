@@ -7,15 +7,20 @@ const {
   DISPATCH_ROUTING_MOVEMENT_METERS,
   DISPATCH_ROUTING_OFF_ROUTE_METERS,
   DISPATCH_ROUTING_OFF_ROUTE_HOLD_MS,
+  DISPATCH_TICKET_CREATE_FAILURE_MESSAGE,
   buildDispatchPlannedJourney,
   chooseDispatchSegmentOrientation,
   dispatchCatalogStopFromDetail,
   dispatchCatalogDestinationIsSelected,
   dispatchDistanceToRouteMeters,
+  dispatchDraftsInOptimizedOrder,
+  dispatchManilaOperatingDay,
   dispatchRoutingFailureState,
   dispatchRoutingResponseIsCurrent,
   dispatchRoutingResponsePreservesOrder,
+  dispatchSafeTicketErrorMessage,
   dispatchSegmentColor,
+  dispatchTicketFailureState,
   dispatchWmoStopOrder,
   evaluateDispatchDynamicReroute,
   matchDispatchCatalogCandidateForStop,
@@ -99,6 +104,66 @@ function testClickOrderDoesNotForceOptimizedOrder() {
   assert.equal(journey.connectorLegs[0].destination_stop_order, 1);
   assert.equal(journey.connectorLegs.at(-1).is_wmo_return, true);
   assert.deepEqual(journey.connectorLegs.at(-1).end, wmo);
+}
+
+function testFirstClickedRoadCanBecomeStopThree() {
+  const start = { lat: 6, lng: 125 };
+  const wmo = { lat: 6.5, lng: 125.5 };
+  const pendatun = pointStop(1, 1, 6.1, 125.1);
+  const pioneer = pointStop(2, 2, 6.2, 125.2);
+  const santiago = pointStop(3, 3, 6.3, 125.3);
+  const joseCatolico = pointStop(4, 4, 6.4, 125.4);
+  const costs = new Map([
+    ["6,125>6.2,125.2", 10],
+    ["6.2,125.2>6.3,125.3", 10],
+    ["6.3,125.3>6.1,125.1", 10],
+    ["6.1,125.1>6.4,125.4", 10],
+    ["6.4,125.4>6.5,125.5", 10]
+  ]);
+  const journey = buildDispatchPlannedJourney(
+    start,
+    wmo,
+    [pendatun, pioneer, santiago, joseCatolico],
+    { costLookup: keyedRoadCost(costs, 10000) }
+  );
+  assert.deepEqual(
+    journey.plannedStops.map((item) => item.metadata.catalog_id),
+    [2, 3, 1, 4]
+  );
+  assert.equal(journey.plannedStops[2].stop.location_name, "Point 1");
+  assert.equal(journey.connectorLegs.at(-1).is_wmo_return, true);
+}
+
+function testSelectedRequirementsRemainSeparateFromOptimizedOrder() {
+  const selectedDestinations = [
+    { metadata_key: "pendatun", location_name: "Pendatun Avenue" },
+    { metadata_key: "pioneer", location_name: "Pioneer Avenue" },
+    { metadata_key: "santiago", location_name: "Santiago Boulevard" },
+    { metadata_key: "jose", location_name: "Jose Catolico Avenue" }
+  ];
+  const optimizedRouteStops = [
+    { metadata_key: "pioneer" },
+    { metadata_key: "santiago" },
+    { metadata_key: "pendatun" },
+    { metadata_key: "jose" }
+  ];
+  const ticketStops = dispatchDraftsInOptimizedOrder(
+    selectedDestinations,
+    optimizedRouteStops
+  );
+  assert.deepEqual(selectedDestinations.map((stop) => stop.location_name), [
+    "Pendatun Avenue",
+    "Pioneer Avenue",
+    "Santiago Boulevard",
+    "Jose Catolico Avenue"
+  ]);
+  assert.deepEqual(ticketStops.map((stop) => stop.location_name), [
+    "Pioneer Avenue",
+    "Santiago Boulevard",
+    "Pendatun Avenue",
+    "Jose Catolico Avenue"
+  ]);
+  assert.deepEqual(ticketStops.map((stop) => stop.stop_order), [1, 2, 3, 4]);
 }
 
 function testOptimizerStartsFromChangedTruckPosition() {
@@ -308,6 +373,42 @@ function testFailureStateStaleResponsesAndActualGpsIndependence() {
   assert.doesNotMatch(ticketDetailsFunction[0], /dispatchEscape\(stop\.latitude\)|dispatchEscape\(stop\.longitude\)/);
   assert.match(source, /activateDispatchPlannedLayerGroups\(layers\)[\s\S]*dispatchLastSuccessfulRouteState = journey/);
   assert.match(source, /if \(dispatchPlannedLayerGroup\) return;/);
+  assert.match(source, /const routeSnapshot = captureDispatchRoutePreviewState\(\)/);
+  assert.match(source, /catch \(error\) \{[\s\S]*restoreDispatchRoutePreviewState\(routeSnapshot\)/);
+  assert.deepEqual(dispatchTicketFailureState(), {
+    message: DISPATCH_TICKET_CREATE_FAILURE_MESSAGE,
+    preserveSelectedStops: true,
+    preserveOptimizedOrder: true,
+    preservePreviousRoute: true
+  });
+  assert.equal(
+    dispatchSafeTicketErrorMessage({
+      status: 500,
+      message: "You have an error in your SQL syntax near last_value"
+    }),
+    DISPATCH_TICKET_CREATE_FAILURE_MESSAGE
+  );
+}
+
+function testOperatingDateAndRecordFiltersAreNotClientControlled() {
+  assert.equal(
+    dispatchManilaOperatingDay(new Date("2026-08-02T16:01:00.000Z")),
+    "2026-08-03"
+  );
+  const source = fs.readFileSync(
+    path.join(__dirname, "..", "frontend", "js", "admin", "admin-dispatch.js"),
+    "utf8"
+  );
+  const dashboard = fs.readFileSync(
+    path.join(__dirname, "..", "frontend", "admin-dashboard.html"),
+    "utf8"
+  );
+  const recordsMarkup = dashboard.match(/<section class="tracking-workspace-view" data-tracking-workspace-view="records"[\s\S]*?<\/section>/)?.[0] || "";
+  const collectForm = source.match(/function collectDispatchTicketForm\(\)[\s\S]*?function resetDispatchTicketForm/)?.[0] || "";
+  assert.doesNotMatch(recordsMarkup, /type="date"|dispatchTicketDateFilter/);
+  assert.match(recordsMarkup, /Showing today&rsquo;s active operations/);
+  assert.match(recordsMarkup, /dispatchTicketClearFiltersBtn/);
+  assert.doesNotMatch(collectForm, /dispatch_date|dispatchDate/);
 }
 
 function testRoutingResponseOrderAndUiRequirements() {
@@ -334,7 +435,7 @@ function testRoutingResponseOrderAndUiRequirements() {
   assert.match(source, /label: "Selected"/);
   assert.doesNotMatch(source, /data-dispatch-stop-move=/);
   assert.match(dashboard, /Optimized Route/i);
-  assert.match(dashboard, /Order automatically optimized from live truck location/);
+  assert.match(dashboard, /Automatically ordered from the truck(?:'|&rsquo;)s live location/);
   assert.match(dashboard, /Return to WMO/);
   assert.equal(dispatchWmoStopOrder(4), 5);
   assert.equal(dispatchSegmentColor({ stop_status: "completed" }, false), "#2e8b57");
@@ -344,6 +445,8 @@ function testRoutingResponseOrderAndUiRequirements() {
 async function run() {
   testOrientationHelperDoesNotMutateGeometry();
   testClickOrderDoesNotForceOptimizedOrder();
+  testFirstClickedRoadCanBecomeStopThree();
+  testSelectedRequirementsRemainSeparateFromOptimizedOrder();
   testOptimizerStartsFromChangedTruckPosition();
   testContinuousJourneyAndFixedWmo();
   testRoadOrientationUsesApproachAndDepartureCosts();
@@ -355,6 +458,7 @@ async function run() {
   testCatalogSelectionAndDetailConversion();
   testPersistedRoadStopRehydratesOnlyTheMatchingCatalogComponent();
   testFailureStateStaleResponsesAndActualGpsIndependence();
+  testOperatingDateAndRecordFiltersAreNotClientControlled();
   testRoutingResponseOrderAndUiRequirements();
   assert.deepEqual(DISPATCH_WMO_LOCATION, {
     latitude: 6.1060875,

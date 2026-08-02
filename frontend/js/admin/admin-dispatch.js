@@ -35,6 +35,8 @@ const DISPATCH_PLANNED_ROUTE_STYLE = Object.freeze({
   lineCap: "round",
   lineJoin: "round"
 });
+const DISPATCH_TICKET_CREATE_FAILURE_MESSAGE =
+  "Dispatch ticket could not be created. Your route is still saved. Please retry.";
 
 let dispatchFocusedStopRow = null;
 let dispatchLocationLookupController = null;
@@ -405,6 +407,75 @@ function dispatchRoutingFailureState() {
   };
 }
 
+function dispatchTicketFailureState() {
+  return {
+    message: DISPATCH_TICKET_CREATE_FAILURE_MESSAGE,
+    preserveSelectedStops: true,
+    preserveOptimizedOrder: true,
+    preservePreviousRoute: true
+  };
+}
+
+function dispatchSafeTicketErrorMessage(error) {
+  const message = String(error?.operatorMessage || error?.message || "").trim();
+  if (
+    Number(error?.status) >= 500 ||
+    /\b(?:mysql|sql syntax|query|table|column|database)\b/i.test(message)
+  ) {
+    return DISPATCH_TICKET_CREATE_FAILURE_MESSAGE;
+  }
+  return message || DISPATCH_TICKET_CREATE_FAILURE_MESSAGE;
+}
+
+function captureDispatchRoutePreviewState() {
+  return {
+    layers: {
+      root: dispatchPlannedLayerGroup,
+      connectors: dispatchPlannedConnectorLayerGroup,
+      geometry: dispatchSelectedGeometryLayerGroup,
+      destinations: dispatchDestinationMarkerLayerGroup,
+      wmo: dispatchWmoMarkerLayerGroup,
+      start: dispatchStartMarkerLayerGroup
+    },
+    optimizedStops: [...dispatchOptimizedRouteStops],
+    coordinates: dispatchLastSuccessfulRouteCoordinates.map((point) => ({ ...point })),
+    routeState: dispatchLastSuccessfulRouteState,
+    distanceMeters: dispatchLastRouteDistanceMeters,
+    routingSignature: dispatchLastRoutingSignature,
+    routingStart: dispatchLastRoutingStart,
+    offRouteSince: dispatchOffRouteSince
+  };
+}
+
+function restoreDispatchRoutePreviewState(snapshot) {
+  if (!snapshot) return;
+  dispatchOptimizedRouteStops = [...snapshot.optimizedStops];
+  dispatchLastSuccessfulRouteCoordinates = snapshot.coordinates.map((point) => ({ ...point }));
+  dispatchLastSuccessfulRouteState = snapshot.routeState;
+  dispatchLastRouteDistanceMeters = snapshot.distanceMeters;
+  dispatchLastRoutingSignature = snapshot.routingSignature;
+  dispatchLastRoutingStart = snapshot.routingStart;
+  dispatchOffRouteSince = snapshot.offRouteSince;
+
+  const root = snapshot.layers.root;
+  if (root) {
+    dispatchPlannedLayerGroup = root;
+    dispatchPlannedConnectorLayerGroup = snapshot.layers.connectors;
+    dispatchSelectedGeometryLayerGroup = snapshot.layers.geometry;
+    dispatchDestinationMarkerLayerGroup = snapshot.layers.destinations;
+    dispatchWmoMarkerLayerGroup = snapshot.layers.wmo;
+    dispatchStartMarkerLayerGroup = snapshot.layers.start;
+    if (truckMap && typeof root.addTo === "function") {
+      const routeIsVisible = typeof truckMap.hasLayer === "function"
+        ? truckMap.hasLayer(root)
+        : true;
+      if (!routeIsVisible) root.addTo(truckMap);
+    }
+  }
+  renderDispatchOptimizedRouteList(dispatchOptimizedRouteStops);
+  if (snapshot.coordinates.length || root) updateDispatchRoutePreviewNotice("ready");
+}
+
 function dispatchRoutingResponseIsCurrent(
   generation,
   layerGroup,
@@ -501,17 +572,211 @@ function dispatchLocalInputDateTime(date = new Date()) {
   return local.toISOString().slice(0, 16);
 }
 
-function setDispatchWorkspaceTab(tabName) {
-  const selectedTab = ["monitor", "plan", "records"].includes(tabName)
-    ? tabName
-    : "monitor";
+function dispatchManilaOperatingDay(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(date);
+  const values = Object.fromEntries(
+    parts
+      .filter((part) => ["year", "month", "day"].includes(part.type))
+      .map((part) => [part.type, part.value])
+  );
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function applyDispatchWorkspaceView(selectedTab) {
   document.querySelectorAll("[data-tracking-workspace-view]").forEach((view) => {
     const isActive = view.dataset.trackingWorkspaceView === selectedTab;
     view.classList.toggle("active", isActive);
     view.hidden = !isActive;
   });
+}
+
+function dispatchPlannerUsesFullScreen() {
+  return Boolean(window.matchMedia?.("(max-width: 620px)").matches);
+}
+
+function dispatchInvalidateMapAfterDrawerTransition() {
+  if (!truckMap) return;
+  const reduceMotion = Boolean(
+    window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+  );
+  setTimeout(() => truckMap.invalidateSize({ pan: false }), reduceMotion ? 0 : 230);
+}
+
+function updateDispatchWorkspaceActions(selectedTab = "plan") {
+  const recordTab = document.querySelector("[data-dispatch-record-tab].active")
+    ?.dataset.dispatchRecordTab;
+  document.querySelectorAll("[data-dispatch-workspace-action]").forEach((button) => {
+    const action = button.dataset.dispatchWorkspaceAction;
+    const active = selectedTab === "plan"
+      ? action === "plan"
+      : action === (recordTab === "reports" ? "reports" : "tickets");
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+}
+
+function openDispatchPlannerDrawer({ focusSearch = true } = {}) {
+  const workspace = document.querySelector(".tracking-dispatch-workspace");
+  const drawer = document.getElementById("dispatchPlannerDrawer");
+  if (!workspace || !drawer) return;
+  const wasOpen = dispatchPlannerOpen;
+  dispatchPlannerOpen = true;
+  workspace.classList.add("planner-open");
+  drawer.setAttribute("aria-hidden", "false");
+  drawer.setAttribute("aria-modal", String(dispatchPlannerUsesFullScreen()));
+  drawer.inert = false;
+  if (!wasOpen) dispatchInvalidateMapAfterDrawerTransition();
+
+  const reduceMotion = Boolean(
+    window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+  );
+  setTimeout(() => {
+    const target = focusSearch
+      ? document.getElementById("dispatchDestinationSearch")
+      : document.getElementById("dispatchPlannerHeading");
+    target?.focus({ preventScroll: true });
+  }, reduceMotion ? 0 : 220);
+}
+
+function closeDispatchPlannerDrawer({ restoreFocus = true } = {}) {
+  const workspace = document.querySelector(".tracking-dispatch-workspace");
+  const drawer = document.getElementById("dispatchPlannerDrawer");
+  if (!workspace || !drawer) return;
+  const wasOpen = dispatchPlannerOpen;
+  dispatchPlannerOpen = false;
+  workspace.classList.remove("planner-open");
+  drawer.setAttribute("aria-hidden", "true");
+  drawer.setAttribute("aria-modal", "false");
+  drawer.inert = true;
+  applyDispatchWorkspaceView("monitor");
+  setDispatchAddDestinationMode(false);
+  if (wasOpen) dispatchInvalidateMapAfterDrawerTransition();
+
+  if (restoreFocus) {
+    const trigger = dispatchPlannerTriggerElement?.isConnected
+      ? dispatchPlannerTriggerElement
+      : [...document.querySelectorAll("[data-tracking-session-id]")].find(
+          (card) => String(card.dataset.trackingSessionId) === String(selectedSessionId)
+        );
+    const reduceMotion = Boolean(
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+    );
+    setTimeout(() => trigger?.focus({ preventScroll: true }), reduceMotion ? 0 : 220);
+  }
+}
+
+function setDispatchWorkspaceTab(tabName) {
+  const selectedTab = ["monitor", "plan", "records"].includes(tabName)
+    ? tabName
+    : "monitor";
+  applyDispatchWorkspaceView(selectedTab);
+  if (selectedTab === "monitor") {
+    closeDispatchPlannerDrawer();
+    return;
+  }
+  updateDispatchWorkspaceActions(selectedTab);
+  openDispatchPlannerDrawer({ focusSearch: selectedTab === "plan" });
   if (selectedTab === "records") void loadDispatchRecords();
-  if (truckMap) setTimeout(() => truckMap.invalidateSize(), 0);
+}
+
+function dispatchPlannerHasUnsavedRoute(sessionId = selectedSessionId) {
+  return Boolean(
+    dispatchPlannerDirty &&
+    getDispatchStopDrafts().length > 0 &&
+    String(dispatchPlannerDirtySessionId || "") === String(sessionId || "")
+  );
+}
+
+function updateDispatchPlannerActions() {
+  const destinationCount = getDispatchStopDrafts().length;
+  const dispatchNowButton = document.getElementById("dispatchNowBtn");
+  const saveButton = document.getElementById("dispatchSaveTicketBtn");
+  const clearButton = document.getElementById("dispatchClearRouteBtn");
+  if (dispatchNowButton) {
+    dispatchNowButton.disabled = Boolean(
+      !selectedTrackingTruck ||
+      !dispatchSelectedSessionActive ||
+      !destinationCount ||
+      dispatchPlannerOperationProcessing
+    );
+  }
+  if (saveButton) saveButton.disabled = dispatchPlannerOperationProcessing;
+  if (clearButton) clearButton.disabled = destinationCount === 0 || dispatchPlannerOperationProcessing;
+}
+
+function markDispatchPlannerDirty() {
+  const destinationCount = getDispatchStopDrafts().length;
+  dispatchPlannerDirty = destinationCount > 0;
+  dispatchPlannerDirtySessionId = dispatchPlannerDirty ? selectedSessionId : null;
+  updateDispatchPlannerActions();
+}
+
+function markDispatchPlannerSaved() {
+  dispatchPlannerDirty = false;
+  dispatchPlannerDirtySessionId = null;
+  updateDispatchPlannerActions();
+}
+
+function openDispatchPlannerConfirmation(options = {}) {
+  const dialog = document.getElementById("dispatchPlannerConfirmation");
+  if (!dialog) return;
+  dispatchPlannerPendingConfirmation = {
+    onAccept: options.onAccept,
+    onCancel: options.onCancel,
+    returnFocus: options.returnFocus || document.activeElement
+  };
+  document.getElementById("dispatchPlannerConfirmationTitle").textContent =
+    options.title || "Confirm change";
+  document.getElementById("dispatchPlannerConfirmationMessage").textContent =
+    options.message || "Continue with this change?";
+  document.getElementById("dispatchPlannerConfirmationCancelBtn").textContent =
+    options.cancelLabel || "Cancel";
+  document.getElementById("dispatchPlannerConfirmationAcceptBtn").textContent =
+    options.acceptLabel || "Continue";
+  dialog.classList.remove("hidden");
+  document.getElementById("dispatchPlannerConfirmationCancelBtn")?.focus();
+}
+
+function closeDispatchPlannerConfirmation({ accepted = false } = {}) {
+  const dialog = document.getElementById("dispatchPlannerConfirmation");
+  const pending = dispatchPlannerPendingConfirmation;
+  dialog?.classList.add("hidden");
+  dispatchPlannerPendingConfirmation = null;
+  if (accepted) pending?.onAccept?.();
+  else pending?.onCancel?.();
+  if (!accepted) pending?.returnFocus?.focus?.({ preventScroll: true });
+}
+
+function requestDispatchTruckSelection(sessionId, truckId, triggerElement = null) {
+  const sameSession = String(selectedSessionId || "") === String(sessionId || "");
+  if (sameSession && selectedTrackingTruck) {
+    dispatchPlannerTriggerElement = triggerElement || dispatchPlannerTriggerElement;
+    prepareDispatchPlannerForTruck(selectedTrackingTruck);
+    return;
+  }
+  if (selectedSessionId && dispatchPlannerHasUnsavedRoute(selectedSessionId)) {
+    openDispatchPlannerConfirmation({
+      title: "Switch trucks?",
+      message: "The current unsaved route will be cleared.",
+      cancelLabel: "Keep Current Truck",
+      acceptLabel: "Switch Truck",
+      returnFocus: triggerElement,
+      onCancel: () => prepareDispatchPlannerForTruck(selectedTrackingTruck),
+      onAccept: () => {
+        markDispatchPlannerSaved();
+        dispatchPlannerTriggerElement = triggerElement;
+        selectTruck(sessionId, truckId);
+      }
+    });
+    return;
+  }
+  dispatchPlannerTriggerElement = triggerElement;
+  selectTruck(sessionId, truckId);
 }
 
 function getDispatchSelectedReliablePoint() {
@@ -561,12 +826,13 @@ function updateDispatchSelectedTruckContext(truck = selectedTrackingTruck) {
     document.getElementById("dispatchSelectedTruckStatus").className = "tracking-live-chip";
     document.getElementById("dispatchSelectedTruckIdLabel").textContent = "--";
     document.getElementById("dispatchSelectedSessionLabel").textContent = "--";
-    document.getElementById("dispatchSelectedPersonnelLabel").textContent = "--";
-    document.getElementById("dispatchSelectedGpsStatusLabel").textContent = "--";
+    document.getElementById("dispatchSelectedPersonnelLabel").textContent = "Personnel not assigned";
+    document.getElementById("dispatchSelectedGpsStatusLabel").textContent = "Waiting for GPS";
+    document.getElementById("dispatchSelectedGpsStatusLabel").className = "dispatch-gps-badge warning";
     document.getElementById("dispatchSelectedGpsLabel").textContent = "--";
-    if (dispatchNowButton) dispatchNowButton.disabled = true;
     if (hint) hint.textContent = "Select a truck before planning destinations.";
     warning?.classList.add("hidden");
+    updateDispatchPlannerActions();
     return;
   }
 
@@ -595,15 +861,17 @@ function updateDispatchSelectedTruckContext(truck = selectedTrackingTruck) {
     reliablePoint?.recorded_at || truck.location_last_updated || truck.last_updated_at
   );
   document.getElementById("dispatchSelectedGpsStatusLabel").textContent = reliablePoint
-    ? "Reliable fix"
-    : "Waiting for reliable GPS";
+    ? "GPS live"
+    : "GPS off";
+  document.getElementById("dispatchSelectedGpsStatusLabel").className = reliablePoint
+    ? "dispatch-gps-badge"
+    : "dispatch-gps-badge warning";
 
   document.getElementById("dispatchTrackingSessionId").value = truck.session_id || "";
   document.getElementById("dispatchTruckId").value = truck.truck_id || "";
   document.getElementById("dispatchTruckName").value = truckLabel;
   document.getElementById("dispatchPersonnelId").value = truck.enforcer_id || "";
   document.getElementById("dispatchPersonnelName").value = personnelName === "Not assigned" ? "" : personnelName;
-  if (dispatchNowButton) dispatchNowButton.disabled = !dispatchSelectedSessionActive;
   if (warning) {
     warning.classList.toggle("hidden", dispatchSelectedSessionActive);
     warning.textContent = dispatchSelectedSessionActive
@@ -615,6 +883,7 @@ function updateDispatchSelectedTruckContext(truck = selectedTrackingTruck) {
       ? "Choose a verified road section or barangay hall from the catalog."
       : "The truck is selected, but the map is waiting for a reliable GPS point.";
   }
+  updateDispatchPlannerActions();
 }
 
 function prepareDispatchPlannerForTruck(truck) {
@@ -625,6 +894,7 @@ function prepareDispatchPlannerForTruck(truck) {
   updateDispatchSelectedTruckContext(truck);
   setDispatchWorkspaceTab("plan");
   renderDispatchDraftOnLiveMap();
+  updateDispatchPlannerDestinationUi();
 }
 
 function handleDispatchSelectedSessionEnded() {
@@ -722,7 +992,9 @@ function clearDispatchPlannedRoute(reason = "explicit reset") {
   dispatchPendingRoutingSignature = "";
   dispatchLastSuccessfulRouteCoordinates = [];
   dispatchLastSuccessfulRouteState = null;
+  dispatchLastRouteDistanceMeters = null;
   dispatchOptimizedRouteStops = [];
+  renderDispatchOptimizedRouteList([]);
   dispatchOffRouteSince = null;
   dispatchRouteDebug("planned route cleared", {
     reason,
@@ -794,11 +1066,13 @@ function clearDispatchTrackingSelection() {
   resetDispatchTicketForm();
   updateDispatchSelectedTruckContext(null);
   renderDispatchEmptyPanel();
+  closeDispatchPlannerDrawer({ restoreFocus: false });
 }
 
 function renderDispatchEmptyPanel(message) {
   const panel = document.getElementById("dispatchCurrentPanel");
   if (!panel) return;
+  panel.classList.add("hidden");
   const setupMessage = dispatchSetupRequired
     ? "Dispatch database setup is required."
     : message ||
@@ -849,8 +1123,12 @@ async function loadDispatchForTrackingSession(sessionId) {
     selectedDispatchTicket = details;
     renderDispatchTicketDetails(details);
     const plannerVisible = !document.querySelector('[data-tracking-workspace-view="plan"]')?.hidden;
-    if (plannerVisible && getDispatchStopDrafts().length) {
+    const preserveUnsavedDraft = dispatchPlannerHasUnsavedRoute(sessionId);
+    if ((plannerVisible || preserveUnsavedDraft) && getDispatchStopDrafts().length) {
       renderDispatchDraftOnLiveMap();
+      if (preserveUnsavedDraft) {
+        renderDispatchOptimizedRouteList(dispatchOptimizedRouteStops);
+      }
     } else {
       renderDispatchPlannedRoute(details);
     }
@@ -897,19 +1175,40 @@ function updateDispatchRoutePreviewNotice(status = "idle") {
     : "idle";
   notice.dataset.routeStatus = normalizedStatus;
   notice.classList.remove("loading", "ready", "error");
-  notice.classList.toggle("hidden", normalizedStatus === "idle");
   if (normalizedStatus === "idle") {
-    notice.innerHTML = "";
+    notice.classList.remove("hidden");
+    notice.textContent = "Add a destination to calculate the route.";
     return;
   }
+  notice.classList.remove("hidden");
   notice.classList.add(normalizedStatus);
+  const destinationCount = getDispatchStopDrafts().length || dispatchOptimizedRouteStops.length;
+  const routeDistance = Number(dispatchLastRouteDistanceMeters);
+  const readyParts = [
+    "Route ready",
+    `${destinationCount} destination${destinationCount === 1 ? "" : "s"}`
+  ];
+  if (Number.isFinite(routeDistance) && routeDistance > 0) {
+    readyParts.push(`${(routeDistance / 1000).toFixed(1)} km`);
+  }
   notice.innerHTML = normalizedStatus === "loading"
     ? dispatchLastSuccessfulRouteCoordinates.length
       ? "Updating route&hellip;"
       : "Calculating route&hellip;"
     : normalizedStatus === "ready"
-      ? "Route ready"
+      ? readyParts.map(dispatchEscape).join(" &middot; ")
       : `${dispatchEscape(dispatchRoutingFailureState().message)} <button type="button" data-dispatch-route-retry>Retry Route</button>`;
+  if (
+    normalizedStatus === "loading" &&
+    dispatchOptimizedRouteStops.length !== destinationCount
+  ) {
+    renderDispatchOptimizedRouteList([]);
+  } else if (normalizedStatus === "error" && !dispatchOptimizedRouteStops.length) {
+    const list = document.getElementById("dispatchOptimizedRouteList");
+    if (list && getDispatchStopDrafts().length) {
+      list.innerHTML = '<div class="dispatch-route-empty error">Optimized order unavailable. Selected destinations are preserved.</div>';
+    }
+  }
 }
 
 function dispatchRoutingCacheKey(start, end) {
@@ -1292,17 +1591,19 @@ function renderDispatchTerminalStopMarkers(layers, completedStops, skippedStops)
 
 function renderDispatchOptimizedTicketOrder(details, groups, journey) {
   if (!journey?.plannedStops) return;
+  const optimizedStops = [
+    ...groups.completedStops.map((stop, index) => ({ ...stop, stop_order: index + 1 })),
+    ...journey.plannedStops.map(({ stop }, index) => ({
+      ...stop,
+      stop_order: groups.completedStops.length + index + 1
+    })),
+    ...groups.skippedStops
+  ];
   renderDispatchTicketDetails({
     ...details,
-    stops: [
-      ...groups.completedStops.map((stop, index) => ({ ...stop, stop_order: index + 1 })),
-      ...journey.plannedStops.map(({ stop }, index) => ({
-        ...stop,
-        stop_order: groups.completedStops.length + index + 1
-      })),
-      ...groups.skippedStops
-    ]
+    stops: optimizedStops
   });
+  renderDispatchOptimizedRouteList(optimizedStops);
 }
 
 function renderDispatchPlannedRoute(details, options = {}) {
@@ -1335,6 +1636,7 @@ function renderDispatchPlannedRoute(details, options = {}) {
     dispatchLastRoutingSignature = signature;
     dispatchLastRoutingStart = startPoint;
     dispatchLastSuccessfulRouteCoordinates = [];
+    dispatchLastRouteDistanceMeters = null;
     updateDispatchRoutePreviewNotice("ready");
     return;
   }
@@ -1408,6 +1710,9 @@ function renderDispatchPlannedRoute(details, options = {}) {
         completedStops: groups.completedStops,
         skippedStops: groups.skippedStops
       };
+      dispatchLastRouteDistanceMeters = Number.isFinite(Number(journey.total_cost_meters))
+        ? Number(journey.total_cost_meters)
+        : null;
       renderDispatchOptimizedTicketOrder(details, groups, journey);
       dispatchLastRoutingSignature = signature;
       dispatchLastRoutingStart = startPoint;
@@ -1461,6 +1766,8 @@ function renderDispatchTicketDetails(details) {
 
   const ticket = details.ticket;
   const stops = Array.isArray(details.stops) ? details.stops : [];
+  panel.classList.remove("hidden");
+  renderDispatchOptimizedRouteList(stops);
   const events = Array.isArray(details.events) ? details.events : [];
   const linkedSessions = Array.isArray(details.tracking_sessions)
     ? details.tracking_sessions
@@ -1607,13 +1914,16 @@ function dispatchStopRowTemplate(stop = {}, index = 0) {
   return `
     <article class="dispatch-stop-row" data-dispatch-stop-row data-dispatch-metadata-key="${dispatchEscape(metadataKey)}">
       <div class="dispatch-stop-row-header">
-        <strong>Stop <span data-dispatch-stop-number>${index + 1}</span></strong>
+        <div class="dispatch-required-destination-label">
+          <strong>${dispatchEscape(stop.operator_label || stop.name || stop.location_name || "Destination")}</strong>
+          <small>${dispatchEscape(dispatchDestinationTypeLabel(destinationType))}${barangay ? ` - ${dispatchEscape(barangay)}` : ""}</small>
+        </div>
         <div class="dispatch-stop-row-actions">
-          <button type="button" data-dispatch-stop-remove aria-label="Remove stop" title="Remove"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M8 7l1 13h6l1-13"/></svg></button>
+          <button type="button" data-dispatch-stop-remove aria-label="Remove destination" title="Remove"><span>Remove</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M8 7l1 13h6l1-13"/></svg></button>
         </div>
       </div>
       <div class="dispatch-stop-fields">
-        <input type="hidden" data-dispatch-field="stop_order" value="${dispatchEscape(stop.stop_order || index + 1)}">
+        <input type="hidden" data-dispatch-field="stop_order" value="${dispatchEscape(stop.stop_order || "")}">
         <div class="dispatch-stop-summary dispatch-stop-location-field">
           <strong>${dispatchEscape(stop.operator_label || stop.name || stop.location_name || "Destination")}</strong>
           <small>${dispatchEscape(dispatchDestinationTypeLabel(destinationType))}${stop.is_verified ? " · Verified" : ""}${barangay ? ` · ${dispatchEscape(barangay)}` : ""}</small>
@@ -1652,26 +1962,71 @@ function addDispatchStopRow(stop = {}) {
   const row = container.lastElementChild;
   dispatchFocusedStopRow = row;
   renderDispatchDraftOnLiveMap();
+  updateDispatchPlannerDestinationUi();
   return row;
 }
 
-function renumberDispatchStopRows(rewriteOrders = true) {
+function renderDispatchOptimizedRouteList(stops = dispatchOptimizedRouteStops) {
+  const list = document.getElementById("dispatchOptimizedRouteList");
+  if (!list) return;
+  const selectedCount = getDispatchStopDrafts().length;
+  const routeStops = Array.isArray(stops) ? stops.filter(Boolean) : [];
+  if (!routeStops.length) {
+    list.innerHTML = selectedCount
+      ? '<div class="dispatch-route-empty">Optimizing route&hellip;</div>'
+      : '<div class="dispatch-route-empty">Add destinations to calculate the optimized order.</div>';
+    return;
+  }
+  list.innerHTML = routeStops.map((stop, index) => {
+    const status = String(stop.stop_status || "pending").toLowerCase();
+    const stateClass = status === "completed"
+      ? "completed"
+      : status === "skipped"
+        ? "skipped"
+        : ["arrived", "on_the_way", "current"].includes(status)
+          ? "current"
+          : "pending";
+    const stateLabel = stateClass === "current"
+      ? "Current"
+      : stateClass === "completed"
+        ? "Completed"
+        : stateClass === "skipped"
+          ? "Skipped"
+          : "Pending";
+    return `
+      <div class="dispatch-optimized-route-item ${stateClass}">
+        <span class="dispatch-route-order">${index + 1}</span>
+        <div>
+          <strong>${dispatchEscape(stop.operator_label || stop.name || stop.location_name || `Destination ${index + 1}`)}</strong>
+          <small>${dispatchEscape(stop.barangay || stop.address_reference || "General Santos City")}</small>
+        </div>
+        <span class="dispatch-route-state">${stateLabel}</span>
+      </div>
+    `;
+  }).join("");
+}
+
+function updateDispatchPlannerDestinationUi() {
+  const destinationCount = getDispatchStopDrafts().length;
+  const count = document.getElementById("dispatchRequiredDestinationCount");
+  if (count) count.textContent = `\u00b7 ${destinationCount}`;
+  if (!destinationCount) renderDispatchOptimizedRouteList([]);
+  updateDispatchPlannerActions();
+}
+
+function renumberDispatchStopRows() {
   const rows = [
     ...document.querySelectorAll("#dispatchStopRows [data-dispatch-stop-row]")
   ];
   rows.forEach((row, index) => {
     const number = row.querySelector("[data-dispatch-stop-number]");
     if (number) number.textContent = String(index + 1);
-    if (rewriteOrders) {
-      const order = row.querySelector('[data-dispatch-field="stop_order"]');
-      if (order) order.value = String(index + 1);
-    }
   });
-  const wmoOrder = dispatchWmoStopOrder(rows.length);
   const wmoOrderElement = document.querySelector("[data-dispatch-wmo-order]");
-  if (wmoOrderElement) wmoOrderElement.textContent = String(wmoOrder);
+  if (wmoOrderElement) wmoOrderElement.textContent = "W";
   document.querySelector(".dispatch-wmo-return")
-    ?.setAttribute("aria-label", `Stop ${wmoOrder}: Return to WMO, required final route point`);
+    ?.setAttribute("aria-label", "Return to WMO, required final route point");
+  updateDispatchPlannerDestinationUi();
 }
 
 function getDispatchStopDrafts() {
@@ -1733,6 +2088,19 @@ function dispatchSelectedSetSignature(items) {
   }).sort().join("|");
 }
 
+function dispatchDraftsInOptimizedOrder(selectedStops = [], optimizedStops = []) {
+  const selectedByKey = new Map(
+    selectedStops.map((stop) => [String(stop.metadata_key || ""), stop])
+  );
+  return optimizedStops.map((optimizedStop, index) => {
+    const selected = selectedByKey.get(String(optimizedStop.metadata_key || ""));
+    return {
+      ...(selected || optimizedStop),
+      stop_order: index + 1
+    };
+  });
+}
+
 function applyDispatchOptimizedDraftOrder(plannedStops) {
   const container = document.getElementById("dispatchStopRows");
   if (!container) return;
@@ -1740,17 +2108,18 @@ function applyDispatchOptimizedDraftOrder(plannedStops) {
     [...container.querySelectorAll("[data-dispatch-stop-row]")]
       .map((row) => [row.dataset.dispatchMetadataKey || "", row])
   );
-  plannedStops.forEach(({ stop }) => {
+  plannedStops.forEach(({ stop }, index) => {
     const row = rowsByKey.get(stop.metadata_key);
-    if (row) container.appendChild(row);
+    const order = row?.querySelector('[data-dispatch-field="stop_order"]');
+    if (order) order.value = String(index + 1);
   });
-  renumberDispatchStopRows();
   dispatchOptimizedRouteStops = plannedStops.map(({ stop, metadata, orientation }, index) => ({
     ...stop,
     stop_order: index + 1,
     catalog_id: metadata?.catalog_id || null,
     orientation
   }));
+  renderDispatchOptimizedRouteList(dispatchOptimizedRouteStops);
 }
 
 function buildDispatchRouteLayers(journey, routeCoordinates, startPoint, wmoPoint, options = {}) {
@@ -1899,6 +2268,9 @@ function renderDispatchDraftOnLiveMap(options = {}) {
       activateDispatchPlannedLayerGroups(layers);
       dispatchLastSuccessfulRouteCoordinates = routeCoordinates.map(([lat, lng]) => ({ lat, lng }));
       dispatchLastSuccessfulRouteState = journey;
+      dispatchLastRouteDistanceMeters = Number.isFinite(Number(journey.total_cost_meters))
+        ? Number(journey.total_cost_meters)
+        : null;
       dispatchLastRoutingSignature = signature;
       dispatchLastRoutingStart = startPoint;
       dispatchOffRouteSince = null;
@@ -2245,19 +2617,19 @@ function confirmDispatchDestinationPreview() {
     return;
   }
 
-  const stopNumber = getDispatchStopDrafts().length + 1;
   addDispatchStopRow({
     ...dispatchDestinationPreview,
-    stop_order: stopNumber,
+    stop_order: null,
     location_name: locationName,
     operator_label: dispatchDestinationPreview.name,
     address_reference: dispatchDestinationPreview.address_reference || locationName
   });
+  markDispatchPlannerDirty();
   clearDispatchDestinationPreview();
   setDispatchAddDestinationMode(false);
   const searchInput = document.getElementById("dispatchDestinationSearch");
   if (searchInput) searchInput.value = "";
-  dispatchNotify(`Destination ${stopNumber} added to the route.`);
+  dispatchNotify("Destination added to the route.");
 }
 
 function setDispatchComboboxExpanded(input, options, expanded) {
@@ -2326,10 +2698,13 @@ function updateDispatchDestinationResultHighlight() {
 function renderDispatchPopularDestinations() {
   const container = document.getElementById("dispatchPopularDestinations");
   if (!container) return;
+  const section = container.closest(".dispatch-popular-section");
   if (!dispatchPopularDestinationResults.length) {
-    container.innerHTML = '<small class="dispatch-popular-empty">No verified destinations are available.</small>';
+    container.innerHTML = "";
+    section?.classList.add("hidden");
     return;
   }
+  section?.classList.remove("hidden");
   container.innerHTML = dispatchPopularDestinationResults.map((destination, index) => {
     const rowState = dispatchDestinationRowState(destination);
     const unavailable = rowState.className === "loading" ||
@@ -2420,18 +2795,19 @@ async function openDispatchBrowseAllDestinations() {
 }
 
 function selectDispatchPopularDestinations(destinations = [], mode = dispatchDestinationMode) {
-  const ranked = [...destinations];
-  if (mode === "road_segment") {
-    const priorities = new Map(
-      DISPATCH_POPULAR_ROAD_LABELS.map((label, index) => [dispatchNormalizeSearchText(label), index])
+  const ranked = destinations.filter((destination) => {
+    const usageCount = Number(
+      destination.dispatch_count ?? destination.usage_count ?? destination.selection_count ?? 0
     );
-    ranked.sort((first, second) => {
-      const firstRank = priorities.get(dispatchNormalizeSearchText(first.display_label || first.name));
-      const secondRank = priorities.get(dispatchNormalizeSearchText(second.display_label || second.name));
-      return (firstRank ?? Number.MAX_SAFE_INTEGER) - (secondRank ?? Number.MAX_SAFE_INTEGER) ||
-        String(first.display_label || first.name).localeCompare(String(second.display_label || second.name));
-    });
-  }
+    return usageCount > 0 || Boolean(destination.last_used_at || destination.recently_used_at);
+  });
+  ranked.sort((first, second) => {
+    const firstUsage = Number(first.dispatch_count ?? first.usage_count ?? first.selection_count ?? 0);
+    const secondUsage = Number(second.dispatch_count ?? second.usage_count ?? second.selection_count ?? 0);
+    const firstRecent = new Date(first.last_used_at || first.recently_used_at || 0).getTime();
+    const secondRecent = new Date(second.last_used_at || second.recently_used_at || 0).getTime();
+    return secondUsage - firstUsage || secondRecent - firstRecent;
+  });
   return ranked.slice(0, DISPATCH_POPULAR_DESTINATION_LIMIT);
 }
 
@@ -2491,8 +2867,9 @@ async function chooseDispatchDestination(result) {
       );
       return;
     }
-    const stop = dispatchCatalogStopFromDetail(detail, getDispatchStopDrafts().length + 1);
+    const stop = dispatchCatalogStopFromDetail(detail, null);
     const row = addDispatchStopRow(stop);
+    markDispatchPlannerDirty();
     dispatchLastAddedStopRow = row;
     const workflowResult = document.getElementById("dispatchWorkflowResult");
     if (workflowResult) {
@@ -2611,18 +2988,16 @@ function setDispatchDestinationMode(mode) {
   const label = document.getElementById("dispatchDestinationSearchLabel");
   if (input) {
     input.value = "";
-    input.placeholder = mode === "road_segment" ? "Search verified road sections..." : "Search verified barangay halls...";
+    input.placeholder = mode === "road_segment" ? "Search Gensan roads..." : "Search barangay halls...";
   }
   if (label) {
     label.textContent = mode === "road_segment"
-      ? "Search All Gensan Roads"
-      : "Search Verified Barangay Halls";
+      ? "Search Gensan roads"
+      : "Search barangay halls";
   }
   const popularHeading = document.getElementById("dispatchPopularDestinationHeading");
   if (popularHeading) {
-    popularHeading.textContent = mode === "road_segment"
-      ? "Popular Roads"
-      : "Verified Barangay Halls";
+    popularHeading.textContent = "Frequently Used";
   }
   const browseButton = document.getElementById("dispatchBrowseAllBtn");
   if (browseButton) {
@@ -2642,14 +3017,21 @@ function setDispatchDestinationMode(mode) {
 }
 
 function collectDispatchTicketForm() {
-  const stops = getDispatchStopDrafts();
-  if (!stops.length) throw new Error("Add at least one route stop.");
+  const selectedStops = getDispatchStopDrafts();
+  if (!selectedStops.length) throw new Error("Add at least one route stop.");
   if (dispatchPendingRoutingSignature) {
     throw new Error("Wait for the optimized route update to finish before saving.");
   }
-  if (dispatchOptimizedRouteStops.length !== stops.length || !dispatchLastSuccessfulRouteState) {
+  if (
+    dispatchOptimizedRouteStops.length !== selectedStops.length ||
+    !dispatchLastSuccessfulRouteState
+  ) {
     throw new Error("An optimized road route is required before saving this dispatch.");
   }
+  const stops = dispatchDraftsInOptimizedOrder(
+    selectedStops,
+    dispatchOptimizedRouteStops
+  );
   const orders = stops.map((stop) => stop.stop_order);
   if (orders.some((order) => !Number.isInteger(order) || order <= 0)) {
     throw new Error("Every stop order must be a positive integer.");
@@ -2713,7 +3095,6 @@ function collectDispatchTicketForm() {
       document.getElementById("dispatchPersonnelId")?.value || null,
     assigned_personnel_name:
       document.getElementById("dispatchPersonnelName")?.value.trim() || null,
-    dispatch_date: document.getElementById("dispatchDate")?.value,
     scheduled_start_at: scheduledStart || null,
     expected_return_at: expectedReturn || null,
     route_name: document.getElementById("dispatchRouteName")?.value.trim(),
@@ -2730,22 +3111,19 @@ function resetDispatchTicketForm() {
   document.getElementById("dispatchTicketForm")?.reset();
   const stopRows = document.getElementById("dispatchStopRows");
   if (stopRows) {
-    stopRows.innerHTML = '<div class="dispatch-route-empty">No destinations added yet.</div>';
+    stopRows.innerHTML = '<div class="dispatch-route-empty">No destinations selected yet.</div>';
   }
   const editingId = document.getElementById("dispatchEditingTicketId");
   if (editingId) editingId.value = "";
   document.getElementById("dispatchTicketEditorTitle").textContent = "Dispatch Planner";
   document.getElementById("dispatchSaveTicketBtn").textContent = "Save Draft";
   const today = new Date();
-  const localToday = new Date(today.getTime() - today.getTimezoneOffset() * 60000)
-    .toISOString()
-    .slice(0, 10);
-  document.getElementById("dispatchDate").value = localToday;
+  const manilaToday = dispatchManilaOperatingDay(today);
   document.getElementById("dispatchScheduledStart").value = dispatchLocalInputDateTime(today);
   const routeName = document.getElementById("dispatchRouteName");
   if (routeName) {
     routeName.value = selectedTrackingTruck
-      ? `Truck ${selectedTrackingTruck.truck_id} - ${localToday}`
+      ? `Truck ${selectedTrackingTruck.truck_id} - ${manilaToday}`
       : "";
   }
   document.getElementById("dispatchTicketFormError")?.classList.add("hidden");
@@ -2767,6 +3145,7 @@ function resetDispatchTicketForm() {
   setDispatchAddDestinationMode(false);
   renumberDispatchStopRows(false);
   renderDispatchDraftOnLiveMap();
+  markDispatchPlannerSaved();
 }
 
 function fillDispatchTicketForm(details) {
@@ -2784,9 +3163,6 @@ function fillDispatchTicketForm(details) {
     ticket.assigned_personnel_id || "";
   document.getElementById("dispatchPersonnelName").value =
     ticket.assigned_personnel_name || "";
-  document.getElementById("dispatchDate").value = String(
-    ticket.dispatch_date || ""
-  ).slice(0, 10);
   document.getElementById("dispatchScheduledStart").value =
     dispatchInputDateTime(ticket.scheduled_start_at);
   document.getElementById("dispatchRouteName").value = ticket.route_name || "";
@@ -2800,10 +3176,11 @@ function fillDispatchTicketForm(details) {
     barangay: String(stop.address_reference || "").match(/Barangay\s+([^,]+)/i)?.[1] || ""
   }));
   if (!details.stops.length) {
-    stopRows.innerHTML = '<div class="dispatch-route-empty">No destinations added yet.</div>';
+    stopRows.innerHTML = '<div class="dispatch-route-empty">No destinations selected yet.</div>';
   }
   renumberDispatchStopRows(false);
   renderDispatchDraftOnLiveMap();
+  markDispatchPlannerSaved();
 }
 
 function openDispatchTicketEditor(details = null) {
@@ -2823,7 +3200,13 @@ function renderDispatchWorkflowResult(message, type = "success", ticketId = null
   `;
 }
 
-function renderDispatchStepProgress(activeStep, state = "progress", detail = "", ticketId = null) {
+function renderDispatchStepProgress(
+  activeStep,
+  state = "progress",
+  detail = "",
+  ticketId = null,
+  options = {}
+) {
   const result = document.getElementById("dispatchWorkflowResult");
   if (!result) return;
   const steps = ["Creating ticket", "Issuing", "Linking truck", "Dispatched"];
@@ -2841,18 +3224,23 @@ function renderDispatchStepProgress(activeStep, state = "progress", detail = "",
     </ol>
     ${detail ? `<p>${dispatchEscape(detail)}</p>` : ""}
     ${ticketId ? `<button type="button" class="dispatch-inline-action secondary" data-dispatch-retry-link="${dispatchEscape(ticketId)}">Retry Link</button>` : ""}
+    ${options.retryDispatch ? '<button type="button" class="dispatch-inline-action secondary" data-dispatch-retry-dispatch>Retry Dispatch</button>' : ""}
   `;
 }
 
-async function saveDispatchDraft({ notify = true, showResult = true } = {}) {
+async function saveDispatchDraft({ notify = true, showResult = true, manageProcessing = true } = {}) {
   const errorBox = document.getElementById("dispatchTicketFormError");
   const saveButton = document.getElementById("dispatchSaveTicketBtn");
+  const routeSnapshot = captureDispatchRoutePreviewState();
   try {
     errorBox?.classList.add("hidden");
-    saveButton.disabled = true;
+    if (manageProcessing) {
+      dispatchPlannerOperationProcessing = true;
+      updateDispatchPlannerActions();
+    }
     const payload = collectDispatchTicketForm();
-    if (!payload.truck_id || !payload.truck_name_snapshot || !payload.dispatch_date || !payload.route_name) {
-      throw new Error("Truck, dispatch date, and route name are required.");
+    if (!payload.truck_id || !payload.truck_name_snapshot || !payload.route_name) {
+      throw new Error("Truck and route name are required.");
     }
     const ticketId = document.getElementById("dispatchEditingTicketId")?.value;
     const details = await dispatchRequest(
@@ -2868,6 +3256,7 @@ async function saveDispatchDraft({ notify = true, showResult = true } = {}) {
     document.getElementById("dispatchEditingTicketId").value = details.ticket.id;
     document.getElementById("dispatchTicketEditorTitle").textContent = details.ticket.ticket_number;
     document.getElementById("dispatchSaveTicketBtn").textContent = "Update Draft";
+    markDispatchPlannerSaved();
     if (showResult) {
       renderDispatchWorkflowResult(
         `${details.ticket.ticket_number} saved as a prepared draft.`,
@@ -2877,13 +3266,21 @@ async function saveDispatchDraft({ notify = true, showResult = true } = {}) {
     if (notify) dispatchNotify(ticketId ? "Dispatch draft updated." : "Dispatch draft saved.");
     return details;
   } catch (error) {
+    restoreDispatchRoutePreviewState(routeSnapshot);
+    const operatorMessage = dispatchSafeTicketErrorMessage(error);
+    error.operatorMessage = operatorMessage;
     if (errorBox) {
-      errorBox.textContent = error.message;
+      errorBox.textContent = operatorMessage;
       errorBox.classList.remove("hidden");
     }
     throw error;
   } finally {
-    saveButton.disabled = false;
+    if (manageProcessing) {
+      dispatchPlannerOperationProcessing = false;
+      updateDispatchPlannerActions();
+    } else if (saveButton) {
+      saveButton.disabled = dispatchPlannerOperationProcessing;
+    }
   }
 }
 
@@ -2907,6 +3304,8 @@ async function retryDispatchSessionLink(ticketId) {
     );
     return;
   }
+  dispatchPlannerOperationProcessing = true;
+  updateDispatchPlannerActions();
   try {
     renderDispatchStepProgress(2, "progress", "Retrying the exact selected tracking session.");
     const details = await dispatchRequest(
@@ -2937,6 +3336,9 @@ async function retryDispatchSessionLink(ticketId) {
       `Link Failed for ticket ${selectedDispatchTicket?.ticket?.ticket_number || ticketId}: ${error.message}`,
       ticketId
     );
+  } finally {
+    dispatchPlannerOperationProcessing = false;
+    updateDispatchPlannerActions();
   }
 }
 
@@ -2956,7 +3358,8 @@ async function dispatchSelectedTruckNow() {
     return;
   }
 
-  button.disabled = true;
+  dispatchPlannerOperationProcessing = true;
+  updateDispatchPlannerActions();
   let details = selectedDispatchTicket;
   try {
     renderDispatchStepProgress(0, "progress");
@@ -2967,9 +3370,15 @@ async function dispatchSelectedTruckNow() {
         : null;
     if (!editingTicketId || !["dispatched", "in_progress"].includes(editingStatus)) {
       try {
-        details = await saveDispatchDraft({ notify: false, showResult: false });
+        details = await saveDispatchDraft({ notify: false, showResult: false, manageProcessing: false });
       } catch (error) {
-        renderDispatchStepProgress(0, "error", `Prepare Failed: ${error.message}`);
+        renderDispatchStepProgress(
+          0,
+          "error",
+          dispatchSafeTicketErrorMessage(error),
+          null,
+          { retryDispatch: true }
+        );
         return;
       }
     }
@@ -3026,9 +3435,11 @@ async function dispatchSelectedTruckNow() {
       `${ticketNumber} is in progress on ${document.getElementById("dispatchTruckName")?.value || selectedTrackingTruck.truck_id}, linked to session #${selectedSession}.`
     );
     await loadDispatchLiveData();
+    markDispatchPlannerSaved();
     dispatchNotify("Dispatch ticket issued and linked successfully.");
   } finally {
-    button.disabled = !dispatchSelectedSessionActive;
+    dispatchPlannerOperationProcessing = false;
+    updateDispatchPlannerActions();
   }
 }
 
@@ -3036,7 +3447,6 @@ function dispatchTicketQuery() {
   const parameters = new URLSearchParams();
   const values = {
     search: document.getElementById("dispatchTicketSearch")?.value.trim(),
-    date: document.getElementById("dispatchTicketDateFilter")?.value,
     truck: document.getElementById("dispatchTicketTruckFilter")?.value.trim()
   };
   Object.entries(values).forEach(([key, value]) => {
@@ -3119,6 +3529,13 @@ function setDispatchRecordTab(tabName) {
     view.classList.toggle("active", active);
     view.hidden = !active;
   });
+  const dayContext = document.getElementById("dispatchRecordDayContext");
+  if (dayContext) {
+    dayContext.textContent = nextTab === "reports"
+      ? "Completed and cancelled dispatch history"
+      : "Showing today’s active operations";
+  }
+  if (dispatchPlannerOpen) updateDispatchWorkspaceActions("records");
 }
 
 async function loadDispatchRecords() {
@@ -3130,7 +3547,8 @@ async function openDispatchTicket(ticketId) {
     const details = await dispatchRequest(getDispatchTicketApiUrl(ticketId));
     selectedDispatchTicket = details;
     renderDispatchTicketDetails(details);
-    renderDispatchPlannedRoute(details);
+    if (dispatchPlannerHasUnsavedRoute()) renderDispatchDraftOnLiveMap();
+    else renderDispatchPlannedRoute(details);
     setDispatchWorkspaceTab("plan");
     document.getElementById("dispatchCurrentPanel")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   } catch (error) {
@@ -3144,13 +3562,10 @@ async function loadDispatchReports() {
   list.innerHTML = '<div class="dispatch-route-empty">Loading dispatch reports...</div>';
 
   const parameters = new URLSearchParams();
-  const date = document.getElementById("dispatchTicketDateFilter")?.value;
   const truck = document.getElementById("dispatchTicketTruckFilter")?.value.trim();
   const search = dispatchNormalizeSearchText(
     document.getElementById("dispatchTicketSearch")?.value
   );
-  if (date) parameters.set("date_from", date);
-  if (date) parameters.set("date_to", date);
   if (truck) parameters.set("truck", truck);
 
   try {
@@ -3243,6 +3658,8 @@ async function performDispatchAction(button) {
   if (!endpoint) return;
 
   button.disabled = true;
+  dispatchPlannerOperationProcessing = true;
+  updateDispatchPlannerActions();
   try {
     const details = await dispatchRequest(
       `${getAppApiBase()}/dispatch${endpoint}`,
@@ -3257,6 +3674,8 @@ async function performDispatchAction(button) {
     dispatchNotify(error.message, "error");
   } finally {
     button.disabled = false;
+    dispatchPlannerOperationProcessing = false;
+    updateDispatchPlannerActions();
   }
 }
 
@@ -3270,8 +3689,9 @@ function handleDispatchStopEditorClick(event) {
     renumberDispatchStopRows();
     const container = document.getElementById("dispatchStopRows");
     if (container && !container.querySelector("[data-dispatch-stop-row]")) {
-      container.innerHTML = '<div class="dispatch-route-empty">No destinations added yet.</div>';
+      container.innerHTML = '<div class="dispatch-route-empty">No destinations selected yet.</div>';
     }
+    markDispatchPlannerDirty();
     renderDispatchPopularDestinations();
     renderDispatchDestinationSuggestions("results");
     renderDispatchBrowseAllDestinations();
@@ -3279,6 +3699,40 @@ function handleDispatchStopEditorClick(event) {
     return;
   }
 
+}
+
+function clearDispatchRequiredDestinations() {
+  const container = document.getElementById("dispatchStopRows");
+  if (container) {
+    container.innerHTML = '<div class="dispatch-route-empty">No destinations selected yet.</div>';
+  }
+  dispatchStopMetadata.clear();
+  renumberDispatchStopRows(false);
+  dispatchFocusedStopRow = null;
+  setDispatchAddDestinationMode(false);
+  clearDispatchDestinationPreview();
+  renderDispatchPopularDestinations();
+  renderDispatchDestinationSuggestions("results");
+  renderDispatchBrowseAllDestinations();
+  renderDispatchDraftOnLiveMap();
+  markDispatchPlannerDirty();
+}
+
+function requestClearDispatchRequiredDestinations() {
+  const destinationCount = getDispatchStopDrafts().length;
+  if (!destinationCount) return;
+  if (destinationCount === 1) {
+    clearDispatchRequiredDestinations();
+    return;
+  }
+  openDispatchPlannerConfirmation({
+    title: "Clear all destinations?",
+    message: `Remove all ${destinationCount} required destinations from this route?`,
+    cancelLabel: "Keep Destinations",
+    acceptLabel: "Clear All",
+    returnFocus: document.getElementById("dispatchClearRouteBtn"),
+    onAccept: clearDispatchRequiredDestinations
+  });
 }
 
 function setupDispatchModule() {
@@ -3291,8 +3745,8 @@ function setupDispatchModule() {
     button.addEventListener("click", () => {
       setDispatchAddDestinationMode(false);
       const action = button.dataset.dispatchWorkspaceAction;
-      if (action === "monitor") {
-        setDispatchWorkspaceTab("monitor");
+      if (action === "plan") {
+        setDispatchWorkspaceTab("plan");
       } else {
         setDispatchRecordTab(action === "reports" ? "reports" : "active");
         setDispatchWorkspaceTab("records");
@@ -3300,6 +3754,18 @@ function setupDispatchModule() {
       }
     });
   });
+  document.getElementById("dispatchPlannerBackBtn")?.addEventListener("click", () => {
+    closeDispatchPlannerDrawer();
+  });
+  document.getElementById("dispatchPlannerCloseBtn")?.addEventListener("click", () => {
+    closeDispatchPlannerDrawer();
+  });
+  document
+    .getElementById("dispatchPlannerConfirmationCancelBtn")
+    ?.addEventListener("click", () => closeDispatchPlannerConfirmation());
+  document
+    .getElementById("dispatchPlannerConfirmationAcceptBtn")
+    ?.addEventListener("click", () => closeDispatchPlannerConfirmation({ accepted: true }));
   document.getElementById("dispatchAddStopBtn")?.addEventListener("click", () => {
     if (!selectedTrackingTruck) {
       dispatchNotify("Select an active truck first.", "error");
@@ -3381,19 +3847,7 @@ function setupDispatchModule() {
     refreshDispatchRoutePreview("operator refresh");
   });
   document.getElementById("dispatchClearRouteBtn")?.addEventListener("click", () => {
-    const container = document.getElementById("dispatchStopRows");
-    if (container) {
-      container.innerHTML = '<div class="dispatch-route-empty">No destinations added yet.</div>';
-    }
-    dispatchStopMetadata.clear();
-    renumberDispatchStopRows(false);
-    dispatchFocusedStopRow = null;
-    setDispatchAddDestinationMode(false);
-    clearDispatchDestinationPreview();
-    renderDispatchPopularDestinations();
-    renderDispatchDestinationSuggestions("results");
-    renderDispatchBrowseAllDestinations();
-    renderDispatchDraftOnLiveMap();
+    requestClearDispatchRequiredDestinations();
   });
   document
     .getElementById("dispatchTicketForm")
@@ -3404,6 +3858,15 @@ function setupDispatchModule() {
   document
     .getElementById("dispatchTicketFilterBtn")
     ?.addEventListener("click", loadDispatchRecords);
+  document
+    .getElementById("dispatchTicketClearFiltersBtn")
+    ?.addEventListener("click", () => {
+      const search = document.getElementById("dispatchTicketSearch");
+      const truck = document.getElementById("dispatchTicketTruckFilter");
+      if (search) search.value = "";
+      if (truck) truck.value = "";
+      void loadDispatchRecords();
+    });
   workspace.querySelectorAll("[data-dispatch-record-tab]").forEach((button) => {
     button.addEventListener("click", () => {
       setDispatchRecordTab(button.dataset.dispatchRecordTab);
@@ -3418,6 +3881,7 @@ function setupDispatchModule() {
     dispatchFocusedStopRow = event.target.closest("[data-dispatch-stop-row]");
   });
   document.getElementById("dispatchStopRows")?.addEventListener("input", () => {
+    markDispatchPlannerDirty();
     renderDispatchDraftOnLiveMap();
   });
 
@@ -3440,6 +3904,10 @@ function setupDispatchModule() {
       void openDispatchTicket(openTicketButton.dataset.dispatchOpenTicket);
       return;
     }
+    if (event.target.closest("[data-dispatch-retry-dispatch]")) {
+      void dispatchSelectedTruckNow();
+      return;
+    }
     const retryLinkButton = event.target.closest("[data-dispatch-retry-link]");
     if (retryLinkButton) {
       void retryDispatchSessionLink(retryLinkButton.dataset.dispatchRetryLink);
@@ -3453,8 +3921,9 @@ function setupDispatchModule() {
         renumberDispatchStopRows();
         const container = document.getElementById("dispatchStopRows");
         if (container && !container.querySelector("[data-dispatch-stop-row]")) {
-          container.innerHTML = '<div class="dispatch-route-empty">No destinations added yet.</div>';
+          container.innerHTML = '<div class="dispatch-route-empty">No destinations selected yet.</div>';
         }
+        markDispatchPlannerDirty();
         renderDispatchPopularDestinations();
         renderDispatchDestinationSuggestions("results");
         renderDispatchBrowseAllDestinations();
@@ -3474,11 +3943,60 @@ function setupDispatchModule() {
     }
   });
 
+  document.addEventListener("keydown", (event) => {
+    const confirmation = document.getElementById("dispatchPlannerConfirmation");
+    const confirmationOpen = confirmation && !confirmation.classList.contains("hidden");
+    if (event.key === "Escape") {
+      if (confirmationOpen) {
+        event.preventDefault();
+        closeDispatchPlannerConfirmation();
+        return;
+      }
+      if (dispatchPlannerOpen && !dispatchPlannerOperationProcessing) {
+        event.preventDefault();
+        closeDispatchPlannerDrawer();
+      }
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const drawer = document.getElementById("dispatchPlannerDrawer");
+    const scope = confirmationOpen
+      ? confirmation
+      : dispatchPlannerOpen && dispatchPlannerUsesFullScreen()
+        ? drawer
+        : null;
+    if (!scope) return;
+    const focusable = [...scope.querySelectorAll(
+      'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    )].filter((element) => !element.hidden && element.getClientRects().length > 0);
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (!scope.contains(document.activeElement)) {
+      event.preventDefault();
+      first.focus();
+    } else if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  });
+
+  window.addEventListener("resize", () => {
+    if (!dispatchPlannerOpen) return;
+    document
+      .getElementById("dispatchPlannerDrawer")
+      ?.setAttribute("aria-modal", String(dispatchPlannerUsesFullScreen()));
+  });
+
   resetDispatchTicketForm();
   updateDispatchSelectedTruckContext(null);
   setDispatchWorkspaceTab("monitor");
   setDispatchRecordTab("active");
   renderDispatchEmptyPanel();
+  document.getElementById("dispatchPlannerDrawer").inert = true;
 }
 
 if (typeof module !== "undefined" && module.exports) {
@@ -3489,16 +4007,21 @@ if (typeof module !== "undefined" && module.exports) {
     DISPATCH_ROUTING_OFF_ROUTE_HOLD_MS,
     DISPATCH_PLANNED_ROUTE_PANE,
     DISPATCH_PLANNED_ROUTE_STYLE,
+    DISPATCH_TICKET_CREATE_FAILURE_MESSAGE,
     buildDispatchPlannedJourney,
     buildDispatchRouteLayers,
     chooseDispatchSegmentOrientation,
     dispatchCatalogStopFromDetail,
     dispatchCatalogDestinationIsSelected,
+    dispatchDraftsInOptimizedOrder,
+    dispatchManilaOperatingDay,
     dispatchRouteNeedsRecalculation,
     dispatchDistanceToRouteMeters,
     evaluateDispatchDynamicReroute,
     evaluateDispatchStopOrder,
     dispatchRoutingFailureState,
+    dispatchTicketFailureState,
+    dispatchSafeTicketErrorMessage,
     dispatchRoutingResponseIsCurrent,
     dispatchRoutingResponsePreservesOrder,
     dispatchContinuousRouteWaypoints,
