@@ -288,8 +288,9 @@ function testPersistedRoadStopRehydratesOnlyTheMatchingCatalogComponent() {
 
 function testFailureStateStaleResponsesAndActualGpsIndependence() {
   assert.deepEqual(dispatchRoutingFailureState(), {
-    message: "Route update unavailable",
+    message: "Route preview unavailable",
     preserveSelectedStops: true,
+    preservePreviousRoute: true,
     drawStraightFallback: false
   });
   const layer = {};
@@ -299,7 +300,7 @@ function testFailureStateStaleResponsesAndActualGpsIndependence() {
     path.join(__dirname, "..", "frontend", "js", "admin", "admin-dispatch.js"),
     "utf8"
   );
-  const clearFunction = source.match(/function clearDispatchPlannedRoute\(\)[\s\S]*?function createDispatchPlannedLayerGroups/);
+  const clearFunction = source.match(/function clearDispatchPlannedRoute\([^)]*\)[\s\S]*?function createDispatchPlannedLayerGroups/);
   const ticketDetailsFunction = source.match(/function renderDispatchTicketDetails\(details\)[\s\S]*?function openDispatchModal/);
   assert.ok(clearFunction);
   assert.ok(ticketDetailsFunction);

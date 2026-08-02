@@ -24,6 +24,17 @@ const DISPATCH_ROUTING_OFF_ROUTE_HOLD_MS = 15000;
 const DISPATCH_ROUTING_TIMEOUT_MS = 15000;
 const DISPATCH_ROUTING_COST_TIE_METERS = 1;
 const DISPATCH_ROUTING_MAX_2OPT_PASSES = 5;
+const DISPATCH_ROUTING_MAX_WAYPOINTS = 90;
+const DISPATCH_PLANNED_ROUTE_PANE = "dispatchPlannedRoutePane";
+const DISPATCH_PLANNED_ROUTE_STYLE = Object.freeze({
+  color: "#245c46",
+  weight: 5,
+  opacity: 0.88,
+  dashArray: "10 7",
+  pane: DISPATCH_PLANNED_ROUTE_PANE,
+  lineCap: "round",
+  lineJoin: "round"
+});
 
 let dispatchFocusedStopRow = null;
 let dispatchLocationLookupController = null;
@@ -367,6 +378,19 @@ function dispatchRouteDebug(eventName, details = {}) {
   console.debug(`[Dispatch route preview] ${eventName}`, details);
 }
 
+function dispatchSafeRoutingUrl(url, waypointCount) {
+  try {
+    const parsed = new URL(url);
+    const routePrefix = parsed.pathname.match(/^\/(route|table)\/v1\/driving\//)?.[0];
+    if (routePrefix) {
+      parsed.pathname = `${routePrefix}[${Number(waypointCount) || 0}-waypoints]`;
+    }
+    return parsed.toString();
+  } catch (_error) {
+    return "OSRM routing endpoint";
+  }
+}
+
 function dispatchCatalogDestinationIsSelected(catalogId, metadata = dispatchStopMetadata) {
   if (catalogId === null || catalogId === undefined || catalogId === "") return false;
   return [...metadata.values()].some((item) => String(item.catalog_id) === String(catalogId));
@@ -374,8 +398,9 @@ function dispatchCatalogDestinationIsSelected(catalogId, metadata = dispatchStop
 
 function dispatchRoutingFailureState() {
   return {
-    message: "Route update unavailable",
+    message: "Route preview unavailable",
     preserveSelectedStops: true,
+    preservePreviousRoute: true,
     drawStraightFallback: false
   };
 }
@@ -386,7 +411,7 @@ function dispatchRoutingResponseIsCurrent(
   currentGeneration = dispatchRoutingGeneration,
   currentLayerGroup = dispatchPlannedLayerGroup
 ) {
-  return generation === currentGeneration && layerGroup === currentLayerGroup;
+  return generation === currentGeneration && (!layerGroup || layerGroup === currentLayerGroup);
 }
 
 function dispatchRoutingResponsePreservesOrder(start, end, coordinates = []) {
@@ -687,7 +712,7 @@ function getDispatchLiveForSession(sessionId) {
   return dispatchLiveBySession[String(sessionId)] || null;
 }
 
-function clearDispatchPlannedRoute() {
+function clearDispatchPlannedRoute(reason = "explicit reset") {
   clearTimeout(dispatchRoutingRequestTimer);
   if (dispatchRoutingAbortController) {
     dispatchRoutingAbortController.abort();
@@ -699,6 +724,10 @@ function clearDispatchPlannedRoute() {
   dispatchLastSuccessfulRouteState = null;
   dispatchOptimizedRouteStops = [];
   dispatchOffRouteSince = null;
+  dispatchRouteDebug("planned route cleared", {
+    reason,
+    generation_id: dispatchRoutingGeneration
+  });
   if (truckMap) {
     [
       dispatchPlannedConnectorLayerGroup,
@@ -719,13 +748,19 @@ function clearDispatchPlannedRoute() {
 
 function createDispatchPlannedLayerGroups(options = {}) {
   const groups = {
-    root: L.layerGroup(),
     connectors: L.layerGroup(),
     geometry: L.layerGroup(),
     destinations: L.layerGroup(),
     wmo: L.layerGroup(),
     start: L.layerGroup()
   };
+  groups.root = L.layerGroup([
+    groups.geometry,
+    groups.connectors,
+    groups.destinations,
+    groups.wmo,
+    groups.start
+  ]);
   if (options.detached) return groups;
   activateDispatchPlannedLayerGroups(groups);
   return groups;
@@ -747,7 +782,7 @@ function activateDispatchPlannedLayerGroups(groups) {
   dispatchDestinationMarkerLayerGroup = groups.destinations;
   dispatchWmoMarkerLayerGroup = groups.wmo;
   dispatchStartMarkerLayerGroup = groups.start;
-  Object.values(groups).forEach((group) => group.addTo(truckMap));
+  groups.root.addTo(truckMap);
 }
 
 function clearDispatchTrackingSelection() {
@@ -755,7 +790,7 @@ function clearDispatchTrackingSelection() {
   dispatchPendingLinkTicketId = null;
   dispatchSelectedSessionActive = false;
   setDispatchAddDestinationMode(false);
-  clearDispatchPlannedRoute();
+  clearDispatchPlannedRoute("tracking selection cleared");
   resetDispatchTicketForm();
   updateDispatchSelectedTruckContext(null);
   renderDispatchEmptyPanel();
@@ -869,7 +904,9 @@ function updateDispatchRoutePreviewNotice(status = "idle") {
   }
   notice.classList.add(normalizedStatus);
   notice.innerHTML = normalizedStatus === "loading"
-    ? "Updating route&hellip;"
+    ? dispatchLastSuccessfulRouteCoordinates.length
+      ? "Updating route&hellip;"
+      : "Calculating route&hellip;"
     : normalizedStatus === "ready"
       ? "Route ready"
       : `${dispatchEscape(dispatchRoutingFailureState().message)} <button type="button" data-dispatch-route-retry>Retry Route</button>`;
@@ -879,6 +916,10 @@ function dispatchRoutingCacheKey(start, end) {
   return [start.lat, start.lng, end.lat, end.lng]
     .map((value) => Number(value).toFixed(5))
     .join(":");
+}
+
+function dispatchRoutingWaypointsCacheKey(waypoints = []) {
+  return waypoints.map((point) => `${Number(point.lat).toFixed(5)},${Number(point.lng).toFixed(5)}`).join(">");
 }
 
 function dispatchRoutingCostKey(start, end) {
@@ -892,6 +933,12 @@ function dispatchRoutingCostStore() {
   return dispatchRoutingCostStore.localCache;
 }
 
+function dispatchRoutingRouteStore() {
+  if (typeof dispatchRoutingCache !== "undefined") return dispatchRoutingCache;
+  if (!dispatchRoutingRouteStore.localCache) dispatchRoutingRouteStore.localCache = new Map();
+  return dispatchRoutingRouteStore.localCache;
+}
+
 function dispatchUniqueRoutingPoints(points = []) {
   const unique = new Map();
   points.filter(Boolean).forEach((point) => {
@@ -899,6 +946,47 @@ function dispatchUniqueRoutingPoints(points = []) {
     if (!unique.has(key)) unique.set(key, point);
   });
   return [...unique.values()];
+}
+
+function dispatchContinuousRouteWaypoints(startPoint, journey, wmoPoint) {
+  const ordered = [
+    startPoint,
+    ...(journey?.plannedStops || []).flatMap(({ geometry }) => geometry || []),
+    wmoPoint
+  ].map((point) => dispatchPoint(
+    point?.latitude ?? point?.lat,
+    point?.longitude ?? point?.lng ?? point?.lon
+  )).filter(Boolean);
+  const waypoints = ordered.filter((point, index) =>
+    index === 0 || dispatchDistanceMeters(point, ordered[index - 1]) >= 0.1
+  );
+  if (waypoints.length < 2) throw new Error("The planned route requires at least two usable waypoints.");
+  if (waypoints.length > DISPATCH_ROUTING_MAX_WAYPOINTS) {
+    throw new Error(`The planned route exceeds the ${DISPATCH_ROUTING_MAX_WAYPOINTS}-waypoint routing limit.`);
+  }
+  return waypoints;
+}
+
+function parseDispatchOsrmRoutePayload(payload, waypoints = []) {
+  const routes = Array.isArray(payload?.routes) ? payload.routes : [];
+  const coordinates = routes[0]?.geometry?.coordinates;
+  if (!Array.isArray(coordinates) || coordinates.length < 2) {
+    throw new Error("No drivable road route was returned.");
+  }
+  const route = coordinates
+    .map((point) => [Number(point?.[1]), Number(point?.[0])])
+    .filter((point) => point.every(Number.isFinite));
+  if (route.length < 2) throw new Error("The road route contained no usable coordinates.");
+  const start = waypoints[0];
+  const end = waypoints.at(-1);
+  if (!dispatchRoutingResponsePreservesOrder(start, end, route)) {
+    throw new Error("The routing response did not preserve connector waypoint order.");
+  }
+  return {
+    coordinates: route,
+    routeCount: routes.length,
+    distance: Number(routes[0]?.distance)
+  };
 }
 
 function dispatchOptimizationPoints(startPoint, wmoPoint, stops = []) {
@@ -937,6 +1025,11 @@ async function requestDispatchRoadCostMatrix(points, signal, options = {}) {
   const requestController = new AbortController();
   const timeoutMs = Number(options.timeoutMs) || DISPATCH_ROUTING_TIMEOUT_MS;
   const fetchImplementation = options.fetchImplementation || fetch;
+  dispatchRouteDebug("OSRM cost request", {
+    url: dispatchSafeRoutingUrl(url, uniquePoints.length),
+    waypoint_count: uniquePoints.length,
+    generation_id: options.generation ?? null
+  });
   let timedOut = false;
   const cancelFromParent = () => requestController.abort();
   if (signal?.aborted) {
@@ -963,6 +1056,11 @@ async function requestDispatchRoadCostMatrix(points, signal, options = {}) {
     clearTimeout(timeoutId);
     signal?.removeEventListener("abort", cancelFromParent);
   }
+  dispatchRouteDebug("OSRM cost response", {
+    http_status: response.status,
+    waypoint_count: uniquePoints.length,
+    generation_id: options.generation ?? null
+  });
   if (!response.ok) throw new Error(`OSRM route-cost matrix request failed (${response.status}).`);
   const payload = await response.json();
   if (!Array.isArray(payload?.distances) || payload.distances.length !== uniquePoints.length) {
@@ -982,16 +1080,40 @@ async function requestDispatchRoadCostMatrix(points, signal, options = {}) {
 }
 
 async function requestDispatchRoadRoute(start, end, signal, options = {}) {
-  const key = dispatchRoutingCacheKey(start, end);
-  if (dispatchRoutingCache.has(key)) {
-    const cachedRoute = dispatchRoutingCache.get(key);
+  return requestDispatchRoadJourney([start, end], signal, options);
+}
+
+async function requestDispatchRoadJourney(waypoints, signal, options = {}) {
+  const orderedWaypoints = (waypoints || []).map((point) =>
+    dispatchPoint(point?.latitude ?? point?.lat, point?.longitude ?? point?.lng ?? point?.lon)
+  ).filter(Boolean);
+  if (orderedWaypoints.length < 2) {
+    throw new Error("The planned route requires at least two usable waypoints.");
+  }
+  if (orderedWaypoints.length > DISPATCH_ROUTING_MAX_WAYPOINTS) {
+    throw new Error(`The planned route exceeds the ${DISPATCH_ROUTING_MAX_WAYPOINTS}-waypoint routing limit.`);
+  }
+  const key = dispatchRoutingWaypointsCacheKey(orderedWaypoints);
+  const routeStore = dispatchRoutingRouteStore();
+  if (routeStore.has(key)) {
+    const cachedRoute = routeStore.get(key);
+    dispatchRouteDebug("OSRM route cache hit", {
+      waypoint_count: orderedWaypoints.length,
+      coordinate_count: cachedRoute.length,
+      generation_id: options.generation ?? null
+    });
     return cachedRoute;
   }
-  const coordinatePair = `${start.lng},${start.lat};${end.lng},${end.lat}`;
-  const url = `https://router.project-osrm.org/route/v1/driving/${coordinatePair}?alternatives=false&steps=false&overview=full&geometries=geojson`;
+  const coordinateList = orderedWaypoints.map((point) => `${point.lng},${point.lat}`).join(";");
+  const url = `https://router.project-osrm.org/route/v1/driving/${coordinateList}?alternatives=false&steps=false&overview=full&geometries=geojson`;
   const requestController = new AbortController();
   const timeoutMs = Number(options.timeoutMs) || DISPATCH_ROUTING_TIMEOUT_MS;
   const fetchImplementation = options.fetchImplementation || fetch;
+  dispatchRouteDebug("OSRM route request", {
+    url: dispatchSafeRoutingUrl(url, orderedWaypoints.length),
+    waypoint_count: orderedWaypoints.length,
+    generation_id: options.generation ?? null
+  });
   let timedOut = false;
   const cancelFromParent = () => requestController.abort();
   if (signal?.aborted) {
@@ -1018,41 +1140,40 @@ async function requestDispatchRoadRoute(start, end, signal, options = {}) {
     clearTimeout(timeoutId);
     signal?.removeEventListener("abort", cancelFromParent);
   }
-  if (!response.ok) throw new Error(`OSRM route request failed (${response.status}).`);
-  const payload = await response.json();
-  const coordinates = payload?.routes?.[0]?.geometry?.coordinates;
-  if (!Array.isArray(coordinates) || coordinates.length < 2) {
-    throw new Error("No drivable road route was returned.");
-  }
-  const route = coordinates
-    .map((point) => [Number(point[1]), Number(point[0])])
-    .filter((point) => point.every(Number.isFinite));
-  if (route.length < 2) throw new Error("The road route contained no usable coordinates.");
-  if (!dispatchRoutingResponsePreservesOrder(start, end, route)) {
-    throw new Error("The routing response did not preserve connector waypoint order.");
-  }
-  const routedDistance = Number(payload?.routes?.[0]?.distance);
-  dispatchRoutingCostStore().set(
-    dispatchRoutingCostKey(start, end),
-    Number.isFinite(routedDistance) ? routedDistance : dispatchPolylineDistanceMeters(
-      route.map(([lat, lng]) => ({ lat, lng }))
-    )
-  );
-  dispatchRoutingCache.set(key, route);
-  return route;
-}
-
-async function requestDispatchConnectorRoutes(legs, signal) {
-  const routedLegs = [];
-  for (const leg of legs) {
-    const coordinates = await requestDispatchRoadRoute(leg.start, leg.end, signal);
-    routedLegs.push({ leg, coordinates });
-    dispatchRouteDebug("route response coordinate count", {
-      connector_order: leg.connector_order || null,
-      coordinate_count: coordinates.length
+  if (!response.ok) {
+    dispatchRouteDebug("OSRM route response", {
+      http_status: response.status,
+      route_count: 0,
+      coordinate_count: 0,
+      waypoint_count: orderedWaypoints.length,
+      generation_id: options.generation ?? null
     });
+    throw new Error(`OSRM route request failed (${response.status}).`);
   }
-  return routedLegs;
+  const payload = await response.json();
+  const responseRouteCount = Array.isArray(payload?.routes) ? payload.routes.length : 0;
+  const responseCoordinateCount = Array.isArray(payload?.routes?.[0]?.geometry?.coordinates)
+    ? payload.routes[0].geometry.coordinates.length
+    : 0;
+  dispatchRouteDebug("OSRM route response", {
+    http_status: response.status,
+    route_count: responseRouteCount,
+    coordinate_count: responseCoordinateCount,
+    waypoint_count: orderedWaypoints.length,
+    generation_id: options.generation ?? null
+  });
+  const parsed = parseDispatchOsrmRoutePayload(payload, orderedWaypoints);
+  const route = parsed.coordinates;
+  if (orderedWaypoints.length === 2) {
+    dispatchRoutingCostStore().set(
+      dispatchRoutingCostKey(orderedWaypoints[0], orderedWaypoints[1]),
+      Number.isFinite(parsed.distance) ? parsed.distance : dispatchPolylineDistanceMeters(
+        route.map(([lat, lng]) => ({ lat, lng }))
+      )
+    );
+  }
+  routeStore.set(key, route);
+  return route;
 }
 
 function splitDispatchOperationalStops(stops = []) {
@@ -1243,28 +1364,34 @@ function renderDispatchPlannedRoute(details, options = {}) {
       }
       const costLookup = await requestDispatchRoadCostMatrix(
         dispatchOptimizationPoints(startPoint, wmo, items),
-        controller.signal
+        controller.signal,
+        { generation }
       );
       const journey = buildDispatchPlannedJourney(startPoint, wmo, items, {
         costLookup,
         lockedPrefixCount: groups.currentStop ? 1 : 0
       });
       if (!journey.plannedStops.length) throw new Error("No complete optimized remaining route could be calculated.");
-      const routedLegs = await requestDispatchConnectorRoutes(journey.connectorLegs, controller.signal);
-      if (generation !== dispatchRoutingGeneration || controller.signal.aborted) return;
+      const routeWaypoints = dispatchContinuousRouteWaypoints(startPoint, journey, wmo);
+      const routeCoordinates = await requestDispatchRoadJourney(
+        routeWaypoints,
+        controller.signal,
+        { generation }
+      );
+      if (!dispatchRoutingResponseIsCurrent(generation) || controller.signal.aborted) {
+        dispatchRouteDebug("stale route response rejected", {
+          response_generation_id: generation,
+          current_generation_id: dispatchRoutingGeneration,
+          waypoint_count: routeWaypoints.length
+        });
+        return;
+      }
 
       const currentStopId = groups.currentStop?.id || null;
-      const layers = buildDispatchRouteLayers(journey, routedLegs, startPoint, wmo, {
+      const layers = buildDispatchRouteLayers(journey, routeCoordinates, startPoint, wmo, {
         showTruckMarker: Boolean(reliableStart),
         currentStopId,
-        orderOffset: groups.completedStops.length,
-        colorForLeg: (leg) => {
-          const destinationStop = journey.plannedStops[leg.connector_order - 1]?.stop || null;
-          return dispatchSegmentColor(
-            destinationStop,
-            destinationStop && Number(destinationStop.id) === Number(currentStopId)
-          );
-        }
+        orderOffset: groups.completedStops.length
       });
       renderDispatchTerminalStopMarkers(layers, groups.completedStops, groups.skippedStops);
       activateDispatchPlannedLayerGroups(layers);
@@ -1275,15 +1402,7 @@ function renderDispatchPlannedRoute(details, options = {}) {
           stop_order: groups.completedStops.length + index + 1
         }))
       ];
-      dispatchLastSuccessfulRouteCoordinates = journey.plannedStops.flatMap(
-        ({ geometry }, index) => [
-          ...(routedLegs[index]?.coordinates || []).map(([lat, lng]) => ({ lat, lng })),
-          ...geometry
-        ]
-      );
-      dispatchLastSuccessfulRouteCoordinates.push(
-        ...(routedLegs.at(-1)?.coordinates || []).map(([lat, lng]) => ({ lat, lng }))
-      );
+      dispatchLastSuccessfulRouteCoordinates = routeCoordinates.map(([lat, lng]) => ({ lat, lng }));
       dispatchLastSuccessfulRouteState = {
         journey,
         completedStops: groups.completedStops,
@@ -1294,9 +1413,20 @@ function renderDispatchPlannedRoute(details, options = {}) {
       dispatchLastRoutingStart = startPoint;
       dispatchOffRouteSince = null;
       updateDispatchRoutePreviewNotice("ready");
+      dispatchRouteDebug("planned route rendered", {
+        generation_id: generation,
+        waypoint_count: routeWaypoints.length,
+        coordinate_count: routeCoordinates.length,
+        render_success: true
+      });
     } catch (error) {
       if (error.name === "AbortError") return;
       console.warn("Dispatch remaining-route update unavailable:", error);
+      dispatchRouteDebug("planned route unavailable", {
+        generation_id: generation,
+        reason: error.name || "routing_error",
+        previous_route_retained: Boolean(dispatchPlannedLayerGroup)
+      });
       if (!dispatchPlannedLayerGroup) {
         renderDispatchSelectionFallback(items, startPoint, wmo, reliableStart);
       }
@@ -1623,7 +1753,10 @@ function applyDispatchOptimizedDraftOrder(plannedStops) {
   }));
 }
 
-function buildDispatchRouteLayers(journey, routedLegs, startPoint, wmoPoint, options = {}) {
+function buildDispatchRouteLayers(journey, routeCoordinates, startPoint, wmoPoint, options = {}) {
+  if (!Array.isArray(routeCoordinates) || routeCoordinates.length < 2) {
+    throw new Error("The planned route geometry is empty.");
+  }
   const layers = createDispatchPlannedLayerGroups({ detached: true });
   const currentStopId = options.currentStopId;
   L.marker([wmoPoint.lat, wmoPoint.lng], { icon: dispatchMarkerIcon("W", "wmo") })
@@ -1639,9 +1772,9 @@ function buildDispatchRouteLayers(journey, routedLegs, startPoint, wmoPoint, opt
     if (geometry.length > 1) {
       L.polyline(geometry.map((point) => [point.lat, point.lng]), {
         color: dispatchSegmentColor(stop, currentStopId && Number(stop.id) === Number(currentStopId)),
-        weight: 5,
-        opacity: 0.9,
-        dashArray: "10 6"
+        weight: 4,
+        opacity: 0.5,
+        dashArray: "4 8"
       })
         .bindTooltip(`${stop.location_name || `Stop ${optimizedOrder}`} - verified OSM geometry`)
         .addTo(layers.geometry);
@@ -1659,16 +1792,9 @@ function buildDispatchRouteLayers(journey, routedLegs, startPoint, wmoPoint, opt
       .bindTooltip(stop.location_name || `Stop ${optimizedOrder}`)
       .addTo(layers.destinations);
   });
-  routedLegs.forEach(({ leg, coordinates }) => {
-    L.polyline(coordinates, {
-      color: typeof options.colorForLeg === "function" ? options.colorForLeg(leg) : "#51645b",
-      weight: 4,
-      opacity: 0.82,
-      dashArray: "8 7"
-    })
-      .bindTooltip("Road-following planned connection")
-      .addTo(layers.connectors);
-  });
+  L.polyline(routeCoordinates, DISPATCH_PLANNED_ROUTE_STYLE)
+    .bindTooltip("Continuous road-following planned route")
+    .addTo(layers.connectors);
   return layers;
 }
 
@@ -1705,7 +1831,7 @@ function renderDispatchDraftOnLiveMap(options = {}) {
     (stop) => Number.isFinite(stop.latitude) && Number.isFinite(stop.longitude)
   );
   if (!stops.length) {
-    clearDispatchPlannedRoute();
+    clearDispatchPlannedRoute("no selected destinations");
     dispatchLastRoutingSignature = "";
     dispatchPendingRoutingSignature = "";
     dispatchLastRoutingStart = null;
@@ -1746,33 +1872,44 @@ function renderDispatchDraftOnLiveMap(options = {}) {
     try {
       const costLookup = await requestDispatchRoadCostMatrix(
         dispatchOptimizationPoints(startPoint, wmo, items),
-        controller.signal
+        controller.signal,
+        { generation }
       );
       const journey = buildDispatchPlannedJourney(startPoint, wmo, items, { costLookup });
       if (!journey.plannedStops.length) throw new Error("No complete optimized route could be calculated.");
-      const routedLegs = await requestDispatchConnectorRoutes(journey.connectorLegs, controller.signal);
-      if (generation !== dispatchRoutingGeneration || controller.signal.aborted) return;
+      const routeWaypoints = dispatchContinuousRouteWaypoints(startPoint, journey, wmo);
+      const routeCoordinates = await requestDispatchRoadJourney(
+        routeWaypoints,
+        controller.signal,
+        { generation }
+      );
+      if (!dispatchRoutingResponseIsCurrent(generation) || controller.signal.aborted) {
+        dispatchRouteDebug("stale route response rejected", {
+          response_generation_id: generation,
+          current_generation_id: dispatchRoutingGeneration,
+          waypoint_count: routeWaypoints.length
+        });
+        return;
+      }
 
       applyDispatchOptimizedDraftOrder(journey.plannedStops);
-      const layers = buildDispatchRouteLayers(journey, routedLegs, startPoint, wmo, {
+      const layers = buildDispatchRouteLayers(journey, routeCoordinates, startPoint, wmo, {
         showTruckMarker: Boolean(reliableStart)
       });
       activateDispatchPlannedLayerGroups(layers);
-      dispatchLastSuccessfulRouteCoordinates = journey.plannedStops.flatMap(
-        ({ geometry }, index) => [
-          ...(routedLegs[index]?.coordinates || []).map(([lat, lng]) => ({ lat, lng })),
-          ...geometry
-        ]
-      );
-      dispatchLastSuccessfulRouteCoordinates.push(
-        ...(routedLegs.at(-1)?.coordinates || []).map(([lat, lng]) => ({ lat, lng }))
-      );
+      dispatchLastSuccessfulRouteCoordinates = routeCoordinates.map(([lat, lng]) => ({ lat, lng }));
       dispatchLastSuccessfulRouteState = journey;
       dispatchLastRoutingSignature = signature;
       dispatchLastRoutingStart = startPoint;
       dispatchOffRouteSince = null;
       dispatchRouteErrorCatalogIds.clear();
       updateDispatchRoutePreviewNotice("ready");
+      dispatchRouteDebug("planned route rendered", {
+        generation_id: generation,
+        waypoint_count: routeWaypoints.length,
+        coordinate_count: routeCoordinates.length,
+        render_success: true
+      });
       dispatchRouteDebug("optimized journey", {
         trigger: reroute.reason,
         optimized_stops: journey.plannedStops.map(({ metadata, orientation }, index) => ({
@@ -1798,6 +1935,11 @@ function renderDispatchDraftOnLiveMap(options = {}) {
     } catch (error) {
       if (error.name === "AbortError") return;
       console.warn("Dispatch route update unavailable:", error);
+      dispatchRouteDebug("planned route unavailable", {
+        generation_id: generation,
+        reason: error.name || "routing_error",
+        previous_route_retained: Boolean(dispatchPlannedLayerGroup)
+      });
       items.map(({ metadata }) => metadata?.catalog_id).filter(Boolean)
         .forEach((id) => dispatchRouteErrorCatalogIds.add(String(id)));
       renderDispatchSelectionFallback(items, startPoint, wmo, reliableStart);
@@ -3345,7 +3487,10 @@ if (typeof module !== "undefined" && module.exports) {
     DISPATCH_ROUTING_MOVEMENT_METERS,
     DISPATCH_ROUTING_OFF_ROUTE_METERS,
     DISPATCH_ROUTING_OFF_ROUTE_HOLD_MS,
+    DISPATCH_PLANNED_ROUTE_PANE,
+    DISPATCH_PLANNED_ROUTE_STYLE,
     buildDispatchPlannedJourney,
+    buildDispatchRouteLayers,
     chooseDispatchSegmentOrientation,
     dispatchCatalogStopFromDetail,
     dispatchCatalogDestinationIsSelected,
@@ -3356,12 +3501,15 @@ if (typeof module !== "undefined" && module.exports) {
     dispatchRoutingFailureState,
     dispatchRoutingResponseIsCurrent,
     dispatchRoutingResponsePreservesOrder,
+    dispatchContinuousRouteWaypoints,
     dispatchSegmentColor,
     dispatchStopOrientationCandidates,
     dispatchWmoStopOrder,
     splitDispatchOperationalStops,
     matchDispatchCatalogCandidateForStop,
+    parseDispatchOsrmRoutePayload,
     requestDispatchRoadCostMatrix,
+    requestDispatchRoadJourney,
     requestDispatchRoadRoute
   };
 }
