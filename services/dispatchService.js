@@ -66,6 +66,16 @@ class DispatchDestinationCatalogUnavailableError extends DispatchServiceError {
   }
 }
 
+function duplicateDispatchTicketNumberError(cause = null) {
+  const error = new DispatchServiceError(
+    "This ticket number is already in use.",
+    409,
+    "DISPATCH_TICKET_NUMBER_DUPLICATE"
+  );
+  error.cause = cause;
+  return error;
+}
+
 function isDestinationCatalogTableMissingError(error) {
   if (!error) return false;
   if (error.code === "DISPATCH_DESTINATION_CATALOG_SETUP_REQUIRED") return true;
@@ -184,6 +194,21 @@ function dateOnly(value, label) {
   return text;
 }
 
+function currentManilaDate(now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(now);
+  const values = Object.fromEntries(
+    parts
+      .filter((part) => ["year", "month", "day"].includes(part.type))
+      .map((part) => [part.type, part.value])
+  );
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
 function normalizeActor(payload = {}, fallbackType = "web_user") {
   return {
     actor_type: cleanText(payload.actor_type || payload.actorType || fallbackType, 40),
@@ -207,6 +232,10 @@ function haversineMeters(latitudeA, longitudeA, latitudeB, longitudeB) {
 }
 
 function validateTicketInput(payload = {}, options = {}) {
+  const ticketNumber = cleanText(
+    payload.ticket_number ?? payload.ticketNumber,
+    100
+  );
   const truckId = cleanText(payload.truck_id || payload.truckId, 100);
   const truckName = cleanText(
     payload.truck_name_snapshot || payload.truckNameSnapshot,
@@ -214,14 +243,24 @@ function validateTicketInput(payload = {}, options = {}) {
   );
   const routeName = cleanText(payload.route_name || payload.routeName, 255);
 
+  if (options.requireTicketNumber && !ticketNumber) {
+    throw new DispatchServiceError(
+      "Enter the ticket number to continue.",
+      400,
+      "DISPATCH_TICKET_NUMBER_REQUIRED"
+    );
+  }
   if (!truckId) throw new DispatchServiceError("truck_id is required");
   if (!truckName) {
     throw new DispatchServiceError("truck_name_snapshot is required");
   }
   if (!routeName) throw new DispatchServiceError("route_name is required");
 
+  const authoritativeNow = typeof options.now === "function"
+    ? options.now()
+    : options.now;
   const dispatchDate = dateOnly(
-    payload.dispatch_date || payload.dispatchDate,
+    options.dispatchDate || currentManilaDate(authoritativeNow),
     "dispatch_date"
   );
   const scheduledStartAt = optionalDateTime(
@@ -331,6 +370,7 @@ function validateTicketInput(payload = {}, options = {}) {
   }
 
   return {
+    ticket_number: ticketNumber || null,
     truck_id: truckId,
     truck_name_snapshot: truckName,
     assigned_personnel_id: optionalId(
@@ -364,8 +404,9 @@ function validateTicketInput(payload = {}, options = {}) {
 }
 
 class DispatchService {
-  constructor(pool = db) {
+  constructor(pool = db, options = {}) {
     this.db = pool;
+    this.now = typeof options.now === "function" ? options.now : () => new Date();
   }
 
   async withTransaction(work) {
@@ -403,7 +444,7 @@ class DispatchService {
       `
         INSERT INTO dispatch_ticket_sequences (
           dispatch_year,
-          last_value,
+          \`last_value\`,
           updated_at
         )
         VALUES (?, 0, NOW())
@@ -414,7 +455,7 @@ class DispatchService {
 
     const [sequenceRows] = await connection.query(
       `
-        SELECT last_value
+        SELECT \`last_value\`
         FROM dispatch_ticket_sequences
         WHERE dispatch_year = ?
         FOR UPDATE
@@ -434,7 +475,7 @@ class DispatchService {
     await connection.query(
       `
         UPDATE dispatch_ticket_sequences
-        SET last_value = ?,
+        SET \`last_value\` = ?,
             updated_at = NOW()
         WHERE dispatch_year = ?
       `,
@@ -727,50 +768,124 @@ class DispatchService {
     return rows[0];
   }
 
+  async getSelectedActiveTrackingSession(connection, trackingSessionId, truckId) {
+    const sessionId = requiredId(trackingSessionId, "tracking_session_id");
+    const [rows] = await connection.query(
+      `
+        SELECT id, truck_id, enforcer_id, enforcer_name, session_status
+        FROM truck_tracking_sessions
+        WHERE id = ?
+        LIMIT 1
+        FOR UPDATE
+      `,
+      [sessionId]
+    );
+    if (!rows.length) {
+      throw new DispatchServiceError(
+        "The selected active tracking session was not found.",
+        404,
+        "ACTIVE_TRACKING_SESSION_NOT_FOUND"
+      );
+    }
+
+    const session = rows[0];
+    if (String(session.session_status || "").toLowerCase() !== "active") {
+      throw new DispatchServiceError(
+        "The selected tracking session is no longer active.",
+        409,
+        "ACTIVE_TRACKING_SESSION_ENDED"
+      );
+    }
+    if (String(session.truck_id) !== String(truckId)) {
+      throw new DispatchServiceError(
+        "The selected active tracking session does not match the truck.",
+        409,
+        "DISPATCH_TRUCK_MISMATCH"
+      );
+    }
+    return session;
+  }
+
   async createTicket(payload = {}) {
-    const ticketData = validateTicketInput(payload, { includeCreator: true });
+    const ticketData = validateTicketInput(payload, {
+      includeCreator: true,
+      requireTicketNumber: true,
+      now: this.now()
+    });
 
     const ticketId = await this.withTransaction(async (connection) => {
-      const dispatchYear = Number(ticketData.dispatch_date.slice(0, 4));
-      const ticketNumber = await this.generateTicketNumber(connection, dispatchYear);
-      const [ticketResult] = await connection.query(
-        `
-          INSERT INTO dispatch_tickets (
-            ticket_number,
-            truck_id,
-            truck_name_snapshot,
-            assigned_personnel_id,
-            assigned_personnel_name,
-            dispatch_date,
-            scheduled_start_at,
-            expected_return_at,
-            route_name,
-            route_description,
-            status,
-            notes,
-            created_by_user_id,
-            created_by_name,
-            created_at,
-            updated_at
-          )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'prepared', ?, ?, ?, NOW(), NOW())
-        `,
-        [
-          ticketNumber,
-          ticketData.truck_id,
-          ticketData.truck_name_snapshot,
-          ticketData.assigned_personnel_id,
-          ticketData.assigned_personnel_name,
-          ticketData.dispatch_date,
-          ticketData.scheduled_start_at,
-          ticketData.expected_return_at,
-          ticketData.route_name,
-          ticketData.route_description,
-          ticketData.notes,
-          ticketData.created_by_user_id,
-          ticketData.created_by_name
-        ]
+      const selectedSession = await this.getSelectedActiveTrackingSession(
+        connection,
+        payload.tracking_session_id || payload.trackingSessionId,
+        ticketData.truck_id
       );
+      ticketData.assigned_personnel_id = optionalId(
+        selectedSession.enforcer_id,
+        "assigned_personnel_id"
+      );
+      ticketData.assigned_personnel_name = nullableText(
+        selectedSession.enforcer_name,
+        255
+      );
+
+      const [duplicateRows] = await connection.query(
+        `
+          SELECT id
+          FROM dispatch_tickets
+          WHERE ticket_number = ?
+          LIMIT 1
+          FOR UPDATE
+        `,
+        [ticketData.ticket_number]
+      );
+      if (duplicateRows.length) throw duplicateDispatchTicketNumberError();
+
+      let ticketResult;
+      try {
+        [ticketResult] = await connection.query(
+          `
+            INSERT INTO dispatch_tickets (
+              ticket_number,
+              truck_id,
+              truck_name_snapshot,
+              assigned_personnel_id,
+              assigned_personnel_name,
+              dispatch_date,
+              scheduled_start_at,
+              expected_return_at,
+              route_name,
+              route_description,
+              status,
+              notes,
+              created_by_user_id,
+              created_by_name,
+              created_at,
+              updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'prepared', ?, ?, ?, NOW(), NOW())
+          `,
+          [
+            ticketData.ticket_number,
+            ticketData.truck_id,
+            ticketData.truck_name_snapshot,
+            ticketData.assigned_personnel_id,
+            ticketData.assigned_personnel_name,
+            ticketData.dispatch_date,
+            ticketData.scheduled_start_at,
+            ticketData.expected_return_at,
+            ticketData.route_name,
+            ticketData.route_description,
+            ticketData.notes,
+            ticketData.created_by_user_id,
+            ticketData.created_by_name
+          ]
+        );
+      } catch (error) {
+        if (error?.code === "ER_DUP_ENTRY") {
+          throw duplicateDispatchTicketNumberError(error);
+        }
+        throw error;
+      }
 
       await this.insertStops(connection, ticketResult.insertId, ticketData.stops);
       await this.insertEvent(connection, {
@@ -808,19 +923,14 @@ class DispatchService {
     }
 
     if (filters.truck) {
-      clauses.push("(dt.truck_id = ? OR dt.truck_name_snapshot LIKE ?)");
-      parameters.push(
-        cleanText(filters.truck, 100),
-        `%${cleanText(filters.truck, 100)}%`
-      );
+      clauses.push("dt.truck_id LIKE ?");
+      parameters.push(`%${cleanText(filters.truck, 100)}%`);
     }
 
-    if (filters.search) {
-      const search = `%${cleanText(filters.search, 255)}%`;
-      clauses.push(
-        "(dt.ticket_number LIKE ? OR dt.route_name LIKE ? OR dt.assigned_personnel_name LIKE ?)"
-      );
-      parameters.push(search, search, search);
+    const ticketFilter = filters.ticket ?? filters.search;
+    if (ticketFilter) {
+      clauses.push("dt.ticket_number LIKE ?");
+      parameters.push(`%${cleanText(ticketFilter, 100)}%`);
     }
 
     const [rows] = await this.query(
@@ -830,8 +940,6 @@ class DispatchService {
           dt.ticket_number,
           dt.truck_id,
           dt.truck_name_snapshot,
-          dt.assigned_personnel_id,
-          dt.assigned_personnel_name,
           dt.dispatch_date,
           dt.scheduled_start_at,
           dt.expected_return_at,
@@ -839,6 +947,8 @@ class DispatchService {
           dt.status,
           dt.actual_start_at,
           dt.actual_end_at,
+          dt.issued_at,
+          dt.created_at,
           dt.updated_at,
           COUNT(drs.id) AS total_stops,
           SUM(CASE WHEN drs.stop_status = 'completed' THEN 1 ELSE 0 END) AS completed_stops,
@@ -848,7 +958,7 @@ class DispatchService {
           ON drs.dispatch_ticket_id = dt.id
         ${clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""}
         GROUP BY dt.id
-        ORDER BY dt.dispatch_date DESC, dt.created_at DESC, dt.id DESC
+        ORDER BY COALESCE(dt.issued_at, dt.created_at) DESC, dt.id DESC
       `,
       parameters
     );
@@ -953,7 +1063,7 @@ class DispatchService {
   }
 
   async updatePreparedTicket(ticketId, payload = {}) {
-    const ticketData = validateTicketInput(payload);
+    const ticketData = validateTicketInput(payload, { now: this.now() });
 
     await this.withTransaction(async (connection) => {
       const ticket = await this.getTicketForUpdate(connection, ticketId);
@@ -964,6 +1074,7 @@ class DispatchService {
           "DISPATCH_TICKET_NOT_EDITABLE"
         );
       }
+      ticketData.dispatch_date = ticket.dispatch_date;
 
       await connection.query(
         `
@@ -2186,6 +2297,7 @@ module.exports.isDestinationCatalogTableMissingError =
 module.exports.normalizeDispatchError = normalizeDispatchError;
 module.exports.normalizeDestinationSearchText = normalizeDestinationSearchText;
 module.exports.destinationLimit = destinationLimit;
+module.exports.currentManilaDate = currentManilaDate;
 module.exports.DESTINATION_TYPES = DESTINATION_TYPES;
 module.exports.TICKET_STATUSES = TICKET_STATUSES;
 module.exports.STOP_STATUSES = STOP_STATUSES;

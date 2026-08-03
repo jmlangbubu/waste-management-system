@@ -89,6 +89,13 @@ let dispatchOptimizedRouteStops = [];
 let dispatchLastSuccessfulRouteCoordinates = [];
 let dispatchLastSuccessfulRouteState = null;
 let dispatchOffRouteSince = null;
+let dispatchPlannerOpen = false;
+let dispatchPlannerDirty = false;
+let dispatchPlannerDirtySessionId = null;
+let dispatchPlannerTriggerElement = null;
+let dispatchPlannerPendingConfirmation = null;
+let dispatchPlannerOperationProcessing = false;
+let dispatchLastRouteDistanceMeters = null;
 
 // Charts
 let wasteTrendChartInstance = null;

@@ -635,6 +635,7 @@ function renderActiveTruckList(trucks) {
     const statusMeta = getTrackingStatusMeta(truck);
     const lastUpdated = getTruckLastUpdateValue(truck);
     const truckName = truck.truck_name || truck.truck_display_name || `Truck ${truck.truck_id || "-"}`;
+    const truckIdentifier = truck.truck_id || truckName;
     const dispatchLabel = truck.dispatch
       ? `<small class="dispatch-truck-ticket">${escapeHtml(truck.dispatch.ticket_number)} · ${Number(truck.dispatch.completed_stops || 0)}/${Number(truck.dispatch.total_stops || 0)} stops</small>`
       : "";
@@ -645,20 +646,22 @@ function renderActiveTruckList(trucks) {
         class="active-truck-item ${isSelected ? "active" : ""} ${statusMeta.className}"
         data-tracking-session-id="${typeof dispatchEscape === "function" ? dispatchEscape(truck.session_id) : escapeHtml(truck.session_id)}"
         data-tracking-truck-id="${escapeHtml(truck.truck_id || "")}"
+        aria-pressed="${isSelected}"
+        aria-label="Plan dispatch for ${escapeHtml(truckIdentifier)}, ${escapeHtml(statusMeta.label)}"
       >
         <span class="truck-item-icon">${getTrackingInlineIcon("truck")}</span>
 
         <div class="truck-item-body">
           <div class="truck-list-topline">
             <div>
-              <strong>${escapeHtml(truckName)}</strong>
-              <small class="truck-id-line">ID ${escapeHtml(truck.truck_id || "-")}</small>
+              <strong>${escapeHtml(truckIdentifier)}</strong>
+              ${truckName !== truckIdentifier ? `<small class="truck-id-line">${escapeHtml(truckName)}</small>` : ""}
             </div>
             <small class="truck-status-label ${statusMeta.className}">${escapeHtml(statusMeta.label)}</small>
           </div>
-          <small class="truck-personnel">${escapeHtml(truck.enforcer_name || "Personnel not assigned")}</small>
           ${dispatchLabel}
           <small class="truck-last-sync">Last sync: ${escapeHtml(formatTrackingTimeSafe(lastUpdated))}</small>
+          <small class="truck-plan-hint">Click to plan dispatch</small>
         </div>
       </button>
     `;
@@ -1191,7 +1194,6 @@ function renderTruckAnalyticsModal(alerts, activeTrucks = []) {
       <div class="truck-analytics-feed-item">
         <div class="truck-analytics-feed-title">Truck ${escapeHtml(truck.truck_id || "-")}</div>
         <div class="truck-analytics-feed-message">
-          Enforcer: ${escapeHtml(truck.enforcer_name || "-")}<br>
           Status: ${escapeHtml(truck.truck_status || "-")}<br>
           Last Updated: ${escapeHtml(formatTrackingTime(truck.location_last_updated))}
         </div>
@@ -1368,7 +1370,15 @@ function bindActiveTruckSelection() {
   list.addEventListener("click", (event) => {
     const card = event.target.closest("[data-tracking-session-id]");
     if (!card) return;
-    selectTruck(card.dataset.trackingSessionId, card.dataset.trackingTruckId);
+    if (typeof requestDispatchTruckSelection === "function") {
+      requestDispatchTruckSelection(
+        card.dataset.trackingSessionId,
+        card.dataset.trackingTruckId,
+        card
+      );
+    } else {
+      selectTruck(card.dataset.trackingSessionId, card.dataset.trackingTruckId);
+    }
   });
 }
 
