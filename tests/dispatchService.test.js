@@ -21,7 +21,7 @@ const {
 } = dispatchServiceModule;
 Module._load = originalModuleLoad;
 
-function ticketPayload(overrides = {}) {
+function productionDispatchNowPayload(overrides = {}) {
   return {
     ticket_number: "00090009",
     tracking_session_id: 58,
@@ -29,8 +29,13 @@ function ticketPayload(overrides = {}) {
     truck_name_snapshot: "Truck 9",
     assigned_personnel_id: 999,
     assigned_personnel_name: "Client supplied personnel",
+    scheduled_start_at: null,
+    expected_return_at: null,
     route_name: "Current operating route",
-    dispatch_date: "2099-12-31",
+    route_description: null,
+    notes: null,
+    created_by_user_id: 7,
+    created_by_name: "Dispatch Operator",
     stops: [{
       stop_order: 1,
       location_name: "Pioneer Avenue",
@@ -177,6 +182,13 @@ function createTransactionalPool({
   };
 }
 
+function ticketPayload(overrides = {}) {
+  return productionDispatchNowPayload({
+    dispatch_date: "2099-12-31",
+    ...overrides
+  });
+}
+
 async function testCreateTicketUsesCurrentManilaDateAndOptimizedStops() {
   const fixedNow = new Date("2026-08-02T16:30:00.000Z");
   const { pool, state } = createTransactionalPool();
@@ -254,22 +266,20 @@ async function testCreateTicketUsesCurrentManilaDateAndOptimizedStops() {
 async function testNewTicketIgnoresEveryClientDispatchDateVariant() {
   const fixedNow = new Date("2026-08-02T16:30:00.000Z");
   const variants = [
-    { label: "missing", omit: true },
-    { label: "empty", value: "" },
-    { label: "malformed", value: "not-a-date" },
-    { label: "past", value: "2001-01-01" },
-    { label: "future", value: "2099-12-31" }
+    { label: "missing", payload: productionDispatchNowPayload() },
+    { label: "null", payload: productionDispatchNowPayload({ dispatch_date: null }) },
+    { label: "empty", payload: productionDispatchNowPayload({ dispatch_date: "" }) },
+    { label: "malformed", payload: productionDispatchNowPayload({ dispatch_date: "invalid" }) },
+    { label: "past", payload: productionDispatchNowPayload({ dispatch_date: "2001-01-01" }) },
+    { label: "future", payload: productionDispatchNowPayload({ dispatch_date: "2099-12-31" }) }
   ];
 
   for (const variant of variants) {
     const { pool, state } = createTransactionalPool();
     const service = new DispatchService(pool, { now: () => fixedNow });
     service.getTicketDetails = async (ticketId) => ({ ticket: { id: ticketId } });
-    const payload = ticketPayload();
-    if (variant.omit) delete payload.dispatch_date;
-    else payload.dispatch_date = variant.value;
 
-    await service.createTicket(payload);
+    await service.createTicket(variant.payload);
     assert.equal(
       state.ticketParameters[5],
       "2026-08-03",
