@@ -15,6 +15,7 @@ const {
   dispatchDistanceToRouteMeters,
   dispatchDraftsInOptimizedOrder,
   dispatchManilaOperatingDay,
+  dispatchNormalizeTicketNumber,
   dispatchRoutingFailureState,
   dispatchRoutingResponseIsCurrent,
   dispatchRoutingResponsePreservesOrder,
@@ -406,9 +407,71 @@ function testOperatingDateAndRecordFiltersAreNotClientControlled() {
   const recordsMarkup = dashboard.match(/<section class="tracking-workspace-view" data-tracking-workspace-view="records"[\s\S]*?<\/section>/)?.[0] || "";
   const collectForm = source.match(/function collectDispatchTicketForm\(\)[\s\S]*?function resetDispatchTicketForm/)?.[0] || "";
   assert.doesNotMatch(recordsMarkup, /type="date"|dispatchTicketDateFilter/);
-  assert.match(recordsMarkup, /Showing today&rsquo;s active operations/);
+  assert.match(recordsMarkup, /Dispatch Tickets/i);
+  assert.match(recordsMarkup, /Review saved and issued dispatch tickets\./);
   assert.match(recordsMarkup, /dispatchTicketClearFiltersBtn/);
+  assert.doesNotMatch(recordsMarkup, /Active Tickets|Prepared Tickets|Completed \/ Cancelled/);
   assert.doesNotMatch(collectForm, /dispatch_date|dispatchDate/);
+}
+
+function testManualTicketNumberAndUnifiedTicketsWorkflow() {
+  assert.equal(dispatchNormalizeTicketNumber("  000042  "), "000042");
+  assert.equal(dispatchNormalizeTicketNumber("   "), "");
+
+  const source = fs.readFileSync(
+    path.join(__dirname, "..", "frontend", "js", "admin", "admin-dispatch.js"),
+    "utf8"
+  );
+  const trackingSource = fs.readFileSync(
+    path.join(__dirname, "..", "frontend", "js", "admin", "admin-tracking.js"),
+    "utf8"
+  );
+  const dashboard = fs.readFileSync(
+    path.join(__dirname, "..", "frontend", "admin-dashboard.html"),
+    "utf8"
+  );
+  const plannerForm = dashboard.match(/<form id="dispatchTicketForm"[\s\S]*?<\/form>/)?.[0] || "";
+  const recordsMarkup = dashboard.match(/data-tracking-workspace-view="records"[\s\S]*?<\/section>/)?.[0] || "";
+  const selectedTruckHeader = dashboard.match(/id="dispatchSelectedTruckSummary"[\s\S]*?dispatch-workspace-actions/)?.[0] || "";
+  const activeTruckRenderer = trackingSource.match(/function renderActiveTruckList\(trucks\)[\s\S]*?function updateTruckMarkers/)?.[0] || "";
+  const recordRenderer = source.match(/function renderDispatchRecordCards[\s\S]*?async function loadDispatchTickets/)?.[0] || "";
+  const ticketDetailsRenderer = source.match(/function renderDispatchTicketDetails\(details\)[\s\S]*?function openDispatchModal/)?.[0] || "";
+  const ticketInputHandler = source.match(/getElementById\("dispatchTicketNumber"\)\?\.addEventListener\("input"[\s\S]*?\n  \}\);/)?.[0] || "";
+  const collectForm = source.match(/function collectDispatchTicketForm\(\)[\s\S]*?function resetDispatchTicketForm/)?.[0] || "";
+
+  assert.match(plannerForm, /<input type="text" id="dispatchTicketNumber"/);
+  assert.match(plannerForm, /Enter the ticket number to continue\./);
+  assert.match(plannerForm, /id="dispatchDestinationControls"[^>]*disabled/);
+  assert.ok(
+    plannerForm.indexOf("dispatchTicketNumber") < plannerForm.indexOf("dispatchAddDestinationsHeading")
+  );
+  assert.doesNotMatch(plannerForm, /type="date"|dispatchExpectedReturn/);
+  assert.match(plannerForm, /type="hidden" id="dispatchTruckId"/);
+  assert.match(plannerForm, /type="hidden" id="dispatchRouteName"/);
+  assert.doesNotMatch(selectedTruckHeader, /Personnel|dispatchSelectedPersonnelLabel/);
+  assert.doesNotMatch(activeTruckRenderer, /personnelName|truck-personnel|enforcer_name/);
+
+  assert.deepEqual(
+    [...dashboard.matchAll(/data-dispatch-workspace-action="([^"]+)"/g)].map((match) => match[1]),
+    ["plan", "tickets"]
+  );
+  assert.doesNotMatch(recordsMarkup, /data-dispatch-record-tab|dispatchReportsList|Personnel/i);
+  assert.match(recordsMarkup, /id="dispatchTicketSearch" placeholder="Ticket Number"/);
+  assert.match(recordsMarkup, /id="dispatchTicketTruckFilter" placeholder="Truck Number"/);
+  assert.match(recordsMarkup, /id="dispatchTicketsList"/);
+  assert.match(dashboard, /openTrackingReportsModal\(\)/);
+  assert.match(dashboard, />\s*Tracking Reports\s*</i);
+
+  assert.match(source, /destinationControls\.disabled = !destinationsEnabled/);
+  assert.match(source, /saveButton\.disabled = Boolean\([\s\S]*!ticketNumberValid/);
+  assert.doesNotMatch(ticketInputHandler, /dispatchRequest|saveDispatchDraft|createTicket/);
+  assert.match(collectForm, /ticket_number: ticketNumber/);
+  assert.match(collectForm, /tracking_session_id:/);
+  assert.match(source, /getElementById\("dispatchTruckId"\)\.value = truck\.truck_id/);
+  assert.doesNotMatch(recordRenderer, /assigned_personnel|personnel/i);
+  assert.match(ticketDetailsRenderer, /assigned_personnel_name/);
+  assert.match(recordRenderer, /View Details/);
+  assert.match(recordRenderer, /ticket\.issued_at \|\| ticket\.created_at/);
 }
 
 function testRoutingResponseOrderAndUiRequirements() {
@@ -459,6 +522,7 @@ async function run() {
   testPersistedRoadStopRehydratesOnlyTheMatchingCatalogComponent();
   testFailureStateStaleResponsesAndActualGpsIndependence();
   testOperatingDateAndRecordFiltersAreNotClientControlled();
+  testManualTicketNumberAndUnifiedTicketsWorkflow();
   testRoutingResponseOrderAndUiRequirements();
   assert.deepEqual(DISPATCH_WMO_LOCATION, {
     latitude: 6.1060875,

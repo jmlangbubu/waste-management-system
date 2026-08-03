@@ -427,6 +427,20 @@ function dispatchSafeTicketErrorMessage(error) {
   return message || DISPATCH_TICKET_CREATE_FAILURE_MESSAGE;
 }
 
+function dispatchNormalizeTicketNumber(value) {
+  return String(value ?? "").trim();
+}
+
+function dispatchTicketNumberValue() {
+  return dispatchNormalizeTicketNumber(
+    document.getElementById("dispatchTicketNumber")?.value
+  );
+}
+
+function dispatchTicketNumberIsValid(value = dispatchTicketNumberValue()) {
+  return dispatchNormalizeTicketNumber(value).length > 0;
+}
+
 function captureDispatchRoutePreviewState() {
   return {
     layers: {
@@ -608,13 +622,11 @@ function dispatchInvalidateMapAfterDrawerTransition() {
 }
 
 function updateDispatchWorkspaceActions(selectedTab = "plan") {
-  const recordTab = document.querySelector("[data-dispatch-record-tab].active")
-    ?.dataset.dispatchRecordTab;
   document.querySelectorAll("[data-dispatch-workspace-action]").forEach((button) => {
     const action = button.dataset.dispatchWorkspaceAction;
     const active = selectedTab === "plan"
       ? action === "plan"
-      : action === (recordTab === "reports" ? "reports" : "tickets");
+      : action === "tickets";
     button.classList.toggle("active", active);
     button.setAttribute("aria-pressed", String(active));
   });
@@ -637,7 +649,9 @@ function openDispatchPlannerDrawer({ focusSearch = true } = {}) {
   );
   setTimeout(() => {
     const target = focusSearch
-      ? document.getElementById("dispatchDestinationSearch")
+      ? dispatchTicketNumberIsValid()
+        ? document.getElementById("dispatchDestinationSearch")
+        : document.getElementById("dispatchTicketNumber")
       : document.getElementById("dispatchPlannerHeading");
     target?.focus({ preventScroll: true });
   }, reduceMotion ? 0 : 220);
@@ -694,19 +708,63 @@ function dispatchPlannerHasUnsavedRoute(sessionId = selectedSessionId) {
 
 function updateDispatchPlannerActions() {
   const destinationCount = getDispatchStopDrafts().length;
+  const ticketNumberValid = dispatchTicketNumberIsValid();
   const dispatchNowButton = document.getElementById("dispatchNowBtn");
   const saveButton = document.getElementById("dispatchSaveTicketBtn");
   const clearButton = document.getElementById("dispatchClearRouteBtn");
+  const refreshButton = document.getElementById("dispatchRefreshRouteBtn");
+  const destinationControls = document.getElementById("dispatchDestinationControls");
+  const destinationHint = document.getElementById("dispatchDestinationHint");
+  const ticketNumberHint = document.getElementById("dispatchTicketNumberHint");
+  const destinationsEnabled = Boolean(
+    ticketNumberValid && selectedTrackingTruck && dispatchSelectedSessionActive
+  );
+
+  if (destinationControls) destinationControls.disabled = !destinationsEnabled;
+  if (ticketNumberHint) {
+    ticketNumberHint.textContent = ticketNumberValid
+      ? "Ticket number ready. Add the required destinations."
+      : "Enter the ticket number to continue.";
+    ticketNumberHint.classList.toggle("valid", ticketNumberValid);
+  }
+  if (destinationHint) {
+    if (!selectedTrackingTruck) {
+      destinationHint.textContent = "Select a truck before planning destinations.";
+    } else if (!ticketNumberValid) {
+      destinationHint.textContent = "Enter the ticket number to enable destination selection.";
+    } else {
+      destinationHint.textContent = getDispatchSelectedReliablePoint()
+        ? "Choose a verified road section or barangay hall from the catalog."
+        : "The truck is selected, but the map is waiting for a reliable GPS point.";
+    }
+  }
   if (dispatchNowButton) {
     dispatchNowButton.disabled = Boolean(
+      !ticketNumberValid ||
       !selectedTrackingTruck ||
       !dispatchSelectedSessionActive ||
       !destinationCount ||
       dispatchPlannerOperationProcessing
     );
   }
-  if (saveButton) saveButton.disabled = dispatchPlannerOperationProcessing;
+  if (saveButton) {
+    saveButton.disabled = Boolean(
+      !ticketNumberValid ||
+      !selectedTrackingTruck ||
+      !dispatchSelectedSessionActive ||
+      dispatchPlannerOperationProcessing
+    );
+  }
   if (clearButton) clearButton.disabled = destinationCount === 0 || dispatchPlannerOperationProcessing;
+  if (refreshButton) refreshButton.disabled = !destinationsEnabled || destinationCount === 0;
+}
+
+function requireDispatchTicketNumberForDestinations() {
+  if (dispatchTicketNumberIsValid()) return true;
+  updateDispatchPlannerActions();
+  dispatchNotify("Enter the ticket number to continue.", "error");
+  document.getElementById("dispatchTicketNumber")?.focus();
+  return false;
 }
 
 function markDispatchPlannerDirty() {
@@ -815,9 +873,7 @@ function getDispatchSelectedReliablePoint() {
 
 function updateDispatchSelectedTruckContext(truck = selectedTrackingTruck) {
   const summary = document.getElementById("dispatchSelectedTruckSummary");
-  const dispatchNowButton = document.getElementById("dispatchNowBtn");
   const warning = document.getElementById("dispatchSessionWarning");
-  const hint = document.getElementById("dispatchDestinationHint");
 
   if (!truck) {
     summary?.classList.add("is-empty");
@@ -826,11 +882,9 @@ function updateDispatchSelectedTruckContext(truck = selectedTrackingTruck) {
     document.getElementById("dispatchSelectedTruckStatus").className = "tracking-live-chip";
     document.getElementById("dispatchSelectedTruckIdLabel").textContent = "--";
     document.getElementById("dispatchSelectedSessionLabel").textContent = "--";
-    document.getElementById("dispatchSelectedPersonnelLabel").textContent = "Personnel not assigned";
     document.getElementById("dispatchSelectedGpsStatusLabel").textContent = "Waiting for GPS";
     document.getElementById("dispatchSelectedGpsStatusLabel").className = "dispatch-gps-badge warning";
     document.getElementById("dispatchSelectedGpsLabel").textContent = "--";
-    if (hint) hint.textContent = "Select a truck before planning destinations.";
     warning?.classList.add("hidden");
     updateDispatchPlannerActions();
     return;
@@ -856,7 +910,6 @@ function updateDispatchSelectedTruckContext(truck = selectedTrackingTruck) {
     `tracking-live-chip ${statusMeta.className || ""}`;
   document.getElementById("dispatchSelectedTruckIdLabel").textContent = truck.truck_id || "--";
   document.getElementById("dispatchSelectedSessionLabel").textContent = `#${truck.session_id}`;
-  document.getElementById("dispatchSelectedPersonnelLabel").textContent = personnelName;
   document.getElementById("dispatchSelectedGpsLabel").textContent = dispatchFormatDateTime(
     reliablePoint?.recorded_at || truck.location_last_updated || truck.last_updated_at
   );
@@ -876,12 +929,7 @@ function updateDispatchSelectedTruckContext(truck = selectedTrackingTruck) {
     warning.classList.toggle("hidden", dispatchSelectedSessionActive);
     warning.textContent = dispatchSelectedSessionActive
       ? ""
-      : "The selected tracking session has ended. You can save this route as a draft, but Dispatch Now is disabled.";
-  }
-  if (hint) {
-    hint.textContent = reliablePoint
-      ? "Choose a verified road section or barangay hall from the catalog."
-      : "The truck is selected, but the map is waiting for a reliable GPS point.";
+      : "The selected tracking session has ended. Choose an active truck to save or dispatch this route.";
   }
   updateDispatchPlannerActions();
 }
@@ -951,14 +999,9 @@ function updateDispatchDestinationCatalogNotice() {
 }
 
 function updateDispatchSetupNotices() {
-  [
-    "dispatchTicketsSetupNotice",
-    "dispatchReportsSetupNotice"
-  ].forEach((id) => {
-    document
-      .getElementById(id)
-      ?.classList.toggle("hidden", !dispatchSetupRequired);
-  });
+  document
+    .getElementById("dispatchTicketsSetupNotice")
+    ?.classList.toggle("hidden", !dispatchSetupRequired);
 }
 
 async function loadDispatchLiveData() {
@@ -2559,6 +2602,7 @@ async function resolveDispatchPreviewBarangay(latitude, longitude) {
 
 function handleDispatchLiveMapClick(event) {
   if (!dispatchAddDestinationMode) return;
+  if (!requireDispatchTicketNumberForDestinations()) return;
   if (!selectedTrackingTruck) {
     dispatchNotify("Select an active truck before adding destinations.", "error");
     return;
@@ -2596,6 +2640,7 @@ function handleDispatchLiveMapClick(event) {
 }
 
 function confirmDispatchDestinationPreview() {
+  if (!requireDispatchTicketNumberForDestinations()) return;
   if (!selectedTrackingTruck || !dispatchDestinationPreview) return;
   const labelInput = document.getElementById("dispatchPreviewLabel");
   const locationName = labelInput?.value.trim();
@@ -2766,6 +2811,7 @@ function renderDispatchBrowseAllDestinations() {
 }
 
 async function openDispatchBrowseAllDestinations() {
+  if (!requireDispatchTicketNumberForDestinations()) return;
   dispatchBrowseDestinationOpen = true;
   dispatchBrowseDestinationVisibleCount = DISPATCH_BROWSE_DESTINATION_BATCH_SIZE;
   renderDispatchBrowseAllDestinations();
@@ -2838,6 +2884,7 @@ function dispatchCatalogStopFromDetail(detail, stopOrder) {
 }
 
 async function chooseDispatchDestination(result) {
+  if (!requireDispatchTicketNumberForDestinations()) return;
   if (!selectedTrackingTruck) {
     dispatchNotify("Select an active truck before adding destinations.", "error");
     setDispatchWorkspaceTab("monitor");
@@ -2891,6 +2938,13 @@ async function chooseDispatchDestination(result) {
 }
 
 async function performDispatchDestinationSearch() {
+  if (!dispatchTicketNumberIsValid()) {
+    dispatchDestinationResults = [];
+    dispatchPopularDestinationResults = [];
+    renderDispatchPopularDestinations();
+    renderDispatchDestinationSuggestions("hidden");
+    return;
+  }
   const input = document.getElementById("dispatchDestinationSearch");
   const query = input?.value.trim() || "";
   if (!query) {
@@ -2946,6 +3000,10 @@ async function performDispatchDestinationSearch() {
 
 function scheduleDispatchDestinationSearch({ immediate = false } = {}) {
   clearTimeout(dispatchDestinationSearchTimer);
+  if (!dispatchTicketNumberIsValid()) {
+    renderDispatchDestinationSuggestions("hidden");
+    return;
+  }
   dispatchDestinationSearchTimer = setTimeout(
     performDispatchDestinationSearch,
     immediate ? 0 : DISPATCH_DESTINATION_SEARCH_DEBOUNCE_MS
@@ -3017,6 +3075,8 @@ function setDispatchDestinationMode(mode) {
 }
 
 function collectDispatchTicketForm() {
+  const ticketNumber = dispatchTicketNumberValue();
+  if (!ticketNumber) throw new Error("Enter the ticket number to continue.");
   const selectedStops = getDispatchStopDrafts();
   if (!selectedStops.length) throw new Error("Add at least one route stop.");
   if (dispatchPendingRoutingSignature) {
@@ -3089,6 +3149,9 @@ function collectDispatchTicketForm() {
 
   const actor = dispatchActorPayload();
   return {
+    ticket_number: ticketNumber,
+    tracking_session_id:
+      document.getElementById("dispatchTrackingSessionId")?.value || null,
     truck_id: document.getElementById("dispatchTruckId")?.value.trim(),
     truck_name_snapshot: document.getElementById("dispatchTruckName")?.value.trim(),
     assigned_personnel_id:
@@ -3109,6 +3172,8 @@ function collectDispatchTicketForm() {
 
 function resetDispatchTicketForm() {
   document.getElementById("dispatchTicketForm")?.reset();
+  const ticketNumber = document.getElementById("dispatchTicketNumber");
+  if (ticketNumber) ticketNumber.readOnly = false;
   const stopRows = document.getElementById("dispatchStopRows");
   if (stopRows) {
     stopRows.innerHTML = '<div class="dispatch-route-empty">No destinations selected yet.</div>';
@@ -3146,6 +3211,7 @@ function resetDispatchTicketForm() {
   renumberDispatchStopRows(false);
   renderDispatchDraftOnLiveMap();
   markDispatchPlannerSaved();
+  updateDispatchPlannerActions();
 }
 
 function fillDispatchTicketForm(details) {
@@ -3154,6 +3220,11 @@ function fillDispatchTicketForm(details) {
   document.getElementById("dispatchEditingTicketId").value = ticket.id;
   document.getElementById("dispatchTicketEditorTitle").textContent =
     `Edit ${ticket.ticket_number}`;
+  const ticketNumber = document.getElementById("dispatchTicketNumber");
+  if (ticketNumber) {
+    ticketNumber.value = ticket.ticket_number || "";
+    ticketNumber.readOnly = true;
+  }
   document.getElementById("dispatchSaveTicketBtn").textContent =
     "Update Draft";
   document.getElementById("dispatchTruckId").value = ticket.truck_id || "";
@@ -3181,6 +3252,7 @@ function fillDispatchTicketForm(details) {
   renumberDispatchStopRows(false);
   renderDispatchDraftOnLiveMap();
   markDispatchPlannerSaved();
+  updateDispatchPlannerActions();
 }
 
 function openDispatchTicketEditor(details = null) {
@@ -3239,8 +3311,13 @@ async function saveDispatchDraft({ notify = true, showResult = true, manageProce
       updateDispatchPlannerActions();
     }
     const payload = collectDispatchTicketForm();
-    if (!payload.truck_id || !payload.truck_name_snapshot || !payload.route_name) {
-      throw new Error("Truck and route name are required.");
+    if (
+      !payload.tracking_session_id ||
+      !payload.truck_id ||
+      !payload.truck_name_snapshot ||
+      !payload.route_name
+    ) {
+      throw new Error("Select an active truck before saving the dispatch ticket.");
     }
     const ticketId = document.getElementById("dispatchEditingTicketId")?.value;
     const details = await dispatchRequest(
@@ -3256,6 +3333,11 @@ async function saveDispatchDraft({ notify = true, showResult = true, manageProce
     document.getElementById("dispatchEditingTicketId").value = details.ticket.id;
     document.getElementById("dispatchTicketEditorTitle").textContent = details.ticket.ticket_number;
     document.getElementById("dispatchSaveTicketBtn").textContent = "Update Draft";
+    const ticketNumber = document.getElementById("dispatchTicketNumber");
+    if (ticketNumber) {
+      ticketNumber.value = details.ticket.ticket_number;
+      ticketNumber.readOnly = true;
+    }
     markDispatchPlannerSaved();
     if (showResult) {
       renderDispatchWorkflowResult(
@@ -3446,7 +3528,7 @@ async function dispatchSelectedTruckNow() {
 function dispatchTicketQuery() {
   const parameters = new URLSearchParams();
   const values = {
-    search: document.getElementById("dispatchTicketSearch")?.value.trim(),
+    ticket: document.getElementById("dispatchTicketSearch")?.value.trim(),
     truck: document.getElementById("dispatchTicketTruckFilter")?.value.trim()
   };
   Object.entries(values).forEach(([key, value]) => {
@@ -3464,20 +3546,18 @@ function renderDispatchRecordCards(list, tickets, emptyMessage) {
 
   list.innerHTML = tickets
     .map((ticket) => {
-      const terminalStops =
-        Number(ticket.completed_stops || 0) + Number(ticket.skipped_stops || 0);
+      const destinationCount = Number(ticket.total_stops || 0);
+      const destinationSummary = `${destinationCount} destination${destinationCount === 1 ? "" : "s"}`;
+      const ticketTimestamp = ticket.issued_at || ticket.created_at || ticket.updated_at;
       return `
         <article class="dispatch-inline-list-card">
           <div class="dispatch-inline-list-heading">
-            <div><strong>${dispatchEscape(ticket.ticket_number)}</strong><small>${dispatchEscape(ticket.route_name)}</small></div>
+            <strong>${dispatchEscape(ticket.ticket_number)}</strong>
             <span class="dispatch-status-chip ${dispatchStatusClass(ticket.status)}">${dispatchEscape(dispatchStatusLabel(ticket.status))}</span>
           </div>
-          <dl>
-            <div><dt>Truck</dt><dd>${dispatchEscape(ticket.truck_name_snapshot || ticket.truck_id)}</dd></div>
-            <div><dt>Date</dt><dd>${dispatchEscape(String(ticket.dispatch_date || "").slice(0, 10))}</dd></div>
-            <div><dt>Stops</dt><dd>${terminalStops}/${Number(ticket.total_stops || 0)}</dd></div>
-          </dl>
-          <button type="button" class="dispatch-inline-action secondary" data-dispatch-open-ticket="${ticket.id}">Open details</button>
+          <strong class="dispatch-ticket-truck-number">${dispatchEscape(ticket.truck_id)}</strong>
+          <p class="dispatch-ticket-row-summary">${dispatchEscape(destinationSummary)} &middot; ${dispatchEscape(dispatchFormatDateTime(ticketTimestamp))}</p>
+          <button type="button" class="dispatch-inline-action secondary" data-dispatch-open-ticket="${ticket.id}">View Details</button>
         </article>
       `;
     })
@@ -3485,33 +3565,18 @@ function renderDispatchRecordCards(list, tickets, emptyMessage) {
 }
 
 async function loadDispatchTickets() {
-  const activeList = document.getElementById("dispatchActiveTicketsList");
-  const preparedList = document.getElementById("dispatchPreparedTicketsList");
-  if (!activeList || !preparedList) return;
-  activeList.innerHTML = '<div class="dispatch-route-empty">Loading active tickets...</div>';
-  preparedList.innerHTML = '<div class="dispatch-route-empty">Loading prepared tickets...</div>';
+  const list = document.getElementById("dispatchTicketsList");
+  if (!list) return;
+  list.innerHTML = '<div class="dispatch-route-empty">Loading dispatch tickets...</div>';
 
   try {
     const query = dispatchTicketQuery();
     dispatchTicketRows = await dispatchRequest(
       `${getDispatchTicketsApiUrl()}${query ? `?${query}` : ""}`
     );
-    renderDispatchRecordCards(
-      activeList,
-      dispatchTicketRows.filter((ticket) =>
-        ["dispatched", "in_progress", "returning_to_wmo"].includes(ticket.status)
-      ),
-      "No active dispatch tickets found."
-    );
-    renderDispatchRecordCards(
-      preparedList,
-      dispatchTicketRows.filter((ticket) => ticket.status === "prepared"),
-      "No prepared dispatch tickets found."
-    );
+    renderDispatchRecordCards(list, dispatchTicketRows, "No dispatch tickets found.");
   } catch (error) {
-    const message = `<div class="dispatch-route-empty error">${dispatchEscape(error.message)}</div>`;
-    activeList.innerHTML = message;
-    preparedList.innerHTML = message;
+    list.innerHTML = `<div class="dispatch-route-empty error">${dispatchEscape(error.message)}</div>`;
   }
 }
 
@@ -3539,7 +3604,7 @@ function setDispatchRecordTab(tabName) {
 }
 
 async function loadDispatchRecords() {
-  await Promise.all([loadDispatchTickets(), loadDispatchReports()]);
+  await loadDispatchTickets();
 }
 
 async function openDispatchTicket(ticketId) {
@@ -3579,8 +3644,7 @@ async function loadDispatchReports() {
             report.ticket_number,
             report.route_name,
             report.truck_id,
-            report.truck_name_snapshot,
-            report.assigned_personnel_name
+            report.truck_name_snapshot
           ].join(" ")
         ).includes(search)
       );
@@ -3748,9 +3812,7 @@ function setupDispatchModule() {
       if (action === "plan") {
         setDispatchWorkspaceTab("plan");
       } else {
-        setDispatchRecordTab(action === "reports" ? "reports" : "active");
         setDispatchWorkspaceTab("records");
-        if (action === "reports") void loadDispatchReports();
       }
     });
   });
@@ -3767,6 +3829,7 @@ function setupDispatchModule() {
     .getElementById("dispatchPlannerConfirmationAcceptBtn")
     ?.addEventListener("click", () => closeDispatchPlannerConfirmation({ accepted: true }));
   document.getElementById("dispatchAddStopBtn")?.addEventListener("click", () => {
+    if (!requireDispatchTicketNumberForDestinations()) return;
     if (!selectedTrackingTruck) {
       dispatchNotify("Select an active truck first.", "error");
       setDispatchWorkspaceTab("monitor");
@@ -3788,6 +3851,9 @@ function setupDispatchModule() {
   });
   const destinationInput = document.getElementById("dispatchDestinationSearch");
   const destinationOptions = document.getElementById("dispatchDestinationSuggestions");
+  document.getElementById("dispatchTicketNumber")?.addEventListener("input", () => {
+    updateDispatchPlannerActions();
+  });
   destinationInput?.addEventListener("input", scheduleDispatchDestinationSearch);
   destinationInput?.addEventListener("keydown", handleDispatchDestinationSearchKeydown);
   destinationInput?.addEventListener("focus", () => {
@@ -3867,13 +3933,6 @@ function setupDispatchModule() {
       if (truck) truck.value = "";
       void loadDispatchRecords();
     });
-  workspace.querySelectorAll("[data-dispatch-record-tab]").forEach((button) => {
-    button.addEventListener("click", () => {
-      setDispatchRecordTab(button.dataset.dispatchRecordTab);
-      if (button.dataset.dispatchRecordTab === "reports") void loadDispatchReports();
-    });
-  });
-
   document
     .getElementById("dispatchStopRows")
     ?.addEventListener("click", handleDispatchStopEditorClick);
@@ -3994,7 +4053,6 @@ function setupDispatchModule() {
   resetDispatchTicketForm();
   updateDispatchSelectedTruckContext(null);
   setDispatchWorkspaceTab("monitor");
-  setDispatchRecordTab("active");
   renderDispatchEmptyPanel();
   document.getElementById("dispatchPlannerDrawer").inert = true;
 }
@@ -4015,6 +4073,7 @@ if (typeof module !== "undefined" && module.exports) {
     dispatchCatalogDestinationIsSelected,
     dispatchDraftsInOptimizedOrder,
     dispatchManilaOperatingDay,
+    dispatchNormalizeTicketNumber,
     dispatchRouteNeedsRecalculation,
     dispatchDistanceToRouteMeters,
     evaluateDispatchDynamicReroute,

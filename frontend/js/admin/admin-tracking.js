@@ -636,7 +636,6 @@ function renderActiveTruckList(trucks) {
     const lastUpdated = getTruckLastUpdateValue(truck);
     const truckName = truck.truck_name || truck.truck_display_name || `Truck ${truck.truck_id || "-"}`;
     const truckIdentifier = truck.truck_id || truckName;
-    const personnelName = truck.enforcer_name || "Personnel not assigned";
     const dispatchLabel = truck.dispatch
       ? `<small class="dispatch-truck-ticket">${escapeHtml(truck.dispatch.ticket_number)} · ${Number(truck.dispatch.completed_stops || 0)}/${Number(truck.dispatch.total_stops || 0)} stops</small>`
       : "";
@@ -648,7 +647,7 @@ function renderActiveTruckList(trucks) {
         data-tracking-session-id="${typeof dispatchEscape === "function" ? dispatchEscape(truck.session_id) : escapeHtml(truck.session_id)}"
         data-tracking-truck-id="${escapeHtml(truck.truck_id || "")}"
         aria-pressed="${isSelected}"
-        aria-label="Plan dispatch for ${escapeHtml(truckIdentifier)}, ${escapeHtml(personnelName)}, ${escapeHtml(statusMeta.label)}"
+        aria-label="Plan dispatch for ${escapeHtml(truckIdentifier)}, ${escapeHtml(statusMeta.label)}"
       >
         <span class="truck-item-icon">${getTrackingInlineIcon("truck")}</span>
 
@@ -660,7 +659,6 @@ function renderActiveTruckList(trucks) {
             </div>
             <small class="truck-status-label ${statusMeta.className}">${escapeHtml(statusMeta.label)}</small>
           </div>
-          <small class="truck-personnel">${escapeHtml(personnelName)}</small>
           ${dispatchLabel}
           <small class="truck-last-sync">Last sync: ${escapeHtml(formatTrackingTimeSafe(lastUpdated))}</small>
           <small class="truck-plan-hint">Click to plan dispatch</small>
@@ -1196,7 +1194,6 @@ function renderTruckAnalyticsModal(alerts, activeTrucks = []) {
       <div class="truck-analytics-feed-item">
         <div class="truck-analytics-feed-title">Truck ${escapeHtml(truck.truck_id || "-")}</div>
         <div class="truck-analytics-feed-message">
-          Enforcer: ${escapeHtml(truck.enforcer_name || "-")}<br>
           Status: ${escapeHtml(truck.truck_status || "-")}<br>
           Last Updated: ${escapeHtml(formatTrackingTime(truck.location_last_updated))}
         </div>

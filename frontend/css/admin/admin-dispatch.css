@@ -2935,7 +2935,6 @@
 
 #trackingSection .dispatch-gps-badge {
   display: inline-flex;
-  margin-left: auto;
   padding: 2px 7px;
   border: 1px solid #cfe0d5;
   border-radius: 999px;
@@ -2961,6 +2960,7 @@
 }
 
 #trackingSection .dispatch-workspace-actions button {
+  flex: 1 1 0;
   min-height: 28px;
   padding: 4px 9px;
   border-radius: 8px;
@@ -2998,6 +2998,80 @@
   border: 1px solid #dfe9e3;
   border-radius: 13px;
   background: #ffffff;
+}
+
+#trackingSection .dispatch-ticket-number-field {
+  display: grid;
+}
+
+#trackingSection .dispatch-ticket-number-field input {
+  width: 100%;
+  border: 1px solid #bfd3c5;
+  border-radius: 10px;
+  padding: 9px 10px;
+  background: #ffffff;
+  color: #173d2b;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+#trackingSection .dispatch-ticket-number-field input:focus-visible {
+  border-color: #4d9368;
+  outline: 3px solid rgba(52, 128, 79, 0.14);
+}
+
+#trackingSection .dispatch-ticket-number-field input[readonly] {
+  background: #f1f6f3;
+  color: #536b5e;
+}
+
+#trackingSection .dispatch-ticket-number-hint {
+  margin: 0;
+  color: #8a5a22;
+  font-size: 9.5px;
+  font-weight: 750;
+}
+
+#trackingSection .dispatch-ticket-number-hint.valid {
+  color: #32734b;
+}
+
+#trackingSection .dispatch-destination-controls {
+  display: grid;
+  min-width: 0;
+  gap: 9px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+#trackingSection .dispatch-destination-controls:disabled > :not(.dispatch-destination-hint) {
+  opacity: 0.55;
+}
+
+#trackingSection .dispatch-inline-filters > .dispatch-inline-field {
+  display: grid;
+  gap: 4px;
+  color: #4e6659;
+  font-size: 9px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+#trackingSection .dispatch-ticket-truck-number {
+  display: block;
+  margin-top: 7px;
+  color: #244d37;
+  font-size: 11px;
+}
+
+#trackingSection .dispatch-ticket-row-summary {
+  margin: 3px 0 0;
+  color: #6c7e74;
+  font-size: 9.5px;
+  line-height: 1.4;
 }
 
 #trackingSection .dispatch-picker-heading,

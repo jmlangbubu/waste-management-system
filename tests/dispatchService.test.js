@@ -23,8 +23,12 @@ Module._load = originalModuleLoad;
 
 function ticketPayload(overrides = {}) {
   return {
+    ticket_number: "00090009",
+    tracking_session_id: 58,
     truck_id: "TRUCK-9",
     truck_name_snapshot: "Truck 9",
+    assigned_personnel_id: 999,
+    assigned_personnel_name: "Client supplied personnel",
     route_name: "Current operating route",
     dispatch_date: "2099-12-31",
     stops: [{
@@ -94,11 +98,18 @@ async function testSequenceInitializesAndIncrementsWithoutDuplicates() {
   assert.equal(calls.filter((sql) => /FOR UPDATE/.test(sql)).length, 2);
 }
 
-function createTransactionalPool({ failTicketInsert = false } = {}) {
+function createTransactionalPool({
+  failTicketInsert = false,
+  duplicateTicket = false,
+  duplicateOnInsert = false,
+  sessionStatus = "active",
+  sessionTruckId = "TRUCK-9"
+} = {}) {
   const state = {
     sequence: new Map(),
     calls: [],
     ticketParameters: null,
+    selectedSessionParameters: null,
     began: false,
     committed: false,
     rolledBack: false,
@@ -112,6 +123,19 @@ function createTransactionalPool({ failTicketInsert = false } = {}) {
     async query(sql, parameters = []) {
       const normalizedSql = sql.replace(/\s+/g, " ").trim();
       state.calls.push({ sql: normalizedSql, parameters });
+      if (normalizedSql.startsWith("SELECT id, truck_id, enforcer_id, enforcer_name, session_status")) {
+        state.selectedSessionParameters = parameters;
+        return [[{
+          id: 58,
+          truck_id: sessionTruckId,
+          enforcer_id: 44,
+          enforcer_name: "Stored Session Personnel",
+          session_status: sessionStatus
+        }]];
+      }
+      if (normalizedSql.startsWith("SELECT id FROM dispatch_tickets WHERE ticket_number")) {
+        return [duplicateTicket ? [{ id: 77 }] : []];
+      }
       if (normalizedSql.startsWith("INSERT INTO dispatch_ticket_sequences")) {
         const year = Number(parameters[0]);
         if (!state.sequence.has(year)) state.sequence.set(year, 0);
@@ -125,6 +149,11 @@ function createTransactionalPool({ failTicketInsert = false } = {}) {
         return [{ affectedRows: 1 }];
       }
       if (normalizedSql.startsWith("INSERT INTO dispatch_tickets")) {
+        if (duplicateOnInsert) {
+          throw Object.assign(new Error("Duplicate entry for ticket_number"), {
+            code: "ER_DUP_ENTRY"
+          });
+        }
         if (failTicketInsert) {
           throw Object.assign(new Error("simulated SQL syntax failure"), {
             code: "ER_PARSE_ERROR"
@@ -181,16 +210,35 @@ async function testCreateTicketUsesCurrentManilaDateAndOptimizedStops() {
   }));
   assert.equal(details.ticket.id, 501);
   assert.equal(currentManilaDate(fixedNow), "2026-08-03");
+  assert.equal(state.ticketParameters[0], "00090009");
   assert.equal(state.ticketParameters[5], "2026-08-03");
   assert.notEqual(state.ticketParameters[5], "2099-12-31");
-  assert.equal(state.sequence.get(2026), 1);
+  assert.deepEqual(state.selectedSessionParameters, [58]);
+  assert.equal(state.ticketParameters[3], 44);
+  assert.equal(state.ticketParameters[4], "Stored Session Personnel");
+  assert.notEqual(state.ticketParameters[3], 999);
+  assert.equal(
+    state.calls.some((call) => call.sql.includes("dispatch_ticket_sequences")),
+    false
+  );
   assert.equal(state.began, true);
   assert.equal(state.committed, true);
   assert.equal(state.rolledBack, false);
   assert.equal(state.released, true);
   const ticketInsertIndex = state.calls.findIndex((call) => call.sql.startsWith("INSERT INTO dispatch_tickets"));
+  const activeSessionIndex = state.calls.findIndex((call) =>
+    call.sql.startsWith("SELECT id, truck_id, enforcer_id, enforcer_name, session_status")
+  );
+  const duplicateCheckIndex = state.calls.findIndex((call) =>
+    call.sql.startsWith("SELECT id FROM dispatch_tickets WHERE ticket_number")
+  );
   const stopInsertIndex = state.calls.findIndex((call) => call.sql.startsWith("INSERT INTO dispatch_route_stops"));
-  assert.ok(ticketInsertIndex >= 0 && stopInsertIndex > ticketInsertIndex);
+  assert.ok(
+    activeSessionIndex >= 0 &&
+    duplicateCheckIndex > activeSessionIndex &&
+    ticketInsertIndex > duplicateCheckIndex &&
+    stopInsertIndex > ticketInsertIndex
+  );
   const stopInserts = state.calls.filter((call) =>
     call.sql.startsWith("INSERT INTO dispatch_route_stops")
   );
@@ -201,6 +249,131 @@ async function testCreateTicketUsesCurrentManilaDateAndOptimizedStops() {
     "Pendatun Avenue"
   ]);
   assert.ok(stopInserts.every((call) => call.parameters[2] !== "Return to WMO"));
+}
+
+async function testNewTicketIgnoresEveryClientDispatchDateVariant() {
+  const fixedNow = new Date("2026-08-02T16:30:00.000Z");
+  const variants = [
+    { label: "missing", omit: true },
+    { label: "empty", value: "" },
+    { label: "malformed", value: "not-a-date" },
+    { label: "past", value: "2001-01-01" },
+    { label: "future", value: "2099-12-31" }
+  ];
+
+  for (const variant of variants) {
+    const { pool, state } = createTransactionalPool();
+    const service = new DispatchService(pool, { now: () => fixedNow });
+    service.getTicketDetails = async (ticketId) => ({ ticket: { id: ticketId } });
+    const payload = ticketPayload();
+    if (variant.omit) delete payload.dispatch_date;
+    else payload.dispatch_date = variant.value;
+
+    await service.createTicket(payload);
+    assert.equal(
+      state.ticketParameters[5],
+      "2026-08-03",
+      `${variant.label} client dispatch_date must be ignored`
+    );
+  }
+}
+
+async function testManualTicketNumberIsRequiredAndPreservesLeadingZeros() {
+  const service = new DispatchService({
+    async getConnection() {
+      throw new Error("A transaction must not start for invalid input");
+    }
+  });
+  await assert.rejects(
+    () => service.createTicket(ticketPayload({ ticket_number: "   " })),
+    (error) => {
+      assert.equal(error.message, "Enter the ticket number to continue.");
+      assert.equal(error.code, "DISPATCH_TICKET_NUMBER_REQUIRED");
+      return true;
+    }
+  );
+
+  const { pool, state } = createTransactionalPool();
+  const validService = new DispatchService(pool, {
+    now: () => new Date("2026-08-03T00:00:00.000Z")
+  });
+  validService.getTicketDetails = async (ticketId) => ({ ticket: { id: ticketId } });
+  await validService.createTicket(ticketPayload({ ticket_number: "  000042  " }));
+  assert.equal(state.ticketParameters[0], "000042");
+}
+
+async function testDuplicateTicketNumberIsRejectedSafely() {
+  for (const options of [{ duplicateTicket: true }, { duplicateOnInsert: true }]) {
+    const { pool, state } = createTransactionalPool(options);
+    const service = new DispatchService(pool, {
+      now: () => new Date("2026-08-03T00:00:00.000Z")
+    });
+    await assert.rejects(
+      () => service.createTicket(ticketPayload()),
+      (error) => {
+        assert.equal(error.message, "This ticket number is already in use.");
+        assert.equal(error.code, "DISPATCH_TICKET_NUMBER_DUPLICATE");
+        assert.equal(error.statusCode, 409);
+        assert.doesNotMatch(error.message, /SQL|duplicate entry|ticket_number/i);
+        return true;
+      }
+    );
+    assert.equal(state.committed, false);
+    assert.equal(state.rolledBack, true);
+    assert.equal(
+      state.calls.some((call) => call.sql.startsWith("INSERT INTO dispatch_route_stops")),
+      false
+    );
+  }
+}
+
+async function testSelectedActiveSessionMustMatchTruck() {
+  const { pool, state } = createTransactionalPool({ sessionTruckId: "TRUCK-10" });
+  const service = new DispatchService(pool, {
+    now: () => new Date("2026-08-03T00:00:00.000Z")
+  });
+  await assert.rejects(
+    () => service.createTicket(ticketPayload()),
+    (error) => {
+      assert.equal(error.code, "DISPATCH_TRUCK_MISMATCH");
+      assert.equal(error.statusCode, 409);
+      return true;
+    }
+  );
+  assert.equal(state.rolledBack, true);
+  assert.equal(state.ticketParameters, null);
+
+  const ended = createTransactionalPool({ sessionStatus: "stopped" });
+  const endedService = new DispatchService(ended.pool, {
+    now: () => new Date("2026-08-03T00:00:00.000Z")
+  });
+  await assert.rejects(
+    () => endedService.createTicket(ticketPayload()),
+    (error) => {
+      assert.equal(error.code, "ACTIVE_TRACKING_SESSION_ENDED");
+      assert.equal(error.statusCode, 409);
+      return true;
+    }
+  );
+  assert.equal(ended.state.rolledBack, true);
+  assert.equal(ended.state.ticketParameters, null);
+}
+
+async function testUnifiedTicketFiltersAreParameterizedAndExcludePersonnel() {
+  const calls = [];
+  const service = new DispatchService({
+    async query(sql, parameters) {
+      calls.push({ sql: sql.replace(/\s+/g, " ").trim(), parameters });
+      return [[]];
+    }
+  });
+  await service.listTickets({ ticket: "0009", truck: "TRUCK-9" });
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].sql, /dt\.ticket_number LIKE \?/);
+  assert.match(calls[0].sql, /dt\.truck_id LIKE \?/);
+  assert.doesNotMatch(calls[0].sql, /assigned_personnel/);
+  assert.match(calls[0].sql, /ORDER BY COALESCE\(dt\.issued_at, dt\.created_at\) DESC/);
+  assert.deepEqual(calls[0].parameters, ["%TRUCK-9%", "%0009%"]);
 }
 
 async function testSqlFailureRollsBackTicketTransaction() {
@@ -290,6 +463,33 @@ async function testUnexpectedCreateErrorReturnsSafeOperatorMessage() {
   }
 }
 
+async function testDuplicateCreateErrorReturnsExactOperatorMessage() {
+  const originalCreateTicket = dispatchServiceModule.createTicket;
+  dispatchServiceModule.createTicket = async () => {
+    throw Object.assign(
+      new Error("This ticket number is already in use."),
+      { statusCode: 409, code: "DISPATCH_TICKET_NUMBER_DUPLICATE" }
+    );
+  };
+  delete require.cache[require.resolve("../controllers/dispatchController")];
+  const controller = require("../controllers/dispatchController");
+  const response = {
+    statusCode: null,
+    body: null,
+    status(value) { this.statusCode = value; return this; },
+    json(value) { this.body = value; return value; }
+  };
+  try {
+    await controller.createTicket({ body: ticketPayload() }, response);
+    assert.equal(response.statusCode, 409);
+    assert.equal(response.body.message, "This ticket number is already in use.");
+    assert.equal(response.body.code, "DISPATCH_TICKET_NUMBER_DUPLICATE");
+    assert.doesNotMatch(response.body.message, /SQL|duplicate entry|ticket_number/i);
+  } finally {
+    dispatchServiceModule.createTicket = originalCreateTicket;
+  }
+}
+
 function testMissingDispatchTableRecognition() {
   assert.equal(
     isDispatchTableMissingError({
@@ -318,9 +518,15 @@ async function run() {
   await testTicketNumberSequenceUsesLock();
   await testSequenceInitializesAndIncrementsWithoutDuplicates();
   await testCreateTicketUsesCurrentManilaDateAndOptimizedStops();
+  await testNewTicketIgnoresEveryClientDispatchDateVariant();
+  await testManualTicketNumberIsRequiredAndPreservesLeadingZeros();
+  await testDuplicateTicketNumberIsRejectedSafely();
+  await testSelectedActiveSessionMustMatchTruck();
+  await testUnifiedTicketFiltersAreParameterizedAndExcludePersonnel();
   await testSqlFailureRollsBackTicketTransaction();
   await testPreparedTicketKeepsItsOriginalOperatingDateAfterMidnight();
   await testUnexpectedCreateErrorReturnsSafeOperatorMessage();
+  await testDuplicateCreateErrorReturnsExactOperatorMessage();
   testMissingDispatchTableRecognition();
   console.log("Dispatch service mock tests passed");
 }
