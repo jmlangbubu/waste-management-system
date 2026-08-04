@@ -31,6 +31,7 @@ let selectedTruckId = null;
 let selectedRoutePolyline = null;
 let selectedStartMarker = null;
 let selectedCurrentMarker = null;
+let trackingCurrentTruckLayerGroup = null;
 let trackingPollInterval = null;
 let isTruckMapInitialized = false;
 let activeTrackingTrucks = [];
@@ -41,12 +42,13 @@ let trackingMarkerStateBySession = {};
 // Dispatch planning (kept separate from legacy tracking layers)
 let dispatchLiveBySession = {};
 let selectedDispatchTicket = null;
+let dispatchCurrentRouteLayerGroup = null;
 let dispatchPlannedLayerGroup = null;
-let dispatchPlannedConnectorLayerGroup = null;
 let dispatchSelectedGeometryLayerGroup = null;
 let dispatchDestinationMarkerLayerGroup = null;
 let dispatchWmoMarkerLayerGroup = null;
 let dispatchStartMarkerLayerGroup = null;
+let dispatchCompletedRouteLayerGroup = null;
 let dispatchPlanningMap = null;
 let dispatchPlanningLayerGroup = null;
 let dispatchTicketRows = [];
@@ -96,6 +98,11 @@ let dispatchPlannerTriggerElement = null;
 let dispatchPlannerPendingConfirmation = null;
 let dispatchPlannerOperationProcessing = false;
 let dispatchLastRouteDistanceMeters = null;
+let dispatchPlannerStep = 1;
+let dispatchPlannerMode = "create";
+let dispatchWorkspaceView = "plan";
+let dispatchActiveRouteOrderSignature = "";
+let dispatchHasFittedActiveRoute = false;
 
 // Charts
 let wasteTrendChartInstance = null;

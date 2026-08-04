@@ -25,13 +25,32 @@ const DISPATCH_ROUTING_TIMEOUT_MS = 15000;
 const DISPATCH_ROUTING_COST_TIE_METERS = 1;
 const DISPATCH_ROUTING_MAX_2OPT_PASSES = 5;
 const DISPATCH_ROUTING_MAX_WAYPOINTS = 90;
+const DISPATCH_CURRENT_ROUTE_PANE = "dispatchCurrentRoutePane";
 const DISPATCH_PLANNED_ROUTE_PANE = "dispatchPlannedRoutePane";
+const DISPATCH_COMPLETED_ROUTE_PANE = "dispatchCompletedRoutePane";
+const DISPATCH_MARKER_PANE = "dispatchMarkerPane";
 const DISPATCH_PLANNED_ROUTE_STYLE = Object.freeze({
-  color: "#245c46",
+  color: "#687a73",
   weight: 5,
-  opacity: 0.88,
+  opacity: 0.82,
   dashArray: "10 7",
   pane: DISPATCH_PLANNED_ROUTE_PANE,
+  lineCap: "round",
+  lineJoin: "round"
+});
+const DISPATCH_CURRENT_ROUTE_STYLE = Object.freeze({
+  color: "#2d73c7",
+  weight: 6,
+  opacity: 0.94,
+  pane: DISPATCH_CURRENT_ROUTE_PANE,
+  lineCap: "round",
+  lineJoin: "round"
+});
+const DISPATCH_COMPLETED_ROUTE_STYLE = Object.freeze({
+  color: "#408a71",
+  weight: 5,
+  opacity: 0.9,
+  pane: DISPATCH_COMPLETED_ROUTE_PANE,
   lineCap: "round",
   lineJoin: "round"
 });
@@ -306,7 +325,7 @@ function dispatchRouteNeedsRecalculation(
   options = {}
 ) {
   const {
-    hasPlannedLayer = Boolean(dispatchPlannedLayerGroup),
+    hasPlannedLayer = dispatchHasVisiblePlannedRoute(),
     lastSignature = dispatchLastRoutingSignature,
     lastStart = dispatchLastRoutingStart,
     movementThreshold = DISPATCH_ROUTING_MOVEMENT_METERS
@@ -400,7 +419,7 @@ function dispatchCatalogDestinationIsSelected(catalogId, metadata = dispatchStop
 
 function dispatchRoutingFailureState() {
   return {
-    message: "Route preview unavailable",
+    message: "Route update is temporarily unavailable. The last route is still displayed.",
     preserveSelectedStops: true,
     preservePreviousRoute: true,
     drawStraightFallback: false
@@ -444,8 +463,9 @@ function dispatchTicketNumberIsValid(value = dispatchTicketNumberValue()) {
 function captureDispatchRoutePreviewState() {
   return {
     layers: {
-      root: dispatchPlannedLayerGroup,
-      connectors: dispatchPlannedConnectorLayerGroup,
+      current: dispatchCurrentRouteLayerGroup,
+      planned: dispatchPlannedLayerGroup,
+      completed: dispatchCompletedRouteLayerGroup,
       geometry: dispatchSelectedGeometryLayerGroup,
       destinations: dispatchDestinationMarkerLayerGroup,
       wmo: dispatchWmoMarkerLayerGroup,
@@ -471,23 +491,77 @@ function restoreDispatchRoutePreviewState(snapshot) {
   dispatchLastRoutingStart = snapshot.routingStart;
   dispatchOffRouteSince = snapshot.offRouteSince;
 
-  const root = snapshot.layers.root;
-  if (root) {
-    dispatchPlannedLayerGroup = root;
-    dispatchPlannedConnectorLayerGroup = snapshot.layers.connectors;
+  const planned = snapshot.layers.planned;
+  const current = snapshot.layers.current;
+  if (planned || current) {
+    dispatchCurrentRouteLayerGroup = current;
+    dispatchPlannedLayerGroup = planned;
+    dispatchCompletedRouteLayerGroup = snapshot.layers.completed;
     dispatchSelectedGeometryLayerGroup = snapshot.layers.geometry;
     dispatchDestinationMarkerLayerGroup = snapshot.layers.destinations;
     dispatchWmoMarkerLayerGroup = snapshot.layers.wmo;
     dispatchStartMarkerLayerGroup = snapshot.layers.start;
-    if (truckMap && typeof root.addTo === "function") {
-      const routeIsVisible = typeof truckMap.hasLayer === "function"
-        ? truckMap.hasLayer(root)
-        : true;
-      if (!routeIsVisible) root.addTo(truckMap);
+    if (truckMap) {
+      [
+        dispatchCurrentRouteLayerGroup,
+        planned,
+        dispatchCompletedRouteLayerGroup,
+        dispatchSelectedGeometryLayerGroup,
+        dispatchDestinationMarkerLayerGroup,
+        dispatchWmoMarkerLayerGroup,
+        dispatchStartMarkerLayerGroup
+      ].filter(Boolean).forEach((layerGroup) => {
+        if (!truckMap.hasLayer?.(layerGroup)) layerGroup.addTo(truckMap);
+      });
     }
   }
   renderDispatchOptimizedRouteList(dispatchOptimizedRouteStops);
-  if (snapshot.coordinates.length || root) updateDispatchRoutePreviewNotice("ready");
+  if (dispatchHasVisiblePlannedRoute()) {
+    updateDispatchRoutePreviewNotice("ready");
+  }
+}
+
+function dispatchLayerHasContent(layerGroup) {
+  return Boolean(layerGroup?.getLayers?.().length);
+}
+
+function dispatchPolylineHasValidCoordinates(layer) {
+  if (typeof layer?.getLatLngs !== "function") return false;
+  const flatten = (items = []) => {
+    if (!Array.isArray(items)) return [items];
+    if (
+      items.length >= 2 &&
+      Number.isFinite(Number(items[0])) &&
+      Number.isFinite(Number(items[1]))
+    ) {
+      return [items];
+    }
+    return items.flatMap((item) => flatten(item));
+  };
+  const coordinates = flatten(layer.getLatLngs());
+  return coordinates.filter((point) => {
+    const lat = Number(point?.lat ?? point?.[0]);
+    const lng = Number(point?.lng ?? point?.[1]);
+    return Number.isFinite(lat) && Number.isFinite(lng);
+  }).length >= 2;
+}
+
+function dispatchLayerHasVisiblePolyline(layerGroup, map = truckMap) {
+  if (!layerGroup?.getLayers || !map?.hasLayer?.(layerGroup)) return false;
+  return layerGroup.getLayers().some((layer) =>
+    dispatchPolylineHasValidCoordinates(layer) &&
+    (!map.hasLayer || map.hasLayer(layer))
+  );
+}
+
+function dispatchHasVisiblePlannedRoute() {
+  return Boolean(
+    dispatchLastSuccessfulRouteCoordinates.length >= 2 &&
+    (
+      dispatchLayerHasVisiblePolyline(dispatchCurrentRouteLayerGroup) ||
+      dispatchLayerHasVisiblePolyline(dispatchPlannedLayerGroup)
+    )
+  );
 }
 
 function dispatchRoutingResponseIsCurrent(
@@ -632,6 +706,74 @@ function updateDispatchWorkspaceActions(selectedTab = "plan") {
   });
 }
 
+function dispatchSetElementVisible(element, visible) {
+  if (!element) return;
+  element.hidden = !visible;
+  element.classList.toggle("hidden", !visible);
+}
+
+function dispatchPlannerStepName(step = dispatchPlannerStep) {
+  return ({ 1: "Ticket", 2: "Destinations", 3: "Review & Dispatch" })[step] || "Ticket";
+}
+
+function setDispatchPlannerMode(mode = "create") {
+  dispatchPlannerMode = mode === "live" ? "live" : "create";
+  const form = document.getElementById("dispatchTicketForm");
+  form?.classList.toggle("is-live-dispatch", dispatchPlannerMode === "live");
+  dispatchSetElementVisible(
+    document.getElementById("dispatchPlannerStepHeader"),
+    dispatchPlannerMode === "create"
+  );
+  document.querySelectorAll("[data-dispatch-step-panel]").forEach((panel) => {
+    const active = dispatchPlannerMode === "create" &&
+      Number(panel.dataset.dispatchStepPanel) === dispatchPlannerStep;
+    panel.classList.toggle("active", active);
+    panel.hidden = !active;
+  });
+  dispatchSetElementVisible(
+    document.getElementById("dispatchCurrentPanel"),
+    dispatchPlannerMode === "live"
+  );
+  const heading = document.getElementById("dispatchPlannerHeading");
+  if (heading) heading.textContent = dispatchPlannerMode === "live" ? "Live Dispatch" : "Dispatch Planner";
+  updateDispatchPlannerActions();
+}
+
+function setDispatchPlannerStep(step, options = {}) {
+  dispatchPlannerStep = Math.max(1, Math.min(3, Number(step) || 1));
+  if (dispatchPlannerMode !== "create") setDispatchPlannerMode("create");
+  document.querySelectorAll("[data-dispatch-step-panel]").forEach((panel) => {
+    const active = Number(panel.dataset.dispatchStepPanel) === dispatchPlannerStep;
+    panel.classList.toggle("active", active);
+    panel.hidden = !active;
+  });
+  document.querySelectorAll("[data-dispatch-step-indicator]").forEach((indicator) => {
+    const indicatorStep = Number(indicator.dataset.dispatchStepIndicator);
+    indicator.classList.toggle("active", indicatorStep === dispatchPlannerStep);
+    indicator.classList.toggle("complete", indicatorStep < dispatchPlannerStep);
+  });
+  const count = document.getElementById("dispatchPlannerStepCount");
+  const title = document.getElementById("dispatchPlannerStepTitle");
+  if (count) count.textContent = `Step ${dispatchPlannerStep} of 3`;
+  if (title) title.textContent = dispatchPlannerStepName();
+  const reviewSummary = document.getElementById("dispatchReviewSummary");
+  if (reviewSummary) {
+    reviewSummary.textContent = `Ticket ${dispatchTicketNumberValue() || "--"} \u00b7 ` +
+      `Truck ${document.getElementById("dispatchTruckId")?.value || "--"}`;
+  }
+  updateDispatchPlannerActions();
+  if (dispatchPlannerStep === 3 && getDispatchStopDrafts().length) {
+    renderDispatchDraftOnLiveMap();
+  }
+  if (options.focus === false) return;
+  const focusTarget = dispatchPlannerStep === 1
+    ? document.getElementById("dispatchTicketNumber")
+    : dispatchPlannerStep === 2
+      ? document.getElementById("dispatchDestinationSearch")
+      : document.getElementById("dispatchOptimizedRouteHeading");
+  focusTarget?.focus?.({ preventScroll: true });
+}
+
 function openDispatchPlannerDrawer({ focusSearch = true } = {}) {
   const workspace = document.querySelector(".tracking-dispatch-workspace");
   const drawer = document.getElementById("dispatchPlannerDrawer");
@@ -648,11 +790,15 @@ function openDispatchPlannerDrawer({ focusSearch = true } = {}) {
     window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
   );
   setTimeout(() => {
-    const target = focusSearch
-      ? dispatchTicketNumberIsValid()
-        ? document.getElementById("dispatchDestinationSearch")
-        : document.getElementById("dispatchTicketNumber")
-      : document.getElementById("dispatchPlannerHeading");
+    const target = !focusSearch
+      ? document.getElementById("dispatchPlannerHeading")
+      : dispatchPlannerMode === "live"
+        ? document.getElementById("dispatchUpdateStopStatusBtn")
+        : dispatchPlannerStep === 1
+          ? document.getElementById("dispatchTicketNumber")
+          : dispatchPlannerStep === 2
+            ? document.getElementById("dispatchDestinationSearch")
+            : document.getElementById("dispatchOptimizedRouteHeading");
     target?.focus({ preventScroll: true });
   }, reduceMotion ? 0 : 220);
 }
@@ -688,6 +834,7 @@ function setDispatchWorkspaceTab(tabName) {
   const selectedTab = ["monitor", "plan", "records"].includes(tabName)
     ? tabName
     : "monitor";
+  dispatchWorkspaceView = selectedTab === "records" ? "records" : "plan";
   applyDispatchWorkspaceView(selectedTab);
   if (selectedTab === "monitor") {
     closeDispatchPlannerDrawer();
@@ -716,9 +863,33 @@ function updateDispatchPlannerActions() {
   const destinationControls = document.getElementById("dispatchDestinationControls");
   const destinationHint = document.getElementById("dispatchDestinationHint");
   const ticketNumberHint = document.getElementById("dispatchTicketNumberHint");
+  const backButton = document.getElementById("dispatchStepBackBtn");
+  const continueButton = document.getElementById("dispatchStepContinueBtn");
+  const reviewButton = document.getElementById("dispatchStepReviewBtn");
+  const updateStopButton = document.getElementById("dispatchUpdateStopStatusBtn");
+  const viewRouteButton = document.getElementById("dispatchViewActiveRouteBtn");
   const destinationsEnabled = Boolean(
     ticketNumberValid && selectedTrackingTruck && dispatchSelectedSessionActive
   );
+  const routeReady = Boolean(
+    destinationCount &&
+    !dispatchPendingRoutingSignature &&
+    dispatchOptimizedRouteStops.length === destinationCount &&
+    dispatchHasVisiblePlannedRoute()
+  );
+
+  const creating = dispatchPlannerMode === "create";
+  dispatchSetElementVisible(backButton, creating && dispatchPlannerStep > 1);
+  dispatchSetElementVisible(continueButton, creating && dispatchPlannerStep === 1);
+  dispatchSetElementVisible(reviewButton, creating && dispatchPlannerStep === 2);
+  dispatchSetElementVisible(saveButton, creating && dispatchPlannerStep === 3);
+  dispatchSetElementVisible(dispatchNowButton, creating && dispatchPlannerStep === 3);
+  dispatchSetElementVisible(updateStopButton, !creating);
+  dispatchSetElementVisible(viewRouteButton, !creating);
+  if (continueButton) {
+    continueButton.disabled = !ticketNumberValid || !dispatchSelectedSessionActive || dispatchPlannerOperationProcessing;
+  }
+  if (reviewButton) reviewButton.disabled = !routeReady || dispatchPlannerOperationProcessing;
 
   if (destinationControls) destinationControls.disabled = !destinationsEnabled;
   if (ticketNumberHint) {
@@ -743,7 +914,7 @@ function updateDispatchPlannerActions() {
       !ticketNumberValid ||
       !selectedTrackingTruck ||
       !dispatchSelectedSessionActive ||
-      !destinationCount ||
+      !routeReady ||
       dispatchPlannerOperationProcessing
     );
   }
@@ -752,11 +923,18 @@ function updateDispatchPlannerActions() {
       !ticketNumberValid ||
       !selectedTrackingTruck ||
       !dispatchSelectedSessionActive ||
+      !routeReady ||
       dispatchPlannerOperationProcessing
     );
   }
   if (clearButton) clearButton.disabled = destinationCount === 0 || dispatchPlannerOperationProcessing;
   if (refreshButton) refreshButton.disabled = !destinationsEnabled || destinationCount === 0;
+  if (updateStopButton) {
+    updateStopButton.disabled = !selectedDispatchTicket || dispatchPlannerOperationProcessing;
+  }
+  if (viewRouteButton) {
+    viewRouteButton.disabled = !selectedDispatchTicket || dispatchPlannerOperationProcessing;
+  }
 }
 
 function requireDispatchTicketNumberForDestinations() {
@@ -1044,17 +1222,19 @@ function clearDispatchPlannedRoute(reason = "explicit reset") {
     generation_id: dispatchRoutingGeneration
   });
   if (truckMap) {
-    [
-      dispatchPlannedConnectorLayerGroup,
+    [...new Set([
+      dispatchCurrentRouteLayerGroup,
       dispatchSelectedGeometryLayerGroup,
       dispatchDestinationMarkerLayerGroup,
       dispatchWmoMarkerLayerGroup,
       dispatchStartMarkerLayerGroup,
+      dispatchCompletedRouteLayerGroup,
       dispatchPlannedLayerGroup
-    ].filter(Boolean).forEach((layerGroup) => truckMap.removeLayer(layerGroup));
+    ].filter(Boolean))].forEach((layerGroup) => truckMap.removeLayer(layerGroup));
   }
+  dispatchCurrentRouteLayerGroup = null;
   dispatchPlannedLayerGroup = null;
-  dispatchPlannedConnectorLayerGroup = null;
+  dispatchCompletedRouteLayerGroup = null;
   dispatchSelectedGeometryLayerGroup = null;
   dispatchDestinationMarkerLayerGroup = null;
   dispatchWmoMarkerLayerGroup = null;
@@ -1063,19 +1243,14 @@ function clearDispatchPlannedRoute(reason = "explicit reset") {
 
 function createDispatchPlannedLayerGroups(options = {}) {
   const groups = {
-    connectors: L.layerGroup(),
+    current: L.layerGroup(),
+    planned: L.layerGroup(),
+    completed: L.layerGroup(),
     geometry: L.layerGroup(),
     destinations: L.layerGroup(),
     wmo: L.layerGroup(),
     start: L.layerGroup()
   };
-  groups.root = L.layerGroup([
-    groups.geometry,
-    groups.connectors,
-    groups.destinations,
-    groups.wmo,
-    groups.start
-  ]);
   if (options.detached) return groups;
   activateDispatchPlannedLayerGroups(groups);
   return groups;
@@ -1083,21 +1258,31 @@ function createDispatchPlannedLayerGroups(options = {}) {
 
 function activateDispatchPlannedLayerGroups(groups) {
   if (!groups || !truckMap) return;
-  [
-    dispatchPlannedConnectorLayerGroup,
+  [...new Set([
+    dispatchCurrentRouteLayerGroup,
     dispatchSelectedGeometryLayerGroup,
     dispatchDestinationMarkerLayerGroup,
     dispatchWmoMarkerLayerGroup,
     dispatchStartMarkerLayerGroup,
+    dispatchCompletedRouteLayerGroup,
     dispatchPlannedLayerGroup
-  ].filter(Boolean).forEach((layerGroup) => truckMap.removeLayer(layerGroup));
-  dispatchPlannedLayerGroup = groups.root;
-  dispatchPlannedConnectorLayerGroup = groups.connectors;
+  ].filter(Boolean))].forEach((layerGroup) => truckMap.removeLayer(layerGroup));
+  dispatchCurrentRouteLayerGroup = groups.current;
+  dispatchPlannedLayerGroup = groups.planned;
+  dispatchCompletedRouteLayerGroup = groups.completed;
   dispatchSelectedGeometryLayerGroup = groups.geometry;
   dispatchDestinationMarkerLayerGroup = groups.destinations;
   dispatchWmoMarkerLayerGroup = groups.wmo;
   dispatchStartMarkerLayerGroup = groups.start;
-  groups.root.addTo(truckMap);
+  [
+    groups.geometry,
+    groups.current,
+    groups.planned,
+    groups.completed,
+    groups.destinations,
+    groups.wmo,
+    groups.start
+  ].forEach((layerGroup) => layerGroup.addTo(truckMap));
 }
 
 function clearDispatchTrackingSelection() {
@@ -1116,6 +1301,7 @@ function renderDispatchEmptyPanel(message) {
   const panel = document.getElementById("dispatchCurrentPanel");
   if (!panel) return;
   panel.classList.add("hidden");
+  if (dispatchPlannerMode === "live") setDispatchPlannerMode("create");
   const setupMessage = dispatchSetupRequired
     ? "Dispatch database setup is required."
     : message ||
@@ -1135,7 +1321,7 @@ function renderDispatchEmptyPanel(message) {
   `;
 }
 
-async function loadDispatchForTrackingSession(sessionId) {
+async function loadDispatchForTrackingSession(sessionId, options = {}) {
   if (!sessionId) {
     clearDispatchTrackingSelection();
     return null;
@@ -1160,14 +1346,23 @@ async function loadDispatchForTrackingSession(sessionId) {
   }
 
   try {
+    const previousTicketId = selectedDispatchTicket?.ticket?.id ?? null;
     const details = await dispatchRequest(
       getDispatchTrackingSessionApiUrl(sessionId)
+    );
+    if (String(selectedSessionId || "") !== String(sessionId || "")) return null;
+    const mustRehydrateRoute = Boolean(
+      options.forceRoute ||
+      String(previousTicketId ?? "") !== String(details.ticket?.id ?? "") ||
+      !dispatchHasVisiblePlannedRoute()
     );
     selectedDispatchTicket = details;
     renderDispatchTicketDetails(details);
     const plannerVisible = !document.querySelector('[data-tracking-workspace-view="plan"]')?.hidden;
     const preserveUnsavedDraft = dispatchPlannerHasUnsavedRoute(sessionId);
-    if ((plannerVisible || preserveUnsavedDraft) && getDispatchStopDrafts().length) {
+    if (dispatchTicketIsLive(details.ticket)) {
+      renderDispatchPlannedRoute(details, { force: mustRehydrateRoute });
+    } else if ((plannerVisible || preserveUnsavedDraft) && getDispatchStopDrafts().length) {
       renderDispatchDraftOnLiveMap();
       if (preserveUnsavedDraft) {
         renderDispatchOptimizedRouteList(dispatchOptimizedRouteStops);
@@ -1210,14 +1405,40 @@ function dispatchSegmentColor(stop, isCurrent) {
   return "#8a9690";
 }
 
+function updateDispatchLiveRouteStatus(status = "idle") {
+  const row = document.getElementById("dispatchLiveRouteState");
+  if (!row) return;
+  const normalizedStatus = ["loading", "ready", "error", "complete"].includes(status)
+    ? status
+    : "idle";
+  row.dataset.routeStatus = normalizedStatus;
+  row.className = `dispatch-live-route-state ${normalizedStatus}`;
+  const label = row.querySelector("strong");
+  if (!label) return;
+  label.textContent = normalizedStatus === "loading"
+    ? "Route updating"
+    : normalizedStatus === "ready"
+      ? "Route ready"
+      : normalizedStatus === "complete"
+        ? "Route complete"
+        : normalizedStatus === "error"
+          ? "Route unavailable — retry available"
+          : "Route pending";
+}
+
 function updateDispatchRoutePreviewNotice(status = "idle") {
   const notice = document.getElementById("dispatchRoutePreviewNotice");
   if (!notice) return;
-  const normalizedStatus = ["loading", "ready", "error"].includes(status)
+  let normalizedStatus = ["loading", "ready", "error", "complete"].includes(status)
     ? status
     : "idle";
+  if (normalizedStatus === "ready" && !dispatchHasVisiblePlannedRoute()) {
+    normalizedStatus = "error";
+  }
   notice.dataset.routeStatus = normalizedStatus;
-  notice.classList.remove("loading", "ready", "error");
+  notice.classList.remove("loading", "ready", "error", "complete");
+  updateDispatchMapRouteOverlay(normalizedStatus);
+  updateDispatchLiveRouteStatus(normalizedStatus);
   if (normalizedStatus === "idle") {
     notice.classList.remove("hidden");
     notice.textContent = "Add a destination to calculate the route.";
@@ -1240,7 +1461,9 @@ function updateDispatchRoutePreviewNotice(status = "idle") {
       : "Calculating route&hellip;"
     : normalizedStatus === "ready"
       ? readyParts.map(dispatchEscape).join(" &middot; ")
-      : `${dispatchEscape(dispatchRoutingFailureState().message)} <button type="button" data-dispatch-route-retry>Retry Route</button>`;
+      : normalizedStatus === "complete"
+        ? "Route complete &middot; WMO final endpoint"
+        : `${dispatchEscape(dispatchRoutingFailureState().message)} <button type="button" data-dispatch-route-retry>Retry Route</button>`;
   if (
     normalizedStatus === "loading" &&
     dispatchOptimizedRouteStops.length !== destinationCount
@@ -1252,6 +1475,62 @@ function updateDispatchRoutePreviewNotice(status = "idle") {
       list.innerHTML = '<div class="dispatch-route-empty error">Optimized order unavailable. Selected destinations are preserved.</div>';
     }
   }
+  updateDispatchPlannerActions();
+}
+
+function updateDispatchMapRouteOverlay(status = "idle") {
+  const overlay = document.getElementById("dispatchRouteMapOverlay");
+  const title = document.getElementById("dispatchRouteMapOverlayTitle");
+  const meta = document.getElementById("dispatchRouteMapOverlayMeta");
+  const fitButton = document.getElementById("dispatchFitRouteBtn");
+  if (!overlay || !title || !meta || !fitButton) return;
+  const hasRoute = dispatchHasVisiblePlannedRoute();
+  const stops = Array.isArray(selectedDispatchTicket?.stops)
+    ? selectedDispatchTicket.stops
+    : getDispatchStopDrafts();
+  const destinationCount = stops.length;
+  const active = dispatchPlannerMode === "live" && selectedDispatchTicket?.ticket;
+  overlay.classList.toggle("hidden", !destinationCount && !hasRoute);
+  fitButton.disabled = !hasRoute;
+  fitButton.textContent = active ? "Fit Active Route" : "Fit Route";
+
+  if (active) {
+    const groups = splitDispatchOperationalStops(stops);
+    const completedCount = groups.completedStops.length;
+    title.textContent = groups.currentStop
+      ? `Current target: ${groups.currentStop.location_name}`
+      : "Return to WMO";
+    meta.textContent = status === "loading"
+      ? `Updating route\u2026 \u00b7 ${completedCount} of ${destinationCount} completed`
+      : status === "error"
+        ? `Route update unavailable \u00b7 ${completedCount} of ${destinationCount} completed`
+        : `${completedCount} of ${destinationCount} completed`;
+    return;
+  }
+
+  title.textContent = status === "loading"
+    ? "Updating route\u2026"
+    : status === "error"
+      ? "Route update unavailable"
+      : "Route ready";
+  meta.textContent = `${destinationCount} destination${destinationCount === 1 ? "" : "s"}`;
+}
+
+function fitDispatchRouteOnMap() {
+  if (
+    !truckMap ||
+    !dispatchLastSuccessfulRouteCoordinates.length ||
+    typeof L === "undefined" ||
+    typeof L.latLngBounds !== "function"
+  ) {
+    return false;
+  }
+  const bounds = L.latLngBounds(
+    dispatchLastSuccessfulRouteCoordinates.map((point) => [point.lat, point.lng])
+  );
+  if (!bounds.isValid?.()) return false;
+  truckMap.fitBounds(bounds, { padding: [42, 42], maxZoom: 16 });
+  return true;
 }
 
 function dispatchRoutingCacheKey(start, end) {
@@ -1528,9 +1807,29 @@ function splitDispatchOperationalStops(stops = []) {
     });
   const skippedStops = stops.filter((stop) => stop.stop_status === "skipped").sort(byOriginalOrder);
   const activeStops = stops.filter((stop) => !["completed", "skipped"].includes(stop.stop_status));
-  const currentStop = activeStops.find((stop) => ["arrived", "on_the_way"].includes(stop.stop_status)) || null;
+  const currentStop = activeStops.find((stop) => ["arrived", "on_the_way"].includes(stop.stop_status)) ||
+    activeStops.sort(byOriginalOrder)[0] ||
+    null;
   const remainingStops = activeStops.filter((stop) => !currentStop || Number(stop.id) !== Number(currentStop.id));
   return { completedStops, currentStop, remainingStops, skippedStops };
+}
+
+function dispatchShouldReoptimizeRemaining(reason, options = {}) {
+  return Boolean(
+    options.reoptimizeRemaining ||
+    reason === "destinations_changed" ||
+    reason === "sustained_off_route"
+  );
+}
+
+function dispatchOrderActiveRouteStops(routeStops = [], previousOrder = [], shouldReoptimize = false) {
+  if (shouldReoptimize || !previousOrder.length) return [...routeStops];
+  const routeStopById = new Map(routeStops.map((stop) => [String(stop.id), stop]));
+  const previousIds = previousOrder.map(String);
+  return [
+    ...previousIds.map((id) => routeStopById.get(id)).filter(Boolean),
+    ...routeStops.filter((stop) => !previousIds.includes(String(stop.id)))
+  ];
 }
 
 function dispatchTicketStopRouteCacheKey(stop = {}) {
@@ -1620,22 +1919,37 @@ async function hydrateDispatchTicketStopRouteItem(stop, signal) {
 }
 
 function renderDispatchTerminalStopMarkers(layers, completedStops, skippedStops) {
-  completedStops.forEach((stop, index) => {
+  completedStops.forEach((stop) => {
     L.marker([stop.latitude, stop.longitude], {
-      icon: dispatchMarkerIcon(index + 1, "completed")
+      icon: dispatchMarkerIcon(stop.stop_order, "completed"),
+      pane: DISPATCH_MARKER_PANE
     }).bindTooltip(`${stop.location_name} - completed`).addTo(layers.destinations);
   });
   skippedStops.forEach((stop) => {
     L.marker([stop.latitude, stop.longitude], {
-      icon: dispatchMarkerIcon("S", "skipped")
+      icon: dispatchMarkerIcon("S", "skipped"),
+      pane: DISPATCH_MARKER_PANE
     }).bindTooltip(`${stop.location_name} - skipped`).addTo(layers.destinations);
+  });
+}
+
+function renderDispatchCompletedRouteGeometry(layers, completedItems = []) {
+  completedItems.forEach(({ stop, geometry = [] }) => {
+    const coordinates = geometry.map((point) => [
+      Number(point?.latitude ?? point?.lat),
+      Number(point?.longitude ?? point?.lng ?? point?.lon)
+    ]).filter(([lat, lng]) => Number.isFinite(lat) && Number.isFinite(lng));
+    if (coordinates.length < 2) return;
+    L.polyline(coordinates, DISPATCH_COMPLETED_ROUTE_STYLE)
+      .bindTooltip(`${stop.location_name || "Completed stop"} - completed route geometry`)
+      .addTo(layers.completed);
   });
 }
 
 function renderDispatchOptimizedTicketOrder(details, groups, journey) {
   if (!journey?.plannedStops) return;
   const optimizedStops = [
-    ...groups.completedStops.map((stop, index) => ({ ...stop, stop_order: index + 1 })),
+    ...groups.completedStops,
     ...journey.plannedStops.map(({ stop }, index) => ({
       ...stop,
       stop_order: groups.completedStops.length + index + 1
@@ -1672,7 +1986,10 @@ function renderDispatchPlannedRoute(details, options = {}) {
 
   if (!routeStops.length) {
     const layers = createDispatchPlannedLayerGroups({ detached: true });
-    L.marker([wmo.lat, wmo.lng], { icon: dispatchMarkerIcon("W", "wmo") })
+    L.marker([wmo.lat, wmo.lng], {
+      icon: dispatchMarkerIcon("W", "wmo"),
+      pane: DISPATCH_MARKER_PANE
+    })
       .bindTooltip("Required WMO return point").addTo(layers.wmo);
     renderDispatchTerminalStopMarkers(layers, groups.completedStops, groups.skippedStops);
     activateDispatchPlannedLayerGroups(layers);
@@ -1680,7 +1997,7 @@ function renderDispatchPlannedRoute(details, options = {}) {
     dispatchLastRoutingStart = startPoint;
     dispatchLastSuccessfulRouteCoordinates = [];
     dispatchLastRouteDistanceMeters = null;
-    updateDispatchRoutePreviewNotice("ready");
+    updateDispatchRoutePreviewNotice("complete");
     return;
   }
 
@@ -1701,11 +2018,27 @@ function renderDispatchPlannedRoute(details, options = {}) {
   dispatchRoutingRequestTimer = setTimeout(async () => {
     const controller = new AbortController();
     dispatchRoutingAbortController = controller;
-    let items = routeStops.map((stop) => ({ stop, metadata: null, geometry: [] }));
+    const shouldReoptimizeRemaining = dispatchShouldReoptimizeRemaining(
+      reroute.reason,
+      options
+    );
+    const previousOrder = (dispatchLastSuccessfulRouteState?.journey?.plannedStops || [])
+      .map(({ stop }) => String(stop.id));
+    const lockedRouteStops = dispatchOrderActiveRouteStops(
+      routeStops,
+      previousOrder,
+      shouldReoptimizeRemaining
+    );
+    let items = lockedRouteStops.map((stop) => ({ stop, metadata: null, geometry: [] }));
+    let completedItems = groups.completedStops.map((stop) => ({ stop, metadata: null, geometry: [] }));
     try {
       items = [];
-      for (const stop of routeStops) {
+      for (const stop of lockedRouteStops) {
         items.push(await hydrateDispatchTicketStopRouteItem(stop, controller.signal));
+      }
+      completedItems = [];
+      for (const stop of groups.completedStops) {
+        completedItems.push(await hydrateDispatchTicketStopRouteItem(stop, controller.signal));
       }
       const costLookup = await requestDispatchRoadCostMatrix(
         dispatchOptimizationPoints(startPoint, wmo, items),
@@ -1714,7 +2047,9 @@ function renderDispatchPlannedRoute(details, options = {}) {
       );
       const journey = buildDispatchPlannedJourney(startPoint, wmo, items, {
         costLookup,
-        lockedPrefixCount: groups.currentStop ? 1 : 0
+        lockedPrefixCount: shouldReoptimizeRemaining
+          ? groups.currentStop ? 1 : 0
+          : items.length
       });
       if (!journey.plannedStops.length) throw new Error("No complete optimized remaining route could be calculated.");
       const routeWaypoints = dispatchContinuousRouteWaypoints(startPoint, journey, wmo);
@@ -1739,6 +2074,7 @@ function renderDispatchPlannedRoute(details, options = {}) {
         orderOffset: groups.completedStops.length
       });
       renderDispatchTerminalStopMarkers(layers, groups.completedStops, groups.skippedStops);
+      renderDispatchCompletedRouteGeometry(layers, completedItems);
       activateDispatchPlannedLayerGroups(layers);
       dispatchOptimizedRouteStops = [
         ...groups.completedStops,
@@ -1753,6 +2089,9 @@ function renderDispatchPlannedRoute(details, options = {}) {
         completedStops: groups.completedStops,
         skippedStops: groups.skippedStops
       };
+      dispatchActiveRouteOrderSignature = journey.plannedStops
+        .map(({ stop }) => String(stop.id))
+        .join(">");
       dispatchLastRouteDistanceMeters = Number.isFinite(Number(journey.total_cost_meters))
         ? Number(journey.total_cost_meters)
         : null;
@@ -1760,6 +2099,10 @@ function renderDispatchPlannedRoute(details, options = {}) {
       dispatchLastRoutingSignature = signature;
       dispatchLastRoutingStart = startPoint;
       dispatchOffRouteSince = null;
+      if (!dispatchHasFittedActiveRoute) {
+        fitDispatchRouteOnMap();
+        dispatchHasFittedActiveRoute = true;
+      }
       updateDispatchRoutePreviewNotice("ready");
       dispatchRouteDebug("planned route rendered", {
         generation_id: generation,
@@ -1773,9 +2116,9 @@ function renderDispatchPlannedRoute(details, options = {}) {
       dispatchRouteDebug("planned route unavailable", {
         generation_id: generation,
         reason: error.name || "routing_error",
-        previous_route_retained: Boolean(dispatchPlannedLayerGroup)
+        previous_route_retained: dispatchHasVisiblePlannedRoute()
       });
-      if (!dispatchPlannedLayerGroup) {
+      if (!dispatchHasVisiblePlannedRoute()) {
         renderDispatchSelectionFallback(items, startPoint, wmo, reliableStart);
       }
       updateDispatchRoutePreviewNotice("error");
@@ -1803,7 +2146,7 @@ function dispatchEventLabel(eventType) {
   return labels[eventType] || dispatchStatusLabel(eventType);
 }
 
-function renderDispatchTicketDetails(details) {
+function renderDispatchLegacyTicketDetails(details) {
   const panel = document.getElementById("dispatchCurrentPanel");
   if (!panel || !details || !details.ticket) return;
 
@@ -1927,12 +2270,107 @@ function renderDispatchTicketDetails(details) {
   `;
 }
 
+function dispatchTicketIsLive(ticket = {}) {
+  return ["dispatched", "in_progress", "returning_to_wmo"].includes(ticket.status);
+}
+
+function renderDispatchTicketDetailsModal(details) {
+  const body = document.getElementById("dispatchTicketDetailsBody");
+  if (!body || !details?.ticket) return;
+  const ticket = details.ticket;
+  const stops = Array.isArray(details.stops) ? details.stops : [];
+  const events = Array.isArray(details.events) ? details.events : [];
+  const warnings = Array.isArray(details.warnings) ? details.warnings : [];
+  const title = document.getElementById("dispatchTicketDetailsTitle");
+  if (title) title.textContent = `Ticket ${ticket.ticket_number}`;
+  const ticketActions = [
+    ticket.status === "prepared" ? `<button type="button" class="dispatch-action-button" data-dispatch-action="edit" data-ticket-id="${ticket.id}">Edit Draft</button>` : "",
+    ticket.status === "prepared" ? `<button type="button" class="dispatch-action-button" data-dispatch-action="issue" data-ticket-id="${ticket.id}">Issue Ticket</button>` : "",
+    ["dispatched", "in_progress"].includes(ticket.status) ? `<button type="button" class="dispatch-action-button" data-dispatch-action="returning" data-ticket-id="${ticket.id}">Returning to WMO</button>` : "",
+    !["completed", "cancelled"].includes(ticket.status) ? `<button type="button" class="dispatch-action-button danger" data-dispatch-action="cancel" data-ticket-id="${ticket.id}">Cancel Ticket</button>` : ""
+  ].join("");
+  const stopCards = stops.map((stop) => `
+    <article class="dispatch-details-stop">
+      <span class="dispatch-route-order">${dispatchEscape(stop.stop_order)}</span>
+      <div><strong>${dispatchEscape(stop.location_name)}</strong><small>${dispatchEscape(stop.address_reference || "General Santos City")}</small></div>
+      <span class="dispatch-stop-status ${dispatchStatusClass(stop.stop_status)}">${dispatchEscape(dispatchStatusLabel(stop.stop_status))}</span>
+    </article>
+  `).join("");
+  const timeline = events.length ? events.map((event) => `
+    <div class="dispatch-event-item">
+      <i></i>
+      <div><strong>${dispatchEscape(dispatchEventLabel(event.event_type))}</strong><small>${dispatchEscape(dispatchFormatDateTime(event.event_at))} \u00b7 ${dispatchEscape(event.event_source || "system")}${event.actor_name ? ` \u00b7 ${dispatchEscape(event.actor_name)}` : ""}</small></div>
+    </div>
+  `).join("") : '<div class="dispatch-route-empty">No dispatch events yet.</div>';
+  body.innerHTML = `
+    <div class="dispatch-details-summary">
+      <div><span>Truck Number</span><strong>${dispatchEscape(ticket.truck_id)}</strong></div>
+      <div><span>Personnel</span><strong>${dispatchEscape(ticket.assigned_personnel_name || "Not assigned")}</strong></div>
+      <div><span>Operating Date</span><strong>${dispatchEscape(String(ticket.dispatch_date || "").slice(0, 10))}</strong></div>
+      <div><span>Status</span><strong>${dispatchEscape(dispatchStatusLabel(ticket.status))}</strong></div>
+    </div>
+    ${warnings.map((warning) => `<div class="dispatch-warning">${dispatchEscape(warning)}</div>`).join("")}
+    <div class="dispatch-ticket-actions">${ticketActions}</div>
+    <section><h4>Route Stops</h4><div class="dispatch-details-stop-list">${stopCards || '<div class="dispatch-route-empty">No route stops.</div>'}</div></section>
+    <section><h4>Timeline & Audit</h4><div class="dispatch-event-list">${timeline}</div></section>
+  `;
+}
+
+function renderDispatchTicketDetails(details) {
+  const panel = document.getElementById("dispatchCurrentPanel");
+  if (!panel || !details?.ticket) return;
+  const ticket = details.ticket;
+  const stops = Array.isArray(details.stops) ? details.stops : [];
+  renderDispatchTicketDetailsModal(details);
+  renderDispatchOptimizedRouteList(stops);
+  if (!dispatchTicketIsLive(ticket)) {
+    if (dispatchPlannerMode === "live") setDispatchPlannerMode("create");
+    dispatchSetElementVisible(panel, false);
+    return;
+  }
+
+  const groups = splitDispatchOperationalStops(stops);
+  const currentStop = groups.currentStop;
+  const nextStop = groups.remainingStops[0] || null;
+  const completedCount = groups.completedStops.length;
+  const reliablePoint = getDispatchSelectedReliablePoint();
+  const targetPoint = dispatchPoint(currentStop?.latitude, currentStop?.longitude);
+  const distanceMeters = reliablePoint && targetPoint
+    ? dispatchDistanceMeters(dispatchPoint(reliablePoint.lat, reliablePoint.lng), targetPoint)
+    : null;
+  const distanceLabel = Number.isFinite(distanceMeters)
+    ? distanceMeters >= 1000 ? `${(distanceMeters / 1000).toFixed(1)} km away` : `${Math.round(distanceMeters)} m away`
+    : "Distance updating";
+  const stopActions = currentStop ? `
+    ${currentStop.stop_status !== "arrived" ? `<button type="button" data-dispatch-action="arrive" data-ticket-id="${ticket.id}" data-stop-id="${currentStop.id}">Mark Arrived</button>` : ""}
+    <button type="button" data-dispatch-action="complete" data-ticket-id="${ticket.id}" data-stop-id="${currentStop.id}">Complete Stop</button>
+    <button type="button" class="danger" data-dispatch-action="skip" data-ticket-id="${ticket.id}" data-stop-id="${currentStop.id}">Skip Stop</button>
+  ` : "";
+  panel.innerHTML = `
+    <div class="dispatch-live-heading"><div><small>Live Dispatch</small><strong>${dispatchEscape(ticket.truck_id)} \u00b7 Ticket ${dispatchEscape(ticket.ticket_number)}</strong></div><span class="dispatch-status-chip ${dispatchStatusClass(ticket.status)}">${dispatchEscape(dispatchStatusLabel(ticket.status))}</span></div>
+    <div class="dispatch-live-progress"><strong>${completedCount} of ${stops.length} destinations completed</strong><progress value="${completedCount}" max="${Math.max(1, stops.length)}">${completedCount} of ${stops.length}</progress></div>
+    <section class="dispatch-live-target current"><small>Current Target</small>${currentStop ? `<div><span>${dispatchEscape(currentStop.stop_order)}</span><strong>${dispatchEscape(currentStop.location_name)}</strong></div><p>${dispatchEscape(distanceLabel)}</p>` : '<strong>Return to WMO</strong>'}</section>
+    <div class="dispatch-live-route-preview"><section><small>Next</small>${nextStop ? `<strong>${dispatchEscape(nextStop.stop_order)} ${dispatchEscape(nextStop.location_name)}</strong>` : "<strong>None</strong>"}</section><section><small>Final</small><strong>W Return to WMO</strong></section></div>
+    <div id="dispatchLiveRouteState" class="dispatch-live-route-state idle" data-route-status="idle"><span aria-hidden="true"></span><strong>Route pending</strong></div>
+    <div id="dispatchStopActionSheet" class="dispatch-stop-action-sheet hidden" role="group" aria-label="Update current stop status">${stopActions || '<p>No destination action is currently available.</p>'}<button type="button" id="dispatchStopActionCancelBtn">Cancel</button></div>
+    <div class="dispatch-live-secondary-actions"><button type="button" id="dispatchReoptimizeRemainingBtn">Re-optimize Remaining Stops</button><button type="button" id="dispatchViewTicketDetailsBtn">View Ticket Details</button></div>
+  `;
+  setDispatchPlannerMode("live");
+  const routeStatus = document.getElementById("dispatchRoutePreviewNotice")?.dataset.routeStatus || "idle";
+  updateDispatchMapRouteOverlay(routeStatus);
+  updateDispatchLiveRouteStatus(routeStatus);
+}
+
 function openDispatchModal(modalId) {
-  document.getElementById(modalId)?.classList.remove("hidden");
+  const modal = document.getElementById(modalId);
+  modal?.classList.remove("hidden");
+  modal?.setAttribute("aria-hidden", "false");
 }
 
 function closeDispatchModal(modalId) {
-  document.getElementById(modalId)?.classList.add("hidden");
+  const modal = document.getElementById(modalId);
+  modal?.classList.add("hidden");
+  modal?.setAttribute("aria-hidden", "true");
 }
 
 function dispatchStopRowTemplate(stop = {}, index = 0) {
@@ -2052,7 +2490,7 @@ function renderDispatchOptimizedRouteList(stops = dispatchOptimizedRouteStops) {
 function updateDispatchPlannerDestinationUi() {
   const destinationCount = getDispatchStopDrafts().length;
   const count = document.getElementById("dispatchRequiredDestinationCount");
-  if (count) count.textContent = `\u00b7 ${destinationCount}`;
+  if (count) count.textContent = `\u00b7 ${destinationCount} selected`;
   if (!destinationCount) renderDispatchOptimizedRouteList([]);
   updateDispatchPlannerActions();
 }
@@ -2165,17 +2603,46 @@ function applyDispatchOptimizedDraftOrder(plannedStops) {
   renderDispatchOptimizedRouteList(dispatchOptimizedRouteStops);
 }
 
+function dispatchRouteSegmentWithEndpoints(coordinates, startPoint, endPoint) {
+  const normalized = (coordinates || []).map((coordinate) => [
+    Number(coordinate?.lat ?? coordinate?.[0]),
+    Number(coordinate?.lng ?? coordinate?.[1])
+  ]).filter(([lat, lng]) => Number.isFinite(lat) && Number.isFinite(lng));
+  const start = dispatchPoint(startPoint?.lat ?? startPoint?.[0], startPoint?.lng ?? startPoint?.[1]);
+  const end = dispatchPoint(endPoint?.lat ?? endPoint?.[0], endPoint?.lng ?? endPoint?.[1]);
+  if (!start || !end) return normalized;
+  const result = [...normalized];
+  if (!result.length || dispatchDistanceMeters(start, dispatchPoint(result[0][0], result[0][1])) > 0.5) {
+    result.unshift([start.lat, start.lng]);
+  } else {
+    result[0] = [start.lat, start.lng];
+  }
+  const last = result.at(-1);
+  if (!last || dispatchDistanceMeters(end, dispatchPoint(last[0], last[1])) > 0.5) {
+    result.push([end.lat, end.lng]);
+  } else {
+    result[result.length - 1] = [end.lat, end.lng];
+  }
+  return result;
+}
+
 function buildDispatchRouteLayers(journey, routeCoordinates, startPoint, wmoPoint, options = {}) {
   if (!Array.isArray(routeCoordinates) || routeCoordinates.length < 2) {
     throw new Error("The planned route geometry is empty.");
   }
   const layers = createDispatchPlannedLayerGroups({ detached: true });
   const currentStopId = options.currentStopId;
-  L.marker([wmoPoint.lat, wmoPoint.lng], { icon: dispatchMarkerIcon("W", "wmo") })
+  L.marker([wmoPoint.lat, wmoPoint.lng], {
+    icon: dispatchMarkerIcon("W", "wmo"),
+    pane: DISPATCH_MARKER_PANE
+  })
     .bindTooltip("Required WMO return point")
     .addTo(layers.wmo);
   if (options.showTruckMarker && !selectedCurrentMarker) {
-    L.marker([startPoint.lat, startPoint.lng], { icon: dispatchMarkerIcon("T", "truck") })
+    L.marker([startPoint.lat, startPoint.lng], {
+      icon: dispatchMarkerIcon("T", "truck"),
+      pane: DISPATCH_MARKER_PANE
+    })
       .bindTooltip("Current reliable truck location")
       .addTo(layers.start);
   }
@@ -2186,7 +2653,8 @@ function buildDispatchRouteLayers(journey, routeCoordinates, startPoint, wmoPoin
         color: dispatchSegmentColor(stop, currentStopId && Number(stop.id) === Number(currentStopId)),
         weight: 4,
         opacity: 0.5,
-        dashArray: "4 8"
+        dashArray: "4 8",
+        pane: DISPATCH_PLANNED_ROUTE_PANE
       })
         .bindTooltip(`${stop.location_name || `Stop ${optimizedOrder}`} - verified OSM geometry`)
         .addTo(layers.geometry);
@@ -2199,25 +2667,74 @@ function buildDispatchRouteLayers(journey, routeCoordinates, startPoint, wmoPoin
           ? "current"
           : "";
     L.marker([stop.latitude, stop.longitude], {
-      icon: dispatchMarkerIcon(optimizedOrder, markerClass)
+      icon: dispatchMarkerIcon(optimizedOrder, markerClass),
+      pane: DISPATCH_MARKER_PANE
     })
       .bindTooltip(stop.location_name || `Stop ${optimizedOrder}`)
       .addTo(layers.destinations);
   });
-  L.polyline(routeCoordinates, DISPATCH_PLANNED_ROUTE_STYLE)
-    .bindTooltip("Continuous road-following planned route")
-    .addTo(layers.connectors);
+  if (currentStopId) {
+    const currentStop = journey.plannedStops.find(({ stop }) =>
+      Number(stop.id) === Number(currentStopId)
+    )?.stop;
+    const currentPoint = dispatchPoint(currentStop?.latitude, currentStop?.longitude);
+    let splitIndex = 0;
+    if (currentPoint) {
+      routeCoordinates.forEach(([lat, lng], index) => {
+        const currentDistance = dispatchDistanceMeters(currentPoint, dispatchPoint(lat, lng));
+        const bestDistance = dispatchDistanceMeters(
+          currentPoint,
+          dispatchPoint(routeCoordinates[splitIndex]?.[0], routeCoordinates[splitIndex]?.[1])
+        );
+        if (currentDistance < bestDistance) splitIndex = index;
+      });
+    }
+    const currentCoordinates = dispatchRouteSegmentWithEndpoints(
+      routeCoordinates.slice(0, splitIndex + 1),
+      startPoint,
+      currentPoint
+    );
+    const remainingCoordinates = dispatchRouteSegmentWithEndpoints(
+      routeCoordinates.slice(Math.max(0, splitIndex)),
+      currentPoint,
+      wmoPoint
+    );
+    if (currentCoordinates.length > 1) {
+      L.polyline(currentCoordinates, DISPATCH_CURRENT_ROUTE_STYLE)
+        .bindTooltip("Current truck to current target")
+        .addTo(layers.current);
+    }
+    if (remainingCoordinates.length > 1) {
+      L.polyline(remainingCoordinates, DISPATCH_PLANNED_ROUTE_STYLE)
+        .bindTooltip("Remaining route to WMO")
+        .addTo(layers.planned);
+    }
+  } else {
+    L.polyline(dispatchRouteSegmentWithEndpoints(routeCoordinates, startPoint, wmoPoint), {
+      ...DISPATCH_CURRENT_ROUTE_STYLE,
+      color: "#408a71",
+      weight: 5
+    })
+      .bindTooltip("Continuous road-following planned route")
+      .addTo(layers.planned);
+  }
   return layers;
 }
 
 function renderDispatchSelectionFallback(items, startPoint, wmoPoint, reliableStart) {
-  if (dispatchPlannedLayerGroup) return;
+  if (dispatchHasVisiblePlannedRoute()) return;
   const layers = createDispatchPlannedLayerGroups({ detached: true });
-  L.marker([wmoPoint.lat, wmoPoint.lng], { icon: dispatchMarkerIcon("W", "wmo") })
+  L.marker([wmoPoint.lat, wmoPoint.lng], {
+    icon: dispatchMarkerIcon("W", "wmo"),
+    pane: DISPATCH_MARKER_PANE
+  })
     .bindTooltip("Required WMO return point")
     .addTo(layers.wmo);
   if (reliableStart && !selectedCurrentMarker) {
-    L.marker([startPoint.lat, startPoint.lng], { icon: dispatchMarkerIcon("T", "truck") })
+    L.marker([startPoint.lat, startPoint.lng], {
+      icon: dispatchMarkerIcon("T", "truck"),
+      pane: DISPATCH_MARKER_PANE
+    })
       .bindTooltip("Current reliable truck location")
       .addTo(layers.start);
   }
@@ -2227,10 +2744,14 @@ function renderDispatchSelectionFallback(items, startPoint, wmoPoint, reliableSt
     ).filter(Boolean);
     if (points.length > 1) {
       L.polyline(points.map((point) => [point.lat, point.lng]), {
-        color: "#245c46", weight: 5, opacity: 0.72, dashArray: "10 6"
+        color: "#687a73", weight: 4, opacity: 0.72, dashArray: "9 8",
+        pane: DISPATCH_PLANNED_ROUTE_PANE
       }).bindTooltip(`${stop.location_name} - selected verified geometry`).addTo(layers.geometry);
     }
-    L.marker([stop.latitude, stop.longitude], { icon: dispatchMarkerIcon("?", "") })
+    L.marker([stop.latitude, stop.longitude], {
+      icon: dispatchMarkerIcon("?", ""),
+      pane: DISPATCH_MARKER_PANE
+    })
       .bindTooltip(`${stop.location_name} - awaiting optimized order`)
       .addTo(layers.destinations);
   });
@@ -2338,8 +2859,7 @@ function renderDispatchDraftOnLiveMap(options = {}) {
       const previewPoints = [startPoint, wmo, ...journey.plannedStops.flatMap(({ geometry }) => geometry)];
       if (previewPoints.length > 1 && typeof L.latLngBounds === "function") {
         const previewBounds = L.latLngBounds(previewPoints.map((point) => [point.lat, point.lng]));
-        const currentBounds = typeof truckMap.getBounds === "function" ? truckMap.getBounds() : null;
-        if (!dispatchHasFittedDraftRoute || !currentBounds?.contains?.(previewBounds)) {
+        if (!dispatchHasFittedDraftRoute || options.fit === true) {
           truckMap.fitBounds(previewBounds, { padding: [35, 35], maxZoom: 16 });
         }
         dispatchHasFittedDraftRoute = true;
@@ -2353,7 +2873,7 @@ function renderDispatchDraftOnLiveMap(options = {}) {
       dispatchRouteDebug("planned route unavailable", {
         generation_id: generation,
         reason: error.name || "routing_error",
-        previous_route_retained: Boolean(dispatchPlannedLayerGroup)
+        previous_route_retained: dispatchHasVisiblePlannedRoute()
       });
       items.map(({ metadata }) => metadata?.catalog_id).filter(Boolean)
         .forEach((id) => dispatchRouteErrorCatalogIds.add(String(id)));
@@ -2373,13 +2893,26 @@ function renderDispatchPlanningMap() {
 function refreshDispatchRoutePreview(reason = "manual refresh") {
   dispatchLastRoutingSignature = "";
   const plannerVisible = !document.querySelector('[data-tracking-workspace-view="plan"]')?.hidden;
-  if (plannerVisible && getDispatchStopDrafts().length) {
+  if (dispatchPlannerMode === "live" && dispatchTicketIsLive(selectedDispatchTicket?.ticket)) {
+    renderDispatchPlannedRoute(selectedDispatchTicket, { force: true, reason });
+  } else if (plannerVisible && getDispatchStopDrafts().length) {
     renderDispatchDraftOnLiveMap({ force: true, reason });
   } else if (selectedDispatchTicket) {
-    renderDispatchPlannedRoute(selectedDispatchTicket);
+    renderDispatchPlannedRoute(selectedDispatchTicket, { force: true, reason });
   } else {
     renderDispatchDraftOnLiveMap();
   }
+}
+
+function viewDispatchActiveRoute() {
+  if (dispatchHasVisiblePlannedRoute() && fitDispatchRouteOnMap()) return true;
+  if (dispatchTicketIsLive(selectedDispatchTicket?.ticket)) {
+    renderDispatchPlannedRoute(selectedDispatchTicket, {
+      force: true,
+      reason: "view active route"
+    });
+  }
+  return false;
 }
 
 function setDispatchAddDestinationMode(enabled) {
@@ -3201,6 +3734,8 @@ function resetDispatchTicketForm() {
   dispatchBrowseDestinationOpen = false;
   dispatchBrowseDestinationVisibleCount = DISPATCH_BROWSE_DESTINATION_BATCH_SIZE;
   dispatchHasFittedDraftRoute = false;
+  dispatchHasFittedActiveRoute = false;
+  dispatchActiveRouteOrderSignature = "";
   dispatchDestinationSearchController?.abort();
   clearTimeout(dispatchDestinationSearchTimer);
   dispatchStopMetadata.clear();
@@ -3211,7 +3746,8 @@ function resetDispatchTicketForm() {
   renumberDispatchStopRows(false);
   renderDispatchDraftOnLiveMap();
   markDispatchPlannerSaved();
-  updateDispatchPlannerActions();
+  setDispatchPlannerMode("create");
+  setDispatchPlannerStep(1, { focus: false });
 }
 
 function fillDispatchTicketForm(details) {
@@ -3252,13 +3788,16 @@ function fillDispatchTicketForm(details) {
   renumberDispatchStopRows(false);
   renderDispatchDraftOnLiveMap();
   markDispatchPlannerSaved();
-  updateDispatchPlannerActions();
+  setDispatchPlannerMode("create");
+  setDispatchPlannerStep(3, { focus: false });
 }
 
 function openDispatchTicketEditor(details = null) {
   if (details) fillDispatchTicketForm(details);
   else resetDispatchTicketForm();
   setDispatchWorkspaceTab("plan");
+  setDispatchPlannerMode("create");
+  setDispatchPlannerStep(details ? 3 : 1, { focus: false });
   updateDispatchSelectedTruckContext(selectedTrackingTruck);
 }
 
@@ -3497,7 +4036,7 @@ async function dispatchSelectedTruckNow() {
     } catch (error) {
       dispatchPendingLinkTicketId = ticketId;
       selectedDispatchTicket = details;
-      renderDispatchTicketDetails(details);
+      renderDispatchTicketDetailsModal(details);
       renderDispatchStepProgress(
         2,
         "error",
@@ -3614,8 +4153,7 @@ async function openDispatchTicket(ticketId) {
     renderDispatchTicketDetails(details);
     if (dispatchPlannerHasUnsavedRoute()) renderDispatchDraftOnLiveMap();
     else renderDispatchPlannedRoute(details);
-    setDispatchWorkspaceTab("plan");
-    document.getElementById("dispatchCurrentPanel")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    openDispatchModal("dispatchTicketDetailsModal");
   } catch (error) {
     dispatchNotify(error.message, "error");
   }
@@ -3785,10 +4323,6 @@ function clearDispatchRequiredDestinations() {
 function requestClearDispatchRequiredDestinations() {
   const destinationCount = getDispatchStopDrafts().length;
   if (!destinationCount) return;
-  if (destinationCount === 1) {
-    clearDispatchRequiredDestinations();
-    return;
-  }
   openDispatchPlannerConfirmation({
     title: "Clear all destinations?",
     message: `Remove all ${destinationCount} required destinations from this route?`,
@@ -3804,6 +4338,19 @@ function setupDispatchModule() {
   if (!workspace || workspace.dataset.bound === "true") return;
   workspace.dataset.bound = "true";
   if (typeof bindActiveTruckSelection === "function") bindActiveTruckSelection();
+  document.getElementById("openTrackingReportsBtn")?.addEventListener("click", () => {
+    if (typeof openTrackingReportsModal === "function") openTrackingReportsModal();
+  });
+  ["trackingReportsModalOverlay", "closeTrackingReportsModalBtn"].forEach((id) => {
+    document.getElementById(id)?.addEventListener("click", () => {
+      if (typeof closeTrackingReportsModal === "function") closeTrackingReportsModal();
+    });
+  });
+  ["trackingReportModalOverlay", "closeTrackingReportModalBtn"].forEach((id) => {
+    document.getElementById(id)?.addEventListener("click", () => {
+      if (typeof closeTrackingReportModal === "function") closeTrackingReportModal();
+    });
+  });
 
   workspace.querySelectorAll("[data-dispatch-workspace-action]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -3821,6 +4368,27 @@ function setupDispatchModule() {
   });
   document.getElementById("dispatchPlannerCloseBtn")?.addEventListener("click", () => {
     closeDispatchPlannerDrawer();
+  });
+  document.getElementById("dispatchStepContinueBtn")?.addEventListener("click", () => {
+    if (!dispatchTicketNumberIsValid() || !dispatchSelectedSessionActive) return;
+    setDispatchPlannerStep(2);
+  });
+  document.getElementById("dispatchStepBackBtn")?.addEventListener("click", () => {
+    setDispatchPlannerStep(dispatchPlannerStep - 1);
+  });
+  document.getElementById("dispatchStepReviewBtn")?.addEventListener("click", () => {
+    const destinationCount = getDispatchStopDrafts().length;
+    if (
+      !destinationCount ||
+      dispatchOptimizedRouteStops.length !== destinationCount ||
+      !dispatchHasVisiblePlannedRoute()
+    ) return;
+    setDispatchPlannerStep(3);
+  });
+  document.getElementById("dispatchFitRouteBtn")?.addEventListener("click", fitDispatchRouteOnMap);
+  document.getElementById("dispatchViewActiveRouteBtn")?.addEventListener("click", viewDispatchActiveRoute);
+  document.getElementById("dispatchUpdateStopStatusBtn")?.addEventListener("click", () => {
+    document.getElementById("dispatchStopActionSheet")?.classList.toggle("hidden");
   });
   document
     .getElementById("dispatchPlannerConfirmationCancelBtn")
@@ -3853,6 +4421,11 @@ function setupDispatchModule() {
   const destinationOptions = document.getElementById("dispatchDestinationSuggestions");
   document.getElementById("dispatchTicketNumber")?.addEventListener("input", () => {
     updateDispatchPlannerActions();
+    const reviewSummary = document.getElementById("dispatchReviewSummary");
+    if (reviewSummary) {
+      reviewSummary.textContent = `Ticket ${dispatchTicketNumberValue() || "--"} \u00b7 ` +
+        `Truck ${document.getElementById("dispatchTruckId")?.value || "--"}`;
+    }
   });
   destinationInput?.addEventListener("input", scheduleDispatchDestinationSearch);
   destinationInput?.addEventListener("keydown", handleDispatchDestinationSearchKeydown);
@@ -3996,8 +4569,29 @@ function setupDispatchModule() {
       refreshDispatchRoutePreview("retry after routing failure");
       return;
     }
+    if (event.target.closest("#dispatchStopActionCancelBtn")) {
+      document.getElementById("dispatchStopActionSheet")?.classList.add("hidden");
+      return;
+    }
+    if (event.target.closest("#dispatchViewTicketDetailsBtn")) {
+      if (selectedDispatchTicket) {
+        renderDispatchTicketDetailsModal(selectedDispatchTicket);
+        openDispatchModal("dispatchTicketDetailsModal");
+      }
+      return;
+    }
+    if (event.target.closest("#dispatchReoptimizeRemainingBtn")) {
+      if (selectedDispatchTicket) {
+        renderDispatchPlannedRoute(selectedDispatchTicket, {
+          force: true,
+          reoptimizeRemaining: true
+        });
+      }
+      return;
+    }
     const actionButton = event.target.closest("[data-dispatch-action]");
     if (actionButton) {
+      document.getElementById("dispatchStopActionSheet")?.classList.add("hidden");
       void performDispatchAction(actionButton);
     }
   });
@@ -4063,18 +4657,30 @@ if (typeof module !== "undefined" && module.exports) {
     DISPATCH_ROUTING_MOVEMENT_METERS,
     DISPATCH_ROUTING_OFF_ROUTE_METERS,
     DISPATCH_ROUTING_OFF_ROUTE_HOLD_MS,
+    DISPATCH_CURRENT_ROUTE_PANE,
     DISPATCH_PLANNED_ROUTE_PANE,
+    DISPATCH_COMPLETED_ROUTE_PANE,
+    DISPATCH_MARKER_PANE,
     DISPATCH_PLANNED_ROUTE_STYLE,
+    DISPATCH_CURRENT_ROUTE_STYLE,
+    DISPATCH_COMPLETED_ROUTE_STYLE,
     DISPATCH_TICKET_CREATE_FAILURE_MESSAGE,
     buildDispatchPlannedJourney,
     buildDispatchRouteLayers,
     chooseDispatchSegmentOrientation,
     dispatchCatalogStopFromDetail,
     dispatchCatalogDestinationIsSelected,
+    dispatchOrderActiveRouteStops,
+    dispatchPlannerStepName,
+    dispatchShouldReoptimizeRemaining,
+    dispatchTicketIsLive,
     dispatchDraftsInOptimizedOrder,
     dispatchManilaOperatingDay,
     dispatchNormalizeTicketNumber,
     dispatchRouteNeedsRecalculation,
+    dispatchRouteSegmentWithEndpoints,
+    dispatchPolylineHasValidCoordinates,
+    dispatchLayerHasVisiblePolyline,
     dispatchDistanceToRouteMeters,
     evaluateDispatchDynamicReroute,
     evaluateDispatchStopOrder,

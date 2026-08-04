@@ -5,9 +5,18 @@ function initializeTruckMap() {
 
   truckMap = L.map("truckMap").setView([6.1164, 125.1716], 13);
 
-  const plannedRoutePane = truckMap.createPane("dispatchPlannedRoutePane");
-  plannedRoutePane.style.zIndex = "450";
-  plannedRoutePane.style.pointerEvents = "none";
+  [
+    ["trackingActualRoutePane", "410"],
+    ["dispatchPlannedRoutePane", "440"],
+    ["dispatchCurrentRoutePane", "455"],
+    ["dispatchCompletedRoutePane", "470"],
+    ["dispatchMarkerPane", "650"]
+  ].forEach(([name, zIndex]) => {
+    const pane = truckMap.getPane(name) || truckMap.createPane(name);
+    pane.style.zIndex = zIndex;
+    pane.style.pointerEvents = name === "dispatchMarkerPane" ? "auto" : "none";
+  });
+  trackingCurrentTruckLayerGroup = L.layerGroup().addTo(truckMap);
 
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution: "&copy; OpenStreetMap contributors"
@@ -563,10 +572,7 @@ async function loadActiveTrucks() {
         updateDispatchSelectedTruckContext(selectedTruck);
       }
 
-      await loadTruckRoute(selectedSessionId, { keepView: true });
-      if (typeof loadDispatchForTrackingSession === "function") {
-        await loadDispatchForTrackingSession(selectedSessionId);
-      }
+      await hydrateSelectedTruckWorkspace(selectedSessionId, { keepView: true });
 
       const selectedLabel = document.getElementById("selectedTruckLabel");
       if (selectedLabel) {
@@ -725,7 +731,8 @@ function updateTruckMarkers(trucks) {
     if (!marker && reliable) {
       marker = L.marker([point.lat, point.lng], {
         icon: buildTrackingMarkerIcon(statusMeta),
-        riseOnHover: true
+        riseOnHover: true,
+        pane: "dispatchMarkerPane"
       }).addTo(truckMap);
       truckMarkers[sessionId] = marker;
       trackingMarkerStateBySession[sessionId] = {
@@ -792,7 +799,8 @@ function updateTruckMarkerWithReliableRoutePoint(sessionId, point) {
   if (!marker) {
     marker = L.marker([point.lat, point.lng], {
       icon: buildTrackingMarkerIcon(statusMeta),
-      riseOnHover: true
+      riseOnHover: true,
+      pane: "dispatchMarkerPane"
     }).addTo(truckMap).bindPopup("");
     truckMarkers[sessionKey] = marker;
   } else {
@@ -822,6 +830,8 @@ async function loadTruckRoute(sessionId, options = {}) {
   try {
     const res = await fetch(getTrackingRouteApiUrl(sessionId));
     const data = await res.json();
+
+    if (String(selectedSessionId || "") !== String(sessionId || "")) return;
 
     const routeLogs = Array.isArray(data?.data?.route_logs)
       ? data.data.route_logs
@@ -856,6 +866,7 @@ async function loadTruckRoute(sessionId, options = {}) {
         color: "#0d6efd",
         weight: 5,
         opacity: 0.9,
+        pane: "trackingActualRoutePane",
         lineCap: "round",
         lineJoin: "round"
       }).addTo(selectedRoutePolyline);
@@ -880,6 +891,7 @@ async function loadTruckRoute(sessionId, options = {}) {
             color: "#0d6efd",
             weight: 4,
             opacity: 0.7,
+            pane: "trackingActualRoutePane",
             dashArray: "8, 10"
           }
         ).addTo(truckMap);
@@ -902,8 +914,8 @@ async function loadTruckRoute(sessionId, options = {}) {
         iconSize: [18, 18],
         iconAnchor: [9, 9]
       });
-      selectedStartMarker = L.marker(startPoint, { icon: startIcon })
-        .addTo(truckMap)
+      selectedStartMarker = L.marker(startPoint, { icon: startIcon, pane: "dispatchMarkerPane" })
+        .addTo(trackingCurrentTruckLayerGroup || truckMap)
         .bindPopup("Reliable route start");
     } else {
       selectedStartMarker.setLatLng(startPoint);
@@ -919,8 +931,8 @@ async function loadTruckRoute(sessionId, options = {}) {
           iconSize: [20, 20],
           iconAnchor: [10, 10]
         });
-        selectedCurrentMarker = L.marker(currentPoint, { icon: currentIcon })
-          .addTo(truckMap)
+        selectedCurrentMarker = L.marker(currentPoint, { icon: currentIcon, pane: "dispatchMarkerPane" })
+          .addTo(trackingCurrentTruckLayerGroup || truckMap)
           .bindPopup("");
       } else {
         selectedCurrentMarker.setLatLng(currentPoint);
@@ -929,9 +941,6 @@ async function loadTruckRoute(sessionId, options = {}) {
       updateTruckMarkerWithReliableRoutePoint(sessionId, currentReliablePoint);
       if (typeof updateDispatchSelectedTruckContext === "function") {
         updateDispatchSelectedTruckContext(selectedTrackingTruck);
-      }
-      if (typeof renderDispatchDraftOnLiveMap === "function") {
-        renderDispatchDraftOnLiveMap();
       }
     }
 
@@ -958,6 +967,13 @@ async function loadTruckRoute(sessionId, options = {}) {
   }
 }
 
+async function hydrateSelectedTruckWorkspace(sessionId, options = {}) {
+  await loadTruckRoute(sessionId, options);
+  if (String(selectedSessionId || "") !== String(sessionId || "")) return null;
+  if (typeof loadDispatchForTrackingSession !== "function") return null;
+  return loadDispatchForTrackingSession(sessionId);
+}
+
 function resetTrackingView() {
   if (selectedRoutePolyline && truckMap) {
     truckMap.removeLayer(selectedRoutePolyline);
@@ -967,12 +983,12 @@ function resetTrackingView() {
   clearTrackingGapPolylines();
 
   if (selectedStartMarker && truckMap) {
-    truckMap.removeLayer(selectedStartMarker);
+    (trackingCurrentTruckLayerGroup || truckMap).removeLayer(selectedStartMarker);
     selectedStartMarker = null;
   }
 
   if (selectedCurrentMarker && truckMap) {
-    truckMap.removeLayer(selectedCurrentMarker);
+    (trackingCurrentTruckLayerGroup || truckMap).removeLayer(selectedCurrentMarker);
     selectedCurrentMarker = null;
   }
 
@@ -1330,8 +1346,8 @@ function selectTruck(sessionId, truckId) {
     if (selectedRoutePolyline && truckMap) truckMap.removeLayer(selectedRoutePolyline);
     selectedRoutePolyline = null;
     clearTrackingGapPolylines();
-    if (selectedStartMarker && truckMap) truckMap.removeLayer(selectedStartMarker);
-    if (selectedCurrentMarker && truckMap) truckMap.removeLayer(selectedCurrentMarker);
+    if (selectedStartMarker && truckMap) (trackingCurrentTruckLayerGroup || truckMap).removeLayer(selectedStartMarker);
+    if (selectedCurrentMarker && truckMap) (trackingCurrentTruckLayerGroup || truckMap).removeLayer(selectedCurrentMarker);
     selectedStartMarker = null;
     selectedCurrentMarker = null;
     selectedReliableRoutePoint = null;
@@ -1357,10 +1373,7 @@ function selectTruck(sessionId, truckId) {
   if (typeof prepareDispatchPlannerForTruck === "function") {
     prepareDispatchPlannerForTruck(selectedTrackingTruck);
   }
-  void loadTruckRoute(sessionId, { keepView: false });
-  if (typeof loadDispatchForTrackingSession === "function") {
-    void loadDispatchForTrackingSession(sessionId);
-  }
+  void hydrateSelectedTruckWorkspace(sessionId, { keepView: false });
 }
 
 function bindActiveTruckSelection() {
