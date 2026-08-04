@@ -3,13 +3,21 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const {
+  DISPATCH_COMPLETED_ROUTE_PANE,
+  DISPATCH_CURRENT_ROUTE_PANE,
+  DISPATCH_CURRENT_ROUTE_STYLE,
+  DISPATCH_MARKER_PANE,
   DISPATCH_PLANNED_ROUTE_PANE,
   DISPATCH_PLANNED_ROUTE_STYLE,
   DISPATCH_WMO_LOCATION,
   buildDispatchRouteLayers,
   dispatchContinuousRouteWaypoints,
+  dispatchLayerHasVisiblePolyline,
+  dispatchOrderActiveRouteStops,
+  dispatchRouteSegmentWithEndpoints,
   dispatchRoutingFailureState,
   dispatchRoutingResponseIsCurrent,
+  dispatchShouldReoptimizeRemaining,
   parseDispatchOsrmRoutePayload,
   requestDispatchRoadJourney
 } = require("../frontend/js/admin/admin-dispatch");
@@ -108,6 +116,7 @@ function fakeLeaflet() {
     kind,
     value,
     options,
+    getLatLngs() { return kind === "polyline" ? value : []; },
     bindTooltip() { return this; },
     addTo(group) { group.layers.push(this); return this; }
   });
@@ -116,6 +125,7 @@ function fakeLeaflet() {
       return {
         kind: "layer-group",
         layers: [...children],
+        getLayers() { return this.layers; },
         addTo(map) { map.layers.push(this); return this; }
       };
     },
@@ -148,9 +158,9 @@ function testOnePlannedPolylineAndSeparateLayerGroups() {
     point(6.1060875, 125.1816406),
     { showTruckMarker: false }
   );
-  assert.equal(layers.connectors.layers.length, 1, "planned route must be one Leaflet polyline");
-  assert.equal(layers.connectors.layers[0].kind, "polyline");
-  assert.deepEqual(layers.connectors.layers[0].value, coordinates);
+  assert.equal(layers.planned.layers.length, 1, "draft route must be one continuous Leaflet polyline");
+  assert.equal(layers.planned.layers[0].kind, "polyline");
+  assert.deepEqual(layers.planned.layers[0].value, coordinates);
   assert.equal(layers.destinations.layers.length, 2);
   assert.deepEqual(layers.destinations.layers.map((layer) => layer.value), [
     [6.11, 125.16], [6.12, 125.17]
@@ -161,29 +171,107 @@ function testOnePlannedPolylineAndSeparateLayerGroups() {
   assert.deepEqual(layers.wmo.layers[0].value, [6.1060875, 125.1816406]);
   assert.match(layers.wmo.layers[0].options.icon.html, />W</);
   assert.ok(layers.geometry.layers.every((layer) => layer.kind === "polyline"));
-  assert.deepEqual(layers.root.layers, [
-    layers.geometry, layers.connectors, layers.destinations, layers.wmo, layers.start
-  ]);
+  assert.ok(layers.completed);
+  assert.ok(layers.current);
+  assert.equal(Object.hasOwn(layers, "root"), false, "an empty root wrapper must not be the route sentinel");
   delete global.L;
   delete global.escapeHtml;
 }
 
 function testPlannedRouteStyleAndPane() {
+  assert.equal(DISPATCH_CURRENT_ROUTE_PANE, "dispatchCurrentRoutePane");
   assert.equal(DISPATCH_PLANNED_ROUTE_PANE, "dispatchPlannedRoutePane");
-  assert.equal(DISPATCH_PLANNED_ROUTE_STYLE.color, "#245c46");
+  assert.equal(DISPATCH_COMPLETED_ROUTE_PANE, "dispatchCompletedRoutePane");
+  assert.equal(DISPATCH_MARKER_PANE, "dispatchMarkerPane");
+  assert.equal(DISPATCH_CURRENT_ROUTE_STYLE.color, "#2d73c7");
+  assert.equal(DISPATCH_CURRENT_ROUTE_STYLE.dashArray, undefined);
+  assert.equal(DISPATCH_PLANNED_ROUTE_STYLE.color, "#687a73");
   assert.equal(DISPATCH_PLANNED_ROUTE_STYLE.weight, 5);
   assert.ok(DISPATCH_PLANNED_ROUTE_STYLE.opacity > 0.5);
   assert.ok(DISPATCH_PLANNED_ROUTE_STYLE.dashArray);
   assert.equal(DISPATCH_PLANNED_ROUTE_STYLE.pane, DISPATCH_PLANNED_ROUTE_PANE);
-  assert.match(trackingSource, /createPane\("dispatchPlannedRoutePane"\)[\s\S]*zIndex = "450"/);
+  assert.match(trackingSource, /"trackingActualRoutePane", "410"/);
+  assert.match(trackingSource, /"dispatchPlannedRoutePane", "440"/);
+  assert.match(trackingSource, /"dispatchCurrentRoutePane", "455"/);
+  assert.match(trackingSource, /"dispatchCompletedRoutePane", "470"/);
+  assert.match(trackingSource, /"dispatchMarkerPane", "650"/);
+}
+
+function testActiveRouteUsesExactEndpointsAndDedicatedLayers() {
+  global.L = fakeLeaflet();
+  global.escapeHtml = (value) => String(value ?? "");
+  const start = point(6.09, 125.14);
+  const current = point(6.11, 125.16);
+  const wmo = point(DISPATCH_WMO_LOCATION.latitude, DISPATCH_WMO_LOCATION.longitude);
+  const routeCoordinates = [
+    [6.0902, 125.1402],
+    [6.105, 125.155],
+    [6.1098, 125.1598],
+    [6.12, 125.17],
+    [6.1062, 125.1815]
+  ];
+  const journey = {
+    plannedStops: [
+      {
+        stop: { id: 31, latitude: current.lat, longitude: current.lng, location_name: "Current", stop_status: "on_the_way" },
+        geometry: [current]
+      },
+      {
+        stop: { id: 32, latitude: 6.12, longitude: 125.17, location_name: "Next", stop_status: "pending" },
+        geometry: [point(6.12, 125.17)]
+      }
+    ]
+  };
+  const layers = buildDispatchRouteLayers(journey, routeCoordinates, start, wmo, {
+    currentStopId: 31
+  });
+  assert.equal(layers.current.layers.length, 1);
+  assert.equal(layers.planned.layers.length, 1);
+  assert.deepEqual(layers.current.layers[0].value[0], [start.lat, start.lng]);
+  assert.deepEqual(layers.current.layers[0].value.at(-1), [current.lat, current.lng]);
+  assert.deepEqual(layers.planned.layers[0].value[0], [current.lat, current.lng]);
+  assert.deepEqual(layers.planned.layers[0].value.at(-1), [wmo.lat, wmo.lng]);
+  assert.equal(layers.current.layers[0].options.pane, DISPATCH_CURRENT_ROUTE_PANE);
+  assert.equal(layers.planned.layers[0].options.pane, DISPATCH_PLANNED_ROUTE_PANE);
+  assert.deepEqual(
+    dispatchRouteSegmentWithEndpoints([], start, current),
+    [[start.lat, start.lng], [current.lat, current.lng]]
+  );
+  delete global.L;
+  delete global.escapeHtml;
+}
+
+function testReadyRequiresAnAttachedPolyline() {
+  const polyline = { getLatLngs: () => [[6.1, 125.1], [6.2, 125.2]] };
+  const marker = { getLatLngs: undefined };
+  const visibleGroup = { getLayers: () => [marker, polyline] };
+  const markerOnlyGroup = { getLayers: () => [marker] };
+  const visibleMap = { hasLayer: (layer) => layer === visibleGroup || layer === markerOnlyGroup || layer === polyline || layer === marker };
+  assert.equal(dispatchLayerHasVisiblePolyline(visibleGroup, visibleMap), true);
+  assert.equal(dispatchLayerHasVisiblePolyline(markerOnlyGroup, visibleMap), false);
+  assert.equal(dispatchLayerHasVisiblePolyline(visibleGroup, { hasLayer: () => false }), false);
+  assert.match(dispatchSource, /normalizedStatus === "ready" && !dispatchHasVisiblePlannedRoute\(\)/);
+  assert.match(dispatchSource, /updateDispatchRoutePreviewNotice\("complete"\)/);
 }
 
 function testPollingRetainsPlannedRouteAndMapView() {
   const loadActiveTrucks = trackingSource.match(/async function loadActiveTrucks\(\)[\s\S]*?function renderActiveTruckList/);
   assert.ok(loadActiveTrucks);
-  assert.match(loadActiveTrucks[0], /loadTruckRoute\(selectedSessionId, \{ keepView: true \}\)/);
+  assert.match(loadActiveTrucks[0], /hydrateSelectedTruckWorkspace\(selectedSessionId, \{ keepView: true \}\)/);
   assert.doesNotMatch(loadActiveTrucks[0], /clearDispatchPlannedRoute/);
   assert.doesNotMatch(loadActiveTrucks[0], /\.fitBounds\(|\.setView\(/);
+}
+
+function testSelectionHydratesTrackingBeforeActiveDispatch() {
+  const loader = trackingSource.match(/async function loadTruckRoute[\s\S]*?async function hydrateSelectedTruckWorkspace/)?.[0] || "";
+  const hydration = trackingSource.match(/async function hydrateSelectedTruckWorkspace[\s\S]*?function resetTrackingView/)?.[0] || "";
+  const selection = trackingSource.match(/function selectTruck[\s\S]*?function bindActiveTruckSelection/)?.[0] || "";
+  assert.doesNotMatch(loader, /renderDispatchDraftOnLiveMap/);
+  assert.match(loader, /String\(selectedSessionId \|\| ""\) !== String\(sessionId \|\| ""\)/);
+  assert.match(hydration, /await loadTruckRoute\(sessionId, options\)[\s\S]*return loadDispatchForTrackingSession\(sessionId\)/);
+  assert.match(selection, /void hydrateSelectedTruckWorkspace\(sessionId, \{ keepView: false \}\)/);
+  assert.doesNotMatch(selection, /void loadDispatchForTrackingSession/);
+  assert.match(dispatchSource, /mustRehydrateRoute[\s\S]*!dispatchHasVisiblePlannedRoute\(\)/);
 }
 
 function testStaleResponseRejection() {
@@ -196,16 +284,35 @@ function testStaleResponseRejection() {
 
 function testFailureRetainsSelectionsAndPreviousRoute() {
   assert.deepEqual(dispatchRoutingFailureState(), {
-    message: "Route preview unavailable",
+    message: "Route update is temporarily unavailable. The last route is still displayed.",
     preserveSelectedStops: true,
     preservePreviousRoute: true,
     drawStraightFallback: false
   });
-  assert.match(dispatchSource, /if \(!dispatchPlannedLayerGroup\) \{\s*renderDispatchSelectionFallback/);
-  assert.match(dispatchSource, /previous_route_retained: Boolean\(dispatchPlannedLayerGroup\)/);
+  assert.match(dispatchSource, /if \(!dispatchHasVisiblePlannedRoute\(\)\) \{\s*renderDispatchSelectionFallback/);
+  assert.match(dispatchSource, /previous_route_retained: dispatchHasVisiblePlannedRoute\(\)/);
   assert.doesNotMatch(dispatchSource, /drawStraightFallback\s*:\s*true/);
   assert.match(dispatchSource, /restoreDispatchRoutePreviewState\(routeSnapshot\)/);
   assert.match(dispatchSource, /Your route is still saved\. Please retry\./);
+}
+
+function testActiveRouteOrderLockingAndExplicitReoptimization() {
+  const routeStops = [{ id: 1 }, { id: 2 }, { id: 3 }];
+  assert.deepEqual(
+    dispatchOrderActiveRouteStops(routeStops, [1, 3, 2], false).map((stop) => stop.id),
+    [1, 3, 2],
+    "ordinary movement must retain the current and pending order"
+  );
+  assert.deepEqual(
+    dispatchOrderActiveRouteStops(routeStops, [1, 3, 2], true).map((stop) => stop.id),
+    [1, 2, 3],
+    "an allowed reoptimization may use the new candidate order"
+  );
+  assert.equal(dispatchShouldReoptimizeRemaining("truck_moved"), false);
+  assert.equal(dispatchShouldReoptimizeRemaining("destinations_changed"), true);
+  assert.equal(dispatchShouldReoptimizeRemaining("sustained_off_route"), true);
+  assert.equal(dispatchShouldReoptimizeRemaining("forced"), false);
+  assert.equal(dispatchShouldReoptimizeRemaining("forced", { reoptimizeRemaining: true }), true);
 }
 
 function testDrawerRecordsAndTicketFailureDoNotClearRoute() {
@@ -223,6 +330,26 @@ function testDrawerRecordsAndTicketFailureDoNotClearRoute() {
   assert.match(saveDraft, /captureDispatchRoutePreviewState/);
   assert.match(saveDraft, /restoreDispatchRoutePreviewState/);
   assert.doesNotMatch(saveDraft, /clearDispatchPlannedRoute/);
+}
+
+function testLiveTransitionRerenderAndPanelActionsDoNotClearRoute() {
+  const dispatchNow = dispatchSource.match(
+    /async function dispatchSelectedTruckNow[\s\S]*?function dispatchTicketQuery/
+  )?.[0] || "";
+  const liveRenderer = dispatchSource.match(
+    /function renderDispatchTicketDetails\(details\)[\s\S]*?function openDispatchModal/
+  )?.[0] || "";
+  const workspaceBindings = dispatchSource.match(
+    /workspace\.querySelectorAll\("\[data-dispatch-workspace-action\]"\)[\s\S]*?dispatchPlannerConfirmationCancelBtn/
+  )?.[0] || "";
+  assert.match(dispatchNow, /renderDispatchTicketDetails\(details\)[\s\S]*renderDispatchPlannedRoute\(details\)/);
+  assert.doesNotMatch(dispatchNow, /clearDispatchPlannedRoute/);
+  assert.doesNotMatch(liveRenderer, /clearDispatchPlannedRoute|removeLayer/);
+  assert.match(workspaceBindings, /dispatchStopActionSheet"\)\?\.classList\.toggle\("hidden"\)/);
+  assert.match(workspaceBindings, /dispatchViewActiveRouteBtn"\)\?\.addEventListener\("click", viewDispatchActiveRoute\)/);
+  assert.doesNotMatch(workspaceBindings, /clearDispatchPlannedRoute|resetDispatchTicketForm/);
+  assert.match(dispatchSource, /function viewDispatchActiveRoute[\s\S]*renderDispatchPlannedRoute\(selectedDispatchTicket, \{[\s\S]*force: true/);
+  assert.match(dispatchSource, /function renderDispatchCompletedRouteGeometry[\s\S]*DISPATCH_COMPLETED_ROUTE_STYLE/);
 }
 
 function testDiagnosticsAndExplicitClearReasons() {
@@ -245,10 +372,15 @@ async function run() {
   await testOneOrderedOsrmRequestAndParsedPolyline();
   testOnePlannedPolylineAndSeparateLayerGroups();
   testPlannedRouteStyleAndPane();
+  testActiveRouteUsesExactEndpointsAndDedicatedLayers();
+  testReadyRequiresAnAttachedPolyline();
   testPollingRetainsPlannedRouteAndMapView();
+  testSelectionHydratesTrackingBeforeActiveDispatch();
   testStaleResponseRejection();
   testFailureRetainsSelectionsAndPreviousRoute();
+  testActiveRouteOrderLockingAndExplicitReoptimization();
   testDrawerRecordsAndTicketFailureDoNotClearRoute();
+  testLiveTransitionRerenderAndPanelActionsDoNotClearRoute();
   testDiagnosticsAndExplicitClearReasons();
   console.log("Dispatch planned-route lifecycle tests passed");
 }
