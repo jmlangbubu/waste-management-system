@@ -1,19 +1,24 @@
-window.APP_CONFIG = {
-  BASE_URL: "https://waste-management-system-1-qon2.onrender.com",
-  API_BASE_URL: "https://waste-management-system-1-qon2.onrender.com/api",
+(() => {
+  const applicationOrigin = window.location.origin;
+  const apiBaseUrl = `${applicationOrigin}/api`;
 
-  APPOINTMENTS_ACTIVE_URL: "https://waste-management-system-1-qon2.onrender.com/api/appointments/active",
-  APPOINTMENTS_HISTORY_URL: "https://waste-management-system-1-qon2.onrender.com/api/appointments/history",
+  window.APP_CONFIG = {
+    BASE_URL: applicationOrigin,
+    API_BASE_URL: apiBaseUrl,
 
-  getAppointmentDecisionUrl: function (id) {
-    return `${this.API_BASE_URL}/appointments/${id}/decision`;
-  },
+    APPOINTMENTS_ACTIVE_URL: `${apiBaseUrl}/appointments/active`,
+    APPOINTMENTS_HISTORY_URL: `${apiBaseUrl}/appointments/history`,
 
-  getRescheduleAppointmentUrl: function (id) {
-    return `${this.API_BASE_URL}/appointments/${id}/reschedule`;
-  },
+    getAppointmentDecisionUrl: function (id) {
+      return `${this.API_BASE_URL}/appointments/${id}/decision`;
+    },
 
-  getCancelAppointmentUrl: function (id) {
-    return `${this.API_BASE_URL}/appointments/${id}/cancel`;
-  }
-};
+    getRescheduleAppointmentUrl: function (id) {
+      return `${this.API_BASE_URL}/appointments/${id}/reschedule`;
+    },
+
+    getCancelAppointmentUrl: function (id) {
+      return `${this.API_BASE_URL}/appointments/${id}/cancel`;
+    }
+  };
+})();

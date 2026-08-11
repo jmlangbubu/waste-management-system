@@ -139,14 +139,12 @@ function read(relativePath) {
   return fs.readFileSync(path.join(projectRoot, relativePath), "utf8");
 }
 
-function loadWebLoginClient() {
+function loadWebLoginClient(origin = "https://wastegensan.com") {
   const listeners = {};
   const context = {
     window: {
-      APP_CONFIG: {
-        API_BASE_URL: "https://waste-management-system-1-qon2.onrender.com/api"
-      },
       location: {
+        origin,
         href: "",
         replace() {}
       }
@@ -174,8 +172,35 @@ function loadWebLoginClient() {
     }
   };
   vm.createContext(context);
+  vm.runInContext(read("frontend/js/config.js"), context);
   vm.runInContext(read("frontend/js/web-login.js"), context);
   return { context, listeners };
+}
+
+function loadAdminApiClient(origin) {
+  const context = {
+    window: {
+      location: {
+        origin,
+        pathname: "/admin-dashboard.html",
+        replace() {}
+      }
+    },
+    document: { cookie: "" },
+    localStorage: { removeItem() {} },
+    fetch: async () => ({ status: 200 }),
+    Headers,
+    URLSearchParams,
+    console: {
+      error() {},
+      warn() {},
+      log() {}
+    }
+  };
+  vm.createContext(context);
+  vm.runInContext(read("frontend/js/config.js"), context);
+  vm.runInContext(read("frontend/js/admin/admin-api.js"), context);
+  return context;
 }
 
 function getLoginHandler(options = {}) {
@@ -667,8 +692,13 @@ test("session cookie is HttpOnly and CSRF cookie is script-readable", () => {
   assert.match(res.headers["set-cookie"][0], /HttpOnly/);
   assert.match(res.headers["set-cookie"][0], /Secure/);
   assert.match(res.headers["set-cookie"][0], /SameSite=Lax/);
+  assert.match(res.headers["set-cookie"][0], /Path=\//);
+  assert.doesNotMatch(res.headers["set-cookie"][0], /Domain=/i);
   assert.doesNotMatch(res.headers["set-cookie"][1], /HttpOnly/);
   assert.match(res.headers["set-cookie"][1], /Secure/);
+  assert.match(res.headers["set-cookie"][1], /SameSite=Lax/);
+  assert.match(res.headers["set-cookie"][1], /Path=\//);
+  assert.doesNotMatch(res.headers["set-cookie"][1], /Domain=/i);
 });
 
 test("logout cookie clearing expires both cookies", () => {
@@ -1058,6 +1088,65 @@ test("admin content is hidden until the server session-ready event", () => {
   assert.match(html, /class="web-session-pending"/);
   assert.match(html, /html\.web-session-pending body \{ visibility: hidden; \}/);
   assert.match(read("frontend/js/admin/admin-session.js"), /web-admin-session-ready/);
+});
+
+for (const origin of [
+  "https://wastegensan.com",
+  "https://waste-management-system-1-qon2.onrender.com",
+  "http://localhost:8081"
+]) {
+  test(`Web Admin API URLs stay on the page origin for ${origin}`, async () => {
+    const { context } = loadWebLoginClient(origin);
+    const config = context.window.APP_CONFIG;
+
+    assert.equal(config.BASE_URL, origin);
+    assert.equal(config.API_BASE_URL, `${origin}/api`);
+    assert.equal(config.APPOINTMENTS_ACTIVE_URL, `${origin}/api/appointments/active`);
+    assert.equal(config.APPOINTMENTS_HISTORY_URL, `${origin}/api/appointments/history`);
+    assert.equal(
+      vm.runInContext("API_URL", context),
+      `${origin}/api/web-auth/login`
+    );
+
+    let sessionRequestUrl = "";
+    context.fetch = async (url) => {
+      sessionRequestUrl = url;
+      return { ok: false };
+    };
+    await vm.runInContext("restoreServerSession()", context);
+    assert.equal(sessionRequestUrl, `${origin}/api/web-auth/session`);
+
+    const adminContext = loadAdminApiClient(origin);
+    const adminUrls = {
+      base: vm.runInContext("getAppApiBase()", adminContext),
+      session: vm.runInContext("getWebAuthSessionApiUrl()", adminContext),
+      logout: vm.runInContext("getWebAuthLogoutApiUrl()", adminContext),
+      users: vm.runInContext("getWebUsersApiUrl()", adminContext),
+      dispatch: vm.runInContext("getDispatchTicketsApiUrl()", adminContext),
+      tracking: vm.runInContext("getTrackingActiveApiUrl()", adminContext)
+    };
+    assert.equal(adminUrls.base, `${origin}/api`);
+    assert.equal(adminUrls.session, `${origin}/api/web-auth/session`);
+    assert.equal(adminUrls.logout, `${origin}/api/web-auth/logout`);
+    assert.equal(adminUrls.users, `${origin}/api/web-users/all`);
+    assert.equal(adminUrls.dispatch, `${origin}/api/dispatch/tickets`);
+    assert.equal(adminUrls.tracking, `${origin}/api/tracking/active`);
+  });
+}
+
+test("browser API configuration contains no fixed deployment hostname", () => {
+  const source = read("frontend/js/config.js");
+  assert.match(source, /window\.location\.origin/);
+  assert.doesNotMatch(source, /wastegensan\.com|onrender\.com/);
+
+  const trackingSource = read("frontend/js/admin/admin-tracking.js");
+  const reportsUrlBuilder = trackingSource.slice(
+    trackingSource.indexOf("function getTrackingReportsApiUrl"),
+    trackingSource.indexOf("function getTrackingReportDetailsApiUrl")
+  );
+  assert.match(reportsUrlBuilder, /getAppApiBase/);
+  assert.match(reportsUrlBuilder, /window\.location\.origin/);
+  assert.doesNotMatch(reportsUrlBuilder, /192\.168\.|localhost|onrender\.com/);
 });
 
 test("login restores only a server-validated session and includes credentials", () => {
