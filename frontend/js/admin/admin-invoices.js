@@ -637,7 +637,15 @@ function setupInvoiceWorkflow() {
   });
 }
 
-document.addEventListener("DOMContentLoaded", setupInvoiceWorkflow);
+document.addEventListener("DOMContentLoaded", () => {
+  if (window.__webAdminSessionReady) {
+    setupInvoiceWorkflow();
+    return;
+  }
+  document.addEventListener("web-admin-session-ready", setupInvoiceWorkflow, {
+    once: true
+  });
+});
 
 window.reloadInvoiceWorkflow = reloadInvoiceWorkflow;
 window.renderInvoiceWorkflow = renderInvoiceWorkflow;

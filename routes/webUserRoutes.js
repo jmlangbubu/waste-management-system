@@ -2,6 +2,12 @@ const express = require("express");
 const router = express.Router();
 const db = require("../config/db");
 const bcrypt = require("bcrypt");
+const webSessionService = require("../services/webSessionService");
+const {
+    requireWebAuth,
+    requireWebRole,
+    requireCsrf
+} = require("../middleware/webSessionAuth");
 
 
 console.log("webUserRoutes loaded");
@@ -40,7 +46,10 @@ function isAllowedStatus(status) {
 }
 
 function handleInsertError(res, err, accountType = "account") {
-    console.error(`create ${accountType} insert error:`, err);
+    console.warn(
+        `[WebUsers] ${accountType} insert failed:`,
+        err?.code || "UNKNOWN_DB_ERROR"
+    );
 
     const sqlMessage = String(err?.sqlMessage || err?.message || "");
 
@@ -65,6 +74,21 @@ function handleInsertError(res, err, accountType = "account") {
     });
 }
 
+async function revokeWebSessionsAfterSecurityChange(userId, action) {
+    try {
+        await webSessionService.revokeUserSessions(userId);
+    } catch (error) {
+        console.warn(
+            `[WebAuth] Session revocation after ${action} failed:`,
+            error.cause?.code || error.code || "UNKNOWN_SESSION_ERROR"
+        );
+    }
+}
+
+router.use(requireWebAuth);
+router.use(requireWebRole("super_admin"));
+router.use(requireCsrf);
+
 
 /* =========================================
    CREATE WEB USER
@@ -76,8 +100,7 @@ router.post("/create", async (req, res) => {
         password,
         role,
         division_name,
-        status,
-        created_by
+        status
     } = req.body;
 
     const cleanFullName = cleanText(full_name);
@@ -144,7 +167,7 @@ router.post("/create", async (req, res) => {
                     normalizedRole,
                     cleanDivisionName,
                     normalizedStatus,
-                    created_by || null
+                    req.user.id
                 ],
                 (err, result) => {
                     if (err) {
@@ -280,7 +303,19 @@ router.post("/create-mobile-account", async (req, res) => {
    GET WEB USERS ONLY
 ========================================= */
 router.get("/all", (req, res) => {
-    const sql = `SELECT * FROM web_users ORDER BY id DESC`;
+    const sql = `
+        SELECT
+            id,
+            full_name,
+            username,
+            role,
+            division_name,
+            status,
+            created_by,
+            created_at
+        FROM web_users
+        ORDER BY id DESC
+    `;
 
     db.query(sql, (err, results) => {
         if (err) {
@@ -380,7 +415,7 @@ router.put("/update-status/:id", (req, res) => {
 
     const sql = `UPDATE web_users SET status = ? WHERE id = ?`;
 
-    db.query(sql, [status, id], (err, result) => {
+    db.query(sql, [status, id], async (err, result) => {
         if (err) {
             console.error("update web status error:", err);
             return res.status(500).json({
@@ -394,6 +429,10 @@ router.put("/update-status/:id", (req, res) => {
                 success: false,
                 message: "Web account not found or no changes made"
             });
+        }
+
+        if (cleanText(status).toLowerCase() !== "active") {
+            await revokeWebSessionsAfterSecurityChange(id, "account status change");
         }
 
         return res.json({
@@ -450,7 +489,7 @@ router.delete("/delete/:id", (req, res) => {
 
     const sql = `DELETE FROM web_users WHERE id = ?`;
 
-    db.query(sql, [id], (err) => {
+    db.query(sql, [id], async (err) => {
         if (err) {
             console.error("delete web account error:", err);
             return res.status(500).json({
@@ -458,6 +497,8 @@ router.delete("/delete/:id", (req, res) => {
                 message: "Failed to delete web account"
             });
         }
+
+        await revokeWebSessionsAfterSecurityChange(id, "account deletion");
 
         return res.json({
             success: true,
@@ -693,7 +734,8 @@ router.put("/update/:id", async (req, res) => {
         let sql = `UPDATE web_users SET username = ?`;
         const params = [String(username).trim()];
 
-        if (password && String(password).trim()) {
+        const passwordChanged = Boolean(password && String(password).trim());
+        if (passwordChanged) {
             const hashedPassword = await bcrypt.hash(String(password).trim(), 10);
             sql += `, password = ?`;
             params.push(hashedPassword);
@@ -702,7 +744,7 @@ router.put("/update/:id", async (req, res) => {
         sql += ` WHERE id = ?`;
         params.push(id);
 
-        db.query(sql, params, (err, result) => {
+        db.query(sql, params, async (err, result) => {
             if (err) {
                 console.error("update web account error:", err);
                 return res.status(500).json({
@@ -716,6 +758,10 @@ router.put("/update/:id", async (req, res) => {
                     success: false,
                     message: "Web account not found"
                 });
+            }
+
+            if (passwordChanged) {
+                await revokeWebSessionsAfterSecurityChange(id, "password change");
             }
 
             return res.json({

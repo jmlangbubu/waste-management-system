@@ -1129,7 +1129,7 @@ function handleDispatchSelectedSessionEnded() {
 }
 
 async function dispatchRequest(url, options = {}) {
-  const response = await fetch(url, {
+  const response = await webAdminFetch(url, {
     ...options,
     headers: {
       "Content-Type": "application/json",

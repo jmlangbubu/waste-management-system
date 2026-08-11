@@ -1,5 +1,18 @@
 const dispatchService = require("../services/dispatchService");
 
+function withAuthenticatedActor(req) {
+  const user = req.user || {};
+  const actorName = user.full_name || user.username || null;
+  return {
+    ...(req.body || {}),
+    actor_type: "web_user",
+    actor_id: user.id || null,
+    actor_name: actorName,
+    created_by_user_id: user.id || null,
+    created_by_name: actorName
+  };
+}
+
 function sendDispatchError(res, error, actionLabel) {
   const statusCode = Number(error.statusCode) || 500;
   const isExpected =
@@ -37,7 +50,7 @@ function sendData(res, data, message) {
 
 exports.createTicket = async (req, res) => {
   try {
-    const data = await dispatchService.createTicket(req.body);
+    const data = await dispatchService.createTicket(withAuthenticatedActor(req));
     return res.status(201).json({
       success: true,
       message: "Dispatch ticket prepared successfully",
@@ -84,7 +97,10 @@ exports.updateTicket = async (req, res) => {
   try {
     return sendData(
       res,
-      await dispatchService.updatePreparedTicket(req.params.id, req.body),
+      await dispatchService.updatePreparedTicket(
+        req.params.id,
+        withAuthenticatedActor(req)
+      ),
       "Dispatch ticket updated successfully"
     );
   } catch (error) {
@@ -96,7 +112,10 @@ exports.issueTicket = async (req, res) => {
   try {
     return sendData(
       res,
-      await dispatchService.issueTicket(req.params.id, req.body),
+      await dispatchService.issueTicket(
+        req.params.id,
+        withAuthenticatedActor(req)
+      ),
       "Dispatch ticket issued successfully"
     );
   } catch (error) {
@@ -108,7 +127,10 @@ exports.cancelTicket = async (req, res) => {
   try {
     return sendData(
       res,
-      await dispatchService.cancelTicket(req.params.id, req.body),
+      await dispatchService.cancelTicket(
+        req.params.id,
+        withAuthenticatedActor(req)
+      ),
       "Dispatch ticket cancelled"
     );
   } catch (error) {
@@ -120,7 +142,10 @@ exports.linkSession = async (req, res) => {
   try {
     return sendData(
       res,
-      await dispatchService.linkSession(req.params.id, req.body),
+      await dispatchService.linkSession(
+        req.params.id,
+        withAuthenticatedActor(req)
+      ),
       "Tracking session linked to dispatch ticket"
     );
   } catch (error) {
@@ -132,7 +157,10 @@ exports.linkActiveSession = async (req, res) => {
   try {
     return sendData(
       res,
-      await dispatchService.linkActiveSession(req.params.id, req.body),
+      await dispatchService.linkActiveSession(
+        req.params.id,
+        withAuthenticatedActor(req)
+      ),
       "Active tracking session linked to dispatch ticket"
     );
   } catch (error) {
@@ -174,7 +202,7 @@ exports.arriveAtStop = async (req, res) => {
       await dispatchService.arriveAtStop(
         req.params.id,
         req.params.stopId,
-        req.body
+        withAuthenticatedActor(req)
       ),
       "Stop marked arrived"
     );
@@ -190,7 +218,7 @@ exports.completeStop = async (req, res) => {
       await dispatchService.completeStop(
         req.params.id,
         req.params.stopId,
-        req.body
+        withAuthenticatedActor(req)
       ),
       "Stop completed"
     );
@@ -203,7 +231,11 @@ exports.skipStop = async (req, res) => {
   try {
     return sendData(
       res,
-      await dispatchService.skipStop(req.params.id, req.params.stopId, req.body),
+      await dispatchService.skipStop(
+        req.params.id,
+        req.params.stopId,
+        withAuthenticatedActor(req)
+      ),
       "Stop skipped"
     );
   } catch (error) {
@@ -215,7 +247,10 @@ exports.markReturning = async (req, res) => {
   try {
     return sendData(
       res,
-      await dispatchService.markReturning(req.params.id, req.body),
+      await dispatchService.markReturning(
+        req.params.id,
+        withAuthenticatedActor(req)
+      ),
       "Dispatch marked as returning to WMO"
     );
   } catch (error) {

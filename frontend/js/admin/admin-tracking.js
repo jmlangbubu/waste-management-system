@@ -530,7 +530,7 @@ function getTrackingRouteNotice(routeLogs = []) {
 async function loadActiveTrucks() {
   try {
     const [res] = await Promise.all([
-      fetch(getTrackingActiveApiUrl()),
+      webAdminFetch(getTrackingActiveApiUrl()),
       typeof loadDispatchLiveData === "function"
         ? loadDispatchLiveData()
         : Promise.resolve({})
@@ -828,7 +828,7 @@ async function loadTruckRoute(sessionId, options = {}) {
   const { keepView = false } = options;
 
   try {
-    const res = await fetch(getTrackingRouteApiUrl(sessionId));
+    const res = await webAdminFetch(getTrackingRouteApiUrl(sessionId));
     const data = await res.json();
 
     if (String(selectedSessionId || "") !== String(sessionId || "")) return;
@@ -1115,7 +1115,7 @@ async function loadMonitoringPreview() {
   try {
     const [notifRes, trackingRes] = await Promise.all([
       fetch(getNotificationsApiUrl()),
-      fetch(getTrackingActiveApiUrl())
+      webAdminFetch(getTrackingActiveApiUrl())
     ]);
 
     const notifData = await notifRes.json();
@@ -1282,7 +1282,7 @@ async function loadTruckAnalyticsModalData() {
   try {
     const [notifRes, trackingRes] = await Promise.all([
       fetch(getNotificationsApiUrl()),
-      fetch(getTrackingActiveApiUrl())
+      webAdminFetch(getTrackingActiveApiUrl())
     ]);
 
     const notifData = await notifRes.json();
@@ -1426,7 +1426,7 @@ async function forceStopTruckSession(sessionId) {
   }
 
   try {
-    const response = await fetch(getTrackingForceStopApiUrl(sessionId), {
+    const response = await webAdminFetch(getTrackingForceStopApiUrl(sessionId), {
       method: "PUT",
       headers: {
         "Accept": "application/json"
@@ -2235,7 +2235,7 @@ async function loadTrackingReports() {
   `;
 
   try {
-    const res = await fetch(getTrackingReportsApiUrl(), {
+    const res = await webAdminFetch(getTrackingReportsApiUrl(), {
       headers: {
         Accept: "application/json"
       }
@@ -2275,7 +2275,7 @@ async function viewTrackingReport(sessionId) {
   if (!sessionId) return;
 
   try {
-    const res = await fetch(getTrackingReportDetailsApiUrl(sessionId), {
+    const res = await webAdminFetch(getTrackingReportDetailsApiUrl(sessionId), {
       headers: {
         Accept: "application/json"
       }

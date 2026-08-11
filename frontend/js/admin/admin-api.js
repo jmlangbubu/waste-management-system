@@ -2,6 +2,61 @@
 // API CONSTANTS
 // =========================
 
+const WEB_ADMIN_CSRF_COOKIE_NAME = "wmo_admin_csrf";
+const WEB_ADMIN_SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+function getBrowserCookie(name) {
+  const cookieHeader = String(document.cookie || "");
+  for (const part of cookieHeader.split(";")) {
+    const separatorIndex = part.indexOf("=");
+    if (separatorIndex < 0) continue;
+    if (part.slice(0, separatorIndex).trim() !== name) continue;
+    try {
+      return decodeURIComponent(part.slice(separatorIndex + 1).trim());
+    } catch (error) {
+      return "";
+    }
+  }
+  return "";
+}
+
+function clearCachedWebUser() {
+  localStorage.removeItem("webUser");
+}
+
+function handleWebAdminAuthenticationFailure() {
+  clearCachedWebUser();
+  if (!window.location.pathname.toLowerCase().endsWith("admin-dashboard.html")) return;
+  if (window.__webAdminAuthRedirecting) return;
+  window.__webAdminAuthRedirecting = true;
+  window.location.replace("web-login.html");
+}
+
+async function webAdminFetch(url, options = {}) {
+  const method = String(options.method || "GET").toUpperCase();
+  const headers = new Headers(options.headers || {});
+
+  if (!WEB_ADMIN_SAFE_METHODS.has(method)) {
+    const csrfToken = getBrowserCookie(WEB_ADMIN_CSRF_COOKIE_NAME);
+    if (!csrfToken) {
+      const error = new Error("Web Admin request verification token is unavailable.");
+      error.code = "WEB_CSRF_TOKEN_MISSING";
+      throw error;
+    }
+    headers.set("X-CSRF-Token", csrfToken);
+  }
+
+  const response = await fetch(url, {
+    ...options,
+    method,
+    headers,
+    credentials: "include"
+  });
+
+  if (response.status === 401) handleWebAdminAuthenticationFailure();
+  return response;
+}
+
 function getAppApiBase() {
   if (window.APP_CONFIG && window.APP_CONFIG.API_BASE_URL) {
     return window.APP_CONFIG.API_BASE_URL.replace(/\/$/, "");
@@ -115,6 +170,14 @@ function getDispatchTicketsApiUrl() {
   return `${getAppApiBase()}/dispatch/tickets`;
 }
 
+function getWebAuthSessionApiUrl() {
+  return `${getAppApiBase()}/web-auth/session`;
+}
+
+function getWebAuthLogoutApiUrl() {
+  return `${getAppApiBase()}/web-auth/logout`;
+}
+
 function getDispatchTicketApiUrl(ticketId) {
   return `${getDispatchTicketsApiUrl()}/${encodeURIComponent(ticketId)}`;
 }
@@ -151,6 +214,12 @@ function getDispatchLocationLabelApiUrl(latitude, longitude) {
   });
   return `${getAppApiBase()}/complaints/detect-barangay?${parameters}`;
 }
+
+window.getBrowserCookie = getBrowserCookie;
+window.clearCachedWebUser = clearCachedWebUser;
+window.webAdminFetch = webAdminFetch;
+window.getWebAuthSessionApiUrl = getWebAuthSessionApiUrl;
+window.getWebAuthLogoutApiUrl = getWebAuthLogoutApiUrl;
 
 // =========================
 // COMPLAINTS

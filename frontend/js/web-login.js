@@ -67,15 +67,36 @@ function saveWebUserSession(user) {
   return normalizedUser;
 }
 
-document.addEventListener("DOMContentLoaded", () => {
+async function restoreServerSession() {
   try {
-    const savedUserRaw = localStorage.getItem("webUser");
-    const savedUser = savedUserRaw ? JSON.parse(savedUserRaw) : null;
-
-    if (savedUser && savedUser.role) {
-      window.location.href = getDashboardByRole(savedUser.role);
-      return;
+    const response = await fetch(
+      `${window.APP_CONFIG.API_BASE_URL}/web-auth/session`,
+      {
+        headers: { Accept: "application/json" },
+        credentials: "include"
+      }
+    );
+    if (!response.ok) {
+      localStorage.removeItem("webUser");
+      return false;
     }
+    const data = await response.json();
+    if (!data.success || !data.user || !isAllowedWebRole(data.user.role)) {
+      localStorage.removeItem("webUser");
+      return false;
+    }
+    const user = saveWebUserSession(data.user);
+    window.location.replace(getDashboardByRole(user.role));
+    return true;
+  } catch (error) {
+    localStorage.removeItem("webUser");
+    return false;
+  }
+}
+
+document.addEventListener("DOMContentLoaded", async () => {
+  try {
+    if (await restoreServerSession()) return;
 
     if (!loginForm) {
       console.error("loginForm not found in DOM.");
@@ -107,7 +128,8 @@ document.addEventListener("DOMContentLoaded", () => {
             "Content-Type": "application/json",
             Accept: "application/json"
           },
-          body: JSON.stringify({ username, password })
+          body: JSON.stringify({ username, password }),
+          credentials: "include"
         });
 
         const rawText = await response.text();
