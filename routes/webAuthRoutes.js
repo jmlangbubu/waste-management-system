@@ -32,6 +32,27 @@ function sendSessionStoreError(res, error, operation) {
   });
 }
 
+function sendLoginLookupError(res, error) {
+  console.warn(
+    "[WebAuth] Login database lookup failed:",
+    error?.code || "UNKNOWN_DB_ERROR"
+  );
+
+  if (db.shouldReturnServiceUnavailable(error)) {
+    return res.status(503).json({
+      success: false,
+      message: "Database service is temporarily unavailable. Please try again.",
+      code: "WEB_AUTH_DATABASE_UNAVAILABLE"
+    });
+  }
+
+  return res.status(500).json({
+    success: false,
+    message: "Server error during web login.",
+    code: "WEB_AUTH_DATABASE_LOOKUP_FAILED"
+  });
+}
+
 router.post("/login", (req, res) => {
   const username = req.body?.username ? String(req.body.username).trim() : "";
   const password = req.body?.password ? String(req.body.password).trim() : "";
@@ -39,7 +60,8 @@ router.post("/login", (req, res) => {
   if (!username || !password) {
     return res.status(400).json({
       success: false,
-      message: "Username and password are required."
+      message: "Username and password are required.",
+      code: "WEB_AUTH_CREDENTIALS_REQUIRED"
     });
   }
 
@@ -50,94 +72,100 @@ router.post("/login", (req, res) => {
     LIMIT 1
   `;
 
-  db.queryReadOnly(sql, [username], async (error, results) => {
-    if (error) {
-      console.warn(
-        "[WebAuth] Login database lookup failed:",
-        error.code || "UNKNOWN_DB_ERROR"
-      );
+  try {
+    db.queryReadOnly(sql, [username], async (error, results) => {
+      if (error) {
+        return sendLoginLookupError(res, error);
+      }
 
-      if (db.shouldReturnServiceUnavailable(error)) {
-        return res.status(503).json({
+      if (!results || results.length === 0) {
+        return res.status(401).json({
           success: false,
-          message: "Database service is temporarily unavailable. Please try again."
+          message: "Invalid username or password.",
+          code: "WEB_AUTH_INVALID_CREDENTIALS"
         });
       }
 
-      return res.status(500).json({
-        success: false,
-        message: "Server error during web login."
-      });
-    }
+      const user = results[0];
+      const dbPassword = String(user.password || "").trim();
+      const inputPassword = String(password || "").trim();
+      const status = String(user.status || "").trim().toLowerCase();
 
-    if (!results || results.length === 0) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid username or password."
-      });
-    }
+      if (status !== "active") {
+        return res.status(403).json({
+          success: false,
+          message: "This account is inactive.",
+          code: "WEB_AUTH_ACCOUNT_INACTIVE"
+        });
+      }
 
-    const user = results[0];
-    const dbPassword = String(user.password || "").trim();
-    const inputPassword = String(password || "").trim();
-    const status = String(user.status || "").trim().toLowerCase();
-
-    if (status !== "active") {
-      return res.status(403).json({
-        success: false,
-        message: "This account is inactive."
-      });
-    }
-
-    try {
-      const isHashedPassword =
-        dbPassword.startsWith("$2a$") ||
-        dbPassword.startsWith("$2b$") ||
-        dbPassword.startsWith("$2y$");
-      const isMatch = isHashedPassword
-        ? await bcrypt.compare(inputPassword, dbPassword)
-        : dbPassword === inputPassword;
+      let isMatch;
+      try {
+        const isHashedPassword =
+          dbPassword.startsWith("$2a$") ||
+          dbPassword.startsWith("$2b$") ||
+          dbPassword.startsWith("$2y$");
+        isMatch = isHashedPassword
+          ? await bcrypt.compare(inputPassword, dbPassword)
+          : dbPassword === inputPassword;
+      } catch (passwordError) {
+        console.warn(
+          "[WebAuth] Password verification failed:",
+          passwordError.code || passwordError.name || "PASSWORD_COMPARE_ERROR"
+        );
+        return res.status(500).json({
+          success: false,
+          message: "Server error during password verification.",
+          code: "WEB_AUTH_PASSWORD_VERIFY_FAILED"
+        });
+      }
 
       if (!isMatch) {
         return res.status(401).json({
           success: false,
-          message: "Invalid username or password."
+          message: "Invalid username or password.",
+          code: "WEB_AUTH_INVALID_CREDENTIALS"
         });
       }
 
-      const previousSessionToken = getCookieValue(req, SESSION_COOKIE_NAME);
-      const session = await webSessionService.rotateSession(
-        user.id,
-        previousSessionToken
-      );
-      setSessionCookies(res, session);
+      try {
+        const previousSessionToken = getCookieValue(req, SESSION_COOKIE_NAME);
+        const session = await webSessionService.rotateSession(
+          user.id,
+          previousSessionToken
+        );
+        setSessionCookies(res, session);
 
-      return res.json({
-        success: true,
-        message: "Web login successful.",
-        user: {
-          id: user.id,
-          fullName: user.full_name,
-          username: user.username,
-          role: user.role,
-          divisionName: user.division_name,
-          status: user.status
+        return res.json({
+          success: true,
+          message: "Web login successful.",
+          user: {
+            id: user.id,
+            fullName: user.full_name,
+            username: user.username,
+            role: user.role,
+            divisionName: user.division_name,
+            status: user.status
+          }
+        });
+      } catch (loginError) {
+        if (loginError.code === "WEB_SESSION_STORE_UNAVAILABLE") {
+          return sendSessionStoreError(res, loginError, "Session creation");
         }
-      });
-    } catch (loginError) {
-      if (loginError.code === "WEB_SESSION_STORE_UNAVAILABLE") {
-        return sendSessionStoreError(res, loginError, "Session creation");
+        console.warn(
+          "[WebAuth] Session creation failed:",
+          loginError.code || loginError.name || "UNKNOWN_SESSION_ERROR"
+        );
+        return res.status(500).json({
+          success: false,
+          message: "Server error while creating the Web Admin session.",
+          code: "WEB_AUTH_SESSION_FAILED"
+        });
       }
-      console.warn(
-        "[WebAuth] Password verification failed:",
-        loginError.code || loginError.name || "PASSWORD_COMPARE_ERROR"
-      );
-      return res.status(500).json({
-        success: false,
-        message: "Server error during password verification."
-      });
-    }
-  });
+    });
+  } catch (error) {
+    return sendLoginLookupError(res, error);
+  }
 });
 
 router.get("/session", requireWebAuth, (req, res) => {
