@@ -4,7 +4,7 @@
 
 document.addEventListener("DOMContentLoaded", async () => {
   try {
-    if (!initializeSession()) return;
+    if (!(await initializeSession())) return;
 
     bindLogoutButton?.();
     bindSidebarToggle?.();
@@ -41,9 +41,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     await safeRun(loadTrackingReports, "loadTrackingReports");
 
     await safeRun(loadRecords, "loadRecords");
-    await safeRun(loadPersonnel, "loadPersonnel");
     await safeRun(loadAppointments, "loadAppointments");
-    await safeRun(loadWebUsers, "loadWebUsers");
+    if (isSuperAdmin(currentUser)) {
+      await safeRun(loadPersonnel, "loadPersonnel");
+      await safeRun(loadWebUsers, "loadWebUsers");
+    }
     await safeRun(loadMonitoringPreview, "loadMonitoringPreview");
 
     await safeRun(() => loadNotifications(false), "loadNotifications");

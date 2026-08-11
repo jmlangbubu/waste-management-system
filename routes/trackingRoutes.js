@@ -1,6 +1,15 @@
 const express = require("express");
 const router = express.Router();
 const trackingController = require("../controllers/trackingController");
+const {
+  requireWebAuth,
+  requireWebRole
+} = require("../middleware/webSessionAuth");
+
+const requireTrackingWebRead = [
+  requireWebAuth,
+  requireWebRole("super_admin", "personnel")
+];
 
 // Start a new tracking session
 router.post("/start", trackingController.startTrackingSession);
@@ -18,10 +27,14 @@ router.post("/:sessionId/locations/batch", trackingController.addLocationLogsBat
 router.post("/:sessionId/status", trackingController.updateTrackingDeviceStatus);
 
 // Dashboard: get all active trucks
-router.get("/active", trackingController.getActiveTrucks);
+router.get("/active", ...requireTrackingWebRead, trackingController.getActiveTrucks);
 
 // Dashboard: get route history by session
-router.get("/route/:sessionId", trackingController.getRouteHistoryBySession);
+router.get(
+  "/route/:sessionId",
+  ...requireTrackingWebRead,
+  trackingController.getRouteHistoryBySession
+);
 
 // Latest session by truck
 router.get("/truck/:truckId/latest-session", trackingController.getTruckLatestSession);
@@ -31,9 +44,13 @@ router.get("/truck/:truckId/latest-session", trackingController.getTruckLatestSe
 ================================ */
 
 // Admin report list
-router.get("/reports", trackingController.getTrackingReports);
+router.get("/reports", ...requireTrackingWebRead, trackingController.getTrackingReports);
 
 // Admin report detail
-router.get("/reports/:sessionId", trackingController.getTrackingReportDetails);
+router.get(
+  "/reports/:sessionId",
+  ...requireTrackingWebRead,
+  trackingController.getTrackingReportDetails
+);
 
 module.exports = router;

@@ -10,7 +10,7 @@ async function loadWebUsers() {
   ensureUserManagementLayoutStyles();
 
   try {
-    const res = await fetch(getAccountsApiUrl(), {
+    const res = await webAdminFetch(getAccountsApiUrl(), {
       headers: { Accept: "application/json" }
     });
 
@@ -676,7 +676,7 @@ async function submitEditUser() {
         ? `${getAppApiBase()}/web-users/update-mobile/${id}`
         : `${getAppApiBase()}/web-users/update/${id}`;
 
-    const res = await fetch(url, {
+    const res = await webAdminFetch(url, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
@@ -753,7 +753,7 @@ async function handleAccountStatusUpdate(source, id, newStatus) {
         ? `${getAppApiBase()}/web-users/update-mobile-status/${id}`
         : `${getAppApiBase()}/web-users/update-status/${id}`;
 
-    const res = await fetch(url, {
+    const res = await webAdminFetch(url, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
@@ -797,7 +797,7 @@ async function handleDeleteAccount(source, id) {
         ? `${getAppApiBase()}/web-users/delete-mobile/${id}`
         : `${getAppApiBase()}/web-users/delete/${id}`;
 
-    const res = await fetch(url, {
+    const res = await webAdminFetch(url, {
       method: "DELETE",
       headers: {
         Accept: "application/json"
@@ -1049,7 +1049,7 @@ function setupCreateAccountForm() {
         return;
       }
 
-      const res = await fetch(url, {
+      const res = await webAdminFetch(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

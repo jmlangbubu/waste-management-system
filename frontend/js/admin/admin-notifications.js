@@ -1723,9 +1723,21 @@ function bindNotificationActions() {
 */
 document.addEventListener("DOMContentLoaded", () => {
   setTimeout(() => {
-    bindNotificationActions();
-    setupAdminNotificationRealtime();
-    startNotificationPolling();
+    const startNotificationsAfterAuthentication = () => {
+      bindNotificationActions();
+      setupAdminNotificationRealtime();
+      startNotificationPolling();
+    };
+
+    if (window.__webAdminSessionReady) {
+      startNotificationsAfterAuthentication();
+    } else {
+      document.addEventListener(
+        "web-admin-session-ready",
+        startNotificationsAfterAuthentication,
+        { once: true }
+      );
+    }
   }, 300);
 });
 

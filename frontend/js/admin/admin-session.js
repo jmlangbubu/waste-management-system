@@ -3,31 +3,30 @@
 // =========================
 
 function redirectToLogin() {
-  localStorage.removeItem("webUser");
-  window.location.href = "web-login.html";
+  clearCachedWebUser?.();
+  window.location.replace("web-login.html");
 }
 
 function bindLogoutButton() {
   const logoutBtn = document.getElementById("logoutBtn");
   if (!logoutBtn) return;
 
-  logoutBtn.addEventListener("click", () => {
+  if (logoutBtn.dataset.webLogoutBound === "true") return;
+  logoutBtn.dataset.webLogoutBound = "true";
+
+  logoutBtn.addEventListener("click", async () => {
     const confirmed = window.confirm("Are you sure you want to log out?");
     if (!confirmed) return;
 
-    redirectToLogin();
+    logoutBtn.disabled = true;
+    try {
+      await webAdminFetch(getWebAuthLogoutApiUrl(), { method: "POST" });
+    } catch (error) {
+      console.warn("Web logout request did not complete:", error.code || error.name);
+    } finally {
+      redirectToLogin();
+    }
   });
-}
-
-function getStoredUser() {
-  try {
-    const raw = localStorage.getItem("webUser");
-    if (!raw) return null;
-    return JSON.parse(raw);
-  } catch (error) {
-    console.error("Invalid webUser session:", error);
-    return null;
-  }
 }
 
 function normalizeRole(role) {
@@ -184,18 +183,37 @@ function forceShowElement(element, displayValue = "") {
   }
 }
 
-function initializeSession() {
-  const storedUser = getStoredUser();
-  currentUser = normalizeCurrentUser(storedUser);
+async function initializeSession() {
+  try {
+    const response = await webAdminFetch(getWebAuthSessionApiUrl(), {
+      headers: { Accept: "application/json" }
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.success || !payload.user) {
+      redirectToLogin();
+      return false;
+    }
+
+    currentUser = normalizeCurrentUser(payload.user);
+  } catch (error) {
+    console.warn("Web Admin session validation failed:", error.code || error.name);
+    redirectToLogin();
+    return false;
+  }
 
   if (!currentUser || !currentUser.role || !currentUser.username) {
     redirectToLogin();
     return false;
   }
 
+  localStorage.setItem("webUser", JSON.stringify(currentUser));
+
   setUserHeaderInfo(currentUser);
   setUserManagementVisibility(currentUser);
   guardRestrictedActiveSection(currentUser);
+  window.__webAdminSessionReady = true;
+  document.documentElement.classList.remove("web-session-pending");
+  document.dispatchEvent(new CustomEvent("web-admin-session-ready"));
 
   return true;
 }
@@ -276,7 +294,6 @@ function guardRestrictedActiveSection(user) {
 
 window.redirectToLogin = redirectToLogin;
 window.bindLogoutButton = bindLogoutButton;
-window.getStoredUser = getStoredUser;
 window.normalizeCurrentUser = normalizeCurrentUser;
 window.getUserDisplayName = getUserDisplayName;
 window.getRoleDisplayName = getRoleDisplayName;

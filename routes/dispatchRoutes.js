@@ -1,7 +1,16 @@
 const express = require("express");
 const dispatchController = require("../controllers/dispatchController");
+const {
+  requireWebAuth,
+  requireWebRole,
+  requireCsrf
+} = require("../middleware/webSessionAuth");
 
 const router = express.Router();
+
+router.use(requireWebAuth);
+router.use(requireWebRole("super_admin", "personnel"));
+router.use(requireCsrf);
 
 router.get("/destinations", dispatchController.listDestinations);
 router.get("/destinations/:id", dispatchController.getDestination);

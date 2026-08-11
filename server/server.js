@@ -10,6 +10,10 @@ const { Server } = require("socket.io");
 const app = express();
 const server = http.createServer(app);
 
+if (process.env.NODE_ENV === "production") {
+  app.set("trust proxy", 1);
+}
+
 /* =========================
    SOCKET.IO REAL-TIME SERVER
 ========================= */
