@@ -3,6 +3,7 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const Module = require("node:module");
+const vm = require("node:vm");
 
 const projectRoot = path.join(__dirname, "..");
 const originalModuleLoad = Module._load;
@@ -136,6 +137,103 @@ function createFakeRouter() {
 
 function read(relativePath) {
   return fs.readFileSync(path.join(projectRoot, relativePath), "utf8");
+}
+
+function loadWebLoginClient() {
+  const listeners = {};
+  const context = {
+    window: {
+      APP_CONFIG: {
+        API_BASE_URL: "https://waste-management-system-1-qon2.onrender.com/api"
+      },
+      location: {
+        href: "",
+        replace() {}
+      }
+    },
+    document: {
+      getElementById() {
+        return null;
+      },
+      addEventListener(name, handler) {
+        listeners[name] = handler;
+      }
+    },
+    localStorage: {
+      setItem() {},
+      removeItem() {}
+    },
+    fetch: async () => {
+      throw new Error("Unexpected fetch");
+    },
+    setTimeout() {},
+    console: {
+      error() {},
+      warn() {},
+      log() {}
+    }
+  };
+  vm.createContext(context);
+  vm.runInContext(read("frontend/js/web-login.js"), context);
+  return { context, listeners };
+}
+
+function getLoginHandler(options = {}) {
+  const router = createFakeRouter();
+  const defaultUser = {
+    id: 7,
+    full_name: "WMO Operator",
+    username: "operator",
+    password: "secret",
+    role: "personnel",
+    division_name: "Operations",
+    status: "active"
+  };
+  const fakeDb = {
+    shouldReturnServiceUnavailable(error) {
+      return ["ECONNRESET", "ETIMEDOUT"].includes(error?.code);
+    },
+    queryReadOnly(sql, parameters, callback) {
+      if (options.lookupThrows) throw options.lookupThrows;
+      callback(options.lookupError || null, options.results || [defaultUser]);
+    },
+    query() {
+      throw new Error("Unexpected write");
+    }
+  };
+  const fakeSessionService = options.sessionService || {
+    async rotateSession() {
+      return {
+        sessionToken: "S".repeat(43),
+        csrfToken: "C".repeat(43),
+        ttlSeconds: 3600,
+        expiresAt: new Date("2026-08-11T02:00:00.000Z")
+      };
+    },
+    async revokeSession() {}
+  };
+
+  loadFresh("../routes/webAuthRoutes", {
+    express: { Router: () => router },
+    bcrypt: { compare: options.compare || (async () => true) },
+    "../config/db": fakeDb,
+    "../services/webSessionService": fakeSessionService
+  });
+
+  const loginLayer = router.stack.find((layer) => layer.route?.path === "/login");
+  return loginLayer.route.stack[0].handle;
+}
+
+function invokeLogin(handler, body, cookie = "") {
+  return new Promise((resolve, reject) => {
+    const res = createResponse(() => resolve(res));
+    try {
+      const result = handler({ body, headers: { cookie } }, res);
+      if (result && typeof result.catch === "function") result.catch(reject);
+    } catch (error) {
+      reject(error);
+    }
+  });
 }
 
 const tests = [];
@@ -632,8 +730,140 @@ test("successful login rotates a session and sends both cookies", async () => {
   });
   assert.deepEqual(rotationArguments, [7, previousToken]);
   assert.equal(res.statusCode, 200);
+  assert.equal(typeof res.body, "object");
+  assert.equal(res.body.success, true);
   assert.equal(res.headers["set-cookie"].length, 2);
   assert.equal(Object.prototype.hasOwnProperty.call(res.body.user, "password"), false);
+});
+
+test("session insert failure returns safe JSON 503", async () => {
+  const handler = getLoginHandler({
+    sessionService: {
+      async rotateSession() {
+        const error = new Error("INSERT INTO web_admin_sessions failed");
+        error.code = "WEB_SESSION_STORE_UNAVAILABLE";
+        error.cause = { code: "ER_NO_SUCH_TABLE" };
+        throw error;
+      }
+    }
+  });
+  const originalWarn = console.warn;
+  console.warn = () => {};
+  try {
+    const res = await invokeLogin(handler, {
+      username: "operator",
+      password: "secret"
+    });
+    assert.equal(res.statusCode, 503);
+    assert.equal(res.body.code, "WEB_SESSION_STORE_UNAVAILABLE");
+    assert.doesNotMatch(JSON.stringify(res.body), /INSERT|SQL|web_admin_sessions/i);
+  } finally {
+    console.warn = originalWarn;
+  }
+});
+
+for (const lookupFailure of [
+  { name: "callback", option: "lookupError" },
+  { name: "synchronous", option: "lookupThrows" }
+]) {
+  test(`${lookupFailure.name} DB lookup failure returns safe JSON`, async () => {
+    const databaseError = Object.assign(
+      new Error("SELECT password FROM web_users failed"),
+      { code: "ER_BAD_FIELD_ERROR" }
+    );
+    const handler = getLoginHandler({ [lookupFailure.option]: databaseError });
+    const originalWarn = console.warn;
+    console.warn = () => {};
+    try {
+      const res = await invokeLogin(handler, {
+        username: "operator",
+        password: "secret"
+      });
+      assert.equal(res.statusCode, 500);
+      assert.equal(res.body.code, "WEB_AUTH_DATABASE_LOOKUP_FAILED");
+      assert.doesNotMatch(JSON.stringify(res.body), /SELECT|password FROM|SQL/i);
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
+}
+
+test("invalid password returns JSON 401", async () => {
+  const handler = getLoginHandler();
+  const res = await invokeLogin(handler, {
+    username: "operator",
+    password: "incorrect"
+  });
+  assert.equal(res.statusCode, 401);
+  assert.equal(res.body.success, false);
+  assert.equal(res.body.code, "WEB_AUTH_INVALID_CREDENTIALS");
+});
+
+test("inactive account returns JSON 403", async () => {
+  const handler = getLoginHandler({
+    results: [{
+      id: 7,
+      full_name: "Inactive Operator",
+      username: "inactive",
+      password: "secret",
+      role: "personnel",
+      division_name: "Operations",
+      status: "inactive"
+    }]
+  });
+  const res = await invokeLogin(handler, {
+    username: "inactive",
+    password: "secret"
+  });
+  assert.equal(res.statusCode, 403);
+  assert.equal(res.body.success, false);
+  assert.equal(res.body.code, "WEB_AUTH_ACCOUNT_INACTIVE");
+});
+
+test("malformed and non-JSON login responses are classified clearly", async () => {
+  const { context } = loadWebLoginClient();
+  await assert.rejects(
+    () => context.parseLoginApiResponse({
+      status: 502,
+      headers: { get: () => "text/html; charset=utf-8" },
+      text: async () => "<html>Bad gateway</html>"
+    }),
+    (error) => {
+      assert.equal(error.code, "WEB_LOGIN_INVALID_RESPONSE");
+      assert.equal(error.httpStatus, 502);
+      assert.equal(error.contentType, "text/html; charset=utf-8");
+      return true;
+    }
+  );
+
+  await assert.rejects(
+    () => context.parseLoginApiResponse({
+      status: 500,
+      headers: { get: () => "application/json" },
+      text: async () => "not-json"
+    }),
+    (error) => error.code === "WEB_LOGIN_INVALID_RESPONSE"
+  );
+});
+
+test("frontend distinguishes authentication and safe server failures", () => {
+  const { context } = loadWebLoginClient();
+  assert.equal(
+    context.getLoginFailureMessage(401, { message: "Invalid username or password." }),
+    "Invalid username or password."
+  );
+  assert.equal(
+    context.getLoginFailureMessage(403, { message: "This account is inactive." }),
+    "This account is inactive."
+  );
+  assert.equal(
+    context.getLoginFailureMessage(503, { message: "raw SQL detail" }),
+    "Web Admin authentication is temporarily unavailable. Please try again."
+  );
+  assert.equal(
+    context.getLoginFailureMessage(500, { message: "raw SQL detail" }),
+    "The server could not complete the login. Please try again."
+  );
 });
 
 test("current-session endpoint returns safe user fields only", () => {
@@ -885,6 +1115,11 @@ test("auth logging does not emit usernames, passwords, tokens, or SQL messages",
   assert.doesNotMatch(routeSource, /LOGIN ATTEMPT|PASSWORD MATCH|RESULT COUNT|console\.log\([^\n]*username/i);
   const middlewareSource = read("middleware/webSessionAuth.js");
   assert.doesNotMatch(middlewareSource, /console\.(log|warn|error)\([^\n]*(sessionToken|csrfToken)/);
+  const loginSource = read("frontend/js/web-login.js");
+  assert.doesNotMatch(loginSource, /Login raw response|console\.(log|warn|error)\([^\n]*(password|cookie|sessionToken|csrfToken)/i);
+  for (const safeDiagnostic of ["endpoint", "status", "contentType", "code"]) {
+    assert.match(loginSource, new RegExp(`\\b${safeDiagnostic}\\b`));
+  }
 });
 
 async function run() {

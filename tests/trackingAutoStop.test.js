@@ -358,6 +358,36 @@ async function testTrackingReportsRemainCompatible() {
   assert.ok(rows[0].report_status_key);
 }
 
+async function testTrackingCompletedBackfillUsesNumericReferenceComparison() {
+  const service = new TrackingService();
+  service.ensureWmoNotificationsTableSafe = async () => {};
+  service.ensureTrackingSessionReportColumns = async () => {};
+  const createdForSessions = [];
+  service.createTrackingCompletedNotification = async (session) => {
+    createdForSessions.push(session.session_id);
+    return { id: 9001 };
+  };
+
+  let backfillSql = "";
+  queryHandler = async (sql) => {
+    backfillSql = normalizeSql(sql);
+    return [[{
+      id: 612,
+      session_id: 612,
+      truck_id: "TRUCK-COMPLETE",
+      session_status: "auto_stopped"
+    }]];
+  };
+
+  const createdCount = await service.backfillTrackingCompletedNotifications(25);
+
+  assert.equal(createdCount, 1);
+  assert.deepEqual(createdForSessions, [612]);
+  assert.match(backfillSql, /n\.type = 'tracking_completed'/);
+  assert.match(backfillSql, /CAST\(n\.reference_id AS UNSIGNED\) = tts\.id/);
+  assert.doesNotMatch(backfillSql, /n\.reference_id = CAST\(tts\.id AS CHAR\)/);
+}
+
 async function testSchedulerSkipsOverlapAndSchedulesOneNextRun() {
   const service = createTestService();
   let scheduledRuns = 0;
@@ -394,8 +424,9 @@ async function run() {
   await testStoppedHistoricalSessionsAreNotReopened();
   testEndedAtCannotPrecedeStartedAt();
   await testTrackingReportsRemainCompatible();
+  await testTrackingCompletedBackfillUsesNumericReferenceComparison();
   await testSchedulerSkipsOverlapAndSchedulesOneNextRun();
-  console.log("Tracking geofence auto-stop tests passed (13 required scenarios plus source priority and scheduler overlap).");
+  console.log("Tracking geofence auto-stop tests passed (13 required scenarios plus source priority, numeric notification lookup, and scheduler overlap).");
 }
 
 run().catch((error) => {

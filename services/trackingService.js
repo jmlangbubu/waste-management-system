@@ -1071,7 +1071,7 @@ class TrackingService {
                     ON route_counts.session_id = tts.id
                 LEFT JOIN notifications n
                     ON n.type = 'tracking_completed'
-                   AND n.reference_id = CAST(tts.id AS CHAR)
+                   AND CAST(n.reference_id AS UNSIGNED) = tts.id
                 WHERE tts.session_status IN (
                     'stopped',
                     'auto_stopped',
