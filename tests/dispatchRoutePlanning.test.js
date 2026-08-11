@@ -354,7 +354,7 @@ function testPersistedRoadStopRehydratesOnlyTheMatchingCatalogComponent() {
 
 function testFailureStateStaleResponsesAndActualGpsIndependence() {
   assert.deepEqual(dispatchRoutingFailureState(), {
-    message: "Route update is temporarily unavailable. The last route is still displayed.",
+    message: "Route preview unavailable. The last route is still displayed.",
     preserveSelectedStops: true,
     preservePreviousRoute: true,
     drawStraightFallback: false
@@ -372,7 +372,7 @@ function testFailureStateStaleResponsesAndActualGpsIndependence() {
   assert.ok(ticketDetailsFunction);
   assert.doesNotMatch(clearFunction[0], /selectedRoutePolyline/);
   assert.doesNotMatch(ticketDetailsFunction[0], /dispatchEscape\(stop\.latitude\)|dispatchEscape\(stop\.longitude\)/);
-  assert.match(source, /activateDispatchPlannedLayerGroups\(layers\)[\s\S]*dispatchLastSuccessfulRouteState = journey/);
+  assert.match(source, /activateDispatchPlannedLayerGroups\(layers\)[\s\S]*dispatchLastSuccessfulRouteState = \{ journey, originSource:/);
   assert.match(source, /if \(dispatchHasVisiblePlannedRoute\(\)\) return;/);
   assert.match(source, /const routeSnapshot = captureDispatchRoutePreviewState\(\)/);
   assert.match(source, /catch \(error\) \{[\s\S]*restoreDispatchRoutePreviewState\(routeSnapshot\)/);

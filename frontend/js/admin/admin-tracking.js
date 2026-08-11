@@ -6,7 +6,7 @@ function initializeTruckMap() {
   truckMap = L.map("truckMap").setView([6.1164, 125.1716], 13);
 
   [
-    ["trackingActualRoutePane", "410"],
+    ["trackingActualRoutePane", "460"],
     ["dispatchPlannedRoutePane", "440"],
     ["dispatchCurrentRoutePane", "455"],
     ["dispatchCompletedRoutePane", "470"],
@@ -42,6 +42,7 @@ const TRACKING_STATIONARY_WINDOW_MS = 2 * 60 * 1000;
 const TRACKING_MAX_DISPLAY_SPEED_METERS_PER_SECOND = 35;
 const TRACKING_MIN_JUMP_DISTANCE_METERS = 200;
 const TRACKING_FALLBACK_RECENT_POINT_LIMIT = 12;
+const TRACKING_ACTUAL_ROUTE_COLOR = "#285a48";
 
 function parseTrackingDate(value) {
   if (!value) return null;
@@ -863,7 +864,7 @@ async function loadTruckRoute(sessionId, options = {}) {
     const addSolidSegment = (segment) => {
       if (segment.length < 2) return;
       L.polyline(segment, {
-        color: "#0d6efd",
+        color: TRACKING_ACTUAL_ROUTE_COLOR,
         weight: 5,
         opacity: 0.9,
         pane: "trackingActualRoutePane",
@@ -888,7 +889,7 @@ async function loadTruckRoute(sessionId, options = {}) {
             [current.lat, current.lng]
           ],
           {
-            color: "#0d6efd",
+            color: TRACKING_ACTUAL_ROUTE_COLOR,
             weight: 4,
             opacity: 0.7,
             pane: "trackingActualRoutePane",

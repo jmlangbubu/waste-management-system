@@ -1485,8 +1485,13 @@
 }
 
 #trackingSection .tracking-legend-line.planned {
-  border-color: #66736d;
-  border-top-style: dashed;
+  border-color: #2d73c7;
+  border-top-style: solid;
+}
+
+#trackingSection .tracking-legend-line.actual {
+  background: #285a48;
+  border-color: #285a48;
 }
 
 #trackingSection .tracking-route-endpoint {
