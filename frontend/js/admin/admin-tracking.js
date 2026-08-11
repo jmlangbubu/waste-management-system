@@ -1475,10 +1475,9 @@ window.selectTruck = selectTruck;
 // =============================
 
 function getTrackingReportsApiUrl() {
-  const apiBase =
-    window.APP_CONFIG?.API_BASE_URL ||
-    window.API_BASE ||
-    "http://192.168.1.37:8081/api";
+  const apiBase = typeof getAppApiBase === "function"
+    ? getAppApiBase()
+    : `${window.location.origin}/api`;
 
   return `${apiBase.replace(/\/$/, "")}/tracking/reports`;
 }
