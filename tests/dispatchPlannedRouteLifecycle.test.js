@@ -9,7 +9,9 @@ const {
   DISPATCH_MARKER_PANE,
   DISPATCH_PLANNED_ROUTE_PANE,
   DISPATCH_PLANNED_ROUTE_STYLE,
+  DISPATCH_ROUTING_GPS_STALE_MS,
   DISPATCH_WMO_LOCATION,
+  buildDispatchPlannedJourney,
   buildDispatchRouteLayers,
   dispatchContinuousRouteWaypoints,
   dispatchLayerHasVisiblePolyline,
@@ -19,6 +21,7 @@ const {
   dispatchRoutingResponseIsCurrent,
   dispatchShouldReoptimizeRemaining,
   parseDispatchOsrmRoutePayload,
+  resolveDispatchRouteOrigin,
   requestDispatchRoadJourney
 } = require("../frontend/js/admin/admin-dispatch");
 
@@ -28,6 +31,10 @@ const dispatchSource = fs.readFileSync(
 );
 const trackingSource = fs.readFileSync(
   path.join(__dirname, "..", "frontend", "js", "admin", "admin-tracking.js"),
+  "utf8"
+);
+const dashboardSource = fs.readFileSync(
+  path.join(__dirname, "..", "frontend", "admin-dashboard.html"),
   "utf8"
 );
 
@@ -49,6 +56,53 @@ function testContinuousWaypointOrderAndWmoEndpoint() {
   const waypoints = dispatchContinuousRouteWaypoints(start, journey, wmo);
   assert.deepEqual(waypoints[0], start);
   assert.deepEqual(waypoints.slice(1, -1), journey.plannedStops.flatMap((stop) => stop.geometry));
+  assert.deepEqual(waypoints.at(-1), wmo);
+}
+
+function testRouteOriginUsesWmoUntilFreshTruckLeavesGeofence() {
+  const now = Date.UTC(2026, 7, 12, 0, 0, 0);
+  const wmo = point(DISPATCH_WMO_LOCATION.latitude, DISPATCH_WMO_LOCATION.longitude);
+  const noGps = resolveDispatchRouteOrigin(null, { now });
+  assert.deepEqual(noGps.point, wmo);
+  assert.equal(noGps.source, "missing");
+
+  const insideWmo = resolveDispatchRouteOrigin({
+    lat: wmo.lat + 0.0002,
+    lng: wmo.lng,
+    timestamp: now
+  }, { now });
+  assert.deepEqual(insideWmo.point, wmo);
+  assert.equal(insideWmo.source, "inside_wmo");
+
+  const staleOutside = resolveDispatchRouteOrigin({
+    lat: wmo.lat + 0.003,
+    lng: wmo.lng,
+    timestamp: now - DISPATCH_ROUTING_GPS_STALE_MS - 1
+  }, { now });
+  assert.deepEqual(staleOutside.point, wmo);
+  assert.equal(staleOutside.source, "stale");
+
+  const freshOutsidePoint = point(wmo.lat + 0.003, wmo.lng);
+  const freshOutside = resolveDispatchRouteOrigin({
+    ...freshOutsidePoint,
+    timestamp: now
+  }, { now });
+  assert.deepEqual(freshOutside.point, freshOutsidePoint);
+  assert.equal(freshOutside.source, "truck");
+  assert.equal(freshOutside.usesTruckPosition, true);
+  assert.equal(DISPATCH_ROUTING_GPS_STALE_MS, 5 * 60 * 1000);
+}
+
+function testImmediateRouteStartsAndEndsAtWmoBeforeDeparture() {
+  const wmo = point(DISPATCH_WMO_LOCATION.latitude, DISPATCH_WMO_LOCATION.longitude);
+  const journey = {
+    plannedStops: [
+      { geometry: [point(6.12, 125.17)] },
+      { geometry: [point(6.13, 125.18)] }
+    ]
+  };
+  const waypoints = dispatchContinuousRouteWaypoints(wmo, journey, wmo);
+  assert.deepEqual(waypoints[0], wmo);
   assert.deepEqual(waypoints.at(-1), wmo);
 }
 
@@ -185,16 +239,26 @@ function testPlannedRouteStyleAndPane() {
   assert.equal(DISPATCH_MARKER_PANE, "dispatchMarkerPane");
   assert.equal(DISPATCH_CURRENT_ROUTE_STYLE.color, "#2d73c7");
   assert.equal(DISPATCH_CURRENT_ROUTE_STYLE.dashArray, undefined);
-  assert.equal(DISPATCH_PLANNED_ROUTE_STYLE.color, "#687a73");
+  assert.equal(DISPATCH_PLANNED_ROUTE_STYLE.color, "#2d73c7");
   assert.equal(DISPATCH_PLANNED_ROUTE_STYLE.weight, 5);
   assert.ok(DISPATCH_PLANNED_ROUTE_STYLE.opacity > 0.5);
-  assert.ok(DISPATCH_PLANNED_ROUTE_STYLE.dashArray);
+  assert.equal(DISPATCH_PLANNED_ROUTE_STYLE.dashArray, undefined);
   assert.equal(DISPATCH_PLANNED_ROUTE_STYLE.pane, DISPATCH_PLANNED_ROUTE_PANE);
-  assert.match(trackingSource, /"trackingActualRoutePane", "410"/);
+  assert.match(trackingSource, /"trackingActualRoutePane", "460"/);
   assert.match(trackingSource, /"dispatchPlannedRoutePane", "440"/);
   assert.match(trackingSource, /"dispatchCurrentRoutePane", "455"/);
   assert.match(trackingSource, /"dispatchCompletedRoutePane", "470"/);
   assert.match(trackingSource, /"dispatchMarkerPane", "650"/);
+  assert.match(trackingSource, /TRACKING_ACTUAL_ROUTE_COLOR = "#285a48"/);
+  assert.equal(
+    (trackingSource.match(/color: TRACKING_ACTUAL_ROUTE_COLOR/g) || []).length,
+    2,
+    "solid actual trail and synchronization gaps must remain dark green"
+  );
+  assert.match(dashboardSource, /> Actual trail</);
+  assert.match(dashboardSource, /> Suggested route</);
+  assert.match(dashboardSource, /> Current truck</);
+  assert.match(dashboardSource, /> Destination</);
 }
 
 function testActiveRouteUsesExactEndpointsAndDedicatedLayers() {
@@ -225,14 +289,12 @@ function testActiveRouteUsesExactEndpointsAndDedicatedLayers() {
   const layers = buildDispatchRouteLayers(journey, routeCoordinates, start, wmo, {
     currentStopId: 31
   });
-  assert.equal(layers.current.layers.length, 1);
+  assert.equal(layers.current.layers.length, 0);
   assert.equal(layers.planned.layers.length, 1);
-  assert.deepEqual(layers.current.layers[0].value[0], [start.lat, start.lng]);
-  assert.deepEqual(layers.current.layers[0].value.at(-1), [current.lat, current.lng]);
-  assert.deepEqual(layers.planned.layers[0].value[0], [current.lat, current.lng]);
+  assert.deepEqual(layers.planned.layers[0].value[0], [start.lat, start.lng]);
   assert.deepEqual(layers.planned.layers[0].value.at(-1), [wmo.lat, wmo.lng]);
-  assert.equal(layers.current.layers[0].options.pane, DISPATCH_CURRENT_ROUTE_PANE);
   assert.equal(layers.planned.layers[0].options.pane, DISPATCH_PLANNED_ROUTE_PANE);
+  assert.equal(layers.planned.layers[0].options.color, "#2d73c7");
   assert.deepEqual(
     dispatchRouteSegmentWithEndpoints([], start, current),
     [[start.lat, start.lng], [current.lat, current.lng]]
@@ -284,7 +346,7 @@ function testStaleResponseRejection() {
 
 function testFailureRetainsSelectionsAndPreviousRoute() {
   assert.deepEqual(dispatchRoutingFailureState(), {
-    message: "Route update is temporarily unavailable. The last route is still displayed.",
+    message: "Route preview unavailable. The last route is still displayed.",
     preserveSelectedStops: true,
     preservePreviousRoute: true,
     drawStraightFallback: false
@@ -296,7 +358,28 @@ function testFailureRetainsSelectionsAndPreviousRoute() {
   assert.match(dispatchSource, /Your route is still saved\. Please retry\./);
 }
 
-function testActiveRouteOrderLockingAndExplicitReoptimization() {
+function testPreDispatchOptimizationAndActiveRouteOrderLocking() {
+  const preDispatchJourney = buildDispatchPlannedJourney(
+    point(6.1, 125.1),
+    point(6.1, 125.13),
+    [
+      {
+        stop: { id: 1, location_name: "Far first selection" },
+        metadata: { catalog_id: 1 },
+        geometry: [point(6.1, 125.12)]
+      },
+      {
+        stop: { id: 2, location_name: "Near second selection" },
+        metadata: { catalog_id: 2 },
+        geometry: [point(6.1, 125.11)]
+      }
+    ]
+  );
+  assert.deepEqual(
+    preDispatchJourney.plannedStops.map(({ stop }) => stop.id),
+    [2, 1],
+    "pre-dispatch planning must remain free to optimize the selected stops"
+  );
   const routeStops = [{ id: 1 }, { id: 2 }, { id: 3 }];
   assert.deepEqual(
     dispatchOrderActiveRouteStops(routeStops, [1, 3, 2], false).map((stop) => stop.id),
@@ -305,14 +388,38 @@ function testActiveRouteOrderLockingAndExplicitReoptimization() {
   );
   assert.deepEqual(
     dispatchOrderActiveRouteStops(routeStops, [1, 3, 2], true).map((stop) => stop.id),
-    [1, 2, 3],
-    "an allowed reoptimization may use the new candidate order"
+    [1, 3, 2],
+    "post-dispatch order must remain locked even if a reoptimization flag is supplied"
   );
   assert.equal(dispatchShouldReoptimizeRemaining("truck_moved"), false);
-  assert.equal(dispatchShouldReoptimizeRemaining("destinations_changed"), true);
-  assert.equal(dispatchShouldReoptimizeRemaining("sustained_off_route"), true);
+  assert.equal(dispatchShouldReoptimizeRemaining("destinations_changed"), false);
+  assert.equal(dispatchShouldReoptimizeRemaining("sustained_off_route"), false);
   assert.equal(dispatchShouldReoptimizeRemaining("forced"), false);
-  assert.equal(dispatchShouldReoptimizeRemaining("forced", { reoptimizeRemaining: true }), true);
+  assert.equal(dispatchShouldReoptimizeRemaining("forced", { reoptimizeRemaining: true }), false);
+  assert.doesNotMatch(dispatchSource, /dispatchReoptimizeRemainingBtn|Re-optimize Remaining Stops/);
+  assert.doesNotMatch(dispatchSource, /reoptimizeRemaining\s*:/);
+}
+
+function testIssueSelectionPollingAndFailureLifecycle() {
+  const dispatchNow = dispatchSource.match(
+    /async function dispatchSelectedTruckNow[\s\S]*?function dispatchTicketQuery/
+  )?.[0] || "";
+  const activeRenderer = dispatchSource.match(
+    /function renderDispatchPlannedRoute[\s\S]*?function dispatchEventLabel/
+  )?.[0] || "";
+  const routeLayers = dispatchSource.match(
+    /function buildDispatchRouteLayers[\s\S]*?function renderDispatchSelectionFallback/
+  )?.[0] || "";
+  assert.match(dispatchNow, /renderDispatchTicketDetails\(details\)[\s\S]*renderDispatchPlannedRoute\(details\)/);
+  assert.match(activeRenderer, /const routeOrigin = resolveDispatchRouteOrigin\(reliableStart\)/);
+  assert.match(activeRenderer, /createDispatchPlannedLayerGroups\(\{ detached: true \}\)/);
+  assert.match(activeRenderer, /requestDispatchRoadJourney[\s\S]*activateDispatchPlannedLayerGroups\(layers\)/);
+  assert.match(activeRenderer, /\["missing", "stale"\]\.includes\(routeOrigin\.source\)[\s\S]*!options\.force[\s\S]*dispatchHasVisiblePlannedRoute\(\)/);
+  assert.match(activeRenderer, /if \(!dispatchHasVisiblePlannedRoute\(\)\) \{\s*renderDispatchSelectionFallback/);
+  assert.doesNotMatch(activeRenderer, /clearDispatchPlannedRoute/);
+  assert.doesNotMatch(activeRenderer, /renderDispatchCompletedRouteGeometry/);
+  assert.doesNotMatch(routeLayers, /color: "#408a71"/);
+  assert.doesNotMatch(dashboardSource, /Edit Route/i);
 }
 
 function testDrawerRecordsAndTicketFailureDoNotClearRoute() {
@@ -365,6 +472,8 @@ function testDiagnosticsAndExplicitClearReasons() {
 
 async function run() {
   testContinuousWaypointOrderAndWmoEndpoint();
+  testRouteOriginUsesWmoUntilFreshTruckLeavesGeofence();
+  testImmediateRouteStartsAndEndsAtWmoBeforeDeparture();
   testConsecutiveDuplicateWaypointsAreRemovedWithoutReordering();
   testOsrmGeoJsonCoordinateConversion();
   testOsrmEndpointsMatchTruckAndWmo();
@@ -378,7 +487,8 @@ async function run() {
   testSelectionHydratesTrackingBeforeActiveDispatch();
   testStaleResponseRejection();
   testFailureRetainsSelectionsAndPreviousRoute();
-  testActiveRouteOrderLockingAndExplicitReoptimization();
+  testPreDispatchOptimizationAndActiveRouteOrderLocking();
+  testIssueSelectionPollingAndFailureLifecycle();
   testDrawerRecordsAndTicketFailureDoNotClearRoute();
   testLiveTransitionRerenderAndPanelActionsDoNotClearRoute();
   testDiagnosticsAndExplicitClearReasons();
