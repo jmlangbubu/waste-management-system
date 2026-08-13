@@ -634,9 +634,21 @@ function dispatchEscape(value) {
 }
 
 function dispatchStatusLabel(status) {
+  if (String(status || "").toLowerCase() === "closed_early") {
+    return "Closed Early";
+  }
   return String(status || "unknown")
     .replace(/_/g, " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function dispatchRecordedDateTime(value) {
+  return value ? dispatchFormatDateTime(value) : "Not recorded";
+}
+
+function dispatchRecordedText(value) {
+  const text = String(value ?? "").trim();
+  return text || "Not recorded";
 }
 
 function dispatchStatusClass(status) {
@@ -2209,6 +2221,7 @@ function dispatchEventLabel(eventType) {
     returning_to_wmo: "Returning to WMO",
     returned_to_wmo: "Returned to WMO",
     dispatch_completed: "Dispatch completed",
+    dispatch_closed_early: "Closed early",
     ticket_cancelled: "Ticket cancelled"
   };
   return labels[eventType] || dispatchStatusLabel(eventType);
@@ -2236,7 +2249,8 @@ function renderDispatchLegacyTicketDetails(details) {
   const canIssue = ticket.status === "prepared";
   const canLink = ["dispatched", "in_progress"].includes(ticket.status);
   const canReturn = ["dispatched", "in_progress"].includes(ticket.status);
-  const canCancel = !["completed", "cancelled"].includes(ticket.status);
+  const canCancel = ticket.status === "prepared";
+  const canEnd = dispatchTicketIsLive(ticket);
 
   const ticketActions = [
     canEdit
@@ -2253,6 +2267,9 @@ function renderDispatchLegacyTicketDetails(details) {
       : "",
     canCancel
       ? `<button type="button" class="dispatch-action-button danger" data-dispatch-action="cancel" data-ticket-id="${ticket.id}">Cancel ticket</button>`
+      : "",
+    canEnd
+      ? `<button type="button" class="dispatch-action-button danger" data-dispatch-action="end" data-ticket-id="${ticket.id}">End Dispatch</button>`
       : ""
   ].join("");
 
@@ -2342,6 +2359,13 @@ function dispatchTicketIsLive(ticket = {}) {
   return ["dispatched", "in_progress", "returning_to_wmo"].includes(ticket.status);
 }
 
+function dispatchTicketIsStale(ticket = {}, now = Date.now()) {
+  const startedAt = new Date(
+    ticket.actual_start_at || ticket.dispatched_at || ""
+  ).getTime();
+  return Number.isFinite(startedAt) && now - startedAt > 24 * 60 * 60 * 1000;
+}
+
 function renderDispatchTicketDetailsModal(details) {
   const body = document.getElementById("dispatchTicketDetailsBody");
   if (!body || !details?.ticket) return;
@@ -2355,7 +2379,8 @@ function renderDispatchTicketDetailsModal(details) {
     ticket.status === "prepared" ? `<button type="button" class="dispatch-action-button" data-dispatch-action="edit" data-ticket-id="${ticket.id}">Edit Draft</button>` : "",
     ticket.status === "prepared" ? `<button type="button" class="dispatch-action-button" data-dispatch-action="issue" data-ticket-id="${ticket.id}">Issue Ticket</button>` : "",
     ["dispatched", "in_progress"].includes(ticket.status) ? `<button type="button" class="dispatch-action-button" data-dispatch-action="returning" data-ticket-id="${ticket.id}">Returning to WMO</button>` : "",
-    !["completed", "cancelled"].includes(ticket.status) ? `<button type="button" class="dispatch-action-button danger" data-dispatch-action="cancel" data-ticket-id="${ticket.id}">Cancel Ticket</button>` : ""
+    ticket.status === "prepared" ? `<button type="button" class="dispatch-action-button danger" data-dispatch-action="cancel" data-ticket-id="${ticket.id}">Cancel Ticket</button>` : "",
+    dispatchTicketIsLive(ticket) ? `<button type="button" class="dispatch-action-button danger" data-dispatch-action="end" data-ticket-id="${ticket.id}">End Dispatch</button>` : ""
   ].join("");
   const stopCards = stops.map((stop) => `
     <article class="dispatch-details-stop">
@@ -2414,14 +2439,19 @@ function renderDispatchTicketDetails(details) {
     <button type="button" data-dispatch-action="complete" data-ticket-id="${ticket.id}" data-stop-id="${currentStop.id}">Complete Stop</button>
     <button type="button" class="danger" data-dispatch-action="skip" data-ticket-id="${ticket.id}" data-stop-id="${currentStop.id}">Skip Stop</button>
   ` : "";
+  const staleWarning = dispatchTicketIsStale(ticket) &&
+    !dispatchDismissedStaleTicketIds.has(String(ticket.id))
+    ? `<div class="dispatch-stale-warning" role="status"><strong>Active for over 24 hours</strong><span>This dispatch remains active until personnel ends it or normal WMO completion is recorded.</span><div><button type="button" data-dispatch-action="end" data-ticket-id="${ticket.id}">End Dispatch</button><button type="button" data-dispatch-action="keep-active" data-ticket-id="${ticket.id}">Keep Active</button></div></div>`
+    : "";
   panel.innerHTML = `
     <div class="dispatch-live-heading"><div><small>Live Dispatch</small><strong>${dispatchEscape(ticket.truck_id)} \u00b7 Ticket ${dispatchEscape(ticket.ticket_number)}</strong></div><span class="dispatch-status-chip ${dispatchStatusClass(ticket.status)}">${dispatchEscape(dispatchStatusLabel(ticket.status))}</span></div>
     <div class="dispatch-live-progress"><strong>${completedCount} of ${stops.length} destinations completed</strong><progress value="${completedCount}" max="${Math.max(1, stops.length)}">${completedCount} of ${stops.length}</progress></div>
     <section class="dispatch-live-target current"><small>Current Target</small>${currentStop ? `<div><span>${dispatchEscape(currentStop.stop_order)}</span><strong>${dispatchEscape(currentStop.location_name)}</strong></div><p>${dispatchEscape(distanceLabel)}</p>` : '<strong>Return to WMO</strong>'}</section>
     <div class="dispatch-live-route-preview"><section><small>Next</small>${nextStop ? `<strong>${dispatchEscape(nextStop.stop_order)} ${dispatchEscape(nextStop.location_name)}</strong>` : "<strong>None</strong>"}</section><section><small>Final</small><strong>W Return to WMO</strong></section></div>
     <div id="dispatchLiveRouteState" class="dispatch-live-route-state idle" data-route-status="idle"><span aria-hidden="true"></span><strong>Route pending</strong></div>
+    ${staleWarning}
     <div id="dispatchStopActionSheet" class="dispatch-stop-action-sheet hidden" role="group" aria-label="Update current stop status">${stopActions || '<p>No destination action is currently available.</p>'}<button type="button" id="dispatchStopActionCancelBtn">Cancel</button></div>
-    <div class="dispatch-live-secondary-actions"><button type="button" id="dispatchViewTicketDetailsBtn">View Ticket Details</button></div>
+    <div class="dispatch-live-secondary-actions"><button type="button" id="dispatchViewTicketDetailsBtn">View Ticket Details</button><button type="button" class="danger" data-dispatch-action="end" data-ticket-id="${ticket.id}">End Dispatch</button></div>
   `;
   setDispatchPlannerMode("live");
   const routeStatus = document.getElementById("dispatchRoutePreviewNotice")?.dataset.routeStatus || "idle";
@@ -4184,59 +4214,288 @@ async function openDispatchTicket(ticketId) {
   }
 }
 
-async function loadDispatchReports() {
-  const list = document.getElementById("dispatchReportsList");
-  if (!list) return;
-  list.innerHTML = '<div class="dispatch-route-empty">Loading dispatch reports...</div>';
+function dispatchReportEndedAt(report = {}) {
+  return report.closed_at || report.actual_end_at || report.completed_at || report.cancelled_at || null;
+}
 
-  const parameters = new URLSearchParams();
-  const truck = document.getElementById("dispatchTicketTruckFilter")?.value.trim();
+function getFilteredDispatchReports() {
   const search = dispatchNormalizeSearchText(
-    document.getElementById("dispatchTicketSearch")?.value
+    document.getElementById("dispatchReportSearch")?.value
   );
-  if (truck) parameters.set("truck", truck);
+  const status = document.getElementById("dispatchReportStatusFilter")?.value || "";
+  const date = document.getElementById("dispatchReportDateFilter")?.value || "";
+  return dispatchReportsCache.filter((report) => {
+    if (status && report.status !== status) return false;
+    if (date) {
+      const endedAt = dispatchReportEndedAt(report);
+      if (!endedAt || String(endedAt).slice(0, 10) !== date) return false;
+    }
+    if (!search) return true;
+    return dispatchNormalizeSearchText([
+      report.ticket_number,
+      report.truck_id,
+      report.truck_name_snapshot,
+      report.route_name,
+      report.assigned_personnel_name,
+      report.created_by_name,
+      report.closed_by_name
+    ].join(" ")).includes(search);
+  });
+}
 
+function renderDispatchReportsTable() {
+  const tbody = document.getElementById("dispatchReportsTableBody");
+  if (!tbody) return;
+  const reports = getFilteredDispatchReports();
+  if (!reports.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No dispatch reports found.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = reports.map((report) => {
+    const total = Number(report.total_stops || 0);
+    const completed = Number(report.completed_stops || 0);
+    const personnel = report.assigned_personnel_name || report.created_by_name;
+    return `
+      <tr>
+        <td><strong>${dispatchEscape(dispatchRecordedText(report.ticket_number))}</strong></td>
+        <td>${dispatchEscape(dispatchRecordedText(report.truck_name_snapshot || report.truck_id))}</td>
+        <td><span class="dispatch-status-chip ${dispatchStatusClass(report.status)}">${dispatchEscape(dispatchStatusLabel(report.status))}</span></td>
+        <td>${dispatchEscape(dispatchRecordedDateTime(report.actual_start_at))}</td>
+        <td>${dispatchEscape(dispatchRecordedDateTime(dispatchReportEndedAt(report)))}</td>
+        <td>${completed}/${total}</td>
+        <td>${dispatchEscape(dispatchRecordedText(personnel))}</td>
+        <td><button type="button" class="dispatch-report-view-button" data-dispatch-view-report="${report.id}">View Report</button></td>
+      </tr>`;
+  }).join("");
+}
+
+async function loadDispatchReports() {
+  const tbody = document.getElementById("dispatchReportsTableBody");
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="8" class="loading-state">Loading dispatch reports...</td></tr>';
   try {
-    let reports = await dispatchRequest(
-      `${getDispatchReportsApiUrl()}${parameters.toString() ? `?${parameters}` : ""}`
-    );
-    if (search) {
-      reports = reports.filter((report) =>
-        dispatchNormalizeSearchText(
-          [
-            report.ticket_number,
-            report.route_name,
-            report.truck_id,
-            report.truck_name_snapshot
-          ].join(" ")
-        ).includes(search)
-      );
-    }
-    if (!reports.length) {
-      list.innerHTML = '<div class="dispatch-route-empty">No completed or cancelled dispatch reports found.</div>';
-      return;
-    }
-    list.innerHTML = reports
-      .map(
-        (report) => `
-          <article class="dispatch-inline-list-card">
-            <div class="dispatch-inline-list-heading">
-              <div><strong>${dispatchEscape(report.ticket_number)}</strong><small>${dispatchEscape(report.route_name)}</small></div>
-              <span class="dispatch-status-chip ${dispatchStatusClass(report.status)}">${dispatchEscape(dispatchStatusLabel(report.status))}</span>
-            </div>
-            <dl>
-              <div><dt>Truck</dt><dd>${dispatchEscape(report.truck_name_snapshot || report.truck_id)}</dd></div>
-              <div><dt>Date</dt><dd>${dispatchEscape(String(report.dispatch_date || "").slice(0, 10))}</dd></div>
-              <div><dt>Stops</dt><dd>${Number(report.completed_stops || 0)} done, ${Number(report.skipped_stops || 0)} skipped</dd></div>
-              <div><dt>Duration</dt><dd>${dispatchEscape(dispatchFormatDuration(report.total_dispatch_duration_seconds))}</dd></div>
-            </dl>
-            <button type="button" class="dispatch-inline-action secondary" data-dispatch-open-ticket="${report.id}">Open details</button>
-          </article>
-        `
-      )
-      .join("");
+    const reports = await dispatchRequest(getDispatchReportsApiUrl());
+    dispatchReportsCache = Array.isArray(reports) ? reports : [];
+    renderDispatchReportsTable();
   } catch (error) {
-    list.innerHTML = `<div class="dispatch-route-empty error">${dispatchEscape(error.message)}</div>`;
+    dispatchReportsCache = [];
+    tbody.innerHTML = `<tr><td colspan="8" class="empty-state">${dispatchEscape(error.message || "Failed to load dispatch reports.")}</td></tr>`;
+  }
+}
+
+function openDispatchReportsModal() {
+  openDispatchModal("dispatchReportsModal");
+  void loadDispatchReports();
+}
+
+function closeDispatchReportsModal() {
+  closeDispatchModal("dispatchReportsModal");
+}
+
+function closeDispatchReportModal() {
+  closeDispatchModal("dispatchReportModal");
+  if (dispatchReportMap) {
+    dispatchReportMap.remove();
+    dispatchReportMap = null;
+    dispatchReportActualLayerGroup = null;
+    dispatchReportSuggestedLayerGroup = null;
+  }
+}
+
+function dispatchReportStopStatus(stop = {}) {
+  if (stop.stop_status === "completed") return "Completed";
+  if (stop.stop_status === "skipped") return "Skipped";
+  return "Not completed";
+}
+
+function dispatchReportActualPoints(logs = []) {
+  return logs.map((log) => dispatchPoint(log.latitude, log.longitude)).filter(Boolean);
+}
+
+function dispatchReportSuggestedPoints(stops = []) {
+  const wmo = dispatchPoint(DISPATCH_WMO_LOCATION.latitude, DISPATCH_WMO_LOCATION.longitude);
+  const stopPoints = [...stops]
+    .sort((a, b) => Number(a.stop_order) - Number(b.stop_order))
+    .map((stop) => dispatchPoint(stop.latitude, stop.longitude))
+    .filter(Boolean);
+  return wmo && stopPoints.length ? [wmo, ...stopPoints, wmo] : [];
+}
+
+function renderDispatchReportMap(stops = [], routeLogs = []) {
+  const mapElement = document.getElementById("dispatchReportMap");
+  if (!mapElement || typeof L === "undefined") return;
+  if (dispatchReportMap) dispatchReportMap.remove();
+  dispatchReportMap = L.map(mapElement, { zoomControl: true });
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: "&copy; OpenStreetMap contributors"
+  }).addTo(dispatchReportMap);
+  dispatchReportActualLayerGroup = L.layerGroup().addTo(dispatchReportMap);
+  dispatchReportSuggestedLayerGroup = L.layerGroup().addTo(dispatchReportMap);
+
+  const actual = dispatchReportActualPoints(routeLogs);
+  const suggested = dispatchReportSuggestedPoints(stops);
+  if (suggested.length >= 2) {
+    L.polyline(suggested.map((point) => [point.lat, point.lng]), {
+      color: "#246ee9",
+      weight: 4,
+      opacity: 0.8,
+      dashArray: "9 8"
+    }).bindTooltip("Suggested route between persisted dispatch waypoints")
+      .addTo(dispatchReportSuggestedLayerGroup);
+  }
+  [...stops].sort((a, b) => Number(a.stop_order) - Number(b.stop_order)).forEach((stop) => {
+    const point = dispatchPoint(stop.latitude, stop.longitude);
+    if (!point) return;
+    L.circleMarker([point.lat, point.lng], {
+      radius: 7,
+      color: "#246ee9",
+      fillColor: "#fff",
+      fillOpacity: 1,
+      weight: 3
+    }).bindTooltip(`${stop.stop_order}. ${stop.location_name}`)
+      .addTo(dispatchReportSuggestedLayerGroup);
+  });
+  if (actual.length >= 2) {
+    L.polyline(actual.map((point) => [point.lat, point.lng]), {
+      color: "#176b3a",
+      weight: 5,
+      opacity: 0.95
+    }).bindTooltip("Actual GPS trail").addTo(dispatchReportActualLayerGroup);
+  }
+  const bounds = [...actual, ...suggested].map((point) => [point.lat, point.lng]);
+  if (bounds.length) dispatchReportMap.fitBounds(bounds, { padding: [24, 24], maxZoom: 16 });
+  else dispatchReportMap.setView([DISPATCH_WMO_LOCATION.latitude, DISPATCH_WMO_LOCATION.longitude], 14);
+  setTimeout(() => dispatchReportMap?.invalidateSize(), 50);
+}
+
+function renderDispatchReportDetails(data = {}) {
+  const body = document.getElementById("dispatchReportBody");
+  if (!body) return;
+  const ticket = data.ticket || {};
+  const stops = Array.isArray(data.stops) ? data.stops : [];
+  const logs = Array.isArray(data.route_logs) ? data.route_logs : [];
+  const events = Array.isArray(data.events) ? data.events : [];
+  const metrics = data.metrics || {};
+  const progress = data.progress || {};
+  const status = ticket.report_status || ticket.status;
+  const title = document.getElementById("dispatchReportTitle");
+  if (title) title.textContent = `Dispatch Report · ${dispatchRecordedText(ticket.ticket_number)}`;
+  const person = ticket.assigned_personnel_name || ticket.created_by_name;
+  const endedAt = ticket.ended_at || ticket.actual_end_at || ticket.completed_at || ticket.cancelled_at;
+  const endedAtLabel = status === "closed_early" ? "Closed At" : "Ended At";
+  const completedStops = Number(progress.completed_stops || 0);
+  const totalStops = Number(progress.total_stops || stops.length || 0);
+  const duration = metrics.dispatch_duration_seconds === null || metrics.dispatch_duration_seconds === undefined
+    ? "Not recorded"
+    : dispatchFormatDuration(metrics.dispatch_duration_seconds);
+  const distance = metrics.actual_distance_km === null || metrics.actual_distance_km === undefined
+    ? "Not recorded"
+    : `${Number(metrics.actual_distance_km).toFixed(2)} km`;
+  const stopMarkup = stops.length ? [...stops]
+    .sort((a, b) => Number(a.stop_order) - Number(b.stop_order))
+    .map((stop) => `<div class="dispatch-report-stop"><span>${dispatchEscape(stop.stop_order)}</span><div><strong>${dispatchEscape(dispatchRecordedText(stop.location_name))}</strong><small>${dispatchEscape(dispatchRecordedText(stop.address_reference))}</small></div><span class="dispatch-stop-status ${dispatchStatusClass(stop.stop_status)}">${dispatchEscape(dispatchReportStopStatus(stop))}</span></div>`)
+    .join("")
+    : '<div class="dispatch-report-empty">No destination records found.</div>';
+  const timelineMarkup = events.length ? events.map((event) => `
+    <div class="dispatch-report-event"><i aria-hidden="true"></i><div><strong>${dispatchEscape(dispatchEventLabel(event.event_type))}</strong><small>${dispatchEscape(dispatchRecordedDateTime(event.event_at))}${event.actor_name ? ` · ${dispatchEscape(event.actor_name)}` : ""}</small></div></div>`).join("")
+    : '<div class="dispatch-report-empty">Detailed trip events are not recorded for this dispatch.</div>';
+  body.innerHTML = `
+    <section class="dispatch-report-section"><h4>Dispatch Information</h4><div class="dispatch-report-summary-grid">
+      <div><span>Ticket Number</span><strong>${dispatchEscape(dispatchRecordedText(ticket.ticket_number))}</strong></div>
+      <div><span>Truck</span><strong>${dispatchEscape(dispatchRecordedText(ticket.truck_name_snapshot || ticket.truck_id))}</strong></div>
+      <div><span>Status</span><strong>${dispatchEscape(dispatchStatusLabel(status))}</strong></div>
+      <div><span>Personnel</span><strong>${dispatchEscape(dispatchRecordedText(person))}</strong></div>
+      <div><span>Started At</span><strong>${dispatchEscape(dispatchRecordedDateTime(ticket.actual_start_at))}</strong></div>
+      <div><span>${endedAtLabel}</span><strong>${dispatchEscape(dispatchRecordedDateTime(endedAt))}</strong></div>
+      <div><span>Destination Progress</span><strong>${completedStops}/${totalStops}</strong></div>
+    </div></section>
+    <section class="dispatch-report-section"><h4>Destination Summary</h4><div class="dispatch-report-stop-list">${stopMarkup}</div></section>
+    <section class="dispatch-report-section"><h4>Trip Summary</h4><div class="dispatch-report-summary-grid">
+      <div><span>Dispatch Duration</span><strong>${dispatchEscape(duration)}</strong></div>
+      <div><span>Actual Distance</span><strong>${dispatchEscape(distance)}</strong></div>
+      ${metrics.returned_to_wmo_at ? `<div><span>Return to WMO</span><strong>${dispatchEscape(dispatchRecordedDateTime(metrics.returned_to_wmo_at))}</strong></div>` : ""}
+      ${status === "closed_early" ? `<div><span>Closure Reason</span><strong>${dispatchEscape(dispatchRecordedText(ticket.closure_reason))}</strong></div><div><span>Closed By</span><strong>${dispatchEscape(dispatchRecordedText(ticket.closed_by_name))}</strong></div>` : ""}
+    </div></section>
+    <section class="dispatch-report-section"><h4>Route Map</h4><div class="dispatch-report-map-wrap"><div id="dispatchReportMap"></div></div><div class="dispatch-report-map-legend"><span><i class="actual"></i>Dark green: actual GPS trail</span><span><i class="suggested"></i>Blue: suggested route</span></div>${logs.length < 2 ? '<p class="dispatch-report-empty">No actual GPS trail recorded.</p>' : ""}</section>
+    <section class="dispatch-report-section"><h4>Activity Timeline</h4><div class="dispatch-report-timeline">${timelineMarkup}</div></section>`;
+  renderDispatchReportMap(stops, logs);
+}
+
+async function openDispatchReport(ticketId) {
+  const body = document.getElementById("dispatchReportBody");
+  if (body) body.innerHTML = '<div class="loading-state">Loading dispatch report...</div>';
+  openDispatchModal("dispatchReportModal");
+  try {
+    const data = await dispatchRequest(getDispatchReportApiUrl(ticketId));
+    renderDispatchReportDetails(data);
+  } catch (error) {
+    if (body) body.innerHTML = `<div class="dispatch-report-empty">${dispatchEscape(error.message || "Unable to load dispatch report.")}</div>`;
+  }
+}
+
+function openDispatchEndModal(ticketId) {
+  dispatchEndTicketId = String(ticketId || "");
+  const form = document.getElementById("dispatchEndForm");
+  form?.reset();
+  document.getElementById("dispatchEndOtherField")?.classList.add("hidden");
+  document.getElementById("dispatchEndError")?.classList.add("hidden");
+  openDispatchModal("dispatchEndModal");
+  document.getElementById("dispatchEndReason")?.focus();
+}
+
+function closeDispatchEndModal() {
+  if (dispatchEndSubmitting) return;
+  dispatchEndTicketId = null;
+  closeDispatchModal("dispatchEndModal");
+}
+
+async function submitDispatchEnd(event) {
+  event.preventDefault();
+  if (!dispatchEndTicketId || dispatchEndSubmitting) return;
+  const reasonCode = document.getElementById("dispatchEndReason")?.value || "";
+  const otherReason = document.getElementById("dispatchEndOtherReason")?.value.trim() || "";
+  const errorBox = document.getElementById("dispatchEndError");
+  const fail = (message) => {
+    if (errorBox) {
+      errorBox.textContent = message;
+      errorBox.classList.remove("hidden");
+    }
+  };
+  if (!reasonCode) return fail("Select a reason for ending the dispatch.");
+  if (reasonCode === "other" && !otherReason) return fail("Enter a short reason when Other is selected.");
+
+  dispatchEndSubmitting = true;
+  const confirmButton = document.getElementById("dispatchEndConfirmBtn");
+  if (confirmButton) {
+    confirmButton.disabled = true;
+    confirmButton.textContent = "Ending Dispatch...";
+  }
+  try {
+    await dispatchRequest(`${getDispatchTicketApiUrl(dispatchEndTicketId)}/end`, {
+      method: "POST",
+      body: JSON.stringify({ reason_code: reasonCode, other_reason: otherReason || undefined })
+    });
+    const closedTicketId = dispatchEndTicketId;
+    dispatchEndTicketId = null;
+    closeDispatchModal("dispatchEndModal");
+    if (String(selectedDispatchTicket?.ticket?.id || "") === String(closedTicketId)) {
+      selectedDispatchTicket = null;
+      clearDispatchPlannedRoute("dispatch ended early");
+      renderDispatchEmptyPanel("Dispatch ended early. GPS tracking remains active independently.");
+      setDispatchPlannerMode("create");
+    }
+    await loadDispatchLiveData();
+    if (typeof loadActiveTrucks === "function") await loadActiveTrucks();
+    dispatchNotify("Dispatch closed early. GPS tracking remains active.");
+  } catch (error) {
+    fail(error.message || "Unable to end dispatch.");
+  } finally {
+    dispatchEndSubmitting = false;
+    if (confirmButton) {
+      confirmButton.disabled = false;
+      confirmButton.textContent = "End Dispatch";
+    }
   }
 }
 
@@ -4245,6 +4504,17 @@ async function performDispatchAction(button) {
   const ticketId = button.dataset.ticketId;
   const stopId = button.dataset.stopId;
   if (!action || !ticketId) return;
+
+  if (action === "keep-active") {
+    dispatchDismissedStaleTicketIds.add(String(ticketId));
+    if (selectedDispatchTicket) renderDispatchTicketDetails(selectedDispatchTicket);
+    return;
+  }
+
+  if (action === "end") {
+    openDispatchEndModal(ticketId);
+    return;
+  }
 
   if (action === "edit") {
     const details =
@@ -4364,17 +4634,30 @@ function setupDispatchModule() {
   workspace.dataset.bound = "true";
   if (typeof bindActiveTruckSelection === "function") bindActiveTruckSelection();
   document.getElementById("openTrackingReportsBtn")?.addEventListener("click", () => {
-    if (typeof openTrackingReportsModal === "function") openTrackingReportsModal();
+    openDispatchReportsModal();
   });
-  ["trackingReportsModalOverlay", "closeTrackingReportsModalBtn"].forEach((id) => {
-    document.getElementById(id)?.addEventListener("click", () => {
-      if (typeof closeTrackingReportsModal === "function") closeTrackingReportsModal();
-    });
+  ["dispatchReportsModalOverlay", "closeDispatchReportsModalBtn"].forEach((id) => {
+    document.getElementById(id)?.addEventListener("click", closeDispatchReportsModal);
   });
-  ["trackingReportModalOverlay", "closeTrackingReportModalBtn"].forEach((id) => {
-    document.getElementById(id)?.addEventListener("click", () => {
-      if (typeof closeTrackingReportModal === "function") closeTrackingReportModal();
-    });
+  ["dispatchReportModalOverlay", "closeDispatchReportModalBtn"].forEach((id) => {
+    document.getElementById(id)?.addEventListener("click", closeDispatchReportModal);
+  });
+  ["dispatchEndModalOverlay", "closeDispatchEndModalBtn", "dispatchEndCancelBtn"].forEach((id) => {
+    document.getElementById(id)?.addEventListener("click", closeDispatchEndModal);
+  });
+  document.getElementById("dispatchEndForm")?.addEventListener("submit", submitDispatchEnd);
+  document.getElementById("dispatchEndReason")?.addEventListener("change", (event) => {
+    const other = event.target.value === "other";
+    document.getElementById("dispatchEndOtherField")?.classList.toggle("hidden", !other);
+    const input = document.getElementById("dispatchEndOtherReason");
+    if (input) {
+      input.required = other;
+      if (!other) input.value = "";
+    }
+  });
+  ["dispatchReportSearch", "dispatchReportStatusFilter", "dispatchReportDateFilter"].forEach((id) => {
+    document.getElementById(id)?.addEventListener("input", renderDispatchReportsTable);
+    document.getElementById(id)?.addEventListener("change", renderDispatchReportsTable);
   });
 
   workspace.querySelectorAll("[data-dispatch-workspace-action]").forEach((button) => {
@@ -4561,6 +4844,11 @@ function setupDispatchModule() {
       void openDispatchTicket(openTicketButton.dataset.dispatchOpenTicket);
       return;
     }
+    const reportButton = event.target.closest("[data-dispatch-view-report]");
+    if (reportButton) {
+      void openDispatchReport(reportButton.dataset.dispatchViewReport);
+      return;
+    }
     if (event.target.closest("[data-dispatch-retry-dispatch]")) {
       void dispatchSelectedTruckNow();
       return;
@@ -4691,6 +4979,10 @@ if (typeof module !== "undefined" && module.exports) {
     dispatchPlannerStepName,
     dispatchShouldReoptimizeRemaining,
     dispatchTicketIsLive,
+    dispatchTicketIsStale,
+    dispatchReportStopStatus,
+    dispatchReportActualPoints,
+    dispatchReportSuggestedPoints,
     dispatchDraftsInOptimizedOrder,
     dispatchManilaOperatingDay,
     dispatchNormalizeTicketNumber,

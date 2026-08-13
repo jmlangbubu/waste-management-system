@@ -103,6 +103,13 @@ let dispatchPlannerMode = "create";
 let dispatchWorkspaceView = "plan";
 let dispatchActiveRouteOrderSignature = "";
 let dispatchHasFittedActiveRoute = false;
+let dispatchEndTicketId = null;
+let dispatchEndSubmitting = false;
+const dispatchDismissedStaleTicketIds = new Set();
+let dispatchReportsCache = [];
+let dispatchReportMap = null;
+let dispatchReportActualLayerGroup = null;
+let dispatchReportSuggestedLayerGroup = null;
 
 // Charts
 let wasteTrendChartInstance = null;

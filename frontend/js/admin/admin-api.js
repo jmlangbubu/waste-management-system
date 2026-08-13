@@ -194,6 +194,10 @@ function getDispatchReportsApiUrl() {
   return `${getAppApiBase()}/dispatch/reports`;
 }
 
+function getDispatchReportApiUrl(ticketId) {
+  return `${getDispatchReportsApiUrl()}/${encodeURIComponent(ticketId)}`;
+}
+
 function getDispatchDestinationsApiUrl(filters = {}) {
   const parameters = new URLSearchParams();
   if (filters.q) parameters.set("q", filters.q);
