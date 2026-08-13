@@ -279,7 +279,8 @@ function testRouteSecurityAndFrontendLifecycle() {
     frontend.indexOf("async function performDispatchAction")
   );
   assert.match(frontend, /Active for over 24 hours/);
-  assert.match(frontend, /Keep Active/);
+  assert.match(frontend, /data-dispatch-action="dismiss-stale"/);
+  assert.doesNotMatch(frontend, /data-dispatch-action="keep-active"/);
   assert.match(frontend, /No dispatch reports found\./);
   assert.match(frontend, /Detailed trip events are not recorded for this dispatch\./);
   assert.match(frontend, /No actual GPS trail recorded\./);

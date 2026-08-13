@@ -806,6 +806,128 @@
   }
 }
 
+#trackingSection .dispatch-stale-warning {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 10px;
+  padding: 9px 10px;
+}
+
+#trackingSection .dispatch-stale-warning span {
+  grid-column: 1;
+}
+
+#trackingSection .dispatch-stale-warning > button {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  min-height: 30px;
+  padding: 4px 9px;
+}
+
+#trackingSection .dispatch-inline-planner.is-live-dispatch .dispatch-inline-form-actions {
+  align-items: center;
+  justify-content: flex-end;
+  overflow: visible;
+}
+
+#trackingSection .dispatch-live-actions-menu {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+#trackingSection .dispatch-live-actions-menu.hidden {
+  display: none;
+}
+
+#trackingSection .dispatch-live-actions-menu > summary {
+  display: grid;
+  min-width: 46px;
+  min-height: 38px;
+  place-items: center;
+  border: 1px solid var(--dispatch-border);
+  border-radius: 11px;
+  background: var(--dispatch-surface);
+  color: var(--dispatch-dark);
+  font-size: 13px;
+  font-weight: 950;
+  letter-spacing: 2px;
+  cursor: pointer;
+  list-style: none;
+}
+
+#trackingSection .dispatch-live-actions-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+#trackingSection .dispatch-live-actions-popover {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 40;
+  display: grid;
+  width: min(220px, calc(100vw - 28px));
+  gap: 3px;
+  padding: 7px;
+  border: 1px solid var(--dispatch-border);
+  border-radius: 12px;
+  background: var(--dispatch-surface);
+  box-shadow: 0 16px 36px rgba(9, 20, 19, 0.2);
+}
+
+#trackingSection .dispatch-live-actions-popover button {
+  min-height: 36px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dispatch-text);
+  font-size: 10.5px;
+  font-weight: 800;
+  text-align: left;
+  cursor: pointer;
+}
+
+#trackingSection .dispatch-live-actions-popover button:hover,
+#trackingSection .dispatch-live-actions-popover button:focus-visible {
+  background: var(--dispatch-page);
+  outline: none;
+}
+
+#trackingSection .dispatch-live-actions-popover button.danger {
+  color: var(--dispatch-danger);
+}
+
+#trackingSection .tracking-panel-tickets-button {
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid #cfe0d5;
+  border-radius: 9px;
+  background: #f7fbf8;
+  color: #285a48;
+  font-size: 10px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+#trackingSection .tracking-panel-tickets-button:hover,
+#trackingSection .tracking-panel-tickets-button:focus-visible {
+  border-color: #79a98a;
+  background: #eaf5ed;
+  outline: 2px solid rgba(52, 128, 79, 0.14);
+}
+
+@media (max-width: 620px) {
+  #trackingSection .dispatch-live-monitor {
+    padding-right: 11px;
+    padding-left: 11px;
+  }
+
+  #trackingSection .dispatch-live-actions-popover {
+    right: 0;
+  }
+}
+
 /* =========================================================
    LIVE TRACKING SECOND-PASS REFINEMENT
    Compact status, 70/30 map workspace, and guided planning.
@@ -3872,6 +3994,12 @@
   grid-template-rows: minmax(0, 1fr) var(--dispatch-action-footer-height);
 }
 
+#trackingSection .dispatch-inline-planner.is-live-dispatch .dispatch-step-viewport {
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
 #trackingSection .dispatch-step-header {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -4791,6 +4919,138 @@
     height: 100%;
     max-height: none;
   }
+}
+
+/* Final cascade for active availability and the fixed live monitor shell. */
+#trackingSection .active-truck-list {
+  gap: 8px;
+}
+
+#trackingSection .active-truck-item {
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 9px;
+  padding: 10px;
+  border-radius: 12px;
+  box-shadow: none;
+}
+
+#trackingSection .active-truck-item .truck-item-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+}
+
+#trackingSection .active-truck-item .truck-list-topline {
+  margin-bottom: 2px;
+}
+
+#trackingSection .active-truck-item .truck-status-label {
+  padding: 3px 7px;
+  font-size: 9px;
+}
+
+#trackingSection .active-truck-item .truck-last-sync,
+#trackingSection .active-truck-item .truck-plan-hint,
+#trackingSection .active-truck-item .dispatch-truck-ticket,
+#trackingSection .active-truck-item .dispatch-truck-progress {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+}
+
+#trackingSection .active-truck-item .dispatch-truck-ticket {
+  color: var(--dispatch-dark);
+  font-weight: 850;
+}
+
+#trackingSection .active-truck-item .dispatch-truck-progress {
+  color: var(--dispatch-muted);
+}
+
+#trackingSection .tracking-empty-state {
+  min-height: 120px;
+  padding: 20px 14px;
+  border: 0;
+  border-radius: 12px;
+  background: #f7faf8;
+}
+
+#trackingSection .tracking-empty-state .tracking-empty-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 13px;
+}
+
+#trackingSection .dispatch-live-monitor {
+  gap: 9px;
+  margin-top: 0;
+  padding: 11px 13px 14px;
+  box-sizing: border-box;
+}
+
+#trackingSection .dispatch-live-progress {
+  gap: 7px;
+  padding: 2px 0 4px;
+}
+
+#trackingSection .dispatch-live-progress strong {
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+
+#trackingSection .dispatch-live-target.current {
+  padding: 14px;
+  border-color: #d9b66e;
+  background: #fffaf1;
+  box-shadow: 0 6px 16px rgba(118, 80, 19, 0.07);
+}
+
+#trackingSection .dispatch-live-target.current > strong,
+#trackingSection .dispatch-live-target.current > div strong {
+  color: var(--dispatch-text);
+  font-size: 14px;
+}
+
+#trackingSection .dispatch-live-route-preview {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+  border-top: 1px solid var(--dispatch-border);
+  border-bottom: 1px solid var(--dispatch-border);
+}
+
+#trackingSection .dispatch-live-route-preview section {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 7px 3px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+#trackingSection .dispatch-live-route-preview section + section {
+  border-top: 1px solid var(--dispatch-border);
+}
+
+#trackingSection .dispatch-live-route-state {
+  min-height: 26px;
+  padding: 4px 2px;
+  border: 0;
+  background: transparent;
+}
+
+#trackingSection .dispatch-live-route-state button {
+  margin-left: auto;
+  padding: 3px 7px;
+  border: 0;
+  background: transparent;
+  color: var(--dispatch-dark);
+  font-size: 9.5px;
+  font-weight: 850;
+  cursor: pointer;
 }
 
 @media (max-width: 620px) {
