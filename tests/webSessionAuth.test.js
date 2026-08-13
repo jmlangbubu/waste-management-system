@@ -966,6 +966,8 @@ test("dispatch routes apply auth, exact role policy, and CSRF globally", () => {
   assert.match(source, /router\.use\(requireWebAuth\)/);
   assert.match(source, /requireWebRole\("super_admin", "personnel"\)/);
   assert.match(source, /router\.use\(requireCsrf\)/);
+  assert.match(source, /router\.post\("\/tickets\/:id\/end", dispatchController\.endDispatch\)/);
+  assert.match(source, /router\.get\("\/reports\/:ticketId", dispatchController\.getReport\)/);
 });
 
 test("client-supplied dispatch actor identity is overwritten", async () => {

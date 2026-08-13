@@ -19,6 +19,7 @@ router.get("/tickets", dispatchController.listTickets);
 router.get("/live", dispatchController.getLiveDispatches);
 router.get("/tracking-sessions/:sessionId", dispatchController.getByTrackingSession);
 router.get("/reports", dispatchController.getReports);
+router.get("/reports/:ticketId", dispatchController.getReport);
 router.get("/tickets/:id/events", dispatchController.getEvents);
 router.post(
   "/tickets/:id/stops/:stopId/arrive",
@@ -34,6 +35,7 @@ router.post(
 );
 router.post("/tickets/:id/issue", dispatchController.issueTicket);
 router.post("/tickets/:id/cancel", dispatchController.cancelTicket);
+router.post("/tickets/:id/end", dispatchController.endDispatch);
 router.post("/tickets/:id/link-session", dispatchController.linkSession);
 router.post(
   "/tickets/:id/link-active-session",

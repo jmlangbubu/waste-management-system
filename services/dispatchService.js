@@ -18,6 +18,19 @@ const STOP_STATUSES = new Set([
 ]);
 
 const TERMINAL_STOP_STATUSES = new Set(["completed", "skipped"]);
+const ACTIVE_TICKET_STATUSES = new Set([
+  "dispatched",
+  "in_progress",
+  "returning_to_wmo"
+]);
+const END_DISPATCH_REASONS = Object.freeze({
+  trip_cancelled: "Trip cancelled",
+  vehicle_unavailable: "Vehicle unavailable",
+  mechanical_issue: "Mechanical issue",
+  wrong_ticket_or_route: "Wrong ticket or route",
+  returned_early: "Returned early",
+  other: "Other"
+});
 const DISPATCH_TABLE_NAMES = new Set([
   "dispatch_ticket_sequences",
   "dispatch_tickets",
@@ -207,6 +220,65 @@ function currentManilaDate(now = new Date()) {
       .map((part) => [part.type, part.value])
   );
   return `${values.year}-${values.month}-${values.day}`;
+}
+
+function normalizeEndDispatchReason(payload = {}) {
+  const reasonCode = cleanText(
+    payload.reason_code ?? payload.reasonCode,
+    80
+  ).toLowerCase();
+  if (!Object.prototype.hasOwnProperty.call(END_DISPATCH_REASONS, reasonCode)) {
+    throw new DispatchServiceError(
+      "Select a valid reason for ending the dispatch",
+      400,
+      "DISPATCH_END_REASON_REQUIRED"
+    );
+  }
+
+  const otherReason = cleanText(
+    payload.other_reason ?? payload.otherReason,
+    500
+  );
+  if (reasonCode === "other" && !otherReason) {
+    throw new DispatchServiceError(
+      "Enter a reason when Other is selected",
+      400,
+      "DISPATCH_END_OTHER_REASON_REQUIRED"
+    );
+  }
+
+  const reasonLabel = END_DISPATCH_REASONS[reasonCode];
+  return {
+    reason_code: reasonCode,
+    reason_label: reasonLabel,
+    reason: reasonCode === "other" ? `${reasonLabel}: ${otherReason}` : reasonLabel,
+    other_reason: reasonCode === "other" ? otherReason : null
+  };
+}
+
+function parseEventDetails(value) {
+  if (!value) return {};
+  if (typeof value === "object") return value;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch (error) {
+    return {};
+  }
+}
+
+function durationSecondsBetween(startValue, endValue) {
+  if (!startValue || !endValue) return null;
+  const start = new Date(startValue);
+  const end = new Date(endValue);
+  if (
+    Number.isNaN(start.getTime()) ||
+    Number.isNaN(end.getTime()) ||
+    end.getTime() < start.getTime()
+  ) {
+    return null;
+  }
+  return Math.floor((end.getTime() - start.getTime()) / 1000);
 }
 
 function normalizeActor(payload = {}, fallbackType = "web_user") {
@@ -992,7 +1064,8 @@ class DispatchService {
             tts.end_longitude,
             tts.last_latitude,
             tts.last_longitude,
-            tts.last_updated_at
+            tts.last_updated_at,
+            tts.session_distance_km
           FROM dispatch_tracking_sessions dts
           INNER JOIN truck_tracking_sessions tts
             ON tts.id = dts.tracking_session_id
@@ -1169,6 +1242,13 @@ class DispatchService {
           "DISPATCH_TICKET_COMPLETED"
         );
       }
+      if (ACTIVE_TICKET_STATUSES.has(ticket.status)) {
+        throw new DispatchServiceError(
+          "Use End Dispatch to close an active dispatch",
+          409,
+          "DISPATCH_END_REQUIRED"
+        );
+      }
 
       await connection.query(
         `
@@ -1190,6 +1270,77 @@ class DispatchService {
         idempotency_key: `dispatch-cancelled:${ticket.id}`
       });
     });
+    return this.getTicketDetails(ticketId);
+  }
+
+  async endDispatch(ticketId, payload = {}) {
+    const closure = normalizeEndDispatchReason(payload);
+    const actor = normalizeActor(payload);
+
+    await this.withTransaction(async (connection) => {
+      const ticket = await this.getTicketForUpdate(connection, ticketId);
+      if (ticket.status === "cancelled") {
+        const [existingEvents] = await connection.query(
+          `
+            SELECT id
+            FROM dispatch_events
+            WHERE dispatch_ticket_id = ?
+              AND event_type = 'dispatch_closed_early'
+            LIMIT 1
+          `,
+          [ticket.id]
+        );
+        if (existingEvents.length) return;
+      }
+
+      if (!ACTIVE_TICKET_STATUSES.has(ticket.status)) {
+        throw new DispatchServiceError(
+          ticket.status === "completed"
+            ? "A completed dispatch cannot be ended early"
+            : "Only an active dispatch can be ended early",
+          409,
+          ticket.status === "completed"
+            ? "DISPATCH_ALREADY_COMPLETED"
+            : "DISPATCH_END_NOT_ALLOWED"
+        );
+      }
+
+      const [sessionRows] = await connection.query(
+        `
+          SELECT tracking_session_id
+          FROM dispatch_tracking_sessions
+          WHERE dispatch_ticket_id = ?
+            AND unlinked_at IS NULL
+          ORDER BY is_primary DESC, linked_at DESC, id DESC
+          LIMIT 1
+        `,
+        [ticket.id]
+      );
+      const trackingSessionId = sessionRows[0]?.tracking_session_id || null;
+
+      await connection.query(
+        `
+          UPDATE dispatch_tickets
+          SET status = 'cancelled',
+              actual_end_at = NOW(),
+              cancelled_at = NOW(),
+              cancellation_reason = ?,
+              updated_at = NOW()
+          WHERE id = ?
+        `,
+        [closure.reason, ticket.id]
+      );
+      await this.insertEvent(connection, {
+        dispatch_ticket_id: ticket.id,
+        tracking_session_id: trackingSessionId,
+        event_type: "dispatch_closed_early",
+        event_source: "web",
+        ...actor,
+        details: closure,
+        idempotency_key: `dispatch-closed-early:${ticket.id}`
+      });
+    });
+
     return this.getTicketDetails(ticketId);
   }
 
@@ -1788,6 +1939,19 @@ class DispatchService {
   async getReports(filters = {}) {
     const clauses = ["dt.status IN ('completed', 'cancelled')"];
     const parameters = [];
+    const status = cleanText(filters.status, 40).toLowerCase();
+    if (status) {
+      if (!["completed", "closed_early", "cancelled"].includes(status)) {
+        throw new DispatchServiceError("Invalid dispatch report status");
+      }
+      if (status === "closed_early") {
+        clauses.push("closure_event.id IS NOT NULL");
+      } else if (status === "cancelled") {
+        clauses.push("dt.status = 'cancelled' AND closure_event.id IS NULL");
+      } else {
+        clauses.push("dt.status = 'completed'");
+      }
+    }
     if (filters.date_from) {
       clauses.push("dt.dispatch_date >= ?");
       parameters.push(dateOnly(filters.date_from, "date_from"));
@@ -1815,12 +1979,29 @@ class DispatchService {
           dt.assigned_personnel_name,
           dt.dispatch_date,
           dt.route_name,
-          dt.status,
+          CASE
+            WHEN closure_event.id IS NOT NULL THEN 'closed_early'
+            ELSE dt.status
+          END AS status,
+          dt.status AS stored_status,
           dt.actual_start_at,
           dt.actual_end_at,
           dt.completed_at,
           dt.cancelled_at,
           dt.cancellation_reason,
+          dt.created_by_user_id,
+          dt.created_by_name,
+          closure_event.actor_id AS closed_by_user_id,
+          closure_event.actor_name AS closed_by_name,
+          closure_event.event_at AS closed_at,
+          return_event.event_at AS returned_to_wmo_at,
+          primary_link.tracking_session_id,
+          CASE
+            WHEN COALESCE(route_counts.route_logs_count, 0) > 0
+              THEN tracking_session.session_distance_km
+            ELSE NULL
+          END AS actual_distance_km,
+          COALESCE(route_counts.route_logs_count, 0) AS actual_gps_point_count,
           COUNT(drs.id) AS total_stops,
           SUM(drs.stop_status = 'completed') AS completed_stops,
           SUM(drs.stop_status = 'skipped') AS skipped_stops,
@@ -1833,13 +2014,132 @@ class DispatchService {
         FROM dispatch_tickets dt
         LEFT JOIN dispatch_route_stops drs
           ON drs.dispatch_ticket_id = dt.id
+        LEFT JOIN dispatch_events closure_event
+          ON closure_event.id = (
+            SELECT de_close.id
+            FROM dispatch_events de_close
+            WHERE de_close.dispatch_ticket_id = dt.id
+              AND de_close.event_type = 'dispatch_closed_early'
+            ORDER BY de_close.event_at DESC, de_close.id DESC
+            LIMIT 1
+          )
+        LEFT JOIN dispatch_events return_event
+          ON return_event.id = (
+            SELECT de_return.id
+            FROM dispatch_events de_return
+            WHERE de_return.dispatch_ticket_id = dt.id
+              AND de_return.event_type = 'returned_to_wmo'
+            ORDER BY de_return.event_at DESC, de_return.id DESC
+            LIMIT 1
+          )
+        LEFT JOIN dispatch_tracking_sessions primary_link
+          ON primary_link.id = (
+            SELECT dts_report.id
+            FROM dispatch_tracking_sessions dts_report
+            WHERE dts_report.dispatch_ticket_id = dt.id
+              AND dts_report.unlinked_at IS NULL
+            ORDER BY dts_report.is_primary DESC, dts_report.linked_at DESC, dts_report.id DESC
+            LIMIT 1
+          )
+        LEFT JOIN truck_tracking_sessions tracking_session
+          ON tracking_session.id = primary_link.tracking_session_id
+        LEFT JOIN (
+          SELECT session_id, COUNT(*) AS route_logs_count
+          FROM truck_location_logs
+          GROUP BY session_id
+        ) route_counts
+          ON route_counts.session_id = primary_link.tracking_session_id
         WHERE ${clauses.join(" AND ")}
         GROUP BY dt.id
-        ORDER BY dt.dispatch_date DESC, dt.updated_at DESC, dt.id DESC
+        ORDER BY
+          COALESCE(dt.actual_end_at, dt.completed_at, dt.cancelled_at, dt.updated_at) DESC,
+          dt.id DESC
       `,
       parameters
     );
     return rows;
+  }
+
+  async getReportDetails(ticketId) {
+    const details = await this.getTicketDetails(ticketId);
+    const { ticket, stops, tracking_sessions: sessions, events } = details;
+    if (!["completed", "cancelled"].includes(ticket.status)) {
+      throw new DispatchServiceError(
+        "Dispatch report is not available for an active ticket",
+        404,
+        "DISPATCH_REPORT_NOT_FOUND"
+      );
+    }
+
+    const primarySession = sessions[0] || null;
+    let routeLogs = [];
+    if (primarySession?.tracking_session_id) {
+      [routeLogs] = await this.query(
+        `
+          SELECT
+            id,
+            session_id,
+            truck_id,
+            latitude,
+            longitude,
+            speed,
+            accuracy,
+            heading,
+            altitude,
+            sync_source,
+            recorded_at
+          FROM truck_location_logs
+          WHERE session_id = ?
+          ORDER BY recorded_at ASC, id ASC
+        `,
+        [primarySession.tracking_session_id]
+      );
+    }
+
+    const closureEvent = events.find(
+      (event) => event.event_type === "dispatch_closed_early"
+    ) || null;
+    const returnedEvent = events.find(
+      (event) => event.event_type === "returned_to_wmo"
+    ) || null;
+    const closureDetails = parseEventDetails(closureEvent?.details);
+    const endedAt = closureEvent
+      ? ticket.actual_end_at || ticket.cancelled_at || closureEvent.event_at
+      : ticket.actual_end_at || ticket.completed_at || null;
+    const measuredDistance =
+      routeLogs.length > 0 && primarySession?.session_distance_km !== null
+        ? Number(primarySession.session_distance_km)
+        : null;
+
+    return {
+      ticket: {
+        ...ticket,
+        report_status: closureEvent ? "closed_early" : ticket.status,
+        ended_at: endedAt,
+        closure_reason: closureEvent
+          ? closureDetails.reason || ticket.cancellation_reason || null
+          : null,
+        closed_by_user_id: closureEvent?.actor_id || null,
+        closed_by_name: closureEvent?.actor_name || null,
+        closed_at: closureEvent?.event_at || null,
+        returned_to_wmo_at: returnedEvent?.event_at || null
+      },
+      stops,
+      tracking_session: primarySession,
+      route_logs: routeLogs,
+      progress: details.progress,
+      events,
+      metrics: {
+        dispatch_duration_seconds: durationSecondsBetween(
+          ticket.actual_start_at,
+          endedAt
+        ),
+        actual_distance_km:
+          Number.isFinite(measuredDistance) ? measuredDistance : null,
+        actual_gps_point_count: routeLogs.length,
+        returned_to_wmo_at: returnedEvent?.event_at || null
+      }
+    };
   }
 
   async processAutomaticLocationLog(relationId, locationLog) {
@@ -2301,3 +2601,7 @@ module.exports.currentManilaDate = currentManilaDate;
 module.exports.DESTINATION_TYPES = DESTINATION_TYPES;
 module.exports.TICKET_STATUSES = TICKET_STATUSES;
 module.exports.STOP_STATUSES = STOP_STATUSES;
+module.exports.ACTIVE_TICKET_STATUSES = ACTIVE_TICKET_STATUSES;
+module.exports.END_DISPATCH_REASONS = END_DISPATCH_REASONS;
+module.exports.normalizeEndDispatchReason = normalizeEndDispatchReason;
+module.exports.durationSecondsBetween = durationSecondsBetween;

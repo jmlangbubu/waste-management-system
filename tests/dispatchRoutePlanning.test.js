@@ -21,6 +21,7 @@ const {
   dispatchRoutingResponsePreservesOrder,
   dispatchSafeTicketErrorMessage,
   dispatchSegmentColor,
+  dispatchTicketIsStale,
   dispatchTicketFailureState,
   dispatchWmoStopOrder,
   evaluateDispatchDynamicReroute,
@@ -414,6 +415,19 @@ function testOperatingDateAndRecordFiltersAreNotClientControlled() {
   assert.doesNotMatch(collectForm, /dispatch_date|dispatchDate/);
 }
 
+function testStaleDispatchWarningDoesNotChangeLifecycle() {
+  const now = new Date("2026-08-13T10:00:00.000Z").getTime();
+  assert.equal(
+    dispatchTicketIsStale({ actual_start_at: "2026-08-12T09:00:00.000Z" }, now),
+    true
+  );
+  assert.equal(
+    dispatchTicketIsStale({ actual_start_at: "2026-08-13T09:00:00.000Z" }, now),
+    false
+  );
+  assert.equal(dispatchTicketIsStale({}, now), false);
+}
+
 function testManualTicketNumberAndUnifiedTicketsWorkflow() {
   assert.equal(dispatchNormalizeTicketNumber("  000042  "), "000042");
   assert.equal(dispatchNormalizeTicketNumber("   "), "");
@@ -461,8 +475,10 @@ function testManualTicketNumberAndUnifiedTicketsWorkflow() {
   assert.match(recordsMarkup, /id="dispatchTicketTruckFilter" placeholder="Truck Number"/);
   assert.match(recordsMarkup, /id="dispatchTicketsList"/);
   assert.match(dashboard, /id="openTrackingReportsBtn"/);
-  assert.match(source, /getElementById\("openTrackingReportsBtn"\)[\s\S]*openTrackingReportsModal/);
-  assert.match(dashboard, />\s*Tracking Reports\s*</i);
+  assert.match(source, /getElementById\("openTrackingReportsBtn"\)[\s\S]*openDispatchReportsModal/);
+  assert.match(dashboard, />\s*Dispatch Reports\s*</i);
+  assert.match(dashboard, /id="dispatchReportsModal"/);
+  assert.match(dashboard, /id="dispatchReportModal"/);
 
   assert.match(source, /destinationControls\.disabled = !destinationsEnabled/);
   assert.match(source, /saveButton\.disabled = Boolean\([\s\S]*!ticketNumberValid/);
@@ -602,6 +618,7 @@ async function run() {
   testPersistedRoadStopRehydratesOnlyTheMatchingCatalogComponent();
   testFailureStateStaleResponsesAndActualGpsIndependence();
   testOperatingDateAndRecordFiltersAreNotClientControlled();
+  testStaleDispatchWarningDoesNotChangeLifecycle();
   testManualTicketNumberAndUnifiedTicketsWorkflow();
   testFocusedThreeStepPlannerAndLiveMonitor();
   testRoutingResponseOrderAndUiRequirements();

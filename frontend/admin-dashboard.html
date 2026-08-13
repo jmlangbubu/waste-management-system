@@ -858,7 +858,7 @@
       <span class="tracking-eyebrow">WMO operations workspace</span>
       <button type="button" class="tracking-compact-link" id="openTrackingReportsBtn">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></svg>
-        Tracking reports
+        Dispatch Reports
       </button>
     </div>
 
@@ -2128,58 +2128,77 @@
   </div>
 </div>
 
-<div id="trackingReportsModal" class="custom-modal hidden">
-  <div class="custom-modal-overlay" id="trackingReportsModalOverlay"></div>
-
-  <div class="custom-modal-content" style="max-width: 1100px; width: 92%;">
+<div id="dispatchEndModal" class="custom-modal dispatch-end-modal hidden" role="dialog" aria-modal="true" aria-labelledby="dispatchEndModalTitle" aria-describedby="dispatchEndModalMessage">
+  <div class="custom-modal-overlay" id="dispatchEndModalOverlay"></div>
+  <div class="custom-modal-content dispatch-end-modal-content">
     <div class="custom-modal-header">
       <div>
-        <h3>Daily Tracking Reports</h3>
-        <p>Truck start point, end point, enforcer, and route history.</p>
+        <h3 id="dispatchEndModalTitle">End Dispatch?</h3>
+        <p id="dispatchEndModalMessage">This ends the dispatch before normal completion and removes it from Active Dispatch. Its record remains in Dispatch Reports. Truck GPS tracking is not automatically stopped.</p>
       </div>
-
-      <button type="button" class="modal-close-btn" id="closeTrackingReportsModalBtn">
-        &times;
-      </button>
+      <button type="button" class="modal-close-btn" id="closeDispatchEndModalBtn" aria-label="Close End Dispatch dialog">&times;</button>
     </div>
-
     <div class="custom-modal-body">
-      <div class="table-shell">
-        <table>
-          <thead>
-            <tr>
-              <th>Truck</th>
-              <th>Enforcer</th>
-              <th>Start Time</th>
-              <th>End Time</th>
-              <th>Status</th>
-              <th>Distance</th>
-              <th>Action</th>
-            </tr>
-          </thead>
+      <form id="dispatchEndForm" class="dispatch-end-form" novalidate>
+        <label for="dispatchEndReason">Reason <span aria-hidden="true">*</span></label>
+        <select id="dispatchEndReason" required>
+          <option value="">Select a reason</option>
+          <option value="trip_cancelled">Trip cancelled</option>
+          <option value="vehicle_unavailable">Vehicle unavailable</option>
+          <option value="mechanical_issue">Mechanical issue</option>
+          <option value="wrong_ticket_or_route">Wrong ticket or route</option>
+          <option value="returned_early">Returned early</option>
+          <option value="other">Other</option>
+        </select>
+        <label id="dispatchEndOtherField" class="hidden" for="dispatchEndOtherReason">
+          Other reason <span aria-hidden="true">*</span>
+          <textarea id="dispatchEndOtherReason" maxlength="500" rows="3" placeholder="Enter a short reason"></textarea>
+        </label>
+        <div id="dispatchEndError" class="dispatch-form-error hidden" role="alert"></div>
+        <div class="dispatch-end-actions">
+          <button type="button" class="dispatch-inline-action secondary" id="dispatchEndCancelBtn">Keep Active</button>
+          <button type="submit" class="dispatch-inline-action danger" id="dispatchEndConfirmBtn">End Dispatch</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
 
-          <tbody id="trackingReportsTableBody">
-            <tr>
-              <td colspan="7" class="loading-state">Loading reports...</td>
-            </tr>
-          </tbody>
+<div id="dispatchReportsModal" class="custom-modal dispatch-reports-modal hidden">
+  <div class="custom-modal-overlay" id="dispatchReportsModalOverlay"></div>
+  <div class="custom-modal-content dispatch-reports-modal-content">
+    <div class="custom-modal-header">
+      <div>
+        <h3>Dispatch Reports</h3>
+        <p>Completed and closed dispatch tickets with persisted trip records.</p>
+      </div>
+      <button type="button" class="modal-close-btn" id="closeDispatchReportsModalBtn">&times;</button>
+    </div>
+    <div class="custom-modal-body">
+      <div class="dispatch-report-filters">
+        <label>Search<input type="search" id="dispatchReportSearch" placeholder="Ticket or truck"></label>
+        <label>Status<select id="dispatchReportStatusFilter"><option value="">All terminal statuses</option><option value="completed">Completed</option><option value="closed_early">Closed Early</option><option value="cancelled">Cancelled</option></select></label>
+        <label>Date<input type="date" id="dispatchReportDateFilter"></label>
+      </div>
+      <div class="table-shell dispatch-report-table-shell">
+        <table class="dispatch-report-table">
+          <thead><tr><th>Ticket Number</th><th>Truck</th><th>Dispatch Status</th><th>Started At</th><th>Ended At</th><th>Destinations</th><th>Personnel / Created By</th><th>Action</th></tr></thead>
+          <tbody id="dispatchReportsTableBody"><tr><td colspan="8" class="loading-state">Loading dispatch reports...</td></tr></tbody>
         </table>
       </div>
     </div>
   </div>
 </div>
 
-<div id="trackingReportModal" class="custom-modal hidden">
-  <div class="custom-modal-overlay" id="trackingReportModalOverlay"></div>
-
-  <div class="custom-modal-content">
+<div id="dispatchReportModal" class="custom-modal dispatch-report-modal hidden">
+  <div class="custom-modal-overlay" id="dispatchReportModalOverlay"></div>
+  <div class="custom-modal-content dispatch-report-modal-content">
     <div class="custom-modal-header">
-      <h3>Tracking Route</h3>
-      <button type="button" id="closeTrackingReportModalBtn" class="modal-close-btn">&times;</button>
+      <div><h3 id="dispatchReportTitle">Dispatch Report</h3><p>Ticket-centered trip record</p></div>
+      <button type="button" id="closeDispatchReportModalBtn" class="modal-close-btn">&times;</button>
     </div>
-
     <div class="custom-modal-body">
-      <div id="trackingReportMap" style="height:400px;"></div>
+      <div id="dispatchReportBody" class="dispatch-report-body"><div class="loading-state">Loading dispatch report...</div></div>
     </div>
   </div>
 </div>

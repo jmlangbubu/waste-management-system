@@ -138,6 +138,21 @@ exports.cancelTicket = async (req, res) => {
   }
 };
 
+exports.endDispatch = async (req, res) => {
+  try {
+    return sendData(
+      res,
+      await dispatchService.endDispatch(
+        req.params.id,
+        withAuthenticatedActor(req)
+      ),
+      "Dispatch ended early"
+    );
+  } catch (error) {
+    return sendDispatchError(res, error, "end dispatch");
+  }
+};
+
 exports.linkSession = async (req, res) => {
   try {
     return sendData(
@@ -263,5 +278,16 @@ exports.getReports = async (req, res) => {
     return sendData(res, await dispatchService.getReports(req.query));
   } catch (error) {
     return sendDispatchError(res, error, "load dispatch reports");
+  }
+};
+
+exports.getReport = async (req, res) => {
+  try {
+    return sendData(
+      res,
+      await dispatchService.getReportDetails(req.params.ticketId)
+    );
+  } catch (error) {
+    return sendDispatchError(res, error, "load dispatch report");
   }
 };
