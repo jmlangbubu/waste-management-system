@@ -33,8 +33,9 @@ function initializeTruckMap() {
    - Route redraws as one full route once queued mobile points sync.
 ========================================================= */
 
-const TRACKING_LIVE_WINDOW_MS = 60 * 1000;
 const TRACKING_SYNC_PENDING_WINDOW_MS = 5 * 60 * 1000;
+const TRACKING_GPS_AVAILABILITY_WINDOW_MS = TRACKING_SYNC_PENDING_WINDOW_MS;
+const TRACKING_CLOCK_SKEW_TOLERANCE_MS = 60 * 1000;
 const TRACKING_ROUTE_GAP_MS = 90 * 1000;
 const TRACKING_MAX_RELIABLE_ACCURACY_METERS = 50;
 const TRACKING_STATIONARY_RADIUS_METERS = 8;
@@ -88,157 +89,157 @@ function getTruckLastUpdateValue(truck) {
   );
 }
 
-function getTrackingStatusMeta(truck) {
-  const rawStatus = String(truck?.truck_status || truck?.status || "").toLowerCase();
+function getTrackingAvailabilityMeta(truck, now = Date.now()) {
   const sessionStatus = String(truck?.session_status || "").toLowerCase();
-
-  /*
-    Prefer backend-computed status when available.
-    This allows the web UI to show different warnings for:
-    - GPS Off / no live GPS points
-    - Sync Pending / weak mobile signal
-    - Live / normal tracking
-  */
-  const serverKey = String(
-    truck?.tracking_status_key ||
-    truck?.tracking_warning_key ||
-    truck?.gps_status ||
-    truck?.sync_status ||
-    ""
-  ).toLowerCase();
-
-  if (sessionStatus === "stopped" || sessionStatus === "auto_stopped" || serverKey === "stopped") {
+  if (sessionStatus !== "active") {
     return {
       key: "stopped",
-      label: "Stopped",
+      label: "Tracking Stopped",
       className: "stopped",
-      description: "Tracking session has ended."
+      description: "The tracking session has ended.",
+      available: false,
+      ageMs: Number.POSITIVE_INFINITY
     };
   }
 
-  if (
-    serverKey.includes("gps_off") ||
-    serverKey.includes("tracking_off") ||
-    serverKey.includes("no_gps")
-  ) {
+  const statusValues = [
+    truck?.tracking_status_key,
+    truck?.tracking_warning_key,
+    truck?.last_location_status,
+    truck?.last_device_status,
+    truck?.gps_status,
+    truck?.sync_status
+  ].map((value) => String(value || "").toLowerCase());
+  const explicitlyOffline = statusValues.some((value) =>
+    value === "off" ||
+    value === "offline" ||
+    value.includes("gps_off") ||
+    value.includes("tracking_off") ||
+    value.includes("permission_missing") ||
+    value.includes("no_gps") ||
+    value.includes("not_syncing")
+  );
+  const latitude = parseTrackingCoordinate(truck?.latitude);
+  const longitude = parseTrackingCoordinate(truck?.longitude);
+  const validCoordinates =
+    Number.isFinite(latitude) &&
+    Number.isFinite(longitude) &&
+    latitude >= -90 &&
+    latitude <= 90 &&
+    longitude >= -180 &&
+    longitude <= 180 &&
+    !(latitude === 0 && longitude === 0);
+  const reliableCoordinates = validCoordinates && isTrackingPointReliable(truck);
+  const lastDate = parseTrackingDate(getTruckLastUpdateValue(truck));
+  const ageMs = lastDate ? now - lastDate.getTime() : Number.POSITIVE_INFINITY;
+
+  if (explicitlyOffline || !lastDate || !reliableCoordinates) {
     return {
-      key: "gps_off",
-      label: "GPS off",
+      key: "offline",
+      label: "GPS Offline",
       className: "gps-off",
-      description: "GPS tracking is turned off. No live route points are being recorded."
+      description: "No current reliable GPS point is available.",
+      available: false,
+      ageMs
     };
   }
 
   if (
-    serverKey.includes("sync_pending") ||
-    serverKey.includes("weak_signal") ||
-    serverKey.includes("pending")
+    ageMs < -TRACKING_CLOCK_SKEW_TOLERANCE_MS ||
+    ageMs > TRACKING_GPS_AVAILABILITY_WINDOW_MS
   ) {
     return {
-      key: "sync_pending",
-      label: "Sync pending",
+      key: "stale",
+      label: "GPS Stale",
       className: "sync-pending",
-      description: "GPS may still be on, but mobile signal is weak. Route points will continue after the phone syncs."
-    };
-  }
-
-  if (serverKey.includes("live") || serverKey === "active" || serverKey === "on") {
-    return {
-      key: "active",
-      label: "Live",
-      className: "active",
-      description: "Live GPS signal is syncing normally."
-    };
-  }
-
-  const lastUpdateValue = getTruckLastUpdateValue(truck);
-  const lastDate = parseTrackingDate(lastUpdateValue);
-  const ageMs = lastDate ? Date.now() - lastDate.getTime() : Number.POSITIVE_INFINITY;
-
-  if (rawStatus === "active" && ageMs <= TRACKING_LIVE_WINDOW_MS) {
-    return {
-      key: "active",
-      label: "Live",
-      className: "active",
-      description: "Live GPS signal is syncing normally."
-    };
-  }
-
-  if (ageMs <= TRACKING_SYNC_PENDING_WINDOW_MS) {
-    return {
-      key: "sync_pending",
-      label: "Sync pending",
-      className: "sync-pending",
-      description: "GPS may still be on, but mobile signal is weak. Route points will continue after the phone syncs."
+      description: "The last reliable GPS point is older than five minutes.",
+      available: false,
+      ageMs
     };
   }
 
   return {
-    key: "gps_off",
-    label: "GPS off",
-    className: "gps-off",
-    description: "GPS tracking is turned off or no live GPS points are being recorded."
+    key: "online",
+    label: "GPS Online",
+    className: "active",
+    description: "A current reliable GPS point is available.",
+    available: true,
+    ageMs
   };
+}
+
+function getTrackingStatusMeta(truck, now = Date.now()) {
+  const availability = getTrackingAvailabilityMeta(truck, now);
+  return {
+    ...availability,
+    key: availability.key === "online"
+      ? "active"
+      : availability.key === "stale"
+        ? "sync_pending"
+        : availability.key === "offline"
+          ? "gps_off"
+          : availability.key
+  };
+}
+
+function isTrackingTruckAvailable(truck, now = Date.now()) {
+  return getTrackingAvailabilityMeta(truck, now).available === true;
+}
+
+function filterAvailableTrackingTrucks(trucks, now = Date.now()) {
+  return (Array.isArray(trucks) ? trucks : []).filter((truck) =>
+    isTrackingTruckAvailable(truck, now)
+  );
+}
+
+function buildTrackingAvailabilitySnapshot(
+  trackingTrucks,
+  dispatchForSession = () => null,
+  now = Date.now()
+) {
+  const sessions = (Array.isArray(trackingTrucks) ? trackingTrucks : []).map((truck) => ({
+    ...truck,
+    dispatch: dispatchForSession(truck.session_id) || null
+  }));
+
+  return {
+    sessions,
+    availableTrucks: filterAvailableTrackingTrucks(sessions, now)
+  };
+}
+
+function formatTrackingRelativeUpdate(value, now = Date.now()) {
+  const date = parseTrackingDate(value);
+  if (!date) return "Not recorded";
+  const ageSeconds = Math.max(0, Math.floor((now - date.getTime()) / 1000));
+  if (ageSeconds < 5) return "just now";
+  if (ageSeconds < 60) return `${ageSeconds} sec ago`;
+  const ageMinutes = Math.floor(ageSeconds / 60);
+  if (ageMinutes < 60) return `${ageMinutes} min ago`;
+  const ageHours = Math.floor(ageMinutes / 60);
+  return `${ageHours} hr ago`;
 }
 
 function getTrackingSignalSummary(trucks) {
-  const safeTrucks = Array.isArray(trucks) ? trucks : [];
-  const liveCount = safeTrucks.filter((truck) => getTrackingStatusMeta(truck).key === "active").length;
-  const pendingCount = safeTrucks.filter((truck) => getTrackingStatusMeta(truck).key === "sync_pending").length;
-  const gpsOffCount = safeTrucks.filter((truck) => getTrackingStatusMeta(truck).key === "gps_off").length;
-
-  if (!safeTrucks.length) {
-    return {
-      text: "No active sessions",
-      className: "idle"
-    };
-  }
-
-  const parts = [];
-
-  if (liveCount > 0) parts.push(`${liveCount} live`);
-  if (pendingCount > 0) parts.push(`${pendingCount} sync pending`);
-  if (gpsOffCount > 0) parts.push(`${gpsOffCount} GPS off`);
-
-  if (gpsOffCount > 0) {
-    return {
-      text: parts.join(" • "),
-      className: "danger"
-    };
-  }
-
-  if (pendingCount > 0) {
-    return {
-      text: parts.join(" • "),
-      className: "warning"
-    };
-  }
-
+  const liveCount = filterAvailableTrackingTrucks(trucks).length;
+  if (!liveCount) return { text: "No active trucks", className: "idle" };
   return {
-    text: parts.join(" • ") || "No live GPS",
-    className: liveCount > 0 ? "good" : "idle"
+    text: liveCount === 1 ? "1 GPS Online" : `${liveCount} GPS Online`,
+    className: "good"
   };
 }
 
-function updateTrackingSummaryCards(trucks) {
+function updateTrackingSummaryCards(trucks, selectedTruck = selectedTrackingTruck) {
   const safeTrucks = Array.isArray(trucks) ? trucks : [];
   const activeTruckCount = document.getElementById("activeTruckCount");
   const trackingSignalStatus = document.getElementById("trackingSignalStatus");
 
   if (activeTruckCount) {
-    /*
-      Count active tracking sessions, not only currently live signal.
-      This prevents the web dashboard from looking like tracking stopped
-      when the phone simply has weak mobile data.
-    */
     activeTruckCount.textContent = safeTrucks.length;
   }
 
   if (trackingSignalStatus) {
-    const selectedTruck = safeTrucks.find(
-      (truck) => String(truck.session_id) === String(selectedSessionId)
-    );
-    if (selectedTruck) {
+    if (selectedTruck && String(selectedTruck.session_id) === String(selectedSessionId)) {
       const selectedStatus = getTrackingStatusMeta(selectedTruck);
       trackingSignalStatus.textContent = selectedStatus.label;
       trackingSignalStatus.className = `tracking-signal-status ${selectedStatus.className}`;
@@ -541,13 +542,14 @@ async function loadActiveTrucks() {
     const trackingTrucks = Array.isArray(data)
       ? data
       : (data.data || []);
-    const trucks = trackingTrucks.map((truck) => ({
-      ...truck,
-      dispatch:
-        typeof getDispatchLiveForSession === "function"
-          ? getDispatchLiveForSession(truck.session_id)
-          : null
-    }));
+    const snapshot = buildTrackingAvailabilitySnapshot(
+      trackingTrucks,
+      (sessionId) => typeof getDispatchLiveForSession === "function"
+        ? getDispatchLiveForSession(sessionId)
+        : null
+    );
+    const trackingSessions = snapshot.sessions;
+    const trucks = snapshot.availableTrucks;
     activeTrackingTrucks = trucks;
 
     renderActiveTruckList(trucks);
@@ -555,23 +557,29 @@ async function loadActiveTrucks() {
     updateTrackingSummaryCards(trucks);
 
     if (selectedSessionId) {
-      const selectedTruck = trucks.find(
+      const selectedTruck = trackingSessions.find(
         (truck) => String(truck.session_id) === String(selectedSessionId)
       );
 
       if (!selectedTruck) {
-        dispatchSelectedSessionActive = false;
-        if (typeof handleDispatchSelectedSessionEnded === "function") {
-          handleDispatchSelectedSessionEnded();
-        }
+        resetTrackingView({ refresh: false });
+        updateTrackingSummaryCards(trucks, null);
+        return;
+      }
+
+      if (!isTrackingTruckAvailable(selectedTruck) && !selectedTruck.dispatch) {
+        resetTrackingView({ refresh: false });
+        updateTrackingSummaryCards(trucks, null);
         return;
       }
 
       selectedTrackingTruck = selectedTruck;
       dispatchSelectedSessionActive = true;
+      updateTrackingActionButtons();
       if (typeof updateDispatchSelectedTruckContext === "function") {
         updateDispatchSelectedTruckContext(selectedTruck);
       }
+      updateTrackingSummaryCards(trucks, selectedTruck);
 
       await hydrateSelectedTruckWorkspace(selectedSessionId, { keepView: true });
 
@@ -630,8 +638,8 @@ function renderActiveTruckList(trucks) {
     container.innerHTML = `
       <div class="tracking-empty-state">
         <span class="tracking-empty-icon">${getTrackingInlineIcon("truck")}</span>
-        <strong>No active tracking sessions</strong>
-        <small>Active trucks will appear here once enforcer tracking starts.</small>
+        <strong>No active trucks</strong>
+        <small>Trucks will appear here when GPS tracking is active.</small>
       </div>
     `;
     return;
@@ -643,8 +651,10 @@ function renderActiveTruckList(trucks) {
     const lastUpdated = getTruckLastUpdateValue(truck);
     const truckName = truck.truck_name || truck.truck_display_name || `Truck ${truck.truck_id || "-"}`;
     const truckIdentifier = truck.truck_id || truckName;
-    const dispatchLabel = truck.dispatch
-      ? `<small class="dispatch-truck-ticket">${escapeHtml(truck.dispatch.ticket_number)} · ${Number(truck.dispatch.completed_stops || 0)}/${Number(truck.dispatch.total_stops || 0)} stops</small>`
+    const hasLiveDispatch = Boolean(truck.dispatch);
+    const dispatchLabel = hasLiveDispatch
+      ? `<small class="dispatch-truck-ticket">Ticket ${escapeHtml(truck.dispatch.ticket_number)} &middot; Tracking Active</small>
+         <small class="dispatch-truck-progress">${Number(truck.dispatch.completed_stops || 0)} of ${Number(truck.dispatch.total_stops || 0)} destinations completed</small>`
       : "";
 
     return `
@@ -654,7 +664,7 @@ function renderActiveTruckList(trucks) {
         data-tracking-session-id="${typeof dispatchEscape === "function" ? dispatchEscape(truck.session_id) : escapeHtml(truck.session_id)}"
         data-tracking-truck-id="${escapeHtml(truck.truck_id || "")}"
         aria-pressed="${isSelected}"
-        aria-label="Plan dispatch for ${escapeHtml(truckIdentifier)}, ${escapeHtml(statusMeta.label)}"
+        aria-label="${hasLiveDispatch ? "Open live dispatch for" : "Plan dispatch for"} ${escapeHtml(truckIdentifier)}, ${escapeHtml(statusMeta.label)}"
       >
         <span class="truck-item-icon">${getTrackingInlineIcon("truck")}</span>
 
@@ -667,8 +677,8 @@ function renderActiveTruckList(trucks) {
             <small class="truck-status-label ${statusMeta.className}">${escapeHtml(statusMeta.label)}</small>
           </div>
           ${dispatchLabel}
-          <small class="truck-last-sync">Last sync: ${escapeHtml(formatTrackingTimeSafe(lastUpdated))}</small>
-          <small class="truck-plan-hint">Click to plan dispatch</small>
+          <small class="truck-last-sync">Updated ${escapeHtml(formatTrackingRelativeUpdate(lastUpdated))}</small>
+          <small class="truck-plan-hint">${hasLiveDispatch ? "Open live dispatch" : "Available for dispatch"}</small>
         </div>
       </button>
     `;
@@ -975,7 +985,7 @@ async function hydrateSelectedTruckWorkspace(sessionId, options = {}) {
   return loadDispatchForTrackingSession(sessionId);
 }
 
-function resetTrackingView() {
+function resetTrackingView(options = {}) {
   if (selectedRoutePolyline && truckMap) {
     truckMap.removeLayer(selectedRoutePolyline);
     selectedRoutePolyline = null;
@@ -1022,7 +1032,7 @@ function resetTrackingView() {
 
   updateTrackingActionButtons();
   if (truckMap) truckMap.setView([6.1164, 125.1716], 13);
-  loadActiveTrucks();
+  if (options.refresh !== false) loadActiveTrucks();
 }
 
 function renderMonitoringAlerts(alerts, activeTrucks = []) {
@@ -1126,9 +1136,9 @@ async function loadMonitoringPreview() {
       ? notifData
       : (notifData.data || notifData.notifications || []);
 
-    const activeTrucks = Array.isArray(trackingData)
+    const activeTrucks = filterAvailableTrackingTrucks(Array.isArray(trackingData)
       ? trackingData
-      : (trackingData.data || []);
+      : (trackingData.data || []));
 
     // Filter only truck-related alerts
     const truckAlerts = allAlerts.filter(isTruckMonitoringAlert);
@@ -1293,9 +1303,9 @@ async function loadTruckAnalyticsModalData() {
       ? notifData
       : (notifData.data || notifData.notifications || []);
 
-    const activeTrucks = Array.isArray(trackingData)
+    const activeTrucks = filterAvailableTrackingTrucks(Array.isArray(trackingData)
       ? trackingData
-      : (trackingData.data || []);
+      : (trackingData.data || []));
 
     renderTruckAnalyticsModal(alerts, activeTrucks);
   } catch (error) {
@@ -1401,7 +1411,13 @@ function updateTrackingActionButtons() {
   const resetBtn = document.getElementById("resetTrackingViewBtn");
 
   if (forceStopBtn) {
-    forceStopBtn.disabled = !selectedSessionId;
+    const canStop = Boolean(
+      selectedSessionId &&
+      selectedTrackingTruck &&
+      String(selectedTrackingTruck.session_status || "").toLowerCase() === "active"
+    );
+    forceStopBtn.disabled = !canStop;
+    forceStopBtn.hidden = !canStop;
   }
 
   if (resetBtn && !resetBtn.dataset.bound) {
@@ -1469,7 +1485,9 @@ function stopTrackingAutoRefresh() {
   }
 }
 
-window.selectTruck = selectTruck;
+if (typeof window !== "undefined") {
+  window.selectTruck = selectTruck;
+}
 
 // =============================
 // TRACKING REPORTS
@@ -2428,19 +2446,33 @@ function closeTrackingReportsModal() {
   }
 }
 
-window.addEventListener("resize", () => {
-  const modal = document.getElementById("trackingReportsModal");
-  if (!modal || modal.classList.contains("hidden")) return;
+if (typeof window !== "undefined") {
+  window.addEventListener("resize", () => {
+    const modal = document.getElementById("trackingReportsModal");
+    if (!modal || modal.classList.contains("hidden")) return;
 
-  window.clearTimeout(window.__trackingReportsScrollResizeTimer);
-  window.__trackingReportsScrollResizeTimer = window.setTimeout(() => {
-    setupTrackingReportsFloatingScrollbar();
-  }, 120);
-});
+    window.clearTimeout(window.__trackingReportsScrollResizeTimer);
+    window.__trackingReportsScrollResizeTimer = window.setTimeout(() => {
+      setupTrackingReportsFloatingScrollbar();
+    }, 120);
+  });
 
-window.loadTrackingReports = loadTrackingReports;
-window.viewTrackingReport = viewTrackingReport;
-window.openTrackingReportsModal = openTrackingReportsModal;
-window.closeTrackingReportsModal = closeTrackingReportsModal;
-window.closeTrackingReportModal = closeTrackingReportModal;
-window.setupTrackingReportsFloatingScrollbar = setupTrackingReportsFloatingScrollbar;
+  window.loadTrackingReports = loadTrackingReports;
+  window.viewTrackingReport = viewTrackingReport;
+  window.openTrackingReportsModal = openTrackingReportsModal;
+  window.closeTrackingReportsModal = closeTrackingReportsModal;
+  window.closeTrackingReportModal = closeTrackingReportModal;
+  window.setupTrackingReportsFloatingScrollbar = setupTrackingReportsFloatingScrollbar;
+}
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = {
+    TRACKING_GPS_AVAILABILITY_WINDOW_MS,
+    buildTrackingAvailabilitySnapshot,
+    filterAvailableTrackingTrucks,
+    formatTrackingRelativeUpdate,
+    getTrackingAvailabilityMeta,
+    isTrackingTruckAvailable,
+    renderActiveTruckList
+  };
+}

@@ -552,7 +552,7 @@ function testFocusedThreeStepPlannerAndLiveMonitor() {
   assert.match(liveRenderer, /Mark Arrived/);
   assert.match(liveRenderer, /Complete Stop/);
   assert.match(liveRenderer, /Skip Stop/);
-  assert.match(liveRenderer, /View Ticket Details/);
+  assert.equal((dashboard.match(/id="dispatchViewTicketDetailsBtn"/g) || []).length, 1);
   assert.doesNotMatch(liveRenderer, /Tracking links|Expected return|dispatch-event-list/);
   assert.match(source, /restoreDispatchRoutePreviewState\(routeSnapshot\)/);
   assert.match(source, /dispatchHasVisiblePlannedRoute\(\)/);
