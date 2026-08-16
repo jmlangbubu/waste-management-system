@@ -530,14 +530,16 @@ function getTrackingRouteNotice(routeLogs = []) {
 }
 
 async function loadActiveTrucks() {
+  const request = trackingActiveRequestGuard.begin();
   try {
     const [res] = await Promise.all([
-      webAdminFetch(getTrackingActiveApiUrl()),
+      webAdminFetch(getTrackingActiveApiUrl(), { signal: request.signal }),
       typeof loadDispatchLiveData === "function"
         ? loadDispatchLiveData()
         : Promise.resolve({})
     ]);
     const data = await res.json();
+    if (!trackingActiveRequestGuard.isCurrent(request)) return;
 
     const trackingTrucks = Array.isArray(data)
       ? data
@@ -600,6 +602,7 @@ async function loadActiveTrucks() {
       updateTrackingRouteStats({ rawCount: 0, displayedPoints: [] });
     }
   } catch (error) {
+    if (error?.name === "AbortError") return;
     console.error("Error loading active trucks:", error);
 
     const trackingSignalStatus = document.getElementById("trackingSignalStatus");
@@ -607,7 +610,13 @@ async function loadActiveTrucks() {
       trackingSignalStatus.textContent = "Unable to refresh";
       trackingSignalStatus.className = "tracking-signal-status warning";
     }
+  } finally {
+    trackingActiveRequestGuard.finish(request);
   }
+}
+
+function invalidateTrackingActiveRequests() {
+  trackingActiveRequestGuard.invalidate();
 }
 
 function getTrackingInlineIcon(name = "truck") {

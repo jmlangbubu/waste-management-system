@@ -2,6 +2,39 @@
 // GLOBAL STATE
 // =========================
 
+function createLatestResponseGuard() {
+  let generation = 0;
+  let activeController = null;
+
+  return {
+    begin() {
+      activeController?.abort();
+      activeController = new AbortController();
+      return {
+        generation: ++generation,
+        controller: activeController,
+        signal: activeController.signal
+      };
+    },
+    isCurrent(request) {
+      return Boolean(
+        request &&
+        request.generation === generation &&
+        request.controller === activeController &&
+        !request.signal.aborted
+      );
+    },
+    finish(request) {
+      if (request?.controller === activeController) activeController = null;
+    },
+    invalidate() {
+      generation += 1;
+      activeController?.abort();
+      activeController = null;
+    }
+  };
+}
+
 // Waste + Users + Appointments
 let validatedWasteRecords = [];
 let allWebUsers = [];
@@ -33,6 +66,7 @@ let selectedStartMarker = null;
 let selectedCurrentMarker = null;
 let trackingCurrentTruckLayerGroup = null;
 let trackingPollInterval = null;
+const trackingActiveRequestGuard = createLatestResponseGuard();
 let isTruckMapInitialized = false;
 let activeTrackingTrucks = [];
 let selectedTrackingTruck = null;
@@ -41,6 +75,7 @@ let trackingMarkerStateBySession = {};
 
 // Dispatch planning (kept separate from legacy tracking layers)
 let dispatchLiveBySession = {};
+const dispatchLiveRequestGuard = createLatestResponseGuard();
 let selectedDispatchTicket = null;
 let dispatchCurrentRouteLayerGroup = null;
 let dispatchPlannedLayerGroup = null;
@@ -136,3 +171,7 @@ let currentComplaintResolution = null;
 // Orientation
 let orientationAppointments = [];
 let currentOrientationQrData = null;
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = { createLatestResponseGuard };
+}

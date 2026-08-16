@@ -1247,12 +1247,18 @@ function updateDispatchSetupNotices() {
 }
 
 async function loadDispatchLiveData() {
+  const request = dispatchLiveRequestGuard.begin();
   try {
-    const data = await dispatchRequest(getDispatchLiveApiUrl());
+    const data = await dispatchRequest(getDispatchLiveApiUrl(), {
+      signal: request.signal
+    });
+    if (!dispatchLiveRequestGuard.isCurrent(request)) return dispatchLiveBySession;
     dispatchLiveBySession =
       data && typeof data === "object" && !Array.isArray(data) ? data : {};
     return dispatchLiveBySession;
   } catch (error) {
+    if (error?.name === "AbortError") return dispatchLiveBySession;
+    if (!dispatchLiveRequestGuard.isCurrent(request)) return dispatchLiveBySession;
     dispatchLiveBySession = {};
     if (error.status !== 503) {
       console.error("Unable to load live dispatch data:", error);
@@ -1260,7 +1266,13 @@ async function loadDispatchLiveData() {
       renderDispatchEmptyPanel();
     }
     return dispatchLiveBySession;
+  } finally {
+    dispatchLiveRequestGuard.finish(request);
   }
+}
+
+function invalidateDispatchLiveRequests() {
+  dispatchLiveRequestGuard.invalidate();
 }
 
 function getDispatchLiveForSession(sessionId) {
@@ -4526,6 +4538,10 @@ async function submitDispatchEnd(event) {
       method: "POST",
       body: JSON.stringify({ reason_code: reasonCode, other_reason: otherReason || undefined })
     });
+    invalidateDispatchLiveRequests();
+    if (typeof invalidateTrackingActiveRequests === "function") {
+      invalidateTrackingActiveRequests();
+    }
     const closedTicketId = dispatchEndTicketId;
     dispatchEndTicketId = null;
     closeDispatchModal("dispatchEndModal");
