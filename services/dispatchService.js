@@ -1,4 +1,8 @@
 const db = require("../config/dbPromise");
+const {
+  validateGpsPointForStorage,
+  qualifyGpsPointForOperationalUse
+} = require("../utils/gpsValidation");
 
 const TICKET_STATUSES = new Set([
   "prepared",
@@ -2503,6 +2507,7 @@ class DispatchService {
             dts.tracking_session_id,
             dt.status AS dispatch_status,
             tts.session_status,
+            tts.truck_id,
             tts.ended_at,
             tts.end_latitude,
             tts.end_longitude,
@@ -2533,9 +2538,66 @@ class DispatchService {
       );
       if (!allTerminal) return;
 
-      const latitude = Number(relation.end_latitude ?? relation.last_latitude);
-      const longitude = Number(relation.end_longitude ?? relation.last_longitude);
-      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+      const [locationRows] = await connection.query(
+        `
+          SELECT
+            latitude,
+            longitude,
+            accuracy,
+            DATE_FORMAT(recorded_at, '%Y-%m-%d %H:%i:%s') AS recorded_at
+          FROM truck_location_logs
+          WHERE session_id = ?
+            AND truck_id = ?
+          ORDER BY recorded_at DESC, id DESC
+          LIMIT 25
+        `,
+        [relation.tracking_session_id, relation.truck_id]
+      );
+      let actualQualification = null;
+      for (const locationRow of locationRows || []) {
+        const qualification = qualifyGpsPointForOperationalUse(locationRow);
+        if (qualification.reliable) {
+          actualQualification = qualification;
+          break;
+        }
+      }
+      if (!actualQualification) return;
+
+      const hasEndLatitude = relation.end_latitude !== null && relation.end_latitude !== undefined;
+      const hasEndLongitude = relation.end_longitude !== null && relation.end_longitude !== undefined;
+      let completionPoint = actualQualification.point;
+
+      if (hasEndLatitude || hasEndLongitude) {
+        if (!hasEndLatitude || !hasEndLongitude) return;
+        let endPoint;
+        try {
+          endPoint = validateGpsPointForStorage({
+            latitude: relation.end_latitude,
+            longitude: relation.end_longitude
+          }, { allowNumericString: true });
+        } catch (error) {
+          return;
+        }
+
+        const endToCurrentMeters = haversineMeters(
+          endPoint.latitude,
+          endPoint.longitude,
+          actualQualification.point.latitude,
+          actualQualification.point.longitude
+        );
+        const agreementRadiusMeters = Math.max(
+          10,
+          Number(actualQualification.point.accuracy)
+        );
+        if (endToCurrentMeters > agreementRadiusMeters) return;
+        completionPoint = {
+          ...actualQualification.point,
+          latitude: endPoint.latitude,
+          longitude: endPoint.longitude
+        };
+      }
+
+      const { latitude, longitude } = completionPoint;
 
       const distanceToWmo = haversineMeters(
         latitude,
@@ -2566,6 +2628,7 @@ class DispatchService {
         actor_type: "system",
         latitude,
         longitude,
+        accuracy_meters: completionPoint.accuracy,
         details: { distance_meters: Math.round(distanceToWmo) },
         idempotency_key: `returned-to-wmo:${relation.dispatch_ticket_id}`
       });

@@ -10,6 +10,9 @@ const {
   getTrackingAvailabilityMeta,
   renderActiveTruckList
 } = require("../frontend/js/admin/admin-tracking.js");
+const {
+  createLatestResponseGuard
+} = require("../frontend/js/admin/admin-state.js");
 
 const ROOT = path.resolve(__dirname, "..");
 const NOW = Date.parse("2026-08-13T08:00:00.000Z");
@@ -205,6 +208,8 @@ function testFrontendTransitionWiringAndSingleActions() {
   assert.match(loadLinkedBlock, /clearDispatchPlannedRoute\("live dispatch no longer active"\)/);
   assert.doesNotMatch(loadLinkedBlock, /currentTicketMatchesTruck/);
   assert.match(endBlock, /delete dispatchLiveBySession/);
+  assert.match(endBlock, /invalidateDispatchLiveRequests\(\)/);
+  assert.match(endBlock, /invalidateTrackingActiveRequests\(\)/);
   assert.match(endBlock, /await loadDispatchLiveData\(\)/);
   assert.match(endBlock, /await loadActiveTrucks\(\)/);
   assert.doesNotMatch(endBlock, /stopTracking|force-stop|Stop Truck/);
@@ -226,6 +231,22 @@ function testFrontendTransitionWiringAndSingleActions() {
   assert.match(openTicketBlock, /setDispatchWorkspaceTab\("plan"\)/);
   assert.equal((html.match(/id="dispatchOpenTicketsBtn"/g) || []).length, 1);
 
+  const activeResponseCheckIndex = loadActiveBlock.indexOf(
+    "trackingActiveRequestGuard.isCurrent(request)"
+  );
+  const activeStateWriteIndex = loadActiveBlock.indexOf("activeTrackingTrucks = trucks");
+  assert.ok(activeResponseCheckIndex >= 0 && activeResponseCheckIndex < activeStateWriteIndex);
+
+  const liveLoadBlock = dispatch.slice(
+    dispatch.indexOf("async function loadDispatchLiveData"),
+    dispatch.indexOf("function getDispatchLiveForSession")
+  );
+  const liveResponseCheckIndex = liveLoadBlock.indexOf(
+    "dispatchLiveRequestGuard.isCurrent(request)"
+  );
+  const liveStateWriteIndex = liveLoadBlock.indexOf("dispatchLiveBySession =");
+  assert.ok(liveResponseCheckIndex >= 0 && liveResponseCheckIndex < liveStateWriteIndex);
+
   [
     "dispatchViewActiveRouteBtn",
     "dispatchViewTicketDetailsBtn",
@@ -236,6 +257,25 @@ function testFrontendTransitionWiringAndSingleActions() {
   });
 }
 
+function testLatestResponseGuardsRejectOlderPollingResults() {
+  const activeGuard = createLatestResponseGuard();
+  const activeA = activeGuard.begin();
+  const activeB = activeGuard.begin();
+  let activeSnapshot = "initial";
+  if (activeGuard.isCurrent(activeB)) activeSnapshot = "fresh";
+  if (activeGuard.isCurrent(activeA)) activeSnapshot = "stale";
+  assert.equal(activeA.signal.aborted, true);
+  assert.equal(activeSnapshot, "fresh");
+
+  const liveGuard = createLatestResponseGuard();
+  const liveBeforeEnd = liveGuard.begin();
+  liveGuard.invalidate();
+  let selectedTicket = null;
+  if (liveGuard.isCurrent(liveBeforeEnd)) selectedTicket = "closed-ticket";
+  assert.equal(liveBeforeEnd.signal.aborted, true);
+  assert.equal(selectedTicket, null);
+}
+
 function run() {
   testAvailabilityBoundaryAndSignals();
   testDispatchEndAndGpsReturnTransition();
@@ -243,6 +283,7 @@ function run() {
   testFilteringAndRelativeUpdateLabel();
   testEmptyStateRendering();
   testFrontendTransitionWiringAndSingleActions();
+  testLatestResponseGuardsRejectOlderPollingResults();
   console.log("trackingActiveAvailability.test.js: all assertions passed");
 }
 

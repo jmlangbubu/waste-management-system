@@ -3,7 +3,8 @@ const router = express.Router();
 const trackingController = require("../controllers/trackingController");
 const {
   requireWebAuth,
-  requireWebRole
+  requireWebRole,
+  requireCsrf
 } = require("../middleware/webSessionAuth");
 
 const requireTrackingWebRead = [
@@ -16,6 +17,15 @@ router.post("/start", trackingController.startTrackingSession);
 
 // Stop an existing tracking session
 router.post("/:sessionId/stop", trackingController.stopTrackingSession);
+
+// Web Admin-only stop. Keep the mobile POST route above unwrapped.
+router.put(
+  "/force-stop/:sessionId",
+  requireWebAuth,
+  requireWebRole("super_admin", "personnel"),
+  requireCsrf,
+  trackingController.stopTrackingSessionByWebAdmin
+);
 
 // Receive GPS location for an active session
 router.post("/:sessionId/location", trackingController.addLocationLog);

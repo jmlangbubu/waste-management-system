@@ -1025,6 +1025,113 @@ test("confirmed tracking reads require exact Web Admin roles", () => {
   assert.match(source, /\.\.\.requireTrackingWebRead/);
 });
 
+test("Web Admin force-stop route has exact auth, role, and CSRF middleware", () => {
+  const router = createFakeRouter();
+  const requireWebAuth = function adminStopAuth() {};
+  const roleMiddleware = function adminStopRole() {};
+  const requireCsrf = function adminStopCsrf() {};
+  const adminStopHandler = function adminStopHandler() {};
+  const mobileStopHandler = function mobileStopHandler() {};
+  loadFresh("../routes/trackingRoutes", {
+    express: { Router: () => router },
+    "../controllers/trackingController": {
+      startTrackingSession() {},
+      stopTrackingSession: mobileStopHandler,
+      stopTrackingSessionByWebAdmin: adminStopHandler,
+      addLocationLog() {},
+      addLocationLogsBatch() {},
+      updateTrackingDeviceStatus() {},
+      getActiveTrucks() {},
+      getRouteHistoryBySession() {},
+      getTruckLatestSession() {},
+      getTrackingReports() {},
+      getTrackingReportDetails() {}
+    },
+    "../middleware/webSessionAuth": {
+      requireWebAuth,
+      requireWebRole(...roles) {
+        assert.deepEqual(roles, ["super_admin", "personnel"]);
+        return roleMiddleware;
+      },
+      requireCsrf
+    }
+  });
+
+  const adminRoute = router.stack.find((entry) =>
+    entry.route?.path === "/force-stop/:sessionId" && entry.route.methods.put
+  );
+  assert.ok(adminRoute);
+  assert.deepEqual(
+    adminRoute.route.stack.map((entry) => entry.handle),
+    [requireWebAuth, roleMiddleware, requireCsrf, adminStopHandler]
+  );
+
+  const mobileRoute = router.stack.find((entry) =>
+    entry.route?.path === "/:sessionId/stop" && entry.route.methods.post
+  );
+  assert.deepEqual(mobileRoute.route.stack.map((entry) => entry.handle), [mobileStopHandler]);
+});
+
+test("Web Admin force-stop controller uses only the authenticated actor", async () => {
+  let received = null;
+  const controller = loadFresh("../controllers/trackingController", {
+    "../services/trackingService": {
+      async stopTrackingSessionByWebAdmin(sessionId, actor) {
+        received = { sessionId, actor };
+        return {
+          message: "Tracking session stopped successfully",
+          truck_id: "TRUCK-9",
+          already_stopped: false,
+          stopped_by: { id: actor.id, name: actor.full_name },
+          notification: null
+        };
+      }
+    }
+  });
+  const res = createResponse();
+  const trustedUser = {
+    id: 7,
+    full_name: "Trusted Operator",
+    username: "operator",
+    role: "personnel"
+  };
+  await controller.stopTrackingSessionByWebAdmin({
+    params: { sessionId: "91" },
+    user: trustedUser,
+    body: { actor_id: 999, actor_name: "Forged", stop_type: "auto_stopped" }
+  }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(received, { sessionId: "91", actor: trustedUser });
+  assert.equal(res.body.stopped_by.id, 7);
+  assert.equal(res.body.already_stopped, false);
+  assert.doesNotMatch(read("controllers/trackingController.js"), /endDispatch|dispatchService/);
+});
+
+test("Web Admin force-stop unexpected failures return safe JSON", async () => {
+  const controller = loadFresh("../controllers/trackingController", {
+    "../services/trackingService": {
+      async stopTrackingSessionByWebAdmin() {
+        throw new Error("raw SQL connection detail");
+      }
+    }
+  });
+  const originalWarn = console.warn;
+  console.warn = () => {};
+  try {
+    const res = createResponse();
+    await controller.stopTrackingSessionByWebAdmin({
+      params: { sessionId: "91" },
+      user: { id: 7, full_name: "Operator" }
+    }, res);
+    assert.equal(res.statusCode, 500);
+    assert.equal(res.body.code, "TRACKING_ADMIN_STOP_FAILED");
+    assert.doesNotMatch(res.body.message, /SQL|connection detail/i);
+  } finally {
+    console.warn = originalWarn;
+  }
+});
+
 test("Android/mobile tracking POST routes remain unmodified and unwrapped", () => {
   const source = read("routes/trackingRoutes.js");
   for (const route of [
@@ -1036,6 +1143,13 @@ test("Android/mobile tracking POST routes remain unmodified and unwrapped", () =
   ]) {
     assert.ok(source.includes(route));
   }
+  assert.match(
+    source,
+    /router\.put\([\s\S]*?"\/force-stop\/:sessionId"[\s\S]*?requireWebAuth[\s\S]*?requireWebRole\("super_admin", "personnel"\)[\s\S]*?requireCsrf[\s\S]*?trackingController\.stopTrackingSessionByWebAdmin/
+  );
+  const trackingFrontend = read("frontend/js/admin/admin-tracking.js");
+  assert.match(trackingFrontend, /getTrackingForceStopApiUrl\(sessionId\)[\s\S]*?method: "PUT"/);
+  assert.doesNotMatch(trackingFrontend, /\/:sessionId\/stop/);
 });
 
 test("latest-session mobile compatibility read remains outside Web Admin middleware", () => {

@@ -82,6 +82,37 @@ exports.stopTrackingSession = async (req, res) => {
     }
 };
 
+exports.stopTrackingSessionByWebAdmin = async (req, res) => {
+    try {
+        const result = await trackingService.stopTrackingSessionByWebAdmin(
+            req.params.sessionId,
+            req.user
+        );
+
+        emitWmoTrackingNotification(req, result.notification);
+
+        return res.status(200).json({
+            success: true,
+            message: result.message,
+            truck_id: result.truck_id,
+            already_stopped: result.already_stopped === true,
+            stopped_by: result.stopped_by,
+            notification: result.notification || null
+        });
+    } catch (error) {
+        const statusCode = Number(error.statusCode) || 500;
+        const code = error.code || "TRACKING_ADMIN_STOP_FAILED";
+        console.warn("stopTrackingSessionByWebAdmin warning:", code);
+        return res.status(statusCode).json({
+            success: false,
+            message: statusCode >= 500
+                ? "Unable to stop the tracking session right now."
+                : error.message || "Unable to stop the tracking session.",
+            code
+        });
+    }
+};
+
 exports.addLocationLog = async (req, res) => {
     try {
         const { sessionId } = req.params;

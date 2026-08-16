@@ -1,4 +1,10 @@
 const db = require("../config/dbPromise");
+const {
+    GpsValidationError,
+    parseManilaTimestamp,
+    validateGpsPointForStorage,
+    qualifyGpsPointForOperationalUse
+} = require("../utils/gpsValidation");
 
 const WMO_GEOFENCE = Object.freeze({
     latitude: 6.1060875,
@@ -26,31 +32,6 @@ class TrackingService {
 
         return text;
     }
-
-    normalizeDateTime(value) {
-        const cleaned = this.cleanText(value);
-
-        if (!cleaned) {
-            return new Date();
-        }
-
-        if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(cleaned)) {
-            return cleaned;
-        }
-
-        if (/^\d{4}-\d{2}-\d{2}T/.test(cleaned)) {
-            return cleaned.replace("T", " ").replace(/\.\d{3}Z?$/, "").replace(/Z$/, "");
-        }
-
-        const parsed = new Date(cleaned);
-
-        if (!Number.isNaN(parsed.getTime())) {
-            return parsed.toISOString().slice(0, 19).replace("T", " ");
-        }
-
-        return new Date();
-    }
-
 
     getManilaNowDateTime() {
         /*
@@ -130,38 +111,14 @@ class TrackingService {
         return Number.isNaN(time) ? 0 : time;
     }
 
-    normalizeReliableLocation(location = {}) {
-        if (
-            location.latitude === null ||
-            location.latitude === undefined ||
-            location.latitude === "" ||
-            location.longitude === null ||
-            location.longitude === undefined ||
-            location.longitude === ""
-        ) {
-            return null;
-        }
-
-        const latitude = Number(location.latitude);
-        const longitude = Number(location.longitude);
-
-        if (
-            !Number.isFinite(latitude) ||
-            !Number.isFinite(longitude) ||
-            latitude < -90 ||
-            latitude > 90 ||
-            longitude < -180 ||
-            longitude > 180 ||
-            (latitude === 0 && longitude === 0)
-        ) {
-            return null;
-        }
-
-        return {
-            ...location,
-            latitude,
-            longitude
-        };
+    normalizeReliableLocation(location = {}, referenceTime = this.getManilaNowDateTime()) {
+        const referenceTimeMs = typeof referenceTime === "number"
+            ? referenceTime
+            : parseManilaTimestamp(referenceTime);
+        const qualification = qualifyGpsPointForOperationalUse(location, {
+            referenceTimeMs: referenceTimeMs || Date.now()
+        });
+        return qualification.reliable ? qualification.point : null;
     }
 
     calculateDistanceMeters(lat1, lon1, lat2, lon2) {
@@ -182,7 +139,7 @@ class TrackingService {
             };
         }
 
-        const reliableLocation = this.normalizeReliableLocation(location || {});
+        const reliableLocation = this.normalizeReliableLocation(location || {}, manilaNow);
 
         if (!reliableLocation) {
             return {
@@ -393,37 +350,28 @@ class TrackingService {
     }
 
 
-    async getLatestReliableLocation(session = {}) {
-        const currentLocation = this.normalizeReliableLocation({
-            latitude: session.current_latitude,
-            longitude: session.current_longitude,
-            recorded_at: session.location_last_updated,
-            source: "truck_last_locations"
-        });
-        const currentLocationMatchesSession = currentLocation &&
-            this.cleanText(session.current_location_session_id) === this.cleanText(session.id) &&
-            this.cleanText(session.current_location_truck_id) === this.cleanText(session.truck_id);
-
-        if (currentLocationMatchesSession) {
-            return currentLocation;
-        }
-
+    async getLatestReliableLocation(session = {}, referenceTime = this.getManilaNowDateTime()) {
         const [locationRows] = await db.query(
             `
-            SELECT latitude, longitude, recorded_at
+            SELECT
+                latitude,
+                longitude,
+                accuracy,
+                DATE_FORMAT(recorded_at, '%Y-%m-%d %H:%i:%s') AS recorded_at
             FROM truck_location_logs
             WHERE session_id = ?
+              AND truck_id = ?
             ORDER BY recorded_at DESC, id DESC
             LIMIT 25
             `,
-            [session.id]
+            [session.id, session.truck_id]
         );
 
         for (const locationRow of locationRows || []) {
             const reliableLocation = this.normalizeReliableLocation({
                 ...locationRow,
                 source: "truck_location_logs"
-            });
+            }, referenceTime);
 
             if (reliableLocation) {
                 return reliableLocation;
@@ -440,7 +388,7 @@ class TrackingService {
             return preliminaryEvaluation;
         }
 
-        const latestLocation = await this.getLatestReliableLocation(session);
+        const latestLocation = await this.getLatestReliableLocation(session, manilaNow);
         const evaluation = this.evaluateAutoStopEligibility(session, latestLocation, manilaNow);
 
         if (!evaluation.shouldStop) {
@@ -541,6 +489,7 @@ class TrackingService {
                 tll.session_id AS current_location_session_id,
                 tll.latitude AS current_latitude,
                 tll.longitude AS current_longitude,
+                tll.accuracy AS current_accuracy,
                 tll.status AS last_location_status,
                 DATE_FORMAT(tll.last_updated_at, '%Y-%m-%d %H:%i:%s') AS location_last_updated
             FROM truck_tracking_sessions tts
@@ -1241,11 +1190,25 @@ class TrackingService {
     async stopTrackingSession(sessionId, data = {}) {
         await this.ensureTrackingSessionReportColumns();
 
-        const {
-            end_latitude = null,
-            end_longitude = null,
+        let {
+            end_latitude,
+            end_longitude,
             stop_type = "stopped"
         } = data;
+
+        const hasEndLatitude = end_latitude !== null && end_latitude !== undefined;
+        const hasEndLongitude = end_longitude !== null && end_longitude !== undefined;
+        if (hasEndLatitude || hasEndLongitude) {
+            const endPoint = validateGpsPointForStorage({
+                latitude: end_latitude,
+                longitude: end_longitude
+            });
+            end_latitude = endPoint.latitude;
+            end_longitude = endPoint.longitude;
+        } else {
+            end_latitude = null;
+            end_longitude = null;
+        }
 
         const allowedStopType = this.normalizeStopType(stop_type);
 
@@ -1293,6 +1256,7 @@ class TrackingService {
                 success: true,
                 message: "Session already stopped",
                 truck_id: session.truck_id,
+                already_stopped: true,
                 notification
             };
         }
@@ -1364,8 +1328,41 @@ class TrackingService {
             success: true,
             message: "Tracking session stopped successfully",
             truck_id: session.truck_id,
+            already_stopped: false,
             notification
         };
+    }
+
+    async stopTrackingSessionByWebAdmin(sessionId, actor = {}) {
+        const actorId = Number(actor.id ?? actor.actor_id);
+        const actorName = this.cleanText(
+            actor.full_name || actor.fullName || actor.username || actor.actor_name
+        );
+        if (!Number.isInteger(actorId) || actorId <= 0 || !actorName) {
+            const error = new Error("Authenticated Web Admin identity is required");
+            error.statusCode = 401;
+            error.code = "WEB_SESSION_REQUIRED";
+            throw error;
+        }
+
+        try {
+            const result = await this.stopTrackingSession(sessionId, {
+                stop_type: "manual_stopped"
+            });
+            return {
+                ...result,
+                stopped_by: {
+                    id: actorId,
+                    name: actorName
+                }
+            };
+        } catch (error) {
+            if (error.message === "Tracking session not found") {
+                error.statusCode = 404;
+                error.code = "TRACKING_SESSION_NOT_FOUND";
+            }
+            throw error;
+        }
     }
 
     async addLocationLog(sessionId, data) {
@@ -1385,6 +1382,9 @@ class TrackingService {
     async addLocationLogsBatch(sessionId, data = {}) {
         await this.ensureOfflineTrackingColumns();
 
+        if (data.locations !== undefined && !Array.isArray(data.locations)) {
+            throw new GpsValidationError("locations must be an array");
+        }
         const locations = Array.isArray(data.locations) ? data.locations : [];
 
         if (locations.length === 0) {
@@ -1398,12 +1398,17 @@ class TrackingService {
         }
 
         const sortedLocations = locations
-            .filter((item) => item && item.latitude !== undefined && item.longitude !== undefined)
-            .sort((a, b) => {
-                const aTime = new Date(a.recorded_at || a.recordedAt || 0).getTime();
-                const bTime = new Date(b.recorded_at || b.recordedAt || 0).getTime();
-                return aTime - bTime;
-            });
+            .map((item, index) => {
+                try {
+                    return validateGpsPointForStorage(item);
+                } catch (error) {
+                    if (error instanceof GpsValidationError) {
+                        error.message = `locations[${index}]: ${error.message}`;
+                    }
+                    throw error;
+                }
+            })
+            .sort((a, b) => a.timestampMs - b.timestampMs);
 
         let insertedCount = 0;
         let duplicateCount = 0;
@@ -1437,6 +1442,7 @@ class TrackingService {
     async addSingleLocationLog(sessionId, data) {
         await this.ensureOfflineTrackingColumns();
 
+        const validatedPoint = validateGpsPointForStorage(data);
         const {
             latitude,
             longitude,
@@ -1444,17 +1450,18 @@ class TrackingService {
             accuracy = null,
             heading = null,
             altitude = null
-        } = data;
+        } = validatedPoint;
 
-        const localPointId = this.cleanText(data.local_point_id || data.localPointId);
-        const recordedAt = this.normalizeDateTime(data.recorded_at || data.recordedAt);
-
-        if (latitude == null || longitude == null) {
-            throw new Error("latitude and longitude are required");
-        }
+        const localPointId = this.cleanText(validatedPoint.local_point_id || validatedPoint.localPointId);
+        const recordedAt = validatedPoint.recorded_at;
 
         const sessionSql = `
-            SELECT id, truck_id, session_status, shift_end_time, ended_at
+            SELECT
+                id,
+                truck_id,
+                session_status,
+                DATE_FORMAT(shift_end_time, '%Y-%m-%d %H:%i:%s') AS shift_end_time,
+                DATE_FORMAT(ended_at, '%Y-%m-%d %H:%i:%s') AS ended_at
             FROM truck_tracking_sessions
             WHERE id = ?
             LIMIT 1
@@ -1488,21 +1495,19 @@ class TrackingService {
             }
         }
 
-        const shiftEnd = session.shift_end_time ? new Date(session.shift_end_time) : null;
-        const endedAt = session.ended_at ? new Date(session.ended_at) : null;
-        const pointTime = recordedAt instanceof Date ? recordedAt : new Date(recordedAt);
+        const shiftEndMs = parseManilaTimestamp(session.shift_end_time);
+        const endedAtMs = parseManilaTimestamp(session.ended_at);
+        const pointTimeMs = validatedPoint.timestampMs;
 
         const isHistoricalPointBeforeEnd =
             localPointId &&
-            shiftEnd &&
-            !Number.isNaN(pointTime.getTime()) &&
-            pointTime <= shiftEnd;
+            shiftEndMs &&
+            pointTimeMs <= shiftEndMs;
 
         const isHistoricalPointBeforeStoppedTime =
             localPointId &&
-            endedAt &&
-            !Number.isNaN(pointTime.getTime()) &&
-            pointTime <= endedAt;
+            endedAtMs &&
+            pointTimeMs <= endedAtMs;
 
         if (
             session.session_status !== "active" &&
@@ -1568,7 +1573,14 @@ class TrackingService {
         const session = sessionRows[0];
 
         const logsSql = `
-            SELECT latitude, longitude, speed, accuracy, heading, altitude, recorded_at
+            SELECT
+                latitude,
+                longitude,
+                speed,
+                accuracy,
+                heading,
+                altitude,
+                DATE_FORMAT(recorded_at, '%Y-%m-%d %H:%i:%s') AS recorded_at
             FROM truck_location_logs
             WHERE session_id = ?
             ORDER BY recorded_at ASC, id ASC
@@ -1637,6 +1649,7 @@ class TrackingService {
             accuracy: latest.accuracy,
             heading: latest.heading,
             altitude: latest.altitude,
+            recorded_at: latest.recorded_at,
             status: session.session_status === "active" ? "active" : "offline"
         });
     }
@@ -1719,10 +1732,12 @@ class TrackingService {
             accuracy = null,
             heading = null,
             altitude = null,
+            recorded_at = null,
             status = "active"
         } = data;
 
         const manilaNow = this.getManilaNowDateTime();
+        const lastUpdatedAt = recorded_at || manilaNow;
 
         const sql = `
             INSERT INTO truck_last_locations (
@@ -1761,7 +1776,7 @@ class TrackingService {
             accuracy,
             heading,
             altitude,
-            manilaNow,
+            lastUpdatedAt,
             status,
             manilaNow
         ]);

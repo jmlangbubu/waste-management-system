@@ -52,8 +52,19 @@ function buildSession(overrides = {}) {
     current_location_session_id: 101,
     current_latitude: WMO_GEOFENCE.latitude,
     current_longitude: WMO_GEOFENCE.longitude,
+    current_accuracy: 10,
     location_last_updated: "2026-08-02 17:00:01",
     last_location_status: "active",
+    ...overrides
+  };
+}
+
+function reliablePoint(overrides = {}) {
+  return {
+    latitude: WMO_GEOFENCE.latitude,
+    longitude: WMO_GEOFENCE.longitude,
+    accuracy: 10,
+    recorded_at: AFTER_SHIFT_END,
     ...overrides
   };
 }
@@ -69,7 +80,7 @@ function testBeforeShiftEndRemainsActive() {
   const service = createTestService();
   const result = service.evaluateAutoStopEligibility(
     buildSession(),
-    { latitude: WMO_GEOFENCE.latitude, longitude: WMO_GEOFENCE.longitude },
+    reliablePoint(),
     BEFORE_SHIFT_END
   );
 
@@ -81,7 +92,7 @@ function testAfterShiftEndOutsideWmoRemainsActive() {
   const service = createTestService();
   const result = service.evaluateAutoStopEligibility(
     buildSession(),
-    { latitude: 6.1160875, longitude: 125.1816406 },
+    reliablePoint({ latitude: 6.1160875, longitude: 125.1816406 }),
     AFTER_SHIFT_END
   );
 
@@ -94,7 +105,7 @@ function testAfterShiftEndInsideWmoAutoStops() {
   const service = createTestService();
   const result = service.evaluateAutoStopEligibility(
     buildSession(),
-    { latitude: WMO_GEOFENCE.latitude, longitude: WMO_GEOFENCE.longitude },
+    reliablePoint(),
     AFTER_SHIFT_END
   );
 
@@ -113,12 +124,12 @@ function testAfterShiftEndWithoutLocationRemainsActive() {
 function testInvalidCoordinatesRemainActive() {
   const service = createTestService();
   const invalidLocations = [
-    { latitude: null, longitude: WMO_GEOFENCE.longitude },
-    { latitude: WMO_GEOFENCE.latitude, longitude: undefined },
-    { latitude: 91, longitude: WMO_GEOFENCE.longitude },
-    { latitude: WMO_GEOFENCE.latitude, longitude: 181 },
-    { latitude: "not-a-number", longitude: WMO_GEOFENCE.longitude },
-    { latitude: 0, longitude: 0 }
+    reliablePoint({ latitude: null }),
+    reliablePoint({ longitude: undefined }),
+    reliablePoint({ latitude: 91 }),
+    reliablePoint({ longitude: 181 }),
+    reliablePoint({ latitude: "not-a-number" }),
+    reliablePoint({ latitude: 0, longitude: 0 })
   ];
 
   for (const location of invalidLocations) {
@@ -134,7 +145,7 @@ function testExactlyOneHundredMetersUsesInclusiveBoundary() {
     ((WMO_GEOFENCE.radiusMeters / 6371000) * (180 / Math.PI));
   const result = service.evaluateAutoStopEligibility(
     buildSession(),
-    { latitude: boundaryLatitude, longitude: WMO_GEOFENCE.longitude },
+    reliablePoint({ latitude: boundaryLatitude }),
     AFTER_SHIFT_END
   );
 
@@ -142,32 +153,91 @@ function testExactlyOneHundredMetersUsesInclusiveBoundary() {
   assert.equal(result.shouldStop, true);
 }
 
-async function testLatestLocationPriorityAndFallback() {
+function testStaleAndPoorAccuracyInsideWmoRemainActive() {
   const service = createTestService();
-  let fallbackQueries = 0;
+  const stale = service.evaluateAutoStopEligibility(
+    buildSession(),
+    reliablePoint({ recorded_at: "2026-08-02 16:55:00" }),
+    AFTER_SHIFT_END
+  );
+  const poorAccuracy = service.evaluateAutoStopEligibility(
+    buildSession(),
+    reliablePoint({ accuracy: 50.01 }),
+    AFTER_SHIFT_END
+  );
+  const future = service.evaluateAutoStopEligibility(
+    buildSession(),
+    reliablePoint({ recorded_at: "2026-08-02 17:01:02" }),
+    AFTER_SHIFT_END
+  );
 
-  queryHandler = async () => {
-    fallbackQueries += 1;
-    return [[
-      { latitude: null, longitude: null, recorded_at: "2026-08-02 17:00:01" },
-      {
-        latitude: WMO_GEOFENCE.latitude,
-        longitude: WMO_GEOFENCE.longitude,
-        recorded_at: "2026-08-02 17:00:00"
-      }
-    ]];
+  for (const result of [stale, poorAccuracy, future]) {
+    assert.equal(result.shouldStop, false);
+    assert.equal(result.reason, "no_reliable_location");
+  }
+}
+
+async function testActualLogsAreAuthoritativeForAutoStop() {
+  const service = createTestService();
+  const staleActualLog = reliablePoint({ recorded_at: "2026-08-02 16:55:00" });
+  let returnedRows = [staleActualLog];
+  let lookupCount = 0;
+
+  queryHandler = async (sql, parameters = []) => {
+    const normalized = normalizeSql(sql);
+    lookupCount += 1;
+    assert.match(normalized, /FROM truck_location_logs/);
+    assert.match(normalized, /WHERE session_id = \? AND truck_id = \?/);
+    assert.match(normalized, /ORDER BY recorded_at DESC, id DESC LIMIT 25/);
+    assert.deepEqual(parameters, [101, "TRUCK-1"]);
+    return [returnedRows];
   };
 
-  const current = await service.getLatestReliableLocation(buildSession());
-  assert.equal(current.source, "truck_last_locations");
-  assert.equal(fallbackQueries, 0);
+  const staleWithFreshLegacyCache = await service.getLatestReliableLocation(
+    buildSession(),
+    AFTER_SHIFT_END
+  );
+  assert.equal(staleWithFreshLegacyCache, null);
+  assert.equal(
+    service.evaluateAutoStopEligibility(buildSession(), staleWithFreshLegacyCache, AFTER_SHIFT_END).shouldStop,
+    false
+  );
 
-  const fallback = await service.getLatestReliableLocation(buildSession({
-    current_latitude: null,
-    current_longitude: null
-  }));
-  assert.equal(fallback.source, "truck_location_logs");
-  assert.equal(fallbackQueries, 1);
+  returnedRows = [];
+  const noMatchingActualLog = await service.getLatestReliableLocation(buildSession(), AFTER_SHIFT_END);
+  assert.equal(noMatchingActualLog, null);
+  assert.equal(
+    service.evaluateAutoStopEligibility(buildSession(), noMatchingActualLog, AFTER_SHIFT_END).shouldStop,
+    false
+  );
+
+  returnedRows = [reliablePoint()];
+  const freshActualLog = await service.getLatestReliableLocation(buildSession(), AFTER_SHIFT_END);
+  assert.equal(freshActualLog.source, "truck_location_logs");
+  const eligible = service.evaluateAutoStopEligibility(
+    buildSession(),
+    freshActualLog,
+    AFTER_SHIFT_END
+  );
+  assert.equal(eligible.shouldStop, true);
+  assert.equal(eligible.reason, "inside_wmo_geofence");
+
+  returnedRows = [staleActualLog];
+  let writes = 0;
+  queryHandler = async (sql, parameters = []) => {
+    const normalized = normalizeSql(sql);
+    if (normalized.includes("FROM truck_location_logs")) {
+      assert.deepEqual(parameters, [101, "TRUCK-1"]);
+      return [returnedRows];
+    }
+    writes += 1;
+    return [{ affectedRows: 1 }];
+  };
+  const staleResult = await service.processAutoStopSession(buildSession(), AFTER_SHIFT_END);
+  assert.equal(staleResult.shouldStop, false);
+  assert.equal(staleResult.reason, "no_reliable_location");
+  assert.equal(writes, 0);
+  assert.equal(lookupCount, 3);
 }
 
 async function testSessionsAreIndependentWhenOneLookupFails() {
@@ -210,8 +280,19 @@ async function testSessionsAreIndependentWhenOneLookupFails() {
       return [sessions];
     }
 
-    if (normalized.includes("FROM truck_location_logs") && parameters[0] === 201) {
-      throw new Error("simulated session lookup failure");
+    if (normalized.includes("FROM truck_location_logs")) {
+      assert.equal(parameters.length, 2);
+      if (parameters[0] === 201) {
+        throw new Error("simulated session lookup failure");
+      }
+      if (parameters[0] === 202) {
+        assert.equal(parameters[1], "TRUCK-INSIDE");
+        return [[reliablePoint()]];
+      }
+      if (parameters[0] === 203) {
+        assert.equal(parameters[1], "TRUCK-OUTSIDE");
+        return [[reliablePoint({ latitude: 6.1160875 })]];
+      }
     }
 
     if (normalized.startsWith("UPDATE truck_tracking_sessions")) {
@@ -252,11 +333,16 @@ async function testRepeatedCyclesDoNotDuplicateAutoStop() {
     notificationCount += 1;
   };
 
-  queryHandler = async (sql) => {
+  queryHandler = async (sql, parameters = []) => {
     const normalized = normalizeSql(sql);
 
     if (normalized.includes("FROM truck_tracking_sessions tts") && normalized.includes("session_status = 'active'")) {
       return [[session]];
+    }
+
+    if (normalized.includes("FROM truck_location_logs")) {
+      assert.deepEqual(parameters, [301, "TRUCK-1"]);
+      return [[reliablePoint()]];
     }
 
     if (normalized.startsWith("UPDATE truck_tracking_sessions")) {
@@ -417,7 +503,8 @@ async function run() {
   testAfterShiftEndWithoutLocationRemainsActive();
   testInvalidCoordinatesRemainActive();
   testExactlyOneHundredMetersUsesInclusiveBoundary();
-  await testLatestLocationPriorityAndFallback();
+  testStaleAndPoorAccuracyInsideWmoRemainActive();
+  await testActualLogsAreAuthoritativeForAutoStop();
   await testSessionsAreIndependentWhenOneLookupFails();
   await testRepeatedCyclesDoNotDuplicateAutoStop();
   await testActiveEndpointKeepsOutsideTruckAndDoesNotWaitForSweep();
@@ -426,7 +513,7 @@ async function run() {
   await testTrackingReportsRemainCompatible();
   await testTrackingCompletedBackfillUsesNumericReferenceComparison();
   await testSchedulerSkipsOverlapAndSchedulesOneNextRun();
-  console.log("Tracking geofence auto-stop tests passed (13 required scenarios plus source priority, numeric notification lookup, and scheduler overlap).");
+  console.log("Tracking geofence auto-stop tests passed, including actual-log authority, freshness, accuracy, numeric notification lookup, and scheduler overlap.");
 }
 
 run().catch((error) => {
