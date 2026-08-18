@@ -1143,9 +1143,14 @@ class TrackingService {
         let insertedCount = 0;
         let duplicateCount = 0;
         const syncedLocalPointIds = [];
+        const session = await this.getLocationLogSession(sessionId);
 
         for (const point of sortedLocations) {
-            const result = await this.addSingleLocationLog(sessionId, point);
+            const result = await this.addSingleLocationLog(sessionId, point, {
+                session,
+                skipOfflineColumnCheck: true,
+                skipRouteRecalculation: true
+            });
 
             if (result.duplicate) {
                 duplicateCount++;
@@ -1156,6 +1161,16 @@ class TrackingService {
             if (result.local_point_id) {
                 syncedLocalPointIds.push(result.local_point_id);
             }
+        }
+
+        /*
+          A mobile request can contain dozens of queued points. Rebuilding the
+          complete route after every point made the response exceed Android's
+          15-second HTTP timeout. Preserve point-by-point idempotency, but do
+          the expensive route/last-location rebuild once after the batch.
+        */
+        if (insertedCount > 0) {
+            await this.recalculateSessionDistanceAndLatestLocation(sessionId, { session });
         }
 
         this.requestAutoStopCheck();
@@ -1169,22 +1184,7 @@ class TrackingService {
         };
     }
 
-    async addSingleLocationLog(sessionId, data) {
-        await this.ensureOfflineTrackingColumns();
-
-        const validatedPoint = validateGpsPointForStorage(data);
-        const {
-            latitude,
-            longitude,
-            speed = null,
-            accuracy = null,
-            heading = null,
-            altitude = null
-        } = validatedPoint;
-
-        const localPointId = this.cleanText(validatedPoint.local_point_id || validatedPoint.localPointId);
-        const recordedAt = validatedPoint.recorded_at;
-
+    async getLocationLogSession(sessionId) {
         const sessionSql = `
             SELECT
                 id,
@@ -1203,7 +1203,28 @@ class TrackingService {
             throw new Error("Tracking session not found");
         }
 
-        const session = sessionRows[0];
+        return sessionRows[0];
+    }
+
+    async addSingleLocationLog(sessionId, data, options = {}) {
+        if (!options.skipOfflineColumnCheck) {
+            await this.ensureOfflineTrackingColumns();
+        }
+
+        const validatedPoint = validateGpsPointForStorage(data);
+        const {
+            latitude,
+            longitude,
+            speed = null,
+            accuracy = null,
+            heading = null,
+            altitude = null
+        } = validatedPoint;
+
+        const localPointId = this.cleanText(validatedPoint.local_point_id || validatedPoint.localPointId);
+        const recordedAt = validatedPoint.recorded_at;
+
+        const session = options.session || await this.getLocationLogSession(sessionId);
 
         if (localPointId) {
             const [existingPointRows] = await db.query(
@@ -1280,7 +1301,9 @@ class TrackingService {
             this.getManilaNowDateTime()
         ]);
 
-        await this.recalculateSessionDistanceAndLatestLocation(sessionId);
+        if (!options.skipRouteRecalculation) {
+            await this.recalculateSessionDistanceAndLatestLocation(sessionId);
+        }
 
         return {
             duplicate: false,
@@ -1288,19 +1311,22 @@ class TrackingService {
         };
     }
 
-    async recalculateSessionDistanceAndLatestLocation(sessionId) {
-        const sessionSql = `
-            SELECT id, truck_id, session_status
-            FROM truck_tracking_sessions
-            WHERE id = ?
-            LIMIT 1
-        `;
+    async recalculateSessionDistanceAndLatestLocation(sessionId, options = {}) {
+        let session = options.session || null;
+        if (!session) {
+            const sessionSql = `
+                SELECT id, truck_id, session_status
+                FROM truck_tracking_sessions
+                WHERE id = ?
+                LIMIT 1
+            `;
 
-        const [sessionRows] = await db.query(sessionSql, [sessionId]);
+            const [sessionRows] = await db.query(sessionSql, [sessionId]);
 
-        if (sessionRows.length === 0) return;
+            if (sessionRows.length === 0) return;
 
-        const session = sessionRows[0];
+            session = sessionRows[0];
+        }
 
         const logsSql = `
             SELECT

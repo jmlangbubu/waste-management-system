@@ -143,6 +143,15 @@ async function testSingleUploadRejectsBeforeDatabase() {
 async function testBatchValidatesBeforeWritingAndSortsChronologically() {
   const service = new TrackingService();
   service.ensureOfflineTrackingColumns = async () => {};
+  service.getLocationLogSession = async () => ({
+    id: 91,
+    truck_id: "TRUCK-9",
+    session_status: "active"
+  });
+  let routeRecalculations = 0;
+  service.recalculateSessionDistanceAndLatestLocation = async () => {
+    routeRecalculations += 1;
+  };
   const received = [];
   service.addSingleLocationLog = async (_sessionId, point) => {
     received.push(point.recorded_at);
@@ -169,6 +178,306 @@ async function testBatchValidatesBeforeWritingAndSortsChronologically() {
   });
   assert.deepEqual(received, ["2026-08-16 08:00:00", "2026-08-16 09:00:00"]);
   assert.equal(result.inserted_count, 2);
+  assert.equal(routeRecalculations, 1);
+}
+
+async function testBatchResponseCountsIdsAndZeroInsertSafety() {
+  const cases = [
+    {
+      name: "all new",
+      outcomes: [false, false, false],
+      expectedInserted: 3,
+      expectedDuplicates: 0,
+      expectedRecalculations: 1
+    },
+    {
+      name: "all duplicates",
+      outcomes: [true, true, true],
+      expectedInserted: 0,
+      expectedDuplicates: 3,
+      expectedRecalculations: 0
+    },
+    {
+      name: "mixed",
+      outcomes: [false, true, false],
+      expectedInserted: 2,
+      expectedDuplicates: 1,
+      expectedRecalculations: 1
+    }
+  ];
+
+  for (const item of cases) {
+    const service = new TrackingService();
+    let offlineColumnChecks = 0;
+    let sessionLookups = 0;
+    let routeRecalculations = 0;
+    const results = [...item.outcomes];
+
+    service.ensureOfflineTrackingColumns = async () => {
+      offlineColumnChecks += 1;
+    };
+    service.getLocationLogSession = async () => {
+      sessionLookups += 1;
+      return { id: 91, truck_id: "TRUCK-9", session_status: "active" };
+    };
+    service.addSingleLocationLog = async (_sessionId, point, options) => {
+      assert.equal(options.skipOfflineColumnCheck, true);
+      assert.equal(options.skipRouteRecalculation, true);
+      assert.equal(options.session.id, 91);
+      return {
+        duplicate: results.shift(),
+        local_point_id: point.local_point_id
+      };
+    };
+    service.recalculateSessionDistanceAndLatestLocation = async () => {
+      routeRecalculations += 1;
+    };
+    service.requestAutoStopCheck = () => {};
+
+    const result = await service.addLocationLogsBatch(91, {
+      locations: [
+        { ...VALID_POINT, local_point_id: "batch-1", recorded_at: "2026-08-16 08:00:01" },
+        { ...VALID_POINT, local_point_id: "batch-2", recorded_at: "2026-08-16 08:00:02" },
+        { ...VALID_POINT, local_point_id: "batch-3", recorded_at: "2026-08-16 08:00:03" }
+      ]
+    });
+
+    assert.deepEqual(result, {
+      success: true,
+      message: "Location batch synced successfully",
+      inserted_count: item.expectedInserted,
+      duplicate_count: item.expectedDuplicates,
+      synced_local_point_ids: ["batch-1", "batch-2", "batch-3"]
+    }, item.name);
+    assert.equal(offlineColumnChecks, 1, item.name);
+    assert.equal(sessionLookups, 1, item.name);
+    assert.equal(routeRecalculations, item.expectedRecalculations, item.name);
+  }
+}
+
+async function testAllDuplicateBatchPerformsNoWritesOrRecalculation() {
+  const service = new TrackingService();
+  service.ensureOfflineTrackingColumns = async () => {};
+  let sessionLookups = 0;
+  let duplicateLookups = 0;
+  let writes = 0;
+  let routeRecalculations = 0;
+
+  queryHandler = async (sql) => {
+    const normalized = String(sql).replace(/\s+/g, " ").trim();
+    if (normalized.includes("FROM truck_tracking_sessions") && normalized.includes("WHERE id = ?")) {
+      sessionLookups += 1;
+      return [[{
+        id: 91,
+        truck_id: "TRUCK-9",
+        session_status: "active",
+        shift_end_time: "2026-08-17 17:00:00",
+        ended_at: null
+      }]];
+    }
+    if (normalized.startsWith("SELECT id FROM truck_location_logs")) {
+      duplicateLookups += 1;
+      return [[{ id: duplicateLookups }]];
+    }
+    if (normalized.startsWith("INSERT") || normalized.startsWith("UPDATE")) {
+      writes += 1;
+      return [{ affectedRows: 1 }];
+    }
+    throw new Error(`Unexpected SQL: ${normalized}`);
+  };
+  service.recalculateSessionDistanceAndLatestLocation = async () => {
+    routeRecalculations += 1;
+  };
+  service.requestAutoStopCheck = () => {};
+
+  const result = await service.addLocationLogsBatch(91, {
+    locations: [
+      { ...VALID_POINT, local_point_id: "duplicate-1" },
+      { ...VALID_POINT, local_point_id: "duplicate-2" },
+      { ...VALID_POINT, local_point_id: "duplicate-3" }
+    ]
+  });
+
+  assert.equal(sessionLookups, 1);
+  assert.equal(duplicateLookups, 3);
+  assert.equal(writes, 0);
+  assert.equal(routeRecalculations, 0);
+  assert.deepEqual(result, {
+    success: true,
+    message: "Location batch synced successfully",
+    inserted_count: 0,
+    duplicate_count: 3,
+    synced_local_point_ids: ["duplicate-1", "duplicate-2", "duplicate-3"]
+  });
+}
+
+async function testQueuedBatchPreparesAndRecalculatesOnlyOnce() {
+  const service = new TrackingService();
+  let offlineColumnChecks = 0;
+  let sessionLookups = 0;
+  let routeRecalculations = 0;
+  const receivedOptions = [];
+  const recalculationOptions = [];
+
+  service.ensureOfflineTrackingColumns = async () => {
+    offlineColumnChecks += 1;
+  };
+  service.getLocationLogSession = async () => {
+    sessionLookups += 1;
+    return { id: 91, truck_id: "TRUCK-9", session_status: "active" };
+  };
+  service.addSingleLocationLog = async (_sessionId, point, options) => {
+    receivedOptions.push(options);
+    return { duplicate: false, local_point_id: point.local_point_id };
+  };
+  service.recalculateSessionDistanceAndLatestLocation = async (sessionId, options) => {
+    routeRecalculations += 1;
+    recalculationOptions.push({ sessionId, options });
+  };
+  service.requestAutoStopCheck = () => {};
+
+  const locations = Array.from({ length: 75 }, (_unused, index) => ({
+    ...VALID_POINT,
+    local_point_id: `queued-${index}`,
+    recorded_at: `2026-08-16 08:${String(Math.floor(index / 60)).padStart(2, "0")}:${String(index % 60).padStart(2, "0")}`
+  }));
+
+  const result = await service.addLocationLogsBatch(91, { locations });
+
+  assert.equal(result.inserted_count, 75);
+  assert.equal(offlineColumnChecks, 1);
+  assert.equal(sessionLookups, 1);
+  assert.equal(routeRecalculations, 1);
+  assert.equal(recalculationOptions[0].sessionId, 91);
+  assert.equal(recalculationOptions[0].options.session.id, 91);
+  assert.equal(receivedOptions.length, 75);
+  assert.ok(receivedOptions.every((options) =>
+    options.skipOfflineColumnCheck === true &&
+    options.skipRouteRecalculation === true &&
+    options.session.id === 91
+  ));
+}
+
+async function testHistoricalQueuedBatchPreservesOriginalRecordedAt() {
+  const service = new TrackingService();
+  service.ensureOfflineTrackingColumns = async () => {};
+  service.getManilaNowDateTime = () => "2026-08-17 10:00:00";
+  let routeRecalculations = 0;
+  const insertedParameters = [];
+
+  queryHandler = async (sql, parameters = []) => {
+    const normalized = String(sql).replace(/\s+/g, " ").trim();
+    if (normalized.includes("FROM truck_tracking_sessions") && normalized.includes("WHERE id = ?")) {
+      return [[{
+        id: 91,
+        truck_id: "TRUCK-9",
+        session_status: "stopped",
+        shift_end_time: "2026-08-16 17:00:00",
+        ended_at: "2026-08-16 17:05:00"
+      }]];
+    }
+    if (normalized.startsWith("SELECT id FROM truck_location_logs")) return [[]];
+    if (normalized.startsWith("INSERT INTO truck_location_logs")) {
+      insertedParameters.push(parameters);
+      return [{ insertId: insertedParameters.length }];
+    }
+    throw new Error(`Unexpected SQL: ${normalized}`);
+  };
+  service.recalculateSessionDistanceAndLatestLocation = async () => {
+    routeRecalculations += 1;
+  };
+  service.requestAutoStopCheck = () => {};
+
+  const result = await service.addLocationLogsBatch(91, {
+    locations: [
+      { ...VALID_POINT, local_point_id: "historical-1", recorded_at: "2026-08-16 16:58:00" },
+      { ...VALID_POINT, local_point_id: "historical-2", recorded_at: "2026-08-16 16:59:00" }
+    ]
+  });
+
+  assert.equal(result.inserted_count, 2);
+  assert.equal(routeRecalculations, 1);
+  assert.deepEqual(insertedParameters.map((parameters) => parameters[10]), [
+    "2026-08-16 16:58:00",
+    "2026-08-16 16:59:00"
+  ]);
+  assert.ok(insertedParameters.every((parameters) =>
+    parameters[9] === "mobile_offline_queue" &&
+    parameters[11] === "2026-08-17 10:00:00"
+  ));
+}
+
+async function testCoordinateFreeAndroidStartMatchesBackendContract() {
+  const service = new TrackingService();
+  service.autoStopExpiredSessions = async () => {};
+  service.ensureTrackingSessionReportColumns = async () => {};
+  service.getManilaNowDateTime = () => "2026-08-17 10:00:00";
+  service.resolveShiftEndForDuty = (requestedShiftEnd) => requestedShiftEnd;
+  service.createGpsTrackingNotification = async () => null;
+
+  const calls = [];
+  queryHandler = async (sql, parameters = []) => {
+    const normalized = String(sql).replace(/\s+/g, " ").trim();
+    calls.push({ sql: normalized, parameters });
+    if (normalized.startsWith("SELECT id FROM truck_tracking_sessions")) return [[]];
+    if (normalized.startsWith("INSERT INTO truck_tracking_sessions")) {
+      return [{ insertId: 58 }];
+    }
+    throw new Error(`Unexpected SQL: ${normalized}`);
+  };
+
+  const result = await service.startTrackingSession({
+    truck_id: "TRUCK-9",
+    enforcer_id: 7,
+    enforcer_name: "Test Enforcer",
+    device_id: "test-device",
+    shift_end_time: "2026-08-17 17:00:00"
+  });
+
+  assert.deepEqual(result, {
+    alreadyActive: false,
+    sessionId: 58,
+    notification: null
+  });
+  const insert = calls.find((call) =>
+    call.sql.startsWith("INSERT INTO truck_tracking_sessions")
+  );
+  assert.ok(insert);
+  assert.deepEqual(insert.parameters.slice(7, 11), [null, null, null, null]);
+}
+
+async function testAlreadyActiveStartResponseKeepsExistingSessionId() {
+  const service = new TrackingService();
+  service.autoStopExpiredSessions = async () => {};
+  service.ensureTrackingSessionReportColumns = async () => {};
+  service.getManilaNowDateTime = () => "2026-08-17 10:00:00";
+  service.resolveShiftEndForDuty = (requestedShiftEnd) => requestedShiftEnd;
+  service.createGpsTrackingNotification = async () => null;
+
+  queryHandler = async (sql) => {
+    const normalized = String(sql).replace(/\s+/g, " ").trim();
+    if (normalized.startsWith("SELECT id FROM truck_tracking_sessions")) {
+      return [[{ id: "58" }]];
+    }
+    if (normalized.startsWith("UPDATE truck_tracking_sessions")) {
+      return [{ affectedRows: 1 }];
+    }
+    throw new Error(`Unexpected SQL: ${normalized}`);
+  };
+
+  const result = await service.startTrackingSession({
+    truck_id: "TRUCK-9",
+    enforcer_id: 7,
+    enforcer_name: "Test Enforcer",
+    device_id: "test-device",
+    shift_end_time: "2026-08-17 17:00:00"
+  });
+
+  assert.deepEqual(result, {
+    alreadyActive: true,
+    sessionId: "58",
+    notification: null
+  });
 }
 
 async function testStoppedSessionHistoricalQueuePointRemainsSupported() {
@@ -305,6 +614,12 @@ async function run() {
   testStorageAndOperationalRulesRemainSeparate();
   await testSingleUploadRejectsBeforeDatabase();
   await testBatchValidatesBeforeWritingAndSortsChronologically();
+  await testBatchResponseCountsIdsAndZeroInsertSafety();
+  await testAllDuplicateBatchPerformsNoWritesOrRecalculation();
+  await testQueuedBatchPreparesAndRecalculatesOnlyOnce();
+  await testHistoricalQueuedBatchPreservesOriginalRecordedAt();
+  await testCoordinateFreeAndroidStartMatchesBackendContract();
+  await testAlreadyActiveStartResponseKeepsExistingSessionId();
   await testStoppedSessionHistoricalQueuePointRemainsSupported();
   await testWebAdminStopUsesFixedStopTypeAndIsIdempotent();
   await testDelayedHistoryDoesNotAcquireSyncTimeAsLocationTime();
