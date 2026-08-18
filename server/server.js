@@ -101,7 +101,6 @@ const complaintRoutes = require("../routes/complaintRoutes");
 const certificateRoutes = require("../routes/certificateRoutes");
 const invoiceRoutes = require("../routes/invoiceRoutes");
 const dispatchMonitorService = require("../services/dispatchMonitorService");
-const trackingService = require("../services/trackingService");
 
 /* =========================
    PATHS
@@ -278,7 +277,6 @@ if (typeof complaintRoutes.startOverdueAcceptedComplaintScheduler === "function"
 }
 
 dispatchMonitorService.start();
-trackingService.startAutoStopScheduler();
 
 
 /* =========================

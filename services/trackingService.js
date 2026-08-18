@@ -11,16 +11,8 @@ const WMO_GEOFENCE = Object.freeze({
     longitude: 125.1816406,
     radiusMeters: 100
 });
-const AUTO_STOP_INITIAL_DELAY_MS = 15000;
-const AUTO_STOP_INTERVAL_MS = 15000;
 
 class TrackingService {
-    constructor() {
-        this.autoStopRunPromise = null;
-        this.autoStopSchedulerStarted = false;
-        this.autoStopSchedulerTimer = null;
-    }
-
     cleanText(value) {
         if (value === null || value === undefined) return "";
 
@@ -35,9 +27,8 @@ class TrackingService {
 
     getManilaNowDateTime() {
         /*
-          Server hosting can use UTC while the WMO shift is based on
-          Philippine time. Use a fixed +08:00 Manila time string so
-          5:00 PM auto-stop works the same on local and hosted servers.
+          Server hosting can use UTC while WMO operational timestamps use
+          Philippine time. Keep stored lifecycle timestamps in Manila time.
         */
         const now = new Date(Date.now() + (8 * 60 * 60 * 1000));
         return now.toISOString().slice(0, 19).replace("T", " ");
@@ -69,39 +60,6 @@ class TrackingService {
         return cleaned.slice(0, 19);
     }
 
-    getDatePart(value) {
-        const text = this.normalizeDateTimeText(value);
-        const match = text.match(/^(\d{4}-\d{2}-\d{2})/);
-        return match ? match[1] : this.getManilaNowDateTime().slice(0, 10);
-    }
-
-    getDailyDutyShiftEnd(startedAtValue) {
-        return `${this.getDatePart(startedAtValue)} 17:00:00`;
-    }
-
-    resolveShiftEndForDuty(clientShiftEndValue, startedAtValue) {
-        const dutyEnd = this.getDailyDutyShiftEnd(startedAtValue);
-        const clientShiftEnd = this.normalizeDateTimeText(clientShiftEndValue);
-
-        if (!clientShiftEnd) {
-            return dutyEnd;
-        }
-
-        /*
-          If Android was opened after 5 PM, older app logic could send
-          tomorrow 5 PM. Clamp it to the actual duty day 5 PM so the truck
-          does not remain in Live Tracking overnight.
-        */
-        return clientShiftEnd > dutyEnd ? dutyEnd : clientShiftEnd;
-    }
-
-    getEffectiveShiftEndTime(session = {}) {
-        return this.resolveShiftEndForDuty(
-            session.effective_shift_end_time || session.shift_end_time,
-            session.started_at || session.created_at || this.getManilaNowDateTime()
-        );
-    }
-
     parseManilaDateTimeMs(value) {
         const text = this.normalizeDateTimeText(value);
         if (!text) return 0;
@@ -125,71 +83,17 @@ class TrackingService {
         return this.calculateDistanceKm(lat1, lon1, lat2, lon2) * 1000;
     }
 
-    evaluateAutoStopEligibility(session = {}, location = null, manilaNow = this.getManilaNowDateTime()) {
-        const effectiveShiftEnd = this.getEffectiveShiftEndTime(session);
-        const shiftEndMs = this.parseManilaDateTimeMs(effectiveShiftEnd);
-        const nowMs = this.parseManilaDateTimeMs(manilaNow);
-
-        if (!shiftEndMs || !nowMs || nowMs < shiftEndMs) {
-            return {
-                shouldStop: false,
-                reason: "before_shift_end",
-                effectiveShiftEnd,
-                distanceMeters: null
-            };
-        }
-
-        const reliableLocation = this.normalizeReliableLocation(location || {}, manilaNow);
-
-        if (!reliableLocation) {
-            return {
-                shouldStop: false,
-                reason: "no_reliable_location",
-                effectiveShiftEnd,
-                distanceMeters: null
-            };
-        }
-
-        const distanceMeters = this.calculateDistanceMeters(
-            reliableLocation.latitude,
-            reliableLocation.longitude,
-            WMO_GEOFENCE.latitude,
-            WMO_GEOFENCE.longitude
-        );
-        const isInsideWmo = distanceMeters <= WMO_GEOFENCE.radiusMeters;
-
-        return {
-            shouldStop: isInsideWmo,
-            reason: isInsideWmo ? "inside_wmo_geofence" : "outside_wmo_geofence",
-            effectiveShiftEnd,
-            distanceMeters,
-            location: reliableLocation
-        };
-    }
-
-    getSafeAutoStopEndedAt(session = {}, manilaNow = this.getManilaNowDateTime()) {
-        const startedAt = this.normalizeDateTimeText(session.started_at || session.created_at || "");
-        const startedAtMs = this.parseManilaDateTimeMs(startedAt);
-        const stoppedAtMs = this.parseManilaDateTimeMs(manilaNow);
-
-        if (startedAtMs && (!stoppedAtMs || stoppedAtMs < startedAtMs)) {
-            return startedAt;
-        }
-
-        return manilaNow;
-    }
-
     getTrackingStatusDescription(statusKey) {
         if (statusKey === "active") {
-            return "Live GPS signal was syncing normally until the shift ended.";
+            return "Live GPS signal was syncing normally when tracking ended.";
         }
 
         if (statusKey === "sync_pending") {
-            return "Mobile data was weak or offline before the shift ended. Saved points may sync later.";
+            return "Mobile data was weak or offline when tracking ended. Saved points may sync later.";
         }
 
         if (statusKey === "gps_off") {
-            return "GPS tracking was off or no live GPS points were recorded before the shift ended.";
+            return "GPS tracking was off or no live GPS points were recorded before tracking ended.";
         }
 
         return "Tracking session ended.";
@@ -205,7 +109,7 @@ class TrackingService {
         return "not_syncing";
     }
 
-    computeFinalTrackingStatus(session = {}) {
+    computeFinalTrackingStatus(session = {}, referenceTime = this.getManilaNowDateTime()) {
         const rawExplicitStatus = this.cleanText(
             session.last_location_status ||
             session.last_device_status ||
@@ -232,20 +136,20 @@ class TrackingService {
             return "gps_off";
         }
 
-        const shiftEndMs = this.parseManilaDateTimeMs(this.getEffectiveShiftEndTime(session));
+        const referenceTimeMs = this.parseManilaDateTimeMs(referenceTime);
         const lastUpdatedMs = this.parseManilaDateTimeMs(lastUpdated);
 
-        if (!shiftEndMs || !lastUpdatedMs) {
+        if (!referenceTimeMs || !lastUpdatedMs) {
             return explicitStatus || "gps_off";
         }
 
-        const ageAtShiftEndSeconds = Math.max(0, Math.floor((shiftEndMs - lastUpdatedMs) / 1000));
+        const ageAtEndSeconds = Math.max(0, Math.floor((referenceTimeMs - lastUpdatedMs) / 1000));
 
-        if (ageAtShiftEndSeconds <= 60) {
+        if (ageAtEndSeconds <= 60) {
             return "active";
         }
 
-        if (ageAtShiftEndSeconds <= 300) {
+        if (ageAtEndSeconds <= 300) {
             return "sync_pending";
         }
 
@@ -381,197 +285,25 @@ class TrackingService {
         return null;
     }
 
-    async processAutoStopSession(session, manilaNow) {
-        const preliminaryEvaluation = this.evaluateAutoStopEligibility(session, null, manilaNow);
-
-        if (preliminaryEvaluation.reason === "before_shift_end") {
-            return preliminaryEvaluation;
-        }
-
-        const latestLocation = await this.getLatestReliableLocation(session, manilaNow);
-        const evaluation = this.evaluateAutoStopEligibility(session, latestLocation, manilaNow);
-
-        if (!evaluation.shouldStop) {
-            return evaluation;
-        }
-
-        const endedAt = this.getSafeAutoStopEndedAt(session, manilaNow);
-        const finalStatusKey = this.computeFinalTrackingStatus(session);
-        const finalGpsStatus = this.getFinalGpsStatus(finalStatusKey);
-        const finalSyncStatus = this.getFinalSyncStatus(finalStatusKey);
-        const finalDescription = this.getTrackingStatusDescription(finalStatusKey);
-        const lastLocationStatus = finalStatusKey === "active" ? "offline" : finalStatusKey;
-
-        const [updateResult] = await db.query(
-            `
-            UPDATE truck_tracking_sessions
-            SET
-                session_status = 'auto_stopped',
-                ended_at = IFNULL(ended_at, ?),
-                effective_shift_end_time = ?,
-                final_tracking_status_key = ?,
-                final_gps_status = ?,
-                final_sync_status = ?,
-                final_tracking_status_description = ?,
-                last_device_status = COALESCE(last_device_status, ?),
-                last_device_status_at = COALESCE(last_device_status_at, ?),
-                updated_at = ?
-            WHERE id = ?
-              AND session_status = 'active'
-            `,
-            [
-                endedAt,
-                evaluation.effectiveShiftEnd,
-                finalStatusKey,
-                finalGpsStatus,
-                finalSyncStatus,
-                finalDescription,
-                finalStatusKey,
-                manilaNow,
-                manilaNow,
-                session.id
-            ]
-        );
-
-        if (!updateResult || updateResult.affectedRows === 0) {
-            return {
-                ...evaluation,
-                shouldStop: false,
-                reason: "already_stopped"
-            };
-        }
-
-        await db.query(
-            `
-            UPDATE truck_last_locations
-            SET
-                status = ?,
-                updated_at = ?
-            WHERE session_id = ?
-            `,
-            [lastLocationStatus, manilaNow, session.id]
-        );
-
-        await this.createTrackingCompletedNotification({
-            truck_id: session.truck_id,
-            enforcer_name: session.enforcer_name || "",
-            session_id: session.id,
-            stop_type: "auto_stopped",
-            final_tracking_status_key: finalStatusKey,
-            ended_at: endedAt
-        });
-
+    async autoStopExpiredSessions() {
+        // Kept as a compatibility no-op for older callers. Wall-clock time
+        // must never transition an active tracking session to a stopped state.
         return {
-            ...evaluation,
-            endedAt
+            stopped_count: 0,
+            reason: "time_based_auto_stop_disabled"
         };
     }
 
-    async runAutoStopExpiredSessions() {
-        await this.ensureTrackingSessionReportColumns();
-
-        const manilaNow = this.getManilaNowDateTime();
-        const [sessions] = await db.query(
-            `
-            SELECT
-                tts.id,
-                tts.truck_id,
-                tts.enforcer_name,
-                tts.session_status,
-                DATE_FORMAT(tts.started_at, '%Y-%m-%d %H:%i:%s') AS started_at,
-                DATE_FORMAT(tts.created_at, '%Y-%m-%d %H:%i:%s') AS created_at,
-                DATE_FORMAT(tts.shift_end_time, '%Y-%m-%d %H:%i:%s') AS shift_end_time,
-                DATE_FORMAT(tts.effective_shift_end_time, '%Y-%m-%d %H:%i:%s') AS effective_shift_end_time,
-                DATE_FORMAT(tts.last_updated_at, '%Y-%m-%d %H:%i:%s') AS last_updated_at,
-                tts.last_device_status,
-                DATE_FORMAT(tts.last_device_status_at, '%Y-%m-%d %H:%i:%s') AS last_device_status_at,
-                tll.truck_id AS current_location_truck_id,
-                tll.session_id AS current_location_session_id,
-                tll.latitude AS current_latitude,
-                tll.longitude AS current_longitude,
-                tll.accuracy AS current_accuracy,
-                tll.status AS last_location_status,
-                DATE_FORMAT(tll.last_updated_at, '%Y-%m-%d %H:%i:%s') AS location_last_updated
-            FROM truck_tracking_sessions tts
-            LEFT JOIN truck_last_locations tll
-                ON tts.id = tll.session_id
-               AND tts.truck_id = tll.truck_id
-            WHERE tts.session_status = 'active'
-            `
-        );
-
-        for (const session of sessions || []) {
-            try {
-                await this.processAutoStopSession(session, manilaNow);
-            } catch (error) {
-                console.error(`[Tracking Auto-stop] Session ${session.id} failed:`, error);
-            }
-        }
-
-        await this.backfillTrackingCompletedNotifications(100);
-    }
-
-    async autoStopExpiredSessions() {
-        if (this.autoStopRunPromise) {
-            return this.autoStopRunPromise;
-        }
-
-        this.autoStopRunPromise = this.runAutoStopExpiredSessions();
-
-        try {
-            return await this.autoStopRunPromise;
-        } finally {
-            this.autoStopRunPromise = null;
-        }
-    }
-
-    scheduleNextAutoStopRun(delayMs = AUTO_STOP_INTERVAL_MS) {
-        if (!this.autoStopSchedulerStarted || this.autoStopSchedulerTimer) return;
-
-        this.autoStopSchedulerTimer = setTimeout(() => {
-            this.autoStopSchedulerTimer = null;
-            void this.runAutoStopSchedulerCycle();
-        }, delayMs);
-    }
-
-    async runAutoStopSchedulerCycle() {
-        if (!this.autoStopSchedulerStarted) return;
-
-        if (this.autoStopRunPromise) {
-            console.warn("[Tracking Auto-stop] Previous cycle is still running; skipping overlap.");
-            this.scheduleNextAutoStopRun();
-            return;
-        }
-
-        try {
-            await this.autoStopExpiredSessions();
-        } catch (error) {
-            console.error("[Tracking Auto-stop] Cycle failed:", error);
-        } finally {
-            this.scheduleNextAutoStopRun();
-        }
-    }
-
     startAutoStopScheduler() {
-        if (this.autoStopSchedulerStarted) return;
-
-        this.autoStopSchedulerStarted = true;
-        this.scheduleNextAutoStopRun(AUTO_STOP_INITIAL_DELAY_MS);
+        return false;
     }
 
     stopAutoStopScheduler() {
-        this.autoStopSchedulerStarted = false;
-
-        if (this.autoStopSchedulerTimer) {
-            clearTimeout(this.autoStopSchedulerTimer);
-            this.autoStopSchedulerTimer = null;
-        }
+        return false;
     }
 
     requestAutoStopCheck() {
-        void this.autoStopExpiredSessions().catch((error) => {
-            console.error("[Tracking Auto-stop] Background check failed:", error);
-        });
+        return false;
     }
 
     async ensureWmoNotificationsTableSafe() {
@@ -1055,7 +787,6 @@ class TrackingService {
 
 
     async startTrackingSession(data) {
-        await this.autoStopExpiredSessions();
         await this.ensureTrackingSessionReportColumns();
 
         const {
@@ -1068,12 +799,12 @@ class TrackingService {
             start_longitude = null
         } = data;
 
-        if (!truck_id || !shift_end_time) {
-            throw new Error("truck_id and shift_end_time are required");
+        if (!truck_id) {
+            throw new Error("truck_id is required");
         }
 
         const startedAt = this.getManilaNowDateTime();
-        const effectiveShiftEnd = this.resolveShiftEndForDuty(shift_end_time, startedAt);
+        const compatibilityShiftEnd = this.normalizeDateTimeText(shift_end_time) || startedAt;
 
         const checkActiveSql = `
             SELECT id 
@@ -1092,11 +823,11 @@ class TrackingService {
                 SET
                     last_device_status = 'active',
                     last_device_status_at = ?,
-                    effective_shift_end_time = COALESCE(effective_shift_end_time, ?),
+                    effective_shift_end_time = COALESCE(effective_shift_end_time, shift_end_time, ?),
                     updated_at = ?
                 WHERE id = ?
                 `,
-                [startedAt, effectiveShiftEnd, startedAt, activeRows[0].id]
+                [startedAt, compatibilityShiftEnd, startedAt, activeRows[0].id]
             );
 
             const notification = await this.createGpsTrackingNotification("on", {
@@ -1142,8 +873,8 @@ class TrackingService {
             enforcer_name,
             device_id,
             startedAt,
-            effectiveShiftEnd,
-            effectiveShiftEnd,
+            compatibilityShiftEnd,
+            compatibilityShiftEnd,
             start_latitude,
             start_longitude,
             start_latitude,
@@ -1176,8 +907,6 @@ class TrackingService {
             enforcer_name,
             session_id: sessionId
         });
-
-        await this.autoStopExpiredSessions();
 
         return {
             alreadyActive: false,
@@ -1212,9 +941,7 @@ class TrackingService {
 
         const allowedStopType = this.normalizeStopType(stop_type);
 
-        const stoppedAt = ["auto_stopped", "auto_wmo_stop"].includes(allowedStopType)
-            ? null
-            : this.getManilaNowDateTime();
+        const stoppedAt = this.getManilaNowDateTime();
 
         const getSessionSql = `
             SELECT
@@ -1225,6 +952,7 @@ class TrackingService {
                 tts.started_at,
                 tts.created_at,
                 tts.shift_end_time,
+                tts.effective_shift_end_time,
                 tts.last_updated_at,
                 tts.last_device_status,
                 tts.last_device_status_at,
@@ -1261,9 +989,11 @@ class TrackingService {
             };
         }
 
-        const effectiveShiftEnd = this.getEffectiveShiftEndTime(session);
-        const endedAt = stoppedAt || effectiveShiftEnd;
-        const finalStatusKey = this.computeFinalTrackingStatus(session);
+        const compatibilityShiftEnd = this.normalizeDateTimeText(
+            session.effective_shift_end_time || session.shift_end_time
+        ) || stoppedAt;
+        const endedAt = stoppedAt;
+        const finalStatusKey = this.computeFinalTrackingStatus(session, endedAt);
         const finalGpsStatus = this.getFinalGpsStatus(finalStatusKey);
         const finalSyncStatus = this.getFinalSyncStatus(finalStatusKey);
         const finalDescription = this.getTrackingStatusDescription(finalStatusKey);
@@ -1291,7 +1021,7 @@ class TrackingService {
         await db.query(updateSql, [
             allowedStopType,
             endedAt,
-            effectiveShiftEnd,
+            compatibilityShiftEnd,
             finalStatusKey,
             finalGpsStatus,
             finalSyncStatus,
@@ -2380,5 +2110,3 @@ const trackingService = new TrackingService();
 module.exports = trackingService;
 module.exports.TrackingService = TrackingService;
 module.exports.WMO_GEOFENCE = WMO_GEOFENCE;
-module.exports.AUTO_STOP_INITIAL_DELAY_MS = AUTO_STOP_INITIAL_DELAY_MS;
-module.exports.AUTO_STOP_INTERVAL_MS = AUTO_STOP_INTERVAL_MS;
