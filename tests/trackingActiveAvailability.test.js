@@ -144,6 +144,42 @@ function testFilteringAndRelativeUpdateLabel() {
   assert.equal(formatTrackingRelativeUpdate(new Date(NOW - 12_000).toISOString(), NOW), "12 sec ago");
 }
 
+function testActiveEndpointKeepsManilaTimestampCurrent() {
+  const responseTime = Date.parse("2026-08-18T16:41:21.000Z");
+  const manilaTimestamp = "2026-08-19T00:41:12+08:00";
+  const incorrectlyMarkedUtc = "2026-08-19T00:41:12.000Z";
+
+  const current = getTrackingAvailabilityMeta(activeTruck({
+    location_last_updated: manilaTimestamp
+  }), responseTime);
+  const future = getTrackingAvailabilityMeta(activeTruck({
+    location_last_updated: incorrectlyMarkedUtc
+  }), responseTime);
+
+  assert.equal(
+    new Date(manilaTimestamp).toISOString(),
+    "2026-08-18T16:41:12.000Z"
+  );
+  assert.notEqual(
+    new Date(incorrectlyMarkedUtc).toISOString(),
+    "2026-08-18T16:41:12.000Z"
+  );
+  assert.equal(current.available, true);
+  assert.equal(current.ageMs, 9_000);
+  assert.equal(future.available, false);
+  assert.ok(future.ageMs < -60_000);
+
+  const trackingService = read("services/trackingService.js");
+  const activeQuery = trackingService.slice(
+    trackingService.indexOf("async getActiveTrucks()"),
+    trackingService.indexOf("async getRouteHistoryBySession")
+  );
+  assert.match(
+    activeQuery,
+    /DATE_FORMAT\(tll\.last_updated_at, '%Y-%m-%dT%H:%i:%s'\)[\s\S]*?'\+08:00'[\s\S]*?AS location_last_updated/
+  );
+}
+
 function testEmptyStateRendering() {
   const container = { innerHTML: "" };
   const originalDocument = global.document;
@@ -281,6 +317,7 @@ function run() {
   testDispatchEndAndGpsReturnTransition();
   testActiveDispatchSurvivesGpsOutage();
   testFilteringAndRelativeUpdateLabel();
+  testActiveEndpointKeepsManilaTimestampCurrent();
   testEmptyStateRendering();
   testFrontendTransitionWiringAndSingleActions();
   testLatestResponseGuardsRejectOlderPollingResults();

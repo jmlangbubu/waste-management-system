@@ -1699,7 +1699,10 @@ class TrackingService {
                 tll.accuracy,
                 tll.heading,
                 tll.altitude,
-                tll.last_updated_at AS location_last_updated,
+                CONCAT(
+                    DATE_FORMAT(tll.last_updated_at, '%Y-%m-%dT%H:%i:%s'),
+                    '+08:00'
+                ) AS location_last_updated,
                 tll.status AS last_location_status,
                 TIMESTAMPDIFF(SECOND, tll.last_updated_at, current_time_ref.manila_now) AS last_sync_age_seconds,
                 CASE
