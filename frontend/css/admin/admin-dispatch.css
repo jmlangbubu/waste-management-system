@@ -4610,33 +4610,55 @@
   font-weight: 850;
 }
 
-#trackingSection .dispatch-ticket-details-modal {
+body.dispatch-ticket-modal-open {
+  overflow: hidden;
+}
+
+body.dispatch-ticket-modal-open .dashboard-sidebar {
+  z-index: 10000 !important;
+}
+
+body > #dispatchTicketDetailsModal {
+  --dispatch-deep: #091413;
+  --dispatch-dark: #285a48;
+  --dispatch-primary: #408a71;
+  --dispatch-mint: #b0e4cc;
+  --dispatch-surface: #ffffff;
+  --dispatch-page: #f5f8f6;
+  --dispatch-text: #13251f;
+  --dispatch-muted: #687a73;
+  --dispatch-border: #dce8e1;
   position: fixed;
   inset: 0;
-  z-index: 1800;
+  z-index: 30000;
   display: grid;
   place-items: center;
-  padding: 18px;
+  box-sizing: border-box;
+  padding: 32px;
+  overflow: hidden;
   background: rgba(9, 20, 19, 0.58);
 }
 
-#trackingSection .dispatch-ticket-details-modal.hidden {
+body > #dispatchTicketDetailsModal.hidden {
   display: none;
 }
 
-#trackingSection .dispatch-ticket-details-card {
+body > #dispatchTicketDetailsModal .dispatch-ticket-details-card {
+  position: relative;
+  z-index: 1;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   width: min(720px, 100%);
-  max-height: min(760px, calc(100dvh - 36px));
+  max-height: min(760px, calc(100dvh - 64px));
   overflow: hidden;
+  box-sizing: border-box;
   border: 1px solid var(--dispatch-border);
   border-radius: 14px;
   background: var(--dispatch-surface);
   box-shadow: 0 24px 70px rgba(9, 20, 19, 0.28);
 }
 
-#trackingSection .dispatch-ticket-details-card > header {
+body > #dispatchTicketDetailsModal .dispatch-ticket-details-card > header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -4645,24 +4667,24 @@
   border-bottom: 1px solid var(--dispatch-border);
 }
 
-#trackingSection .dispatch-ticket-details-card > header small,
-#trackingSection .dispatch-ticket-details-card > header h3 {
+body > #dispatchTicketDetailsModal .dispatch-ticket-details-card > header small,
+body > #dispatchTicketDetailsModal .dispatch-ticket-details-card > header h3 {
   margin: 0;
 }
 
-#trackingSection .dispatch-ticket-details-card > header small {
+body > #dispatchTicketDetailsModal .dispatch-ticket-details-card > header small {
   color: var(--dispatch-primary);
   font-size: 9px;
   font-weight: 900;
   text-transform: uppercase;
 }
 
-#trackingSection .dispatch-ticket-details-card > header h3 {
+body > #dispatchTicketDetailsModal .dispatch-ticket-details-card > header h3 {
   color: var(--dispatch-text);
   font-size: 16px;
 }
 
-#trackingSection .dispatch-ticket-details-card > header button {
+body > #dispatchTicketDetailsModal .dispatch-ticket-details-card > header button {
   display: grid;
   width: 34px;
   height: 34px;
@@ -4673,12 +4695,19 @@
   color: var(--dispatch-dark);
 }
 
-#trackingSection .dispatch-ticket-details-card > header svg {
+body > #dispatchTicketDetailsModal .dispatch-ticket-details-card > header svg {
   width: 16px;
   height: 16px;
 }
 
-#trackingSection .dispatch-ticket-details-body {
+body > #dispatchTicketDetailsModal .dispatch-ticket-details-card > header svg path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+body > #dispatchTicketDetailsModal .dispatch-ticket-details-body {
   display: grid;
   gap: 13px;
   min-height: 0;
@@ -4686,13 +4715,13 @@
   overflow-y: auto;
 }
 
-#trackingSection .dispatch-details-summary {
+body > #dispatchTicketDetailsModal .dispatch-details-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
 }
 
-#trackingSection .dispatch-details-summary > div {
+body > #dispatchTicketDetailsModal .dispatch-details-summary > div {
   display: grid;
   gap: 3px;
   padding: 9px;
@@ -4700,29 +4729,29 @@
   background: var(--dispatch-page);
 }
 
-#trackingSection .dispatch-details-summary span,
-#trackingSection .dispatch-ticket-details-body h4 {
+body > #dispatchTicketDetailsModal .dispatch-details-summary span,
+body > #dispatchTicketDetailsModal .dispatch-ticket-details-body h4 {
   color: var(--dispatch-muted);
   font-size: 9px;
   font-weight: 850;
   text-transform: uppercase;
 }
 
-#trackingSection .dispatch-details-summary strong {
+body > #dispatchTicketDetailsModal .dispatch-details-summary strong {
   color: var(--dispatch-text);
   font-size: 10.5px;
 }
 
-#trackingSection .dispatch-ticket-details-body h4 {
+body > #dispatchTicketDetailsModal .dispatch-ticket-details-body h4 {
   margin: 0 0 7px;
 }
 
-#trackingSection .dispatch-details-stop-list {
+body > #dispatchTicketDetailsModal .dispatch-details-stop-list {
   display: grid;
   gap: 6px;
 }
 
-#trackingSection .dispatch-details-stop {
+body > #dispatchTicketDetailsModal .dispatch-details-stop {
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr) auto;
   align-items: center;
@@ -4732,12 +4761,12 @@
   border-radius: 10px;
 }
 
-#trackingSection .dispatch-details-stop > div {
+body > #dispatchTicketDetailsModal .dispatch-details-stop > div {
   display: grid;
   gap: 2px;
 }
 
-#trackingSection .dispatch-details-stop small {
+body > #dispatchTicketDetailsModal .dispatch-details-stop small {
   color: var(--dispatch-muted);
   font-size: 9px;
 }
@@ -4821,20 +4850,18 @@
     min-width: 0;
   }
 
-  #trackingSection .dispatch-details-summary {
+  body > #dispatchTicketDetailsModal .dispatch-details-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  #trackingSection .dispatch-ticket-details-modal {
-    padding: 0;
+  body > #dispatchTicketDetailsModal {
+    padding: 12px;
   }
 
-  #trackingSection .dispatch-ticket-details-card {
+  body > #dispatchTicketDetailsModal .dispatch-ticket-details-card {
     width: 100%;
-    height: 100dvh;
-    max-height: none;
-    border: 0;
-    border-radius: 0;
+    max-height: calc(100dvh - 24px);
+    border-radius: 12px;
   }
 
   #trackingSection .dispatch-route-map-overlay {

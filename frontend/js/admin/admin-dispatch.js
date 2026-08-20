@@ -2504,16 +2504,40 @@ function renderDispatchTicketDetails(details) {
   updateDispatchLiveRouteStatus(routeStatus);
 }
 
+const DISPATCH_PORTAL_MODAL_IDS = ["dispatchTicketDetailsModal"];
+const DISPATCH_TICKET_MODAL_SCROLL_LOCK_CLASS = "dispatch-ticket-modal-open";
+
+function mountDispatchModalsToBody() {
+  if (!document.body) return;
+  DISPATCH_PORTAL_MODAL_IDS.forEach((modalId) => {
+    const modal = document.getElementById(modalId);
+    if (modal && modal.parentElement !== document.body) {
+      document.body.appendChild(modal);
+    }
+  });
+}
+
+function setDispatchTicketModalScrollLock(isOpen) {
+  document.body?.classList.toggle(DISPATCH_TICKET_MODAL_SCROLL_LOCK_CLASS, isOpen);
+}
+
 function openDispatchModal(modalId) {
+  if (DISPATCH_PORTAL_MODAL_IDS.includes(modalId)) mountDispatchModalsToBody();
   const modal = document.getElementById(modalId);
   modal?.classList.remove("hidden");
   modal?.setAttribute("aria-hidden", "false");
+  if (modalId === "dispatchTicketDetailsModal") {
+    setDispatchTicketModalScrollLock(Boolean(modal));
+  }
 }
 
 function closeDispatchModal(modalId) {
   const modal = document.getElementById(modalId);
   modal?.classList.add("hidden");
   modal?.setAttribute("aria-hidden", "true");
+  if (modalId === "dispatchTicketDetailsModal") {
+    setDispatchTicketModalScrollLock(false);
+  }
 }
 
 function dispatchStopRowTemplate(stop = {}, index = 0) {
@@ -4699,6 +4723,7 @@ function requestClearDispatchRequiredDestinations() {
 }
 
 function setupDispatchModule() {
+  mountDispatchModalsToBody();
   const workspace = document.querySelector(".tracking-dispatch-workspace");
   if (!workspace || workspace.dataset.bound === "true") return;
   workspace.dataset.bound = "true";
