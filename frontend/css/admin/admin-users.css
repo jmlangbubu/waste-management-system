@@ -2,293 +2,395 @@
    USER MANAGEMENT
 ========================= */
 
-#userManagementSection .users-layout {
+#userManagementSection {
+  --users-primary: #285a48;
+  --users-secondary: #408a71;
+  --users-accent: #b0e4cc;
+  --users-text: #091413;
+  --users-muted: #60716a;
+  --users-line: #dce8e1;
+  --users-soft: #f5f9f7;
+  max-width: 100%;
+  overflow-x: hidden;
+  color: var(--users-text);
+}
+
+#userManagementSection #superAdminContent.users-layout {
   display: grid;
-  gap: 24px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+  width: 100%;
+  min-width: 0;
+}
+
+#userManagementSection .user-management-heading {
+  display: grid;
+  gap: 4px;
+  padding: 0 2px 2px;
+}
+
+#userManagementSection .user-management-heading h2 {
+  margin: 0;
+  color: var(--users-text);
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+}
+
+#userManagementSection .user-management-heading p {
+  margin: 0;
+  color: var(--users-muted);
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 #userManagementSection .page-card {
-  padding: 26px;
-  border-radius: 24px;
+  width: 100%;
+  min-width: 0;
+  padding: 20px 22px;
+  border: 1px solid var(--users-line);
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: none;
 }
 
 #userManagementSection .page-card-header {
-  margin-bottom: 22px;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e6eee9;
 }
 
 #userManagementSection .page-card-header h2 {
   margin: 0;
-  font-size: 24px;
-  font-weight: 900;
-  color: #061226;
+  color: var(--users-text);
+  font-size: 18px;
+  font-weight: 750;
+  letter-spacing: -0.01em;
 }
 
 #userManagementSection .page-card-header p {
-  margin-top: 6px;
-  font-size: 14px;
-  color: #64748b;
+  margin: 4px 0 0;
+  color: var(--users-muted);
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 /* FORM */
 
-.account-form .form-grid {
+#userManagementSection .account-form .form-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px 16px;
+  align-items: start;
 }
 
-.account-form label {
+#userManagementSection .account-form .form-group {
+  min-width: 0;
+}
+
+#userManagementSection .account-form label {
   display: block;
-  margin-bottom: 7px;
+  margin-bottom: 6px;
+  color: #3c4d46;
   font-size: 12px;
-  font-weight: 900;
-  color: #64748b;
+  font-weight: 700;
 }
 
-.account-form input,
-.account-form select,
-.account-search-input {
+#userManagementSection .account-form input,
+#userManagementSection .account-form select,
+#userManagementSection .account-search-input {
+  box-sizing: border-box;
   width: 100%;
-  height: 46px;
-  border: 1px solid #dbe3ea;
-  border-radius: 14px;
-  padding: 0 14px;
+  max-width: 100%;
+  height: 42px;
+  border: 1px solid #cbdad2;
+  border-radius: 7px;
+  padding: 0 12px;
   background: #ffffff;
+  color: var(--users-text);
   font-size: 14px;
   outline: none;
 }
 
-.account-form input:focus,
-.account-form select:focus,
-.account-search-input:focus {
-  border-color: #22c55e;
-  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.12);
+#userManagementSection .account-form input:focus,
+#userManagementSection .account-form select:focus,
+#userManagementSection .account-search-input:focus {
+  border-color: var(--users-secondary);
+  box-shadow: 0 0 0 3px rgba(64, 138, 113, 0.12);
 }
 
-.form-actions {
+#userManagementSection .account-form .form-actions {
   display: flex;
   justify-content: flex-end;
-  margin-top: 20px;
+  margin-top: 14px;
 }
 
-.create-btn {
-  height: 44px;
-  padding: 0 20px;
+#userManagementSection .account-form .create-btn {
+  width: auto;
+  min-width: 142px;
+  height: 40px;
+  padding: 0 16px;
   border: none;
-  border-radius: 14px;
-  background: #15803d;
+  border-radius: 7px;
+  background: var(--users-primary);
   color: #ffffff;
-  font-size: 13px;
-  font-weight: 900;
+  font-size: 12.5px;
+  font-weight: 750;
   cursor: pointer;
 }
 
-.create-btn:hover {
-  background: #166534;
+#userManagementSection .account-form .create-btn:hover {
+  background: #1f493b;
 }
 
 /* TOOLBAR */
 
-.accounts-toolbar {
-  display: flex;
+#userManagementSection .accounts-toolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 480px) auto;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 18px;
-  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 12px;
 }
 
-.account-search-input {
-  max-width: 420px;
+#userManagementSection .account-search-input {
+  height: 40px;
+}
+
+#userManagementSection .accounts-toolbar .view-all-btn,
+#userManagementSection .accounts-toolbar .view-all-btn.small {
+  width: auto;
+  min-width: 112px;
+  height: 40px;
+  padding: 0 14px;
+  border: 1px solid #afc5b9;
+  border-radius: 7px;
+  background: #ffffff;
+  color: var(--users-primary);
+  box-shadow: none;
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+#userManagementSection .accounts-toolbar .view-all-btn:hover,
+#userManagementSection .accounts-toolbar .view-all-btn.small:hover {
+  border-color: var(--users-secondary);
+  background: var(--users-soft);
 }
 
 /* MAIN TABLE */
 
-#userManagementSection .table-shell {
+#userManagementSection .accounts-table-shell {
+  box-sizing: border-box;
   width: 100%;
+  max-width: 100%;
   overflow-x: auto;
-  border: 1px solid #e5e7eb;
-  border-radius: 18px;
+  border: 1px solid var(--users-line);
+  border-radius: 8px;
   background: #ffffff;
+  box-shadow: none;
 }
 
-#userManagementSection .table-shell::-webkit-scrollbar {
+#userManagementSection .accounts-table-shell::-webkit-scrollbar {
   height: 8px;
 }
 
-#userManagementSection .table-shell::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+#userManagementSection .accounts-table-shell::-webkit-scrollbar-thumb {
+  background: #b8c9c0;
   border-radius: 999px;
 }
 
-#userManagementSection table {
+#userManagementSection .accounts-table-shell > .accounts-table {
   width: 100%;
-  min-width: 1180px;
+  min-width: 1120px;
+  table-layout: fixed;
   border-collapse: collapse;
 }
 
-#userManagementSection th,
-#userManagementSection td {
-  padding: 16px;
-  text-align: center;
+#userManagementSection .accounts-table th,
+#userManagementSection .accounts-table td {
+  padding: 11px 10px;
+  text-align: left;
   vertical-align: middle;
+  line-height: 1.35;
+}
+
+#userManagementSection .accounts-table th {
+  border-bottom: 1px solid #cfddd5;
+  background: #f3f8f5;
+  color: #2d3e37;
+  font-size: 11.5px;
+  font-weight: 750;
+  letter-spacing: 0.01em;
   white-space: nowrap;
 }
 
-#userManagementSection th {
-  background: #f8fafc;
-  font-size: 13px;
-  font-weight: 900;
-  color: #0f172a;
-  border-bottom: 1px solid #e5e7eb;
+#userManagementSection .accounts-table td {
+  border-bottom: 1px solid #e7eee9;
+  background: #ffffff;
+  color: var(--users-text);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
 }
 
-#userManagementSection td {
-  font-size: 14px;
-  color: #0f172a;
-  border-bottom: 1px solid #edf0f2;
+#userManagementSection .accounts-table tbody tr:last-child td {
+  border-bottom: 0;
 }
 
-#userManagementSection th:first-child,
-#userManagementSection td:first-child {
+#userManagementSection .accounts-table tbody tr:hover td {
+  background: #fafcfb;
+}
+
+#userManagementSection .accounts-table th:nth-child(1),
+#userManagementSection .accounts-table td:nth-child(1) {
+  width: 14%;
+}
+
+#userManagementSection .accounts-table th:nth-child(2),
+#userManagementSection .accounts-table td:nth-child(2) {
+  width: 18%;
+}
+
+#userManagementSection .accounts-table th:nth-child(3),
+#userManagementSection .accounts-table td:nth-child(3) {
+  width: 8%;
   text-align: center;
-  font-weight: 900;
 }
 
-#userManagementSection tr:hover td {
-  background: #f8fafc;
+#userManagementSection .accounts-table th:nth-child(4),
+#userManagementSection .accounts-table td:nth-child(4) {
+  width: 11%;
 }
 
-/* ACTION BUTTONS */
+#userManagementSection .accounts-table th:nth-child(5),
+#userManagementSection .accounts-table td:nth-child(5) {
+  width: 14%;
+}
 
-.user-action-buttons,
+#userManagementSection .accounts-table th:nth-child(6),
+#userManagementSection .accounts-table td:nth-child(6) {
+  width: 9%;
+  text-align: center;
+}
+
+#userManagementSection .accounts-table th:nth-child(7),
+#userManagementSection .accounts-table td:nth-child(7) {
+  width: 12%;
+  white-space: nowrap;
+}
+
+#userManagementSection .accounts-table th:nth-child(8),
+#userManagementSection .accounts-table td:nth-child(8) {
+  width: 14%;
+  min-width: 168px;
+  text-align: center;
+}
+
+#userManagementSection .accounts-table td:first-child strong,
+#deactivatedAccountsModal .accounts-table td:first-child strong,
+.account-username {
+  display: block;
+  color: #14251f;
+  font-weight: 700;
+}
+
+.account-subtle-text {
+  display: block;
+  margin-top: 3px;
+  color: #74837c;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.3;
+  white-space: normal;
+}
+
+.account-source-chip,
+.account-status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 3px 8px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.account-source-chip.web,
+.account-source-chip.mobile {
+  border-color: #d9e5de;
+  background: #f4f7f5;
+  color: #52645c;
+}
+
+.account-status-pill.active {
+  border-color: #bfe3d1;
+  background: #eaf7f0;
+  color: #24634c;
+}
+
+.account-status-pill.pending {
+  border-color: #ead9a9;
+  background: #fff9e8;
+  color: #7a5b13;
+}
+
+.account-status-pill.inactive {
+  border-color: #e7c9c9;
+  background: #fff2f2;
+  color: #8a3636;
+}
+
 .account-action-buttons {
   display: flex;
-  justify-content: center;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  gap: 6px;
   flex-wrap: nowrap;
 }
 
-.user-btn,
-.account-action-btn,
-#userManagementSection .inline-action-btn,
-#userManagementSection td:last-child button,
-#deactivatedAccountsModal button {
-  height: 36px;
-  padding: 0 14px;
-  border-radius: 10px;
-  font-size: 12px;
-  font-weight: 900;
+#userManagementSection .account-action-buttons .inline-action-btn,
+#deactivatedAccountsModal .account-action-buttons .inline-action-btn {
+  min-width: 58px;
+  height: 32px;
+  padding: 0 9px;
+  border: 1px solid #b7cabf;
+  border-radius: 6px;
+  background: #ffffff;
+  color: var(--users-primary, #285a48);
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1;
   cursor: pointer;
   white-space: nowrap;
-  transition: all 0.2s ease;
-  border: 1px solid transparent;
 }
 
-/* DEACTIVATE */
-.user-btn.deactivate,
-.account-action-btn.deactivate,
-#userManagementSection .deactivate-btn,
-#userManagementSection td:last-child button:first-child {
-  background: #fee2e2;
-  color: #b91c1c;
-  border-color: #fecaca;
+#userManagementSection .account-action-buttons .edit-btn:hover,
+#deactivatedAccountsModal .account-action-buttons .edit-btn:hover,
+#userManagementSection .account-action-buttons .activate-btn:hover,
+#deactivatedAccountsModal .account-action-buttons .activate-btn:hover {
+  border-color: #408a71;
+  background: #f0f8f4;
+  color: #1f5542;
 }
 
-.user-btn.deactivate:hover,
-.account-action-btn.deactivate:hover,
-#userManagementSection .deactivate-btn:hover,
-#userManagementSection td:last-child button:first-child:hover {
-  background: #ef4444;
-  color: #ffffff;
+#userManagementSection .account-action-buttons .suspend-btn,
+#deactivatedAccountsModal .account-action-buttons .delete-btn {
+  border-color: #dfbcbc;
+  color: #a44242;
 }
 
-/* EDIT */
-.user-btn.edit,
-.account-action-btn.edit,
-#userManagementSection .edit-btn,
-#userManagementSection td:last-child button:last-child {
-  background: #e0f2fe;
-  color: #0369a1;
-  border-color: #bae6fd;
-}
-
-.user-btn.edit:hover,
-.account-action-btn.edit:hover,
-#userManagementSection .edit-btn:hover,
-#userManagementSection td:last-child button:last-child:hover {
-  background: #0284c7;
-  color: #ffffff;
-}
-
-/* ACTIVATE */
-.user-btn.activate,
-.account-action-btn.activate,
-#deactivatedAccountsModal button:first-child {
-  background: #dcfce7 !important;
-  color: #166534 !important;
-  border: 1px solid #bbf7d0 !important;
-}
-
-.user-btn.activate:hover,
-.account-action-btn.activate:hover,
-#deactivatedAccountsModal button:first-child:hover {
-  background: #16a34a !important;
-  color: #ffffff !important;
-}
-
-/* DELETE */
-.user-btn.delete,
-.account-action-btn.delete,
-#deactivatedAccountsModal button:last-child {
-  background: #fee2e2 !important;
-  color: #b91c1c !important;
-  border: 1px solid #fecaca !important;
-}
-
-.user-btn.delete:hover,
-.account-action-btn.delete:hover,
-#deactivatedAccountsModal button:last-child:hover {
-  background: #dc2626 !important;
-  color: #ffffff !important;
-}
-
-/* BADGES */
-
-.user-avatar {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  background: #2f8a34;
-  color: #ffffff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.user-role-badge {
-  padding: 6px 10px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.user-role-admin {
-  background: #ede9fe;
-  color: #6d28d9;
-}
-
-.user-role-staff {
-  background: #dbeafe;
-  color: #1d4ed8;
-}
-
-.user-role-barangay {
-  background: #dcfce7;
-  color: #166534;
+#userManagementSection .account-action-buttons .suspend-btn:hover,
+#deactivatedAccountsModal .account-action-buttons .delete-btn:hover {
+  border-color: #c77c7c;
+  background: #fff5f5;
+  color: #8e2f2f;
 }
 
 /* DEACTIVATED HISTORY MODAL */
@@ -405,22 +507,48 @@
 
 /* RESPONSIVE */
 
-@media (max-width: 800px) {
-  .account-form .form-grid {
-    grid-template-columns: 1fr;
+@media (max-width: 1180px) {
+  #userManagementSection .account-form .form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 
-  .accounts-toolbar {
-    flex-direction: column;
-    align-items: stretch;
+  #userManagementSection .accounts-toolbar {
+    grid-template-columns: minmax(220px, 1fr) auto !important;
+  }
+}
+
+@media (max-width: 700px) {
+  #userManagementSection #superAdminContent.users-layout {
+    gap: 14px !important;
   }
 
-  .account-search-input {
-    max-width: none;
+  #userManagementSection .user-management-heading h2 {
+    font-size: 24px;
   }
 
-  #userManagementSection table {
-    min-width: 980px;
+  #userManagementSection .page-card {
+    padding: 16px !important;
+    border-radius: 10px !important;
+  }
+
+  #userManagementSection .account-form .form-grid,
+  #userManagementSection .accounts-toolbar {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 12px !important;
+  }
+
+  #userManagementSection .account-form .form-actions {
+    justify-content: stretch;
+  }
+
+  #userManagementSection .account-form .create-btn,
+  #userManagementSection .accounts-toolbar .view-all-btn,
+  #userManagementSection .accounts-toolbar .view-all-btn.small {
+    width: 100% !important;
+  }
+
+  #userManagementSection .accounts-table-shell > .accounts-table {
+    min-width: 1040px !important;
   }
 
   #deactivatedAccountsModal .history-modal-content {
@@ -430,7 +558,7 @@
   }
 
   #deactivatedAccountsModal table {
-    min-width: 900px;
+    min-width: 980px !important;
   }
 }
 
