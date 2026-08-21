@@ -1249,7 +1249,12 @@
 
   <div id="superAdminContent" class="users-layout">
 
-    <div class="page-card">
+    <header class="user-management-heading">
+      <h2>User Management</h2>
+      <p>Manage web and mobile accounts.</p>
+    </header>
+
+    <div class="page-card user-create-panel">
       <div class="page-card-header">
         <div>
           <h2>Create Web Account</h2>
@@ -1304,7 +1309,7 @@
       </form>
     </div>
 
-    <div class="page-card">
+    <div class="page-card user-accounts-panel">
       <div class="page-card-header">
         <div>
           <h2>All Accounts</h2>
@@ -1328,8 +1333,8 @@
         </button>
       </div>
 
-      <div class="table-shell">
-        <table>
+      <div class="table-shell accounts-table-shell">
+        <table class="accounts-table">
           <thead>
             <tr>
               <th>Full Name</th>
@@ -1550,8 +1555,8 @@
       <button type="button" class="history-close-btn" onclick="closeDeactivatedAccountsModal()">✕</button>
     </div>
 
-    <div class="table-shell">
-      <table>
+    <div class="table-shell accounts-table-shell">
+      <table class="accounts-table">
         <thead>
           <tr>
             <th>Full Name</th>
