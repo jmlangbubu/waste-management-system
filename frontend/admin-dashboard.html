@@ -53,44 +53,59 @@
           </div>
         </div>
 
-       <nav class="sidebar-nav">
-  <button class="nav-btn active" data-section="dashboardSection" type="button">
-    <i data-lucide="layout-dashboard"></i>
-    <span>Dashboard Overview</span>
-  </button>
+       <nav class="sidebar-nav" aria-label="Admin navigation">
+  <div class="sidebar-nav-group sidebar-nav-group-overview">
+    <div class="sidebar-section-label">Overview</div>
 
-  <button class="nav-btn" data-section="recordsSection" type="button">
-    <i data-lucide="clipboard-list"></i>
-    <span>Waste Records</span>
-  </button>
+    <button class="nav-btn active" data-section="dashboardSection" type="button" aria-label="Dashboard Overview" title="Dashboard Overview">
+      <i data-lucide="layout-dashboard"></i>
+      <span>Dashboard Overview</span>
+    </button>
+  </div>
 
-  <button class="nav-btn" data-section="appointmentsSection" type="button">
-    <i data-lucide="calendar-days"></i>
-    <span>Appointments</span>
-  </button>
+  <div class="sidebar-nav-group sidebar-nav-group-operations">
+    <div class="sidebar-section-label">Operations</div>
 
-  <button class="nav-btn" data-section="complaintsSection" type="button">
-    <i data-lucide="message-square-warning"></i>
-    <span>Complaints</span>
-  </button>
+    <button class="nav-btn" data-section="recordsSection" type="button" aria-label="Waste Records" title="Waste Records">
+      <i data-lucide="clipboard-list"></i>
+      <span>Waste Records</span>
+    </button>
 
-  <button class="nav-btn" data-section="trackingSection" type="button">
-    <i data-lucide="map-pinned"></i>
-    <span>Live Tracking</span>
-  </button>
+    <button class="nav-btn" data-section="appointmentsSection" type="button" aria-label="Appointments" title="Appointments">
+      <i data-lucide="calendar-days"></i>
+      <span>Appointments</span>
+    </button>
 
-  <button class="nav-btn" data-section="orientationSection" type="button">
-    <i data-lucide="graduation-cap"></i>
-    <span>Orientation</span>
-  </button>
+    <button class="nav-btn" data-section="complaintsSection" type="button" aria-label="Complaints" title="Complaints">
+      <i data-lucide="message-square-warning"></i>
+      <span>Complaints</span>
+    </button>
 
-  <button id="navUserManagement" class="nav-btn" data-section="userManagementSection" type="button">
-    <i data-lucide="users"></i>
-    <span>User Management</span>
-  </button>
+    <button class="nav-btn" data-section="trackingSection" type="button" aria-label="Live Tracking" title="Live Tracking">
+      <i data-lucide="map-pinned"></i>
+      <span>Live Tracking</span>
+    </button>
+  </div>
 
-  <div class="sidebar-other-group" id="sidebarOtherGroup">
-          <button class="sidebar-other-trigger" id="sidebarOtherTrigger" type="button" aria-expanded="false">
+  <div class="sidebar-nav-group sidebar-nav-group-management">
+    <div class="sidebar-section-label">Management</div>
+
+    <button class="nav-btn" data-section="orientationSection" type="button" aria-label="Orientation" title="Orientation">
+      <i data-lucide="graduation-cap"></i>
+      <span>Orientation</span>
+    </button>
+
+    <button id="navUserManagement" class="nav-btn" data-section="userManagementSection" type="button" aria-label="User Management" title="User Management">
+      <i data-lucide="users"></i>
+      <span>User Management</span>
+    </button>
+  </div>
+
+  <div class="sidebar-nav-group sidebar-nav-group-more">
+    <div class="sidebar-section-label">More</div>
+
+    <div class="sidebar-other-group" id="sidebarOtherGroup">
+          <button class="sidebar-other-trigger" id="sidebarOtherTrigger" type="button" aria-expanded="false" aria-label="Other" title="Other">
             <span class="sidebar-other-trigger-left">
               <i data-lucide="ellipsis"></i>
               <span>Other</span>
@@ -111,17 +126,27 @@
             </button>
           </div>
         </div>
+  </div>
 </nav>
       </div>
 
       <div class="sidebar-bottom">
+        <div class="sidebar-section-label sidebar-account-label">Account</div>
 
-<div class="sidebar-user-card">
-          <div class="sidebar-user-name" id="sidebarName">-</div>
-          <div class="sidebar-user-role" id="sidebarRole">-</div>
+        <div class="sidebar-account-row">
+          <span class="sidebar-account-avatar" aria-hidden="true">
+            <i data-lucide="user-round"></i>
+          </span>
+
+          <div class="sidebar-user-card">
+            <div class="sidebar-user-name" id="sidebarName">-</div>
+            <div class="sidebar-account-meta">
+              <span class="sidebar-user-role" id="sidebarRole">-</span>
+            </div>
+          </div>
         </div>
 
-        <button class="logout-btn" id="logoutBtn" type="button">
+        <button class="logout-btn" id="logoutBtn" type="button" aria-label="Logout" title="Logout">
           <i data-lucide="log-out" aria-hidden="true"></i>
           <span>Logout</span>
         </button>

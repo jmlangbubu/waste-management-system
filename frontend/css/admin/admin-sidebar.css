@@ -39,7 +39,7 @@ body #adminLayout #dashboardSidebar {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 14px !important;
+  gap: 12px !important;
 }
 
 #dashboardSidebar .sidebar-bottom {
@@ -165,7 +165,32 @@ body #adminLayout #dashboardSidebar {
 #dashboardSidebar .sidebar-nav {
   display: flex !important;
   flex-direction: column !important;
-  gap: 5px !important;
+  gap: 0 !important;
+}
+
+#dashboardSidebar .sidebar-nav-group {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+}
+
+#dashboardSidebar .sidebar-nav-group + .sidebar-nav-group {
+  margin-top: 0;
+  padding-top: 16px;
+  border-top: 1px solid rgba(176, 228, 204, 0.12);
+}
+
+#dashboardSidebar .sidebar-section-label {
+  min-width: 0;
+  margin: 0 10px 2px;
+  color: rgba(176, 228, 204, 0.62);
+  font-size: 10.5px;
+  font-weight: 625;
+  line-height: 1.2;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 body #adminLayout #dashboardSidebar .nav-btn {
@@ -207,6 +232,21 @@ body #adminLayout #dashboardSidebar .nav-btn {
   white-space: nowrap;
 }
 
+body #adminLayout #dashboardSidebar #navUserManagement {
+  grid-template-columns: 20px minmax(0, 1fr) !important;
+  align-items: center !important;
+  column-gap: 11px !important;
+}
+
+#dashboardSidebar #navUserManagement svg,
+#dashboardSidebar #navUserManagement i {
+  grid-column: 1;
+}
+
+#dashboardSidebar #navUserManagement span {
+  grid-column: 2;
+}
+
 body #adminLayout #dashboardSidebar .nav-btn:hover {
   background: var(--wmo-sidebar-hover) !important;
   color: #ffffff !important;
@@ -223,9 +263,9 @@ body #adminLayout #dashboardSidebar .nav-btn.active {
   position: relative;
   width: 100%;
   min-width: 0;
-  margin-top: 7px;
-  padding-top: 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
 
 body #adminLayout #dashboardSidebar .sidebar-other-trigger {
@@ -364,14 +404,51 @@ html body #sidebarOtherMenu.sidebar-other-menu .sidebar-other-btn:hover {
 }
 
 body #adminLayout #dashboardSidebar .sidebar-user-card {
-  width: 100% !important;
+  min-width: 0 !important;
+  flex: 1 1 auto !important;
   min-height: 0 !important;
-  padding: 8px 10px !important;
+  padding: 0 !important;
   border: 0 !important;
-  border-radius: var(--wmo-radius-md) !important;
-  background: rgba(255, 255, 255, 0.035) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
   box-shadow: none !important;
   overflow: hidden !important;
+}
+
+#dashboardSidebar .sidebar-account-label {
+  margin-inline: 8px;
+}
+
+#dashboardSidebar .sidebar-account-row {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 6px 8px;
+  border-radius: var(--wmo-radius-md);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+#dashboardSidebar .sidebar-account-avatar {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  border: 1px solid rgba(176, 228, 204, 0.18);
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(176, 228, 204, 0.1);
+  color: var(--wmo-soft);
+}
+
+#dashboardSidebar .sidebar-account-avatar svg,
+#dashboardSidebar .sidebar-account-avatar i {
+  width: 17px;
+  height: 17px;
+  stroke-width: 2;
 }
 
 #dashboardSidebar .sidebar-user-name {
@@ -385,12 +462,25 @@ body #adminLayout #dashboardSidebar .sidebar-user-card {
 }
 
 #dashboardSidebar .sidebar-user-role {
-  margin-top: 2px !important;
+  min-width: 0;
   overflow: hidden;
-  color: rgba(255, 255, 255, 0.6) !important;
+  color: inherit !important;
   font-size: 11.5px !important;
   line-height: 1.35 !important;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#dashboardSidebar .sidebar-account-meta {
+  min-width: 0;
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 11.5px;
+  line-height: 1.35;
   white-space: nowrap;
 }
 
@@ -445,12 +535,31 @@ body #adminLayout.sidebar-collapsed #dashboardSidebar {
 }
 
 #adminLayout.sidebar-collapsed #dashboardSidebar .brand-text,
+#adminLayout.sidebar-collapsed #dashboardSidebar .sidebar-section-label,
 #adminLayout.sidebar-collapsed #dashboardSidebar .nav-btn span,
 #adminLayout.sidebar-collapsed #dashboardSidebar .sidebar-other-trigger-left span,
 #adminLayout.sidebar-collapsed #dashboardSidebar .sidebar-other-arrow,
 #adminLayout.sidebar-collapsed #dashboardSidebar .sidebar-user-card,
 #adminLayout.sidebar-collapsed #dashboardSidebar .logout-btn span {
   display: none !important;
+}
+
+#adminLayout.sidebar-collapsed #dashboardSidebar .sidebar-nav-group + .sidebar-nav-group {
+  padding-top: 12px;
+}
+
+#adminLayout.sidebar-collapsed #dashboardSidebar .sidebar-account-row {
+  width: 52px;
+  min-width: 52px;
+  padding: 0;
+  justify-content: center;
+  background: transparent;
+}
+
+body #adminLayout.sidebar-collapsed #dashboardSidebar #navUserManagement {
+  grid-template-columns: 20px !important;
+  column-gap: 0 !important;
+  justify-content: center !important;
 }
 
 body #adminLayout.sidebar-collapsed #dashboardSidebar .nav-btn,
@@ -483,12 +592,27 @@ body #adminLayout.sidebar-collapsed #dashboardSidebar .logout-btn {
   }
 
   body #adminLayout.sidebar-collapsed #dashboardSidebar .brand-text,
+  body #adminLayout.sidebar-collapsed #dashboardSidebar .sidebar-section-label,
   body #adminLayout.sidebar-collapsed #dashboardSidebar .nav-btn span,
   body #adminLayout.sidebar-collapsed #dashboardSidebar .sidebar-other-trigger-left span,
   body #adminLayout.sidebar-collapsed #dashboardSidebar .sidebar-other-arrow,
   body #adminLayout.sidebar-collapsed #dashboardSidebar .sidebar-user-card,
   body #adminLayout.sidebar-collapsed #dashboardSidebar .logout-btn span {
     display: block !important;
+  }
+
+  body #adminLayout.sidebar-collapsed #dashboardSidebar .sidebar-account-row {
+    width: 100%;
+    min-width: 0;
+    padding: 6px 8px;
+    justify-content: flex-start;
+    background: rgba(255, 255, 255, 0.035);
+  }
+
+  body #adminLayout.sidebar-collapsed #dashboardSidebar #navUserManagement {
+    grid-template-columns: 20px minmax(0, 1fr) !important;
+    column-gap: 11px !important;
+    justify-content: flex-start !important;
   }
 
   body #adminLayout.sidebar-collapsed #dashboardSidebar .nav-btn,
