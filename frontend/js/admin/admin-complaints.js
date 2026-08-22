@@ -1974,6 +1974,7 @@ function applyComplaintModalPosition(modalId) {
     if (!modal) return;
 
     const isMobile = window.matchMedia("(max-width: 992px)").matches;
+    const isComplaintDetails = modalId === "complaintDetailsModal";
 
     const overlay =
       modal.querySelector(".custom-modal-overlay") ||
@@ -1998,7 +1999,11 @@ function applyComplaintModalPosition(modalId) {
     modal.style.setProperty("justify-content", "center", "important");
     modal.style.setProperty("z-index", modalId === "complaintRejectModal" ? "2147483640" : "2147483600", "important");
     modal.style.setProperty("overflow", "hidden", "important");
-    modal.style.setProperty("padding", isMobile ? "12px" : "24px", "important");
+    modal.style.setProperty(
+      "padding",
+      isComplaintDetails && isMobile ? "10px" : (isMobile ? "12px" : "24px"),
+      "important"
+    );
     modal.style.setProperty("box-sizing", "border-box", "important");
 
     if (overlay) {
@@ -2022,14 +2027,21 @@ function applyComplaintModalPosition(modalId) {
       content.style.setProperty("bottom", "auto", "important");
       content.style.setProperty("transform", "none", "important");
       content.style.setProperty("z-index", "2", "important");
-      content.style.setProperty("overflow", "auto", "important");
       content.style.setProperty("margin", "0 auto", "important");
 
-      if (isMobile) {
+      if (isComplaintDetails) {
+        // Complaint Details geometry and its single body scroll live in admin-complaints.css.
+        content.style.removeProperty("overflow");
+        content.style.removeProperty("width");
+        content.style.removeProperty("max-width");
+        content.style.removeProperty("max-height");
+      } else if (isMobile) {
+        content.style.setProperty("overflow", "auto", "important");
         content.style.setProperty("width", "calc(100vw - 24px)", "important");
         content.style.setProperty("max-width", "calc(100vw - 24px)", "important");
         content.style.setProperty("max-height", "calc(100dvh - 24px)", "important");
       } else {
+        content.style.setProperty("overflow", "auto", "important");
         if (modalId === "complaintRejectModal") {
           content.style.setProperty("width", "min(560px, calc(100vw - 48px))", "important");
           content.style.setProperty("max-width", "560px", "important");
