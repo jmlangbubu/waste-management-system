@@ -558,30 +558,30 @@ function getNotificationDisplayIcon(notif = {}) {
   ].join(" ").toLowerCase();
 
   if (combined.includes("explanation") || combined.includes("replied to wmo")) {
-    return "💬";
+    return "message-circle";
   }
 
   if (combined.includes("resolution") || combined.includes("resolved")) {
-    return "✅";
+    return "circle-check";
   }
 
   if (combined.includes("complaint") || combined.includes("concern")) {
-    return "⚠️";
+    return "triangle-alert";
   }
 
   if (combined.includes("gps") || combined.includes("tracking") || combined.includes("truck")) {
-    return "🚛";
+    return "truck";
   }
 
   if (combined.includes("waste") || combined.includes("validation") || combined.includes("qr")) {
-    return "♻️";
+    return "recycle";
   }
 
   if (combined.includes("appointment") || combined.includes("orientation")) {
-    return "📅";
+    return "calendar-days";
   }
 
-  return "🔔";
+  return "bell";
 }
 
 function getNotificationToneClass(notif = {}) {
@@ -1196,7 +1196,9 @@ function ensureNotificationDetailModal() {
 
     <section class="notification-detail-card" role="dialog" aria-modal="true" aria-labelledby="notificationDetailTitle">
       <header class="notification-detail-header">
-        <div class="notification-detail-icon" id="notificationDetailIcon">💬</div>
+        <div class="notification-detail-icon" id="notificationDetailIcon" aria-hidden="true">
+          <i data-lucide="bell"></i>
+        </div>
 
         <div class="notification-detail-heading">
           <p class="notification-detail-eyebrow" id="notificationDetailType">Notification</p>
@@ -1255,7 +1257,9 @@ function openNotificationDetailModal(notif = {}) {
 
   modal.className = `notification-detail-modal notif-detail-tone-${toneClass}`;
 
-  if (iconEl) iconEl.textContent = icon || "🔔";
+  if (iconEl) {
+    iconEl.innerHTML = `<i data-lucide="${escapeHtml(icon || "bell")}"></i>`;
+  }
   if (typeEl) typeEl.textContent = type || "Notification";
   if (titleEl) titleEl.textContent = title || "Notification Details";
   if (dateEl) {
@@ -1285,6 +1289,10 @@ function openNotificationDetailModal(notif = {}) {
 
   modal.classList.remove("hidden");
   modal.setAttribute("aria-hidden", "false");
+
+  if (window.lucide && typeof window.lucide.createIcons === "function") {
+    window.lucide.createIcons();
+  }
 }
 
 function closeNotificationDetailModal() {
@@ -1553,7 +1561,9 @@ function renderNotifications(list = []) {
         aria-label="${escapeHtml(title)}"
       >
         <div class="notif-main">
-          <div class="notif-icon" aria-hidden="true">${escapeHtml(icon)}</div>
+          <div class="notif-icon" aria-hidden="true">
+            <i data-lucide="${escapeHtml(icon || "bell")}"></i>
+          </div>
 
           <div class="notif-content">
             <div class="notif-title-row">
@@ -1594,6 +1604,10 @@ function renderNotifications(list = []) {
       </article>
     `;
   }).join("");
+
+  if (window.lucide && typeof window.lucide.createIcons === "function") {
+    window.lucide.createIcons();
+  }
 }
 
 function bindNotificationActions() {
