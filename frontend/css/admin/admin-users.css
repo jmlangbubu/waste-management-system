@@ -383,13 +383,14 @@
 #userManagementSection .account-action-buttons .suspend-btn,
 #deactivatedAccountsModal .account-action-buttons .delete-btn {
   border-color: #dfbcbc;
+  background: #fff1f1;
   color: #a44242;
 }
 
 #userManagementSection .account-action-buttons .suspend-btn:hover,
 #deactivatedAccountsModal .account-action-buttons .delete-btn:hover {
   border-color: #c77c7c;
-  background: #fff5f5;
+  background: #fee7e7;
   color: #8e2f2f;
 }
 
@@ -404,6 +405,9 @@
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
+  padding: 24px !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
 }
 
 #deactivatedAccountsModal.hidden {
@@ -413,96 +417,185 @@
 #deactivatedAccountsModal .history-modal-overlay {
   position: fixed !important;
   inset: 0 !important;
-  background: rgba(15, 23, 42, 0.62) !important;
-  backdrop-filter: blur(4px);
+  background: rgba(9, 20, 19, 0.48) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
   z-index: 1 !important;
 }
 
-#deactivatedAccountsModal .history-modal-content {
+body #deactivatedAccountsModal.history-modal:not(.hidden) .history-modal-content {
   position: relative !important;
+  inset: auto !important;
+  top: auto !important;
+  left: auto !important;
+  transform: none !important;
   z-index: 2 !important;
-  width: min(1050px, 88vw) !important;
-  max-height: 84vh !important;
+  display: block !important;
+  width: min(1040px, calc(100vw - 96px)) !important;
+  min-width: 0 !important;
+  max-width: 1040px !important;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: calc(100dvh - 48px) !important;
   overflow: hidden !important;
   margin: 0 !important;
-  background: #ffffff;
-  border-radius: 24px;
-  padding: 24px;
-  box-shadow: 0 30px 100px rgba(15, 23, 42, 0.28);
+  padding: 0 !important;
+  background: #ffffff !important;
+  border: 1px solid #dce8e1 !important;
+  border-radius: 11px !important;
+  box-shadow: 0 18px 48px rgba(9, 20, 19, 0.14) !important;
+  box-sizing: border-box !important;
 }
 
 #deactivatedAccountsModal .history-modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 18px;
-  padding-bottom: 16px;
-  margin-bottom: 18px;
-  border-bottom: 1px solid #e5e7eb;
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  gap: 16px !important;
+  margin: 0 !important;
+  padding: 24px 26px 20px !important;
+  border-bottom: 1px solid #dce8e1 !important;
 }
 
 #deactivatedAccountsModal .history-modal-header h2 {
-  margin: 0;
-  font-size: 24px;
-  font-weight: 900;
-  color: #06251c;
+  margin: 0 !important;
+  color: #091413 !important;
+  font-size: 27px !important;
+  font-weight: 750 !important;
+  line-height: 1.18 !important;
+  letter-spacing: -0.025em !important;
 }
 
 #deactivatedAccountsModal .history-modal-header p {
-  margin: 4px 0 0;
-  color: #64748b;
-  font-size: 14px;
+  margin: 3px 0 0 !important;
+  color: #60716a !important;
+  font-size: 14px !important;
+  line-height: 1.4 !important;
 }
 
 #deactivatedAccountsModal .history-close-btn {
-  width: 46px;
-  height: 46px;
-  border: none;
-  border-radius: 50%;
-  background: #f1f5f9;
-  color: #334155;
-  font-size: 22px;
+  width: 40px !important;
+  height: 40px !important;
+  min-width: 40px !important;
+  min-height: 40px !important;
+  padding: 0 !important;
+  border: 1px solid #dce8e1 !important;
+  border-radius: 9px !important;
+  background: #f5f9f7 !important;
+  color: #3f5149 !important;
+  font-size: 19px !important;
+  font-weight: 600 !important;
+  line-height: 1 !important;
   cursor: pointer;
 }
 
 #deactivatedAccountsModal .history-close-btn:hover {
-  background: #e2e8f0;
+  border-color: #bfd2c8 !important;
+  background: #edf5f1 !important;
+  color: #173c2f !important;
 }
 
-#deactivatedAccountsModal .table-shell {
-  width: 100%;
-  max-height: 56vh;
-  overflow-x: auto;
-  overflow-y: auto;
-  border: 1px solid #e5e7eb;
-  border-radius: 18px;
+body #deactivatedAccountsModal.history-modal:not(.hidden) .table-shell {
+  width: auto !important;
+  max-width: none !important;
+  max-height: calc(100dvh - 190px) !important;
+  margin: 20px 26px 26px !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  border: 1px solid #dce8e1 !important;
+  border-radius: 10px !important;
+  background: #ffffff !important;
+  box-sizing: border-box !important;
 }
 
-#deactivatedAccountsModal table {
-  width: 100%;
-  min-width: 950px;
-  border-collapse: collapse;
+body #deactivatedAccountsModal.history-modal:not(.hidden) table {
+  width: 100% !important;
+  min-width: 0 !important;
+  table-layout: fixed !important;
+  border-collapse: collapse !important;
 }
 
 #deactivatedAccountsModal th,
 #deactivatedAccountsModal td {
   text-align: center !important;
   vertical-align: middle;
-  white-space: nowrap;
-  padding: 16px;
+  white-space: normal !important;
+  padding: 12px 8px !important;
+  overflow-wrap: anywhere;
 }
 
 #deactivatedAccountsModal th {
-  background: #f8fafc;
-  font-size: 13px;
-  font-weight: 900;
-  color: #0f172a;
+  background: #f3f8f5 !important;
+  color: #2d3e37 !important;
+  font-size: 13px !important;
+  font-weight: 650 !important;
+  line-height: 1.3 !important;
+  white-space: nowrap !important;
 }
 
 #deactivatedAccountsModal td {
-  font-size: 14px;
-  color: #0f172a;
-  border-bottom: 1px solid #edf0f2;
+  color: #091413 !important;
+  font-size: 12.5px !important;
+  border-bottom: 1px solid #e7eee9 !important;
+}
+
+#deactivatedAccountsModal th:nth-child(1),
+#deactivatedAccountsModal td:nth-child(1) { width: 13%; }
+
+#deactivatedAccountsModal th:nth-child(2),
+#deactivatedAccountsModal td:nth-child(2) { width: 18%; }
+
+#deactivatedAccountsModal th:nth-child(3),
+#deactivatedAccountsModal td:nth-child(3) { width: 8%; }
+
+#deactivatedAccountsModal th:nth-child(4),
+#deactivatedAccountsModal td:nth-child(4) { width: 10%; }
+
+#deactivatedAccountsModal th:nth-child(5),
+#deactivatedAccountsModal td:nth-child(5) { width: 16%; }
+
+#deactivatedAccountsModal th:nth-child(6),
+#deactivatedAccountsModal td:nth-child(6) { width: 9%; }
+
+#deactivatedAccountsModal th:nth-child(7),
+#deactivatedAccountsModal td:nth-child(7) { width: 12%; }
+
+#deactivatedAccountsModal th:nth-child(8),
+#deactivatedAccountsModal td:nth-child(8) { width: 14%; }
+
+#deactivatedAccountsModal .account-action-buttons .inline-action-btn {
+  min-width: 50px;
+  padding-inline: 7px;
+}
+
+#deactivatedAccountsModal td.empty-state {
+  height: 160px;
+  padding: 80px 24px 24px !important;
+  background-color: #fbfdfc !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='52' height='52' viewBox='0 0 52 52'%3E%3Ccircle cx='26' cy='26' r='26' fill='%23E8F4EE'/%3E%3Cpath d='M19 22.5a7 7 0 1 1 14 0 7 7 0 0 1-14 0Zm-3.5 14c1.6-5.1 5-7.5 10.5-7.5s8.9 2.4 10.5 7.5' fill='none' stroke='%23408A71' stroke-width='2.3' stroke-linecap='round'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: center 22px !important;
+  font-size: 0 !important;
+  text-align: center !important;
+}
+
+#deactivatedAccountsModal td.empty-state::before {
+  content: "No deactivated accounts found.";
+  display: block;
+  color: #173c2f;
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+#deactivatedAccountsModal td.empty-state::after {
+  content: "There are currently no deactivated user accounts.";
+  display: block;
+  margin-top: 4px;
+  color: #60716a;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
 }
 
 /* RESPONSIVE */
@@ -551,14 +644,54 @@
     min-width: 1040px !important;
   }
 
-  #deactivatedAccountsModal .history-modal-content {
-    width: 94vw !important;
-    max-height: 86vh !important;
-    padding: 18px;
+  body #deactivatedAccountsModal.history-modal:not(.hidden) .history-modal-content {
+    width: calc(100vw - 24px) !important;
+    max-width: calc(100vw - 24px) !important;
+    max-height: calc(100dvh - 24px) !important;
+    padding: 0 !important;
   }
 
-  #deactivatedAccountsModal table {
-    min-width: 980px !important;
+  body #deactivatedAccountsModal.history-modal:not(.hidden) {
+    padding: 12px !important;
+  }
+
+  #deactivatedAccountsModal .history-modal-header {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) 40px !important;
+    align-items: start !important;
+    gap: 12px !important;
+    padding: 20px 18px 17px !important;
+  }
+
+  #deactivatedAccountsModal .history-modal-header h2 {
+    font-size: 22px !important;
+    line-height: 1.2 !important;
+  }
+
+  #deactivatedAccountsModal .history-modal-header p {
+    font-size: 13px !important;
+  }
+
+  body #deactivatedAccountsModal.history-modal:not(.hidden) .table-shell {
+    max-height: calc(100dvh - 146px) !important;
+    margin: 12px !important;
+    overflow-x: auto !important;
+    overflow-y: auto !important;
+  }
+
+  body #deactivatedAccountsModal.history-modal:not(.hidden) table {
+    min-width: 900px !important;
+  }
+
+  #deactivatedAccountsModal td.empty-state {
+    background-position: calc((100vw - 52px) / 2) 22px !important;
+  }
+
+  #deactivatedAccountsModal td.empty-state::before,
+  #deactivatedAccountsModal td.empty-state::after {
+    position: sticky;
+    left: 0;
+    width: calc(100vw - 52px);
   }
 }
 
