@@ -2389,3 +2389,578 @@ body #complaintDetailsModal .complaint-modal-actions {
   }
 }
 
+/* =========================================================
+   COMPLAINT DETAILS - COMPACT OPERATIONAL LAYOUT
+   This module owns the modal geometry; workflow IDs and handlers are unchanged.
+========================================================= */
+body #complaintDetailsModal.custom-modal:not(.hidden) {
+  position: fixed !important;
+  inset: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 24px 32px !important;
+  overflow: hidden !important;
+}
+
+body #complaintDetailsModal .custom-modal-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  background: rgba(9, 20, 19, 0.68) !important;
+  backdrop-filter: blur(5px) !important;
+}
+
+body #complaintDetailsModal .complaint-details-pro-modal,
+body #complaintDetailsModal .complaint-modal-content {
+  position: relative !important;
+  inset: auto !important;
+  transform: none !important;
+  width: min(1080px, calc(100vw - 64px)) !important;
+  max-width: 1080px !important;
+  max-height: min(860px, calc(100dvh - 48px)) !important;
+  margin: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  border: 1px solid #dbe7e1 !important;
+  border-radius: 16px !important;
+  background: #ffffff !important;
+  box-shadow: 0 28px 76px rgba(9, 20, 19, 0.3) !important;
+}
+
+body #complaintDetailsModal .complaint-details-pro-header,
+body #complaintDetailsModal .custom-modal-header {
+  flex: 0 0 78px !important;
+  min-height: 78px !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  align-items: center !important;
+  gap: 16px !important;
+  padding: 12px 18px !important;
+  border-bottom: 1px solid #dfe9e4 !important;
+  background: #ffffff !important;
+}
+
+body #complaintDetailsModal .complaint-details-title-wrap {
+  min-width: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+}
+
+body #complaintDetailsModal .complaint-details-title-icon {
+  position: relative !important;
+  width: 38px !important;
+  height: 38px !important;
+  min-width: 38px !important;
+  border: 1px solid #b0e4cc !important;
+  border-radius: 11px !important;
+  background: #eaf8f2 !important;
+  color: transparent !important;
+  font-size: 0 !important;
+}
+
+body #complaintDetailsModal .complaint-details-title-icon::before,
+body #complaintDetailsModal .complaint-pro-icon::before,
+body #complaintDetailsModal .complaint-mini-icon::before,
+body #complaintDetailsModal .no-image-icon::before,
+body #complaintDetailsModal .map-preview-pin::before {
+  content: "" !important;
+  display: block !important;
+  width: 19px !important;
+  height: 19px !important;
+  background: currentColor !important;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M6 2h9l5 5v15H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm8 2H6v16h12V8h-4V4Zm-5 8h6v2H9v-2Zm0 4h6v2H9v-2Z'/%3E%3C/svg%3E") center / contain no-repeat !important;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M6 2h9l5 5v15H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm8 2H6v16h12V8h-4V4Zm-5 8h6v2H9v-2Zm0 4h6v2H9v-2Z'/%3E%3C/svg%3E") center / contain no-repeat !important;
+}
+
+body #complaintDetailsModal .complaint-details-title-icon::before {
+  color: #285a48 !important;
+}
+
+body #complaintDetailsModal .custom-modal-header h3,
+body #complaintDetailsModal .complaint-details-pro-header h3 {
+  margin: 0 !important;
+  color: #091413 !important;
+  font-size: 25px !important;
+  line-height: 1.05 !important;
+  font-weight: 900 !important;
+  letter-spacing: -0.025em !important;
+}
+
+body #complaintDetailsModal .custom-modal-header p,
+body #complaintDetailsModal .complaint-details-pro-header p {
+  margin: 4px 0 0 !important;
+  color: #66776f !important;
+  font-size: 13px !important;
+  line-height: 1.25 !important;
+}
+
+body #complaintDetailsModal .complaint-details-header-actions {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+
+body #complaintDetailsModal #complaintModalStatus.complaint-details-status-pill {
+  min-height: 30px !important;
+  padding: 0 11px !important;
+  border-radius: 999px !important;
+  font-size: 12px !important;
+  font-weight: 850 !important;
+}
+
+body #complaintDetailsModal #complaintModalStatus.complaint-details-status-pill.pending {
+  border: 1px solid #f4c95d !important;
+  background: #fff4d6 !important;
+  color: #92400e !important;
+}
+
+body #complaintDetailsModal #complaintModalStatus.complaint-details-status-pill.validated,
+body #complaintDetailsModal #complaintModalStatus.complaint-details-status-pill.forwarded,
+body #complaintDetailsModal #complaintModalStatus.complaint-details-status-pill.accepted,
+body #complaintDetailsModal #complaintModalStatus.complaint-details-status-pill.resolved {
+  border: 1px solid #9ed9bf !important;
+  background: #e6f7ef !important;
+  color: #166534 !important;
+}
+
+body #complaintDetailsModal #complaintModalStatus.complaint-details-status-pill.rejected,
+body #complaintDetailsModal #complaintModalStatus.complaint-details-status-pill.cancelled {
+  border: 1px solid #fecaca !important;
+  background: #fee2e2 !important;
+  color: #b91c1c !important;
+}
+
+body #complaintDetailsModal .modal-close-btn {
+  width: 40px !important;
+  height: 40px !important;
+  min-width: 40px !important;
+  min-height: 40px !important;
+  padding: 0 !important;
+  border: 1px solid #dbe5e0 !important;
+  border-radius: 50% !important;
+  background: #f6f9f7 !important;
+  color: #40524a !important;
+  font-size: 22px !important;
+  line-height: 1 !important;
+  box-shadow: none !important;
+}
+
+body #complaintDetailsModal .complaint-details-pro-body,
+body #complaintDetailsModal .complaint-modal-body,
+body #complaintDetailsModal .custom-modal-body {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  max-height: calc(min(860px, calc(100dvh - 48px)) - 78px) !important;
+  padding: 14px 16px 12px !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  scrollbar-width: thin !important;
+}
+
+body #complaintDetailsModal .complaint-details-pro-grid {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1.18fr) minmax(320px, 0.82fr) !important;
+  gap: 12px !important;
+  align-items: start !important;
+}
+
+body #complaintDetailsModal .complaint-details-left-stack,
+body #complaintDetailsModal .complaint-details-right-stack {
+  min-width: 0 !important;
+  display: grid !important;
+  gap: 10px !important;
+}
+
+body #complaintDetailsModal .complaint-pro-card {
+  min-width: 0 !important;
+  padding: 11px 13px !important;
+  border: 1px solid #dfe9e4 !important;
+  border-radius: 12px !important;
+  background: #fbfdfc !important;
+  box-shadow: none !important;
+}
+
+body #complaintDetailsModal .complaint-pro-card-header {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  margin-bottom: 7px !important;
+}
+
+body #complaintDetailsModal .complaint-pro-card-header h4 {
+  margin: 0 !important;
+  color: #163c30 !important;
+  font-size: 14px !important;
+  line-height: 1.2 !important;
+  font-weight: 850 !important;
+}
+
+body #complaintDetailsModal .complaint-pro-icon,
+body #complaintDetailsModal .complaint-mini-icon {
+  position: relative !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  color: #408a71 !important;
+  font-size: 0 !important;
+}
+
+body #complaintDetailsModal .complaint-pro-icon {
+  width: 26px !important;
+  height: 26px !important;
+  min-width: 26px !important;
+  border: 0 !important;
+  border-radius: 8px !important;
+  background: #eaf8f2 !important;
+}
+
+body #complaintDetailsModal .complaint-pro-icon::before {
+  width: 15px !important;
+  height: 15px !important;
+}
+
+body #complaintDetailsModal .complaint-summary-fields {
+  display: grid !important;
+  gap: 0 !important;
+  border-top: 1px solid #e5ede9 !important;
+}
+
+body #complaintDetailsModal .complaint-summary-fields .complaint-pro-field + .complaint-pro-field {
+  border-top: 1px solid #e5ede9 !important;
+}
+
+body #complaintDetailsModal .complaint-pro-two-grid,
+body #complaintDetailsModal .complaint-pro-submitted-grid {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 0 !important;
+  border-top: 1px solid #e5ede9 !important;
+}
+
+body #complaintDetailsModal .complaint-pro-two-grid > .complaint-pro-field + .complaint-pro-field,
+body #complaintDetailsModal .complaint-pro-submitted-grid > .complaint-pro-field + .complaint-pro-field {
+  border-left: 1px solid #e5ede9 !important;
+}
+
+body #complaintDetailsModal .complaint-pro-field,
+body #complaintDetailsModal .submitted-card .complaint-pro-submitted-grid .complaint-pro-field {
+  min-width: 0 !important;
+  min-height: 62px !important;
+  padding: 8px 9px !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+body #complaintDetailsModal .complaint-pro-field.with-icon {
+  display: grid !important;
+  grid-template-columns: 30px minmax(0, 1fr) !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+
+body #complaintDetailsModal .complaint-mini-icon {
+  width: 30px !important;
+  height: 30px !important;
+  border: 1px solid #d7ebe2 !important;
+  border-radius: 9px !important;
+  background: #f0f8f4 !important;
+}
+
+body #complaintDetailsModal .complaint-mini-icon::before {
+  width: 15px !important;
+  height: 15px !important;
+}
+
+body #complaintDetailsModal .complaint-pro-field label,
+body #complaintDetailsModal .manual-barangay-container label {
+  display: block !important;
+  margin: 0 0 4px !important;
+  color: #718177 !important;
+  font-size: 11.5px !important;
+  line-height: 1.15 !important;
+  font-weight: 800 !important;
+}
+
+body #complaintDetailsModal .complaint-field-value {
+  color: #142a23 !important;
+  font-size: 13px !important;
+  line-height: 1.35 !important;
+  font-weight: 800 !important;
+  overflow-wrap: anywhere !important;
+}
+
+body #complaintDetailsModal #complaintModalCoordinates {
+  white-space: nowrap !important;
+  overflow-wrap: normal !important;
+  font-variant-numeric: tabular-nums !important;
+}
+
+body #complaintDetailsModal .submitted-card {
+  padding: 11px 13px !important;
+}
+
+body #complaintDetailsModal .evidence-card {
+  min-height: 0 !important;
+}
+
+body #complaintDetailsModal .complaint-evidence-wrapper {
+  position: relative !important;
+  width: 100% !important;
+  height: 228px !important;
+  min-height: 228px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  overflow: hidden !important;
+  border: 1px solid #dce6e1 !important;
+  border-radius: 11px !important;
+  background: #f3f6f4 !important;
+}
+
+body #complaintDetailsModal .complaint-evidence-image,
+body #complaintDetailsModal .complaint-image-skeleton,
+body #complaintDetailsModal .no-image-placeholder {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+body #complaintDetailsModal .complaint-evidence-image {
+  object-fit: contain !important;
+  object-position: center !important;
+  background: #f3f6f4 !important;
+}
+
+body #complaintDetailsModal .no-image-placeholder .no-image-icon {
+  position: relative !important;
+  width: 44px !important;
+  height: 44px !important;
+  color: #5f786d !important;
+  font-size: 0 !important;
+  border-radius: 11px !important;
+  background: #e5eee9 !important;
+}
+
+body #complaintDetailsModal .map-preview-card {
+  padding-bottom: 11px !important;
+}
+
+body #complaintDetailsModal .map-preview-header {
+  justify-content: space-between !important;
+  align-items: center !important;
+}
+
+body #complaintDetailsModal .complaint-map-small-btn {
+  min-height: 36px !important;
+  height: 36px !important;
+  padding: 0 13px !important;
+  border: 1px solid #9ed9bf !important;
+  border-radius: 10px !important;
+  background: #dff4ea !important;
+  color: #285a48 !important;
+  font-size: 12px !important;
+  font-weight: 850 !important;
+  box-shadow: none !important;
+}
+
+body #complaintDetailsModal .complaint-map-preview-box {
+  position: relative !important;
+  width: 100% !important;
+  height: 184px !important;
+  overflow: hidden !important;
+  border: 1px solid #dce6e1 !important;
+  border-radius: 11px !important;
+}
+
+body #complaintDetailsModal .map-preview-pin {
+  top: 56px !important;
+  width: 40px !important;
+  height: 40px !important;
+  color: #285a48 !important;
+  font-size: 0 !important;
+}
+
+body #complaintDetailsModal .map-preview-pin::before {
+  width: 20px !important;
+  height: 20px !important;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M12 2a7 7 0 0 1 7 7c0 5.25-7 13-7 13S5 14.25 5 9a7 7 0 0 1 7-7Zm0 4a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z'/%3E%3C/svg%3E") center / contain no-repeat !important;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M12 2a7 7 0 0 1 7 7c0 5.25-7 13-7 13S5 14.25 5 9a7 7 0 0 1 7-7Zm0 4a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z'/%3E%3C/svg%3E") center / contain no-repeat !important;
+}
+
+body #complaintDetailsModal .complaint-details-footer {
+  position: sticky !important;
+  bottom: -12px !important;
+  z-index: 4 !important;
+  min-height: 54px !important;
+  margin: 10px -16px -12px !important;
+  padding: 8px 16px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 8px !important;
+  border-top: 1px solid #dfe9e4 !important;
+  background: rgba(255, 255, 255, 0.97) !important;
+  box-shadow: 0 -8px 18px rgba(9, 20, 19, 0.04) !important;
+  backdrop-filter: blur(6px) !important;
+}
+
+body #complaintDetailsModal #btnCloseComplaintModalFooter {
+  display: none !important;
+}
+
+body #complaintDetailsModal .complaint-danger-btn,
+body #complaintDetailsModal .complaint-primary-btn,
+body #complaintDetailsModal .complaint-details-footer #btnValidateComplaintFromDetails {
+  width: auto !important;
+  min-width: 0 !important;
+  height: 42px !important;
+  min-height: 42px !important;
+  padding: 0 15px !important;
+  border-radius: 10px !important;
+  font-size: 13px !important;
+  line-height: 1 !important;
+  font-weight: 850 !important;
+  box-shadow: none !important;
+}
+
+body #complaintDetailsModal .complaint-danger-btn {
+  border: 1px solid #fecaca !important;
+  background: #feecec !important;
+  color: #a61b1b !important;
+}
+
+body #complaintDetailsModal .complaint-primary-btn,
+body #complaintDetailsModal .complaint-details-footer #btnValidateComplaintFromDetails {
+  border: 1px solid #285a48 !important;
+  background: #285a48 !important;
+  color: #ffffff !important;
+}
+
+@media (max-width: 900px) {
+  body #complaintDetailsModal.custom-modal:not(.hidden) {
+    padding: 16px !important;
+  }
+
+  body #complaintDetailsModal .complaint-details-pro-modal,
+  body #complaintDetailsModal .complaint-modal-content {
+    width: calc(100vw - 32px) !important;
+    max-width: calc(100vw - 32px) !important;
+    max-height: calc(100dvh - 32px) !important;
+  }
+
+  body #complaintDetailsModal .complaint-details-pro-body,
+  body #complaintDetailsModal .complaint-modal-body,
+  body #complaintDetailsModal .custom-modal-body {
+    max-height: calc(100dvh - 110px) !important;
+  }
+
+  body #complaintDetailsModal .complaint-details-pro-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (max-width: 560px) {
+  body #complaintDetailsModal.custom-modal:not(.hidden) {
+    padding: 10px !important;
+  }
+
+  body #complaintDetailsModal .complaint-details-pro-modal,
+  body #complaintDetailsModal .complaint-modal-content {
+    width: calc(100vw - 20px) !important;
+    max-width: calc(100vw - 20px) !important;
+    max-height: calc(100dvh - 20px) !important;
+    border-radius: 14px !important;
+  }
+
+  body #complaintDetailsModal .complaint-details-pro-header,
+  body #complaintDetailsModal .custom-modal-header {
+    flex-basis: 80px !important;
+    min-height: 80px !important;
+    gap: 8px !important;
+    padding: 10px 12px !important;
+  }
+
+  body #complaintDetailsModal .complaint-details-title-icon {
+    display: none !important;
+  }
+
+  body #complaintDetailsModal .complaint-details-title-wrap {
+    gap: 0 !important;
+  }
+
+  body #complaintDetailsModal .custom-modal-header h3,
+  body #complaintDetailsModal .complaint-details-pro-header h3 {
+    font-size: 21px !important;
+  }
+
+  body #complaintDetailsModal .custom-modal-header p,
+  body #complaintDetailsModal .complaint-details-pro-header p {
+    max-width: 205px !important;
+    font-size: 11.5px !important;
+    line-height: 1.2 !important;
+  }
+
+  body #complaintDetailsModal .complaint-details-header-actions {
+    gap: 5px !important;
+  }
+
+  body #complaintDetailsModal #complaintModalStatus.complaint-details-status-pill {
+    min-height: 28px !important;
+    padding: 0 8px !important;
+    font-size: 11.5px !important;
+  }
+
+  body #complaintDetailsModal .modal-close-btn {
+    width: 36px !important;
+    height: 36px !important;
+    min-width: 36px !important;
+    min-height: 36px !important;
+  }
+
+  body #complaintDetailsModal .complaint-details-pro-body,
+  body #complaintDetailsModal .complaint-modal-body,
+  body #complaintDetailsModal .custom-modal-body {
+    max-height: calc(100dvh - 100px) !important;
+    padding: 10px !important;
+  }
+
+  body #complaintDetailsModal .complaint-pro-two-grid,
+  body #complaintDetailsModal .complaint-pro-submitted-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  body #complaintDetailsModal .complaint-pro-two-grid > .complaint-pro-field + .complaint-pro-field,
+  body #complaintDetailsModal .complaint-pro-submitted-grid > .complaint-pro-field + .complaint-pro-field {
+    border-top: 1px solid #e5ede9 !important;
+    border-left: 0 !important;
+  }
+
+  body #complaintDetailsModal .complaint-evidence-wrapper {
+    height: 220px !important;
+    min-height: 220px !important;
+  }
+
+  body #complaintDetailsModal .complaint-map-preview-box {
+    height: 176px !important;
+  }
+
+  body #complaintDetailsModal .complaint-details-footer {
+    bottom: -10px !important;
+    margin: 8px -10px -10px !important;
+    padding: 8px 10px !important;
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  body #complaintDetailsModal .complaint-danger-btn,
+  body #complaintDetailsModal .complaint-primary-btn,
+  body #complaintDetailsModal .complaint-details-footer #btnValidateComplaintFromDetails {
+    width: 100% !important;
+    padding: 0 9px !important;
+    font-size: 12px !important;
+  }
+}
+
