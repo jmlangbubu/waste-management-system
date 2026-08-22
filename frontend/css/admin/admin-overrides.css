@@ -479,85 +479,7 @@
   }
 }
 
-/* ===============================
-   GLOBAL COMPACT DASHBOARD FIX
-   No transform, no broken sidebar
-================================ */
-
-body {
-  font-size: 14px;
-}
-
-
-
-
-
-.page-card {
-  padding: 22px;
-  border-radius: 22px;
-}
-
-.topbar {
-  margin-bottom: 24px;
-}
-
-.topbar h1 {
-  font-size: 24px;
-}
-
-.topbar-subtitle {
-  font-size: 13px;
-}
-
-.page-card-header h2 {
-  font-size: 22px;
-}
-
-.page-card-header p {
-  font-size: 13px;
-}
-
-.nav-btn {
-  min-height: 44px;
-  padding: 12px 16px;
-  font-size: 14px;
-}
-
-.refresh-btn,
-.view-all-btn,
-.logout-btn {
-  min-height: 44px;
-  padding: 11px 18px;
-  font-size: 14px;
-}
-
-input,
-select,
-button {
-  font-size: 14px;
-}
-
-table th,
-table td {
-  font-size: 13px;
-  padding: 13px 14px;
-}
-
-.dashboard-main-grid {
-  gap: 22px;
-}
-
-.dashboard-side-stack {
-  gap: 22px;
-}
-
-.waste-summary-cards {
-  gap: 14px;
-}
-
-.waste-summary-card {
-  padding: 18px;
-}
+/* Legacy global compact-dashboard patch retired; shared typography and table density now use Phase 1 primitives. */
 
 /* ===============================
    COMPLAINT DETAILS MODAL - FINAL CLEAN UI
@@ -684,80 +606,7 @@ table td {
   }
 }
 
-/* ===============================
-   UNIFORM MODAL POSITION FIX
-   Works with fixed 260px sidebar
-================================ */
-
-
-.history-modal,
-.custom-modal {
-  position: fixed !important;
-  inset: 0 !important;
-  z-index: 5000 !important;
-}
-
-/* modal background */
-.history-modal-overlay,
-.custom-modal-overlay {
-  position: fixed !important;
-  inset: 0 !important;
-  background: rgba(15, 23, 42, 0.55) !important;
-  backdrop-filter: blur(5px);
-}
-
-
-.history-modal .history-modal-content,
-.custom-modal .custom-modal-content {
-  position: fixed !important;
-  top: 50% !important;
-  left: calc(260px + ((100vw - 260px) / 2)) !important;
-  transform: translate(-50%, -50%) !important;
-
-  width: min(1080px, calc(100vw - 330px)) !important;
-  max-width: none !important;
-  max-height: 84vh !important;
-
-  background: #ffffff !important;
-  border-radius: 24px !important;
-  overflow: hidden !important;
-  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28) !important;
-}
-
-/* modal body scroll */
-.history-modal .table-shell,
-.custom-modal .custom-modal-body {
-  max-height: 62vh;
-  overflow: auto;
-}
-
-/* keep headers clean */
-.history-modal .history-modal-header,
-.custom-modal .custom-modal-header {
-  padding: 22px 24px;
-  border-bottom: 1px solid #e5e7eb;
-}
-
-/* table modal spacing */
-.history-modal .table-shell {
-  margin: 22px 24px 24px;
-}
-
-/* close button */
-.history-close-btn,
-.modal-close-btn {
-  flex-shrink: 0;
-}
-
-/* mobile / small screen */
-@media (max-width: 900px) {
-  .history-modal .history-modal-content,
-  .custom-modal .custom-modal-content {
-    left: 50% !important;
-    width: calc(100vw - 28px) !important;
-    max-height: 86vh !important;
-  }
-}
+/* Legacy fixed-260px modal positioning patch retired; admin-modals.css owns shared modal placement. */
 
 /* ===============================
    USER MANAGEMENT MODAL FIX
@@ -1267,7 +1116,7 @@ body {
     display: block !important;
   }
 
-  
+
 
   .topbar {
     width: 100%;
@@ -1366,7 +1215,7 @@ body {
     background: #f6fbf8;
   }
 
-  
+
 
   .content-section {
     width: 100% !important;
@@ -1736,7 +1585,7 @@ body {
    SMALL MOBILE
 ========================================================= */
 @media (max-width: 480px) {
-  
+
 
   .page-card {
     padding: 15px !important;
@@ -2216,23 +2065,9 @@ body {
 ================================ */
 
 @media (max-width: 1180px) {
-  
 
-  
 
-  .sidebar-backdrop {
-    position: fixed !important;
-    inset: 0 !important;
-    z-index: 99970 !important;
-    background: rgba(15, 23, 42, 0.48) !important;
-    backdrop-filter: blur(3px) !important;
-  }
 
-  .sidebar-backdrop.hidden {
-    display: none !important;
-  }
-
-  
 
   #sidebarToggleBtn,
   .sidebar-toggle-btn {
@@ -2298,7 +2133,7 @@ body {
     background: #f6fbf8 !important;
   }
 
-  
+
 
   .topbar {
     width: 100% !important;
@@ -2699,7 +2534,7 @@ body {
 ================================ */
 
 @media (max-width: 480px) {
-  
+
 
   .page-card {
     padding: 15px !important;
@@ -3262,7 +3097,7 @@ body {
     overflow: visible !important;
   }
 
-  
+
 
   .sidebar-top,
   .sidebar-bottom,
@@ -3271,7 +3106,7 @@ body {
     z-index: 999999 !important;
   }
 
-  
+
 
   .sidebar-other-menu {
     position: absolute !important;
@@ -3329,7 +3164,7 @@ body {
 
 /* Keep responsive behavior safe */
 @media (max-width: 1180px) {
-  
+
 
   .sidebar-other-menu {
     position: relative !important;
@@ -4896,10 +4731,6 @@ body {
    - Makes wide tables scroll horizontally on tablet/mobile.
 ========================================================= */
 
-:root {
-  --safe-sidebar-width: 260px;
-}
-
 /* Prevent whole page horizontal breaking */
 html,
 body {
@@ -4914,7 +4745,7 @@ body {
    DESKTOP SIDEBAR SAFE FIX
 ========================= */
 @media (min-width: 1181px) {
-  
+
 
   /* Top area scrolls, bottom area remains visible */
   .sidebar-top {
@@ -4968,12 +4799,12 @@ body {
     margin: 0 !important;
   }
 
-  
+
 }
 
 /* Compact desktop height only */
 @media (min-width: 1181px) and (max-height: 820px) {
-  
+
 
   .sidebar-brand {
     margin-bottom: 10px !important;
@@ -5029,9 +4860,9 @@ body {
    TABLET/MOBILE SIDEBAR SAFE FIX
 ========================= */
 @media (max-width: 1180px) {
-  
 
-  
+
+
 
   .sidebar-top {
     flex: 1 1 auto !important;
@@ -5059,7 +4890,7 @@ body {
     justify-content: center !important;
   }
 
-  
+
 
   #sidebarToggleBtn,
   .sidebar-toggle-btn {
@@ -5118,7 +4949,7 @@ body {
    MOBILE SMALL SAFE FIX
 ========================= */
 @media (max-width: 768px) {
-  
+
 
   .topbar {
     width: 100% !important;
@@ -5198,7 +5029,7 @@ body {
 
 /* Desktop: allow Other flyout to escape sidebar */
 @media (min-width: 1181px) {
-  
+
 
   .sidebar-top {
     overflow-y: auto !important;
@@ -5212,7 +5043,7 @@ body {
     z-index: 100000 !important;
   }
 
-  
+
 
   .sidebar-other-menu {
     position: absolute !important;
@@ -5272,7 +5103,7 @@ body {
 
 /* Tablet/mobile: keep Other menu inside sidebar */
 @media (max-width: 1180px) {
-  
+
 
   .sidebar-top {
     overflow-y: auto !important;
@@ -5304,309 +5135,7 @@ body {
     display: none !important;
   }
 }
-/* =========================================================
-   SAFE PATCH: SIDEBAR BALANCED/FULLER UI
-   Paste at the VERY BOTTOM of css/admin/admin-overrides.css
-
-   Goal:
-   - Mas sakto ang sidebar spacing
-   - Bigger nav buttons
-   - Less awkward empty space
-   - Logout still visible
-   - Other submenu still works
-========================================================= */
-
-/* Main sidebar spacing */
-
-
-/* Brand area: cleaner and bigger */
-.sidebar-brand {
-  display: grid !important;
-  grid-template-columns: 64px minmax(0, 1fr) !important;
-  align-items: center !important;
-  gap: 14px !important;
-  min-height: 76px !important;
-  margin-bottom: 26px !important;
-}
-
-.sidebar-brand .brand-mark,
-.sidebar-brand .brand-mark.brand-logo {
-  width: 64px !important;
-  height: 64px !important;
-  min-width: 64px !important;
-  max-width: 64px !important;
-  min-height: 64px !important;
-  max-height: 64px !important;
-  border-radius: 20px !important;
-}
-
-.sidebar-brand .sidebar-logo-img {
-  width: 100% !important;
-  height: 100% !important;
-  object-fit: contain !important;
-  padding: 5px !important;
-}
-
-.sidebar-brand .brand-text h2 {
-  font-size: 23px !important;
-  line-height: 1.05 !important;
-  margin: 0 0 6px !important;
-  letter-spacing: -0.03em !important;
-}
-
-.sidebar-brand .brand-text p {
-  font-size: 13.5px !important;
-  line-height: 1.2 !important;
-  margin: 0 !important;
-}
-
-/* Sidebar top must use space better */
-.sidebar-top {
-  display: flex !important;
-  flex-direction: column !important;
-  min-height: 0 !important;
-}
-
-/* Nav: bigger and more balanced */
-.sidebar-nav {
-  display: grid !important;
-  gap: 10px !important;
-  width: 100% !important;
-}
-
-.nav-btn {
-  width: 100% !important;
-  min-height: 52px !important;
-  padding: 14px 18px !important;
-  display: grid !important;
-  grid-template-columns: 26px minmax(0, 1fr) !important;
-  align-items: center !important;
-  gap: 14px !important;
-  border-radius: 18px !important;
-  font-size: 15px !important;
-  font-weight: 850 !important;
-  text-align: left !important;
-}
-
-.nav-btn svg,
-.nav-btn i {
-  width: 22px !important;
-  height: 22px !important;
-  min-width: 22px !important;
-}
-
-.nav-btn span {
-  min-width: 0 !important;
-  white-space: nowrap !important;
-}
-
-/* Push bottom section cleanly without making middle look too empty */
-.sidebar-bottom {
-  margin-top: auto !important;
-  padding-top: 18px !important;
-  display: grid !important;
-  gap: 14px !important;
-}
-
-/* Other button same visual weight as nav */
-.sidebar-other-trigger {
-  min-height: 54px !important;
-  padding: 14px 18px !important;
-  border-radius: 18px !important;
-}
-
-.sidebar-other-trigger-left {
-  gap: 14px !important;
-  font-size: 15px !important;
-}
-
-.sidebar-other-trigger-left svg,
-.sidebar-other-trigger-left i {
-  width: 22px !important;
-  height: 22px !important;
-}
-
-/* User card and logout larger but still safe */
-.sidebar-user-card {
-  min-height: 90px !important;
-  padding: 18px 20px !important;
-  border-radius: 20px !important;
-}
-
-.sidebar-user-name {
-  font-size: 20px !important;
-  line-height: 1.15 !important;
-  margin-bottom: 8px !important;
-}
-
-.sidebar-user-role {
-  font-size: 14px !important;
-  line-height: 1.3 !important;
-}
-
-.logout-btn {
-  min-height: 54px !important;
-  border-radius: 18px !important;
-  font-size: 15.5px !important;
-}
-
-/* Desktop: keep logout visible on normal screens */
-@media (min-width: 1181px) {
-  
-
-  
-
-  .sidebar-top {
-    overflow-y: auto !important;
-    overflow-x: hidden !important;
-    padding-right: 2px !important;
-  }
-
-  .sidebar-bottom {
-    flex-shrink: 0 !important;
-  }
-}
-
-/* Short screens: compact but still not tiny */
-@media (min-width: 1181px) and (max-height: 820px) {
-  
-
-  .sidebar-brand {
-    grid-template-columns: 54px minmax(0, 1fr) !important;
-    min-height: 62px !important;
-    margin-bottom: 16px !important;
-    gap: 12px !important;
-  }
-
-  .sidebar-brand .brand-mark,
-  .sidebar-brand .brand-mark.brand-logo {
-    width: 54px !important;
-    height: 54px !important;
-    min-width: 54px !important;
-    max-width: 54px !important;
-    min-height: 54px !important;
-    max-height: 54px !important;
-    border-radius: 17px !important;
-  }
-
-  .sidebar-brand .brand-text h2 {
-    font-size: 20px !important;
-    margin-bottom: 4px !important;
-  }
-
-  .sidebar-brand .brand-text p {
-    font-size: 12.5px !important;
-  }
-
-  .sidebar-nav {
-    gap: 6px !important;
-  }
-
-  .nav-btn {
-    min-height: 43px !important;
-    padding: 10px 14px !important;
-    grid-template-columns: 22px minmax(0, 1fr) !important;
-    gap: 12px !important;
-    border-radius: 15px !important;
-    font-size: 13.5px !important;
-  }
-
-  .nav-btn svg,
-  .nav-btn i {
-    width: 19px !important;
-    height: 19px !important;
-    min-width: 19px !important;
-  }
-
-  .sidebar-bottom {
-    gap: 10px !important;
-    padding-top: 12px !important;
-  }
-
-  .sidebar-other-trigger {
-    min-height: 44px !important;
-    padding: 10px 14px !important;
-    border-radius: 15px !important;
-  }
-
-  .sidebar-user-card {
-    min-height: 72px !important;
-    padding: 13px 16px !important;
-    border-radius: 16px !important;
-  }
-
-  .sidebar-user-name {
-    font-size: 17px !important;
-    margin-bottom: 4px !important;
-  }
-
-  .sidebar-user-role {
-    font-size: 12.5px !important;
-  }
-
-  .logout-btn {
-    min-height: 46px !important;
-    border-radius: 15px !important;
-  }
-}
-
-/* Tablet/mobile sidebar keeps fuller look */
-@media (max-width: 1180px) {
-  
-
-  .sidebar-brand {
-    grid-template-columns: 62px minmax(0, 1fr) !important;
-    margin-bottom: 24px !important;
-  }
-
-  .sidebar-brand .brand-mark,
-  .sidebar-brand .brand-mark.brand-logo {
-    width: 62px !important;
-    height: 62px !important;
-    min-width: 62px !important;
-    max-width: 62px !important;
-    min-height: 62px !important;
-    max-height: 62px !important;
-  }
-
-  .nav-btn {
-    min-height: 52px !important;
-  }
-
-  .sidebar-bottom {
-    gap: 14px !important;
-  }
-}
-
-/* Very small phones */
-@media (max-width: 420px) {
-  
-
-  .sidebar-brand {
-    grid-template-columns: 56px minmax(0, 1fr) !important;
-    gap: 12px !important;
-  }
-
-  .sidebar-brand .brand-mark,
-  .sidebar-brand .brand-mark.brand-logo {
-    width: 56px !important;
-    height: 56px !important;
-    min-width: 56px !important;
-    max-width: 56px !important;
-    min-height: 56px !important;
-    max-height: 56px !important;
-  }
-
-  .sidebar-brand .brand-text h2 {
-    font-size: 20px !important;
-  }
-
-  .nav-btn {
-    min-height: 48px !important;
-    padding: 12px 15px !important;
-    font-size: 14px !important;
-  }
-}
+/* Legacy balanced-sidebar patch retired; admin-sidebar.css owns all sidebar states. */
 
 /* =========================================================
    INCOMING INVOICE WORKFLOW UI
@@ -6694,674 +6223,8 @@ body {
   }
 }
 
-/* =========================================================
-   GLOBAL ADMIN MODAL + BUTTON DESIGN SYSTEM
-   Paste at the VERY BOTTOM of css/admin/admin-overrides.css
-
-   Goal:
-   - Uniform modal design across admin system
-   - All modals pop up centered
-   - Same backdrop, radius, shadow, spacing, animation
-   - Uniform View buttons
-   - Uniform action buttons
-   - Responsive on tablet/mobile
-
-   Important:
-   - Paste this LAST so it can override older modal patches.
-   - This is CSS-only. No JS logic changed.
-========================================================= */
-
-:root {
-  --admin-modal-z: 100000;
-  --admin-modal-overlay: rgba(15, 23, 42, 0.62);
-  --admin-modal-radius: 24px;
-  --admin-modal-shadow: 0 34px 100px rgba(15, 23, 42, 0.34);
-
-  --admin-green: #15803d;
-  --admin-green-2: #16a34a;
-  --admin-blue: #1d4ed8;
-  --admin-blue-soft: #eff6ff;
-  --admin-red: #ef4444;
-  --admin-slate: #0f172a;
-  --admin-muted: #64748b;
-  --admin-border: #e2e8f0;
-  --admin-surface: #ffffff;
-  --admin-soft: #f8fafc;
-}
-
-/* =========================================================
-   GLOBAL MODAL CENTERING
-========================================================= */
-
-.custom-modal:not(.hidden),
-.modal:not(.hidden),
-.admin-modal:not(.hidden),
-.other-modal:not(.hidden),
-#complaintDetailsModal:not(.hidden),
-#complaintMapModal:not(.hidden),
-#complaintHistoryModal:not(.hidden),
-#complaintResolutionModal:not(.hidden),
-#incomingInvoiceModal:not(.hidden),
-#invoiceTrackingModal:not(.hidden),
-#calendarActivitiesModal:not(.hidden),
-#calendarAddActivityModal:not(.hidden),
-#orientationQrModal:not(.hidden),
-#orientationReportModal:not(.hidden),
-#deactivatedAccountsModal:not(.hidden) {
-  position: fixed !important;
-  inset: 0 !important;
-
-  width: 100vw !important;
-  height: 100vh !important;
-  height: 100dvh !important;
-
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-
-  padding: 24px !important;
-  margin: 0 !important;
-
-  overflow: hidden !important;
-  background: var(--admin-modal-overlay) !important;
-  backdrop-filter: blur(7px) !important;
-
-  z-index: var(--admin-modal-z) !important;
-}
-
-/* Overlay should not push content out of center */
-.custom-modal:not(.hidden) > .custom-modal-overlay,
-.modal:not(.hidden) > .custom-modal-overlay,
-.admin-modal:not(.hidden) > .custom-modal-overlay,
-.custom-modal:not(.hidden) > [id$="Overlay"],
-.modal:not(.hidden) > [id$="Overlay"],
-.admin-modal:not(.hidden) > [id$="Overlay"] {
-  position: fixed !important;
-  inset: 0 !important;
-  width: 100vw !important;
-  height: 100dvh !important;
-  z-index: 1 !important;
-  background: transparent !important;
-}
-
-/* =========================================================
-   GLOBAL MODAL CONTENT
-========================================================= */
-
-.custom-modal:not(.hidden) .custom-modal-content,
-.custom-modal:not(.hidden) .modal-content,
-.custom-modal:not(.hidden) .admin-modal-content,
-.modal:not(.hidden) .custom-modal-content,
-.modal:not(.hidden) .modal-content,
-.admin-modal:not(.hidden) .custom-modal-content,
-.admin-modal:not(.hidden) .modal-content,
-#complaintDetailsModal:not(.hidden) .custom-modal-content,
-#complaintDetailsModal:not(.hidden) .complaint-modal-content,
-#complaintDetailsModal:not(.hidden) .modal-content,
-#complaintMapModal:not(.hidden) .custom-modal-content,
-#complaintMapModal:not(.hidden) .complaint-map-modal-content,
-#complaintMapModal:not(.hidden) .modal-content,
-#complaintHistoryModal:not(.hidden) .custom-modal-content,
-#complaintResolutionModal:not(.hidden) .custom-modal-content,
-#incomingInvoiceModal:not(.hidden) .custom-modal-content,
-#invoiceTrackingModal:not(.hidden) .custom-modal-content,
-#calendarActivitiesModal:not(.hidden) .custom-modal-content,
-#calendarAddActivityModal:not(.hidden) .custom-modal-content,
-#orientationQrModal:not(.hidden) .custom-modal-content,
-#orientationReportModal:not(.hidden) .custom-modal-content,
-#deactivatedAccountsModal:not(.hidden) .custom-modal-content {
-  position: relative !important;
-  z-index: 2 !important;
-
-  inset: auto !important;
-  top: auto !important;
-  left: auto !important;
-  right: auto !important;
-  bottom: auto !important;
-  transform: none !important;
-  translate: none !important;
-
-  width: min(1080px, calc(100vw - 48px)) !important;
-  max-width: calc(100vw - 48px) !important;
-  max-height: calc(100dvh - 48px) !important;
-
-  display: flex !important;
-  flex-direction: column !important;
-
-  margin: 0 auto !important;
-
-  border: 1px solid rgba(226, 232, 240, 0.9) !important;
-  border-radius: var(--admin-modal-radius) !important;
-  background: var(--admin-surface) !important;
-  box-shadow: var(--admin-modal-shadow) !important;
-
-  overflow: hidden !important;
-
-  animation: adminModalPopIn 0.22s ease both !important;
-}
-
-/* Wider modals that naturally need more room */
-#incomingInvoiceModal:not(.hidden) .custom-modal-content,
-#calendarActivitiesModal:not(.hidden) .custom-modal-content,
-#orientationReportModal:not(.hidden) .custom-modal-content,
-#complaintMapModal:not(.hidden) .custom-modal-content,
-#complaintMapModal:not(.hidden) .complaint-map-modal-content {
-  width: min(1220px, calc(100vw - 48px)) !important;
-}
-
-/* Smaller detail/confirm modals */
-#invoiceTrackingModal:not(.hidden) .custom-modal-content,
-#calendarAddActivityModal:not(.hidden) .custom-modal-content,
-#orientationQrModal:not(.hidden) .custom-modal-content {
-  width: min(900px, calc(100vw - 48px)) !important;
-}
-
-@keyframes adminModalPopIn {
-  from {
-    opacity: 0;
-    transform: translateY(14px) scale(0.985);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-/* =========================================================
-   GLOBAL MODAL HEADER
-========================================================= */
-
-.custom-modal-content > .custom-modal-header,
-.custom-modal-content > .modal-header,
-.modal-content > .custom-modal-header,
-.modal-content > .modal-header,
-.admin-modal-content > .custom-modal-header,
-.admin-modal-content > .modal-header,
-.complaint-modal-content > .custom-modal-header,
-.complaint-modal-content > .modal-header,
-.complaint-map-modal-content > .custom-modal-header,
-.complaint-map-modal-content > .modal-header {
-  flex: 0 0 auto !important;
-
-  display: grid !important;
-  grid-template-columns: minmax(0, 1fr) 52px !important;
-  align-items: start !important;
-  gap: 18px !important;
-
-  padding: 22px 26px !important;
-
-  border-bottom: 1px solid var(--admin-border) !important;
-  background: rgba(255, 255, 255, 0.98) !important;
-}
-
-.custom-modal-header h3,
-.modal-header h3,
-.admin-modal-header h3 {
-  margin: 0 0 5px !important;
-  color: #173c2a !important;
-  font-size: 22px !important;
-  line-height: 1.15 !important;
-  font-weight: 950 !important;
-  letter-spacing: -0.035em !important;
-}
-
-.custom-modal-header p,
-.modal-header p,
-.admin-modal-header p {
-  margin: 0 !important;
-  color: var(--admin-muted) !important;
-  font-size: 13.5px !important;
-  line-height: 1.45 !important;
-}
-
-/* =========================================================
-   GLOBAL CLOSE BUTTON
-========================================================= */
-
-.modal-close-btn,
-.close-modal-btn,
-.close-btn[id^="close"],
-button[id^="close"][id$="Btn"],
-button[id^="close"][id$="Modal"],
-#closeComplaintDetailsModal,
-#closeComplaintMapModal,
-#closeComplaintHistoryBtn,
-#closeComplaintResolutionModal,
-#closeIncomingInvoiceBtn,
-#closeInvoiceTrackingBtn,
-#closeCalendarActivitiesBtn,
-#closeCalendarAddActivityBtn,
-#closeOrientationQrBtn {
-  width: 52px !important;
-  height: 52px !important;
-  min-width: 52px !important;
-  min-height: 52px !important;
-
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-
-  border: 0 !important;
-  border-radius: 999px !important;
-
-  background: #eef2f7 !important;
-  color: #475569 !important;
-
-  font-size: 24px !important;
-  font-weight: 900 !important;
-  line-height: 1 !important;
-
-  cursor: pointer !important;
-  transition:
-    transform 0.16s ease,
-    background 0.16s ease,
-    color 0.16s ease !important;
-}
-
-.modal-close-btn:hover,
-.close-modal-btn:hover,
-.close-btn[id^="close"]:hover,
-button[id^="close"][id$="Btn"]:hover,
-button[id^="close"][id$="Modal"]:hover,
-#closeComplaintDetailsModal:hover,
-#closeComplaintMapModal:hover,
-#closeComplaintHistoryBtn:hover,
-#closeComplaintResolutionModal:hover,
-#closeIncomingInvoiceBtn:hover,
-#closeInvoiceTrackingBtn:hover,
-#closeCalendarActivitiesBtn:hover,
-#closeCalendarAddActivityBtn:hover,
-#closeOrientationQrBtn:hover {
-  transform: translateY(-1px) !important;
-  background: #e2e8f0 !important;
-  color: #0f172a !important;
-}
-
-/* =========================================================
-   GLOBAL MODAL BODY
-========================================================= */
-
-.custom-modal-body,
-.modal-body,
-.admin-modal-body,
-.complaint-modal-body,
-.complaint-map-body,
-.invoice-workflow-body,
-.invoice-tracking-body {
-  flex: 1 1 auto !important;
-  min-height: 0 !important;
-
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
-
-  padding: 24px 26px !important;
-}
-
-/* Standard card look inside modals */
-.custom-modal-content .detail-card,
-.custom-modal-content .info-card,
-.custom-modal-content .modal-card,
-.custom-modal-content .summary-card,
-.modal-content .detail-card,
-.modal-content .info-card,
-.modal-content .modal-card,
-.modal-content .summary-card {
-  border: 1px solid #dfe7ef !important;
-  border-radius: 17px !important;
-  background: var(--admin-soft) !important;
-}
-
-/* =========================================================
-   GLOBAL MODAL FOOTER / ACTION BAR
-========================================================= */
-
-.custom-modal-footer,
-.modal-footer,
-.admin-modal-footer,
-.complaint-details-action-bar,
-.complaint-modal-footer {
-  flex: 0 0 auto !important;
-
-  display: flex !important;
-  align-items: center !important;
-  justify-content: flex-end !important;
-  gap: 12px !important;
-  flex-wrap: wrap !important;
-
-  width: 100% !important;
-  min-width: 0 !important;
-
-  margin: 0 !important;
-  padding: 16px 26px 20px !important;
-
-  border-top: 1px solid var(--admin-border) !important;
-  background: rgba(255, 255, 255, 0.98) !important;
-  backdrop-filter: blur(12px) !important;
-
-  box-sizing: border-box !important;
-}
-
-/* If modal has three main complaint buttons, keep them equal */
-#complaintDetailsModal .complaint-details-action-bar {
-  display: grid !important;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-}
-
-/* =========================================================
-   GLOBAL BUTTON DESIGN
-========================================================= */
-
-.admin-btn,
-.modal-btn,
-.action-btn,
-.view-btn,
-.table-view-btn,
-.complaint-action-btn,
-.complaint-history-view-btn,
-.invoice-view-btn,
-.invoice-action-btn,
-.orientation-view-btn,
-.orientation-report-view-btn,
-.tracking-view-btn,
-.user-action-btn,
-button[data-action="view"],
-button[data-invoice-action="view"],
-button[data-resolution-id],
-button[data-id].complaint-action-btn {
-  min-height: 42px !important;
-
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-
-  gap: 8px !important;
-
-  border: 1px solid transparent !important;
-  border-radius: 14px !important;
-
-  padding: 0 16px !important;
-
-  font-size: 13px !important;
-  font-weight: 900 !important;
-  line-height: 1 !important;
-  text-align: center !important;
-  white-space: nowrap !important;
-
-  cursor: pointer !important;
-  transition:
-    transform 0.16s ease,
-    box-shadow 0.16s ease,
-    background 0.16s ease,
-    border-color 0.16s ease !important;
-}
-
-/* Uniform View buttons */
-.view-btn,
-.table-view-btn,
-.complaint-action-btn,
-.complaint-history-view-btn,
-.invoice-view-btn,
-.orientation-view-btn,
-.orientation-report-view-btn,
-.tracking-view-btn,
-button[data-action="view"],
-button[data-invoice-action="view"],
-button[data-resolution-id],
-button[data-id].complaint-action-btn {
-  min-width: 86px !important;
-  background: var(--admin-blue-soft) !important;
-  color: var(--admin-blue) !important;
-  border-color: #bfdbfe !important;
-}
-
-.view-btn:hover,
-.table-view-btn:hover,
-.complaint-action-btn:hover,
-.complaint-history-view-btn:hover,
-.invoice-view-btn:hover,
-.orientation-view-btn:hover,
-.orientation-report-view-btn:hover,
-.tracking-view-btn:hover,
-button[data-action="view"]:hover,
-button[data-invoice-action="view"]:hover,
-button[data-resolution-id]:hover,
-button[data-id].complaint-action-btn:hover {
-  transform: translateY(-1px) !important;
-  background: #dbeafe !important;
-  box-shadow: 0 12px 24px rgba(29, 78, 216, 0.12) !important;
-}
-
-/* Primary action */
-.admin-btn.primary,
-.modal-btn.primary,
-.action-btn.primary,
-.invoice-action-btn,
-#btnValidateForwardComplaint,
-#saveCalendarActivityBtn,
-#createAccountBtn,
-button[type="submit"].primary,
-button[type="submit"].invoice-primary-btn {
-  background: linear-gradient(135deg, var(--admin-green), var(--admin-green-2)) !important;
-  color: #ffffff !important;
-  border-color: var(--admin-green-2) !important;
-  box-shadow: 0 12px 24px rgba(22, 163, 74, 0.16) !important;
-}
-
-/* Secondary action */
-.admin-btn.secondary,
-.modal-btn.secondary,
-.action-btn.secondary,
-#btnOpenComplaintMap,
-#openIncomingInvoiceBtn,
-#openCalendarActivitiesBtn {
-  background: var(--admin-blue-soft) !important;
-  color: var(--admin-blue) !important;
-  border-color: #bfdbfe !important;
-}
-
-/* Danger/Close action */
-.admin-btn.danger,
-.modal-btn.danger,
-.action-btn.danger,
-#btnCloseComplaintModalFooter,
-#logoutBtn,
-button.danger,
-button.close-danger {
-  background: var(--admin-red) !important;
-  color: #ffffff !important;
-  border-color: var(--admin-red) !important;
-}
-
-/* Disabled */
-.admin-btn:disabled,
-.modal-btn:disabled,
-.action-btn:disabled,
-.view-btn:disabled,
-.complaint-action-btn:disabled,
-.invoice-action-btn:disabled,
-.invoice-view-btn:disabled,
-#btnOpenComplaintMap:disabled,
-#btnValidateForwardComplaint:disabled,
-.is-disabled {
-  opacity: 0.55 !important;
-  cursor: not-allowed !important;
-  transform: none !important;
-  box-shadow: none !important;
-}
-
-/* =========================================================
-   GLOBAL TABLE ACTION ALIGNMENT
-========================================================= */
-
-td:last-child .view-btn,
-td:last-child .table-view-btn,
-td:last-child .complaint-action-btn,
-td:last-child .complaint-history-view-btn,
-td:last-child .invoice-view-btn,
-td:last-child .orientation-view-btn,
-td:last-child button[data-action="view"],
-td:last-child button[data-invoice-action="view"] {
-  margin-left: auto !important;
-  margin-right: auto !important;
-}
-
-th:last-child,
-td:last-child {
-  text-align: center !important;
-}
-
-/* =========================================================
-   MODAL Z-INDEX FOR NESTED MODALS
-========================================================= */
-
-#invoiceTrackingModal:not(.hidden),
-#complaintMapModal:not(.hidden),
-#calendarAddActivityModal:not(.hidden),
-.image-preview-modal {
-  z-index: calc(var(--admin-modal-z) + 600) !important;
-}
-
-#invoiceTrackingModal:not(.hidden) .custom-modal-content,
-#complaintMapModal:not(.hidden) .custom-modal-content,
-#calendarAddActivityModal:not(.hidden) .custom-modal-content {
-  z-index: calc(var(--admin-modal-z) + 602) !important;
-}
-
-/* =========================================================
-   RESPONSIVE
-========================================================= */
-
-@media (max-width: 1180px) {
-  .custom-modal:not(.hidden),
-  .modal:not(.hidden),
-  .admin-modal:not(.hidden),
-  .other-modal:not(.hidden),
-  #complaintDetailsModal:not(.hidden),
-  #complaintMapModal:not(.hidden),
-  #complaintHistoryModal:not(.hidden),
-  #complaintResolutionModal:not(.hidden),
-  #incomingInvoiceModal:not(.hidden),
-  #invoiceTrackingModal:not(.hidden),
-  #calendarActivitiesModal:not(.hidden),
-  #calendarAddActivityModal:not(.hidden),
-  #orientationQrModal:not(.hidden),
-  #orientationReportModal:not(.hidden),
-  #deactivatedAccountsModal:not(.hidden) {
-    padding: 14px !important;
-  }
-
-  .custom-modal:not(.hidden) .custom-modal-content,
-  .modal:not(.hidden) .custom-modal-content,
-  .modal:not(.hidden) .modal-content,
-  .admin-modal:not(.hidden) .custom-modal-content,
-  #complaintDetailsModal:not(.hidden) .custom-modal-content,
-  #complaintDetailsModal:not(.hidden) .complaint-modal-content,
-  #complaintDetailsModal:not(.hidden) .modal-content,
-  #complaintMapModal:not(.hidden) .custom-modal-content,
-  #complaintMapModal:not(.hidden) .complaint-map-modal-content,
-  #incomingInvoiceModal:not(.hidden) .custom-modal-content,
-  #invoiceTrackingModal:not(.hidden) .custom-modal-content,
-  #calendarActivitiesModal:not(.hidden) .custom-modal-content,
-  #calendarAddActivityModal:not(.hidden) .custom-modal-content {
-    width: calc(100vw - 28px) !important;
-    max-width: calc(100vw - 28px) !important;
-    max-height: calc(100dvh - 28px) !important;
-    border-radius: 20px !important;
-  }
-
-  .custom-modal-header,
-  .modal-header {
-    padding: 18px !important;
-  }
-
-  .custom-modal-body,
-  .modal-body,
-  .admin-modal-body,
-  .complaint-modal-body,
-  .complaint-map-body,
-  .invoice-workflow-body,
-  .invoice-tracking-body {
-    padding: 18px !important;
-  }
-
-  .custom-modal-footer,
-  .modal-footer,
-  .admin-modal-footer,
-  .complaint-details-action-bar,
-  .complaint-modal-footer,
-  #complaintDetailsModal .complaint-details-action-bar {
-    display: grid !important;
-    grid-template-columns: 1fr !important;
-    padding: 14px 18px 18px !important;
-  }
-
-  .admin-btn,
-  .modal-btn,
-  .action-btn,
-  .view-btn,
-  .table-view-btn,
-  .complaint-action-btn,
-  .complaint-history-view-btn,
-  .invoice-view-btn,
-  .invoice-action-btn,
-  .orientation-view-btn,
-  .tracking-view-btn {
-    width: 100% !important;
-  }
-}
-
-@media (max-width: 640px) {
-  .custom-modal:not(.hidden),
-  .modal:not(.hidden),
-  .admin-modal:not(.hidden),
-  .other-modal:not(.hidden),
-  #complaintDetailsModal:not(.hidden),
-  #complaintMapModal:not(.hidden),
-  #complaintHistoryModal:not(.hidden),
-  #complaintResolutionModal:not(.hidden),
-  #incomingInvoiceModal:not(.hidden),
-  #invoiceTrackingModal:not(.hidden),
-  #calendarActivitiesModal:not(.hidden),
-  #calendarAddActivityModal:not(.hidden),
-  #orientationQrModal:not(.hidden),
-  #orientationReportModal:not(.hidden),
-  #deactivatedAccountsModal:not(.hidden) {
-    padding: 10px !important;
-  }
-
-  .custom-modal:not(.hidden) .custom-modal-content,
-  .modal:not(.hidden) .custom-modal-content,
-  .modal:not(.hidden) .modal-content,
-  .admin-modal:not(.hidden) .custom-modal-content,
-  #complaintDetailsModal:not(.hidden) .custom-modal-content,
-  #complaintDetailsModal:not(.hidden) .complaint-modal-content,
-  #complaintDetailsModal:not(.hidden) .modal-content,
-  #complaintMapModal:not(.hidden) .custom-modal-content,
-  #complaintMapModal:not(.hidden) .complaint-map-modal-content,
-  #incomingInvoiceModal:not(.hidden) .custom-modal-content,
-  #invoiceTrackingModal:not(.hidden) .custom-modal-content {
-    width: calc(100vw - 20px) !important;
-    max-width: calc(100vw - 20px) !important;
-    max-height: calc(100dvh - 20px) !important;
-    border-radius: 18px !important;
-  }
-
-  .custom-modal-header h3,
-  .modal-header h3,
-  .admin-modal-header h3 {
-    font-size: 19px !important;
-  }
-
-  .modal-close-btn,
-  .close-modal-btn,
-  button[id^="close"][id$="Btn"],
-  button[id^="close"][id$="Modal"] {
-    width: 46px !important;
-    height: 46px !important;
-    min-width: 46px !important;
-    min-height: 46px !important;
-  }
-}
+/* Legacy global modal/button override retired in Phase 1.
+   Shared primitives now live in admin-components.css and admin-modals.css. */
 
 /* =========================================================
    GLOBAL MODAL FOOTER CLOSE BUTTON HIDE
@@ -10794,178 +9657,7 @@ td:last-child {
    rules in this file.
 ========================================================= */
 
-/* =========================================================
-   MOBILE SIDEBAR DRAWER LAYER FIX
-   File: css/admin/admin-overrides.css
-
-   Issue:
-   - On mobile/tablet, admin-overrides had sidebar-backdrop with
-     very high z-index and backdrop blur.
-   - That placed the backdrop above the sidebar, making the sidebar
-     look blurred when opened.
-
-   Fix:
-   - Sidebar must be above the backdrop.
-   - Backdrop should dim the page only, not blur the sidebar.
-========================================================= */
-
-@media (max-width: 1180px) {
-  body .sidebar-backdrop {
-    position: fixed !important;
-    inset: 0 !important;
-
-    z-index: 99980 !important;
-
-    background: rgba(15, 23, 42, 0.52) !important;
-
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-    filter: none !important;
-  }
-
-  body .sidebar-backdrop.hidden {
-    display: none !important;
-  }
-
-  body .dashboard-sidebar,
-  body .dashboard-sidebar.open,
-  body .admin-layout.sidebar-collapsed .dashboard-sidebar,
-  body .admin-layout.sidebar-collapsed .dashboard-sidebar.open {
-    z-index: 100000 !important;
-
-    filter: none !important;
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-
-    opacity: 1 !important;
-  }
-
-  body .dashboard-sidebar *,
-  body .dashboard-sidebar.open *,
-  body .admin-layout.sidebar-collapsed .dashboard-sidebar *,
-  body .admin-layout.sidebar-collapsed .dashboard-sidebar.open * {
-    filter: none !important;
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-  }
-}
-
-@media (max-width: 992px) {
-  body .dashboard-sidebar,
-  body .admin-layout.sidebar-collapsed .dashboard-sidebar {
-    width: 280px !important;
-    max-width: 84vw !important;
-    height: 100dvh !important;
-
-    transform: translateX(-100%) !important;
-
-    overflow-y: auto !important;
-    overflow-x: hidden !important;
-  }
-
-  body .dashboard-sidebar.open,
-  body .admin-layout.sidebar-collapsed .dashboard-sidebar.open {
-    transform: translateX(0) !important;
-  }
-}
-
-@media (max-width: 480px) {
-  body .dashboard-sidebar,
-  body .admin-layout.sidebar-collapsed .dashboard-sidebar {
-    width: 82vw !important;
-    max-width: 82vw !important;
-  }
-}
-
-/* =========================================================
-   MOBILE SIDEBAR NO-BLUR HARD FIX
-   File: css/admin/admin-overrides.css
-
-   Problem:
-   - The sidebar drawer becomes blurred on mobile because the
-     sidebar-backdrop layer is still applying blur / covering the drawer.
-
-   Final fix:
-   - Disable the sidebar backdrop completely on mobile/tablet.
-   - Keep the sidebar drawer above the page and sharp.
-   - Close sidebar using logo toggle or nav click instead of backdrop.
-========================================================= */
-
-@media (max-width: 1180px) {
-  body #sidebarBackdrop.sidebar-backdrop,
-  body .sidebar-backdrop,
-  body .sidebar-backdrop:not(.hidden) {
-    display: none !important;
-    visibility: hidden !important;
-    opacity: 0 !important;
-    pointer-events: none !important;
-
-    background: transparent !important;
-
-    filter: none !important;
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-
-    z-index: -1 !important;
-  }
-
-  body .dashboard-sidebar,
-  body .dashboard-sidebar.open,
-  body .dashboard-sidebar.active,
-  body .dashboard-sidebar.show,
-  body .dashboard-sidebar.is-open,
-  body .admin-layout.sidebar-collapsed .dashboard-sidebar,
-  body .admin-layout.sidebar-collapsed .dashboard-sidebar.open {
-    z-index: 999999 !important;
-
-    filter: none !important;
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-
-    opacity: 1 !important;
-    mix-blend-mode: normal !important;
-
-    transform: translateX(-100%) !important;
-  }
-
-  body .dashboard-sidebar.open,
-  body .dashboard-sidebar.active,
-  body .dashboard-sidebar.show,
-  body .dashboard-sidebar.is-open,
-  body .admin-layout.sidebar-collapsed .dashboard-sidebar.open {
-    transform: translateX(0) !important;
-  }
-
-  body .dashboard-sidebar *,
-  body .dashboard-sidebar.open *,
-  body .admin-layout.sidebar-collapsed .dashboard-sidebar *,
-  body .admin-layout.sidebar-collapsed .dashboard-sidebar.open * {
-    filter: none !important;
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-    opacity: 1;
-    mix-blend-mode: normal !important;
-  }
-}
-
-@media (max-width: 992px) {
-  body .dashboard-sidebar,
-  body .admin-layout.sidebar-collapsed .dashboard-sidebar {
-    width: 280px !important;
-    max-width: 84vw !important;
-    height: 100dvh !important;
-    overflow-y: auto !important;
-    overflow-x: hidden !important;
-  }
-}
-
-@media (max-width: 480px) {
-  body .dashboard-sidebar,
-  body .admin-layout.sidebar-collapsed .dashboard-sidebar {
-    width: 82vw !important;
-    max-width: 82vw !important;
-  }
-}
+/* Legacy 1180px drawer/backdrop patches retired; the shared 992px shell breakpoint owns this behavior. */
 
 /* =========================================================
    DASHBOARD WASTE SUMMARY LABEL FINAL FIT FIX
@@ -11884,122 +10576,7 @@ body #sidebarOtherMenu.sidebar-other-menu-portal.open:not(.hidden) {
     padding: 18px !important;
   }
 }
-/* =========================================================
-   SIDEBAR LARGE DESKTOP RESPONSIVE WIDTH FIX
-   File: css/admin/admin-overrides.css
-
-   Purpose:
-   - Fix expanded desktop sidebar label clipping on large screens.
-   - Keep collapsed sidebar icons-only behavior unchanged.
-   - Keep tablet/mobile drawer behavior unchanged.
-   - Keep existing JS/backend logic unchanged.
-========================================================= */
-
-@media (min-width: 1181px) {
-  :root {
-    --sidebar-expanded-width: 320px;
-    --safe-sidebar-width: 320px;
-  }
-
-  body .admin-layout:not(.sidebar-collapsed) .dashboard-sidebar {
-    width: var(--sidebar-expanded-width) !important;
-    min-width: var(--sidebar-expanded-width) !important;
-    max-width: var(--sidebar-expanded-width) !important;
-    padding-left: 22px !important;
-    padding-right: 22px !important;
-    overflow-x: hidden !important;
-  }
-
-  body .admin-layout:not(.sidebar-collapsed) .main-content {
-    width: calc(100% - var(--sidebar-expanded-width)) !important;
-    margin-left: var(--sidebar-expanded-width) !important;
-  }
-
-  body .admin-layout:not(.sidebar-collapsed) .sidebar-brand {
-    width: 100% !important;
-    grid-template-columns: 64px minmax(0, 1fr) !important;
-  }
-
-  body .admin-layout:not(.sidebar-collapsed) .brand-text,
-  body .admin-layout:not(.sidebar-collapsed) .brand-text h2,
-  body .admin-layout:not(.sidebar-collapsed) .brand-text p {
-    max-width: none !important;
-    overflow: visible !important;
-    text-overflow: clip !important;
-    white-space: nowrap !important;
-  }
-
-  body .admin-layout:not(.sidebar-collapsed) .sidebar-nav {
-    width: 100% !important;
-    min-width: 0 !important;
-  }
-
-  body .admin-layout:not(.sidebar-collapsed) .nav-btn {
-    width: 100% !important;
-    grid-template-columns: 26px minmax(0, 1fr) !important;
-    gap: 14px !important;
-    padding-left: 18px !important;
-    padding-right: 18px !important;
-    overflow: hidden !important;
-  }
-
-  body .admin-layout:not(.sidebar-collapsed) .nav-btn span {
-    width: auto !important;
-    max-width: none !important;
-    min-width: 0 !important;
-    display: block !important;
-    white-space: nowrap !important;
-    overflow: visible !important;
-    text-overflow: clip !important;
-    word-break: normal !important;
-  }
-
-  body .admin-layout:not(.sidebar-collapsed) .sidebar-other-trigger-left span,
-  body .admin-layout:not(.sidebar-collapsed) .sidebar-other-arrow {
-    overflow: visible !important;
-    text-overflow: clip !important;
-    white-space: nowrap !important;
-  }
-
-  body .admin-layout:not(.sidebar-collapsed) .sidebar-user-name,
-  body .admin-layout:not(.sidebar-collapsed) .sidebar-user-role {
-    max-width: 100% !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-    white-space: nowrap !important;
-  }
-
-  body .admin-layout:not(.sidebar-collapsed) #sidebarOtherMenu.sidebar-other-menu {
-    left: var(--other-menu-left, calc(var(--sidebar-expanded-width) + 14px)) !important;
-  }
-}
-
-@media (min-width: 1181px) and (max-width: 1365px) {
-  :root {
-    --sidebar-expanded-width: 300px;
-    --safe-sidebar-width: 300px;
-  }
-
-  body .admin-layout:not(.sidebar-collapsed) .dashboard-sidebar {
-    padding-left: 20px !important;
-    padding-right: 20px !important;
-  }
-
-  body .admin-layout:not(.sidebar-collapsed) .nav-btn {
-    grid-template-columns: 24px minmax(0, 1fr) !important;
-    gap: 13px !important;
-    padding-left: 16px !important;
-    padding-right: 16px !important;
-    font-size: 14.5px !important;
-  }
-}
-
-@media (min-width: 1181px) and (max-height: 820px) {
-  body .admin-layout:not(.sidebar-collapsed) .nav-btn span {
-    overflow: visible !important;
-    text-overflow: clip !important;
-  }
-}
+/* Legacy large-desktop sidebar width patch retired; admin-sidebar.css owns the shell. */
 
 
 /* =========================================================
@@ -12717,70 +11294,7 @@ body #sidebarOtherMenu.sidebar-other-menu-portal.open:not(.hidden) {
   }
 }
 
-/* =========================================================
-   FULL PAGE BACKGROUND CONTINUITY FIX
-   Purpose:
-   - Prevents admin pages from looking cut off when content is short
-   - Keeps Orientation, Complaints, Appointments, and other sections
-     using one continuous page background down to the bottom viewport
-   - Final-layer patch only; no HTML or JS changes required
-========================================================= */
-
-html,
-body {
-  min-height: 100% !important;
-  background:
-    radial-gradient(circle at top left, rgba(47, 138, 52, 0.10), transparent 34%),
-    linear-gradient(180deg, #f6fbf8 0%, #eef3f0 100%) !important;
-}
-
-body {
-  min-height: 100vh !important;
-  min-height: 100dvh !important;
-}
-
-.admin-layout {
-  min-height: 100vh !important;
-  min-height: 100dvh !important;
-  background:
-    radial-gradient(circle at top left, rgba(47, 138, 52, 0.10), transparent 34%),
-    linear-gradient(180deg, #f6fbf8 0%, #eef3f0 100%) !important;
-}
-
-.main-content {
-  min-height: 100vh !important;
-  min-height: 100dvh !important;
-  background: transparent !important;
-}
-
-.content-section {
-  min-height: calc(100vh - 120px) !important;
-  background: transparent !important;
-}
-
-.content-section.active {
-  background: transparent !important;
-}
-
-@media (min-width: 993px) {
-  .main-content {
-    min-height: 100vh !important;
-    min-height: 100dvh !important;
-  }
-}
-
-@media (max-width: 992px) {
-  .main-content,
-  .admin-layout.sidebar-collapsed .main-content {
-    min-height: 100vh !important;
-    min-height: 100dvh !important;
-    background: transparent !important;
-  }
-
-  .content-section {
-    min-height: calc(100vh - 100px) !important;
-  }
-}
+/* Legacy page-gradient continuity patch retired; admin-layout.css owns the page surface. */
 
 /* =========================================================
    WASTE VALIDATION REPORT - PROFESSIONAL ROW LAYOUT

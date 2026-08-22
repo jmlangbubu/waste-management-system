@@ -28,20 +28,13 @@
   padding: 0 0 40px !important;
 }
 
-/* softer dashboard background feeling */
-.main-content {
-  background:
-    radial-gradient(circle at top left, rgba(34, 197, 94, 0.08), transparent 28%),
-    linear-gradient(180deg, #f8fafc 0%, #f1f5f3 100%);
-}
-
 /* =========================
-   SHARED CARD STYLE
+   DASHBOARD CARD STYLE
 ========================= */
 
-.page-card,
-.panel-card,
-.stat-card {
+#dashboardSection .page-card,
+#dashboardSection .panel-card,
+#dashboardSection .stat-card {
   width: 100%;
   max-width: none;
   min-width: 0;
@@ -76,7 +69,7 @@
    HEADER
 ========================= */
 
-.page-card-header {
+#dashboardSection .page-card-header {
   margin-bottom: 18px;
 }
 
@@ -109,7 +102,7 @@
 }
 
 .dashboard-title-with-icon p,
-.page-card-header p {
+#dashboardSection .page-card-header p {
   max-width: 620px;
   margin-top: 5px;
 

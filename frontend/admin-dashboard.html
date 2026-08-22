@@ -5,24 +5,26 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Admin Panel</title>
 <style>html.web-session-pending body { visibility: hidden; }</style>
+<link rel="stylesheet" href="css/admin/admin-tokens.css">
 <link rel="stylesheet" href="css/admin/admin-base.css">
 <link rel="stylesheet" href="css/admin/admin-layout.css">
 <link rel="stylesheet" href="css/admin/admin-sidebar.css">
 <link rel="stylesheet" href="css/admin/admin-topbar.css">
-<link rel="stylesheet" href="css/admin/admin-dashboard.css">
+<link rel="stylesheet" href="css/admin/admin-components.css">
 <link rel="stylesheet" href="css/admin/admin-tables.css">
+<link rel="stylesheet" href="css/admin/admin-modals.css">
+<link rel="stylesheet" href="css/admin/admin-dashboard.css">
 <link rel="stylesheet" href="css/admin/admin-appointments.css">
 <link rel="stylesheet" href="css/admin/admin-tracking.css">
 <link rel="stylesheet" href="css/admin/admin-tracking-offline-sync.css">
 <link rel="stylesheet" href="css/admin/admin-users.css">
-<link rel="stylesheet" href="css/admin/admin-modals.css">
-<link rel="stylesheet" href="css/admin/admin-responsive.css">
 <link rel="stylesheet" href="css/admin/admin-orientation.css">
-<link rel="stylesheet" href="css/admin/admin-overrides.css">
 <link rel="stylesheet" href="css/admin/admin-waste-records.css">
 <link rel="stylesheet" href="css/admin/admin-complaints.css">
 <link rel="stylesheet" href="css/admin/admin-profile.css">
 <link rel="stylesheet" href="css/admin/admin-dispatch.css">
+<link rel="stylesheet" href="css/admin/admin-responsive.css">
+<link rel="stylesheet" href="css/admin/admin-overrides.css">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
 
@@ -98,7 +100,7 @@
               <span>Other</span>
             </span>
 
-            <span class="sidebar-other-arrow">⌄</span>
+            <span class="sidebar-other-arrow" aria-hidden="true"><i data-lucide="chevron-down"></i></span>
           </button>
 
           <div class="sidebar-other-menu hidden" id="sidebarOtherMenu">
@@ -119,7 +121,10 @@
           <div class="sidebar-user-role" id="sidebarRole">-</div>
         </div>
 
-        <button class="logout-btn" id="logoutBtn" type="button">Logout</button>
+        <button class="logout-btn" id="logoutBtn" type="button">
+          <i data-lucide="log-out" aria-hidden="true"></i>
+          <span>Logout</span>
+        </button>
       </div>
     </aside>
 
@@ -138,7 +143,7 @@
         <div class="topbar-actions">
           <div class="notification-wrapper">
             <button id="notificationBtn" class="notification-btn" type="button" aria-label="Notifications">
-              🔔
+              <i data-lucide="bell" aria-hidden="true"></i>
               <span id="notificationCount" class="notif-badge">0</span>
             </button>
 
@@ -2748,7 +2753,6 @@
 <script src="js/admin/admin-dispatch.js"></script>
 <script src="js/admin/admin-tracking.js"></script>
 <script src="js/admin/admin-users.js"></script>
-<script src="js/admin/admin-role-fix.js"></script>
 <script src="js/admin/admin-invoices.js"></script>
 <script src="js/admin/admin-other.js"></script>
 <script src="js/admin/admin-profile.js"></script>

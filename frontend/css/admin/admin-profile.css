@@ -1,123 +1,54 @@
 /* =========================================================
-   ADMIN PROFILE PICTURE - TOPBAR RESPONSIVE FIX
-   File: css/admin/admin-profile.css
-
-   Purpose:
-   - Replaces the visible Refresh Data button with a clickable
-     circular profile picture uploader in the topbar.
-   - Keeps notification + profile icons responsive on mobile.
-   - Keeps #refreshBtn hidden so existing JS references do not break.
+   ADMIN PROFILE CONTROL
+   Profile-specific topbar styling only; shared topbar layout lives elsewhere.
 ========================================================= */
 
-/* =========================
-   TOPBAR ACTION LAYOUT FIX
-========================= */
-
-.topbar {
-  display: flex !important;
-  align-items: center !important;
-  justify-content: space-between !important;
-  gap: 16px !important;
-}
-
-.topbar-left {
-  min-width: 0 !important;
-  flex: 1 1 auto !important;
-  display: flex !important;
-  align-items: center !important;
-  gap: 14px !important;
-}
-
-.topbar-left > div {
-  min-width: 0 !important;
-}
-
-.topbar-left h1,
-#pageTitle {
-  max-width: 100% !important;
-  overflow-wrap: anywhere !important;
-}
-
-.topbar-actions {
-  flex: 0 0 auto !important;
-  width: auto !important;
-  min-width: max-content !important;
-  margin-left: auto !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: flex-end !important;
-  gap: 12px !important;
-  flex-wrap: nowrap !important;
-}
-
-.notification-wrapper {
-  position: relative !important;
-  flex: 0 0 auto !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-}
-
-.notification-btn {
-  flex: 0 0 auto !important;
-}
-
-/* =========================
-   PROFILE BUTTON
-========================= */
-
 .topbar-profile-wrapper {
-  position: relative !important;
-  flex: 0 0 auto !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.topbar-profile-btn {
+body #adminLayout .topbar-profile-btn {
   position: relative !important;
-  width: 58px !important;
-  height: 58px !important;
-  min-width: 58px !important;
-  min-height: 58px !important;
+  width: 40px !important;
+  height: 40px !important;
+  min-width: 40px !important;
+  min-height: 40px !important;
   padding: 0 !important;
-  border: 1px solid #dbe7ef !important;
+  border: 1px solid var(--wmo-border) !important;
   border-radius: 999px !important;
-  background: #ffffff !important;
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
   overflow: visible !important;
-  cursor: pointer !important;
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08) !important;
-  transition:
-    transform 0.18s ease,
-    box-shadow 0.18s ease,
-    border-color 0.18s ease,
-    background 0.18s ease !important;
+  background: var(--wmo-surface) !important;
+  box-shadow: none !important;
+  color: var(--wmo-primary) !important;
+  transform: none !important;
+  transition: background-color 0.16s ease, border-color 0.16s ease !important;
 }
 
-.topbar-profile-btn:hover {
-  transform: translateY(-1px) !important;
-  border-color: #22c55e !important;
-  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.12) !important;
+body #adminLayout .topbar-profile-btn:hover {
+  border-color: #c5d9cf !important;
+  background: var(--wmo-surface-muted) !important;
 }
 
-.topbar-profile-btn:focus-visible {
+body #adminLayout .topbar-profile-btn:focus-visible {
   outline: none !important;
-  border-color: #16a34a !important;
-  box-shadow:
-    0 0 0 4px rgba(34, 197, 94, 0.16),
-    0 16px 34px rgba(15, 23, 42, 0.12) !important;
+  border-color: var(--wmo-secondary) !important;
+  box-shadow: 0 0 0 3px var(--wmo-focus-ring) !important;
 }
 
 .topbar-profile-image {
   width: 100% !important;
   height: 100% !important;
-  display: block !important;
   border-radius: 999px !important;
+  display: block !important;
   object-fit: cover !important;
-  background: #f8fafc !important;
+  background: var(--wmo-surface-muted) !important;
 }
 
 .topbar-profile-image.hidden {
@@ -131,37 +62,35 @@
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
-  background:
-    radial-gradient(circle at 30% 20%, rgba(34, 197, 94, 0.18), transparent 42%),
-    #f8fafc !important;
-  color: #166534 !important;
+  background: var(--wmo-surface-muted) !important;
+  color: var(--wmo-primary) !important;
 }
 
 .topbar-profile-fallback svg {
-  width: 25px !important;
-  height: 25px !important;
-  stroke-width: 2.6 !important;
+  width: 18px !important;
+  height: 18px !important;
+  stroke-width: 2 !important;
 }
 
 .topbar-profile-camera {
   position: absolute !important;
-  right: -3px !important;
-  bottom: -3px !important;
-  width: 23px !important;
-  height: 23px !important;
+  right: -2px !important;
+  bottom: -2px !important;
+  width: 16px !important;
+  height: 16px !important;
+  border: 2px solid var(--wmo-page) !important;
   border-radius: 999px !important;
-  background: #16a34a !important;
-  color: #ffffff !important;
-  border: 2px solid #ffffff !important;
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
-  box-shadow: 0 8px 18px rgba(22, 163, 74, 0.28) !important;
+  background: var(--wmo-secondary) !important;
+  box-shadow: none !important;
+  color: #ffffff !important;
 }
 
 .topbar-profile-camera svg {
-  width: 12px !important;
-  height: 12px !important;
+  width: 8px !important;
+  height: 8px !important;
   stroke-width: 3 !important;
 }
 
@@ -169,174 +98,11 @@
   display: none !important;
 }
 
-.refresh-btn-hidden,
-#refreshBtn.refresh-btn-hidden {
-  display: none !important;
-}
-
-/* =========================
-   TABLET RESPONSIVE
-========================= */
-
-@media (max-width: 992px) {
-  .topbar {
-    display: grid !important;
-    grid-template-columns: minmax(0, 1fr) auto !important;
-    align-items: center !important;
-    gap: 12px !important;
-  }
-
-  .topbar-left {
-    grid-column: 1 / 2 !important;
-    min-width: 0 !important;
-    width: 100% !important;
-  }
-
-  .topbar-actions {
-    grid-column: 2 / 3 !important;
-    justify-self: end !important;
-    align-self: center !important;
-    width: auto !important;
-    min-width: max-content !important;
-    margin-left: 0 !important;
-    gap: 10px !important;
-  }
-
-  .notification-dropdown {
-    right: 0 !important;
-    left: auto !important;
-  }
-}
-
-/* =========================
-   MOBILE RESPONSIVE
-========================= */
-
 @media (max-width: 640px) {
-  .topbar {
-    grid-template-columns: minmax(0, 1fr) auto !important;
-    align-items: start !important;
-    gap: 10px !important;
-    padding-inline: 0 !important;
-  }
-
-  .topbar-left {
-    align-items: flex-start !important;
-    gap: 10px !important;
-  }
-
-  .topbar-left h1,
-  #pageTitle {
-    font-size: 24px !important;
-    line-height: 1.08 !important;
-    letter-spacing: -0.04em !important;
-  }
-
-  .topbar-subtitle {
-    font-size: 13px !important;
-    line-height: 1.35 !important;
-    max-width: 240px !important;
-  }
-
-  .topbar-actions {
-    align-self: start !important;
-    display: inline-flex !important;
-    flex-direction: row !important;
-    align-items: center !important;
-    justify-content: flex-end !important;
-    gap: 8px !important;
-    transform: none !important;
-  }
-
-  .notification-btn {
-    width: 46px !important;
-    height: 46px !important;
-    min-width: 46px !important;
-    min-height: 46px !important;
-    border-radius: 16px !important;
-  }
-
-  .notif-badge {
-    top: -8px !important;
-    right: -8px !important;
-    min-width: 22px !important;
-    height: 22px !important;
-    padding: 0 6px !important;
-    font-size: 11px !important;
-    line-height: 22px !important;
-  }
-
-  .topbar-profile-btn {
-    width: 46px !important;
-    height: 46px !important;
-    min-width: 46px !important;
-    min-height: 46px !important;
-  }
-
-  .topbar-profile-fallback svg {
-    width: 22px !important;
-    height: 22px !important;
-  }
-
-  .topbar-profile-camera {
-    width: 19px !important;
-    height: 19px !important;
-    right: -3px !important;
-    bottom: -3px !important;
-  }
-
-  .topbar-profile-camera svg {
-    width: 10px !important;
-    height: 10px !important;
-  }
-}
-
-/* =========================
-   SMALL MOBILE RESPONSIVE
-========================= */
-
-@media (max-width: 420px) {
-  .topbar {
-    grid-template-columns: minmax(0, 1fr) auto !important;
-    gap: 8px !important;
-  }
-
-  .topbar-left {
-    gap: 8px !important;
-  }
-
-  .sidebar-toggle-btn,
-  .mobile-sidebar-toggle {
-    width: 48px !important;
-    height: 48px !important;
-    min-width: 48px !important;
-    min-height: 48px !important;
-  }
-
-  .topbar-left h1,
-  #pageTitle {
-    font-size: 22px !important;
-  }
-
-  .topbar-subtitle {
-    max-width: 190px !important;
-    font-size: 12px !important;
-  }
-
-  .notification-btn,
-  .topbar-profile-btn {
-    width: 42px !important;
-    height: 42px !important;
-    min-width: 42px !important;
-    min-height: 42px !important;
-  }
-
-  .topbar-actions {
-    gap: 7px !important;
-  }
-
-  .topbar-profile-camera {
-    width: 18px !important;
-    height: 18px !important;
+  body #adminLayout .topbar-profile-btn {
+    width: 38px !important;
+    height: 38px !important;
+    min-width: 38px !important;
+    min-height: 38px !important;
   }
 }

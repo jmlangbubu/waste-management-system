@@ -28,10 +28,10 @@
   align-items: center;
   justify-content: center;
 
-  padding: 24px;
+  padding: 20px;
   margin: 0;
 
-  z-index: 30000;
+  z-index: var(--wmo-z-modal);
 
   overflow: hidden;
   box-sizing: border-box;
@@ -49,9 +49,7 @@
 
   z-index: 1;
 
-  background: rgba(15, 23, 42, 0.58);
-  backdrop-filter: blur(3px);
-  -webkit-backdrop-filter: blur(3px);
+  background: rgba(9, 20, 19, 0.56);
 }
 
 .custom-modal-content,
@@ -59,18 +57,17 @@
   position: relative;
   z-index: 2;
 
-  width: min(900px, calc(100vw - 48px));
-  max-height: calc(100vh - 48px);
-  max-height: calc(100dvh - 48px);
+  width: min(900px, calc(100vw - 40px));
+  max-height: calc(100vh - 40px);
+  max-height: calc(100dvh - 40px);
 
   margin: 0;
   overflow: hidden;
 
-  background: #ffffff;
-  border: 1px solid #e5eaf1;
-  border-radius: 22px;
-
-  box-shadow: 0 28px 90px rgba(15, 23, 42, 0.24);
+  background: var(--wmo-surface);
+  border: 1px solid var(--wmo-border);
+  border-radius: var(--wmo-radius-lg);
+  box-shadow: 0 18px 48px rgba(9, 20, 19, 0.18);
 }
 
 .custom-modal-header,
@@ -80,33 +77,33 @@
   align-items: flex-start;
   gap: 16px;
 
-  padding: 22px 24px 16px;
+  padding: 18px 20px;
 
-  border-bottom: 1px solid #edf0f5;
+  border-bottom: 1px solid var(--wmo-border);
 }
 
 .custom-modal-header h3,
 .history-modal-header h2 {
   margin: 0;
 
-  color: #173126;
+  color: var(--wmo-ink);
 
   font-size: 20px;
-  font-weight: 900;
+  font-weight: 750;
 }
 
 .custom-modal-header p,
 .history-modal-header p {
   margin: 4px 0 0;
 
-  color: #64748b;
+  color: var(--wmo-text-muted);
 
   font-size: 13px;
   line-height: 1.45;
 }
 
 .custom-modal-body {
-  padding: 20px 24px 24px;
+  padding: 20px;
 
   overflow: auto;
   max-height: calc(100vh - 170px);
@@ -115,8 +112,8 @@
 
 .modal-close-btn,
 .history-close-btn {
-  width: 42px;
-  height: 42px;
+  width: 36px;
+  height: 36px;
 
   display: inline-flex;
   align-items: center;
@@ -124,24 +121,23 @@
   flex: 0 0 auto;
 
   border: none;
-  border-radius: 999px;
+  border-radius: var(--wmo-radius-md);
 
-  background: #eef2f6;
-  color: #475569;
+  background: var(--wmo-surface-muted);
+  color: var(--wmo-text-muted);
 
-  font-size: 22px;
-  font-weight: 850;
+  font-size: 20px;
+  font-weight: 750;
   line-height: 1;
 
   cursor: pointer;
-  transition: transform 0.18s ease, background 0.18s ease, color 0.18s ease;
+  transition: background-color 0.16s ease, color 0.16s ease;
 }
 
 .modal-close-btn:hover,
 .history-close-btn:hover {
-  background: #e2e8f0;
-  color: #0f172a;
-  transform: scale(1.03);
+  background: #e4f0ea;
+  color: var(--wmo-ink);
 }
 
 /* =========================
