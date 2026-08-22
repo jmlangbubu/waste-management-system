@@ -12,7 +12,7 @@ body #adminLayout #dashboardSidebar {
   max-width: var(--wmo-sidebar-expanded) !important;
   height: 100vh !important;
   height: 100dvh !important;
-  padding: 18px 14px !important;
+  padding: 16px 14px !important;
   display: flex !important;
   flex-direction: column !important;
   justify-content: space-between !important;
@@ -39,16 +39,16 @@ body #adminLayout #dashboardSidebar {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 14px !important;
 }
 
 #dashboardSidebar .sidebar-bottom {
   flex: 0 0 auto;
-  display: flex;
+  display: flex !important;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px !important;
   margin-top: auto;
-  padding-top: 12px;
+  padding-top: 10px !important;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   background: transparent !important;
 }
@@ -56,19 +56,20 @@ body #adminLayout #dashboardSidebar {
 #dashboardSidebar .sidebar-brand {
   width: 100%;
   min-width: 0;
-  min-height: 52px;
-  margin: 0;
-  padding: 0 6px;
-  display: flex;
+  min-height: 48px !important;
+  margin: 0 !important;
+  padding: 0 2px !important;
+  display: flex !important;
+  grid-template-columns: none !important;
   align-items: center;
-  gap: 11px;
+  gap: 10px !important;
 }
 
 #dashboardSidebar .sidebar-logo-toggle {
   position: relative;
-  width: 46px;
-  height: 46px;
-  min-width: 46px;
+  width: 48px;
+  height: 48px;
+  min-width: 48px;
   padding: 0;
   border: 0;
   border-radius: var(--wmo-radius-md);
@@ -106,12 +107,12 @@ body #adminLayout #dashboardSidebar {
 }
 
 #dashboardSidebar .brand-mark {
-  width: 44px !important;
-  height: 44px !important;
-  min-width: 44px !important;
-  max-width: 44px !important;
-  min-height: 44px !important;
-  max-height: 44px !important;
+  width: 46px !important;
+  height: 46px !important;
+  min-width: 46px !important;
+  max-width: 46px !important;
+  min-height: 46px !important;
+  max-height: 46px !important;
   border: 1px solid rgba(255, 255, 255, 0.18) !important;
   border-radius: var(--wmo-radius-md) !important;
   display: flex !important;
@@ -181,7 +182,7 @@ body #adminLayout #dashboardSidebar .nav-btn {
   box-shadow: none !important;
   color: var(--wmo-sidebar-text) !important;
   font-size: 13.5px !important;
-  font-weight: 650 !important;
+  font-weight: 575 !important;
   line-height: 1 !important;
   text-align: left !important;
   transform: none !important;
@@ -190,10 +191,10 @@ body #adminLayout #dashboardSidebar .nav-btn {
 
 #dashboardSidebar .nav-btn svg,
 #dashboardSidebar .nav-btn i {
-  width: 19px !important;
-  height: 19px !important;
-  min-width: 19px !important;
-  flex: 0 0 19px !important;
+  width: 20px !important;
+  height: 20px !important;
+  min-width: 20px !important;
+  flex: 0 0 20px !important;
   color: currentColor !important;
   opacity: 0.86 !important;
   stroke-width: 2 !important;
@@ -214,6 +215,7 @@ body #adminLayout #dashboardSidebar .nav-btn:hover {
 body #adminLayout #dashboardSidebar .nav-btn.active {
   background: var(--wmo-secondary) !important;
   color: #ffffff !important;
+  font-weight: 600 !important;
   box-shadow: none !important;
 }
 
@@ -221,6 +223,9 @@ body #adminLayout #dashboardSidebar .nav-btn.active {
   position: relative;
   width: 100%;
   min-width: 0;
+  margin-top: 7px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 body #adminLayout #dashboardSidebar .sidebar-other-trigger {
@@ -237,7 +242,7 @@ body #adminLayout #dashboardSidebar .sidebar-other-trigger {
   box-shadow: none !important;
   color: var(--wmo-sidebar-text) !important;
   font-size: 13px !important;
-  font-weight: 650 !important;
+  font-weight: 575 !important;
   transform: none !important;
   transition: background-color 0.16s ease, color 0.16s ease !important;
 }
@@ -361,10 +366,10 @@ html body #sidebarOtherMenu.sidebar-other-menu .sidebar-other-btn:hover {
 body #adminLayout #dashboardSidebar .sidebar-user-card {
   width: 100% !important;
   min-height: 0 !important;
-  padding: 10px 11px !important;
+  padding: 8px 10px !important;
   border: 0 !important;
   border-radius: var(--wmo-radius-md) !important;
-  background: rgba(255, 255, 255, 0.055) !important;
+  background: rgba(255, 255, 255, 0.035) !important;
   box-shadow: none !important;
   overflow: hidden !important;
 }
@@ -372,8 +377,8 @@ body #adminLayout #dashboardSidebar .sidebar-user-card {
 #dashboardSidebar .sidebar-user-name {
   overflow: hidden;
   color: #ffffff;
-  font-size: 13px !important;
-  font-weight: 700 !important;
+  font-size: 12.5px !important;
+  font-weight: 650 !important;
   line-height: 1.3 !important;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -391,17 +396,17 @@ body #adminLayout #dashboardSidebar .sidebar-user-card {
 
 body #adminLayout #dashboardSidebar .logout-btn {
   width: 100% !important;
-  min-height: 40px !important;
+  min-height: 42px !important;
   padding: 0 12px !important;
   border: 1px solid rgba(254, 226, 226, 0.18) !important;
   border-radius: var(--wmo-radius-md) !important;
   display: inline-flex !important;
   align-items: center !important;
-  justify-content: center !important;
+  justify-content: flex-start !important;
   gap: 8px !important;
-  background: rgba(180, 35, 24, 0.18) !important;
+  background: rgba(180, 35, 24, 0.08) !important;
   box-shadow: none !important;
-  color: #ffd9d6 !important;
+  color: #fecaca !important;
   font-size: 12.5px !important;
   font-weight: 700 !important;
   transform: none !important;
@@ -467,7 +472,7 @@ body #adminLayout.sidebar-collapsed #dashboardSidebar .logout-btn {
     width: min(280px, 84vw) !important;
     min-width: min(280px, 84vw) !important;
     max-width: min(280px, 84vw) !important;
-    padding: 18px 14px !important;
+    padding: 16px 14px !important;
     transform: translateX(-100%) !important;
   }
 
@@ -531,7 +536,7 @@ body #adminLayout.sidebar-collapsed #dashboardSidebar .logout-btn {
   }
 
   body #adminLayout #dashboardSidebar .nav-btn {
-    min-height: 38px !important;
+    min-height: 42px !important;
   }
 
   #dashboardSidebar .sidebar-user-card {
