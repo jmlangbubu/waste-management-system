@@ -1221,8 +1221,10 @@ function renderTruckAnalyticsModal(alerts, activeTrucks = []) {
 
   if (!activeTrucks.length) {
     modalTruckStatusList.innerHTML = `
-      <div class="summary-item">
-        <span>No active trucks available.</span>
+      <div class="truck-analytics-empty">
+        <span class="truck-analytics-empty-icon" aria-hidden="true">${getTrackingInlineIcon("truck")}</span>
+        <strong>No active trucks available.</strong>
+        <small>Active tracking sessions will appear here.</small>
       </div>
     `;
   } else {
@@ -1248,8 +1250,10 @@ function renderTruckAnalyticsModal(alerts, activeTrucks = []) {
 
   if (!distanceItems.length || maxValue === 0) {
     modalTruckDistanceChart.innerHTML = `
-      <div class="summary-item">
-        <span>No truck distance data available yet.</span>
+      <div class="truck-analytics-empty">
+        <span class="truck-analytics-empty-icon" aria-hidden="true">${getTrackingInlineIcon("route")}</span>
+        <strong>No truck distance data available yet.</strong>
+        <small>Distance appears after tracked movement is recorded.</small>
       </div>
     `;
   } else {

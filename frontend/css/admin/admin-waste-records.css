@@ -23,11 +23,11 @@
 }
 
 #recordsSection .page-card {
-  padding: 24px;
-  border: 1px solid #e5eaf1;
-  border-radius: 24px;
-  background: #ffffff;
-  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.06);
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
 }
 
 #recordsSection .page-card-header {
@@ -62,15 +62,15 @@
   position: relative;
 
   display: grid;
-  grid-template-columns: minmax(260px, 1.4fr) repeat(3, minmax(180px, 1fr));
+  grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 14px 16px;
   align-items: end;
 
   margin: 0 0 18px;
-  padding: 54px 18px 18px;
+  padding: 52px 18px 18px;
 
   border: 1px solid #e1e8f0;
-  border-radius: 20px;
+  border-radius: var(--wmo-radius-lg);
   background: linear-gradient(180deg, #ffffff 0%, #fbfcfe 100%);
   box-shadow: 0 12px 30px rgba(15, 23, 42, 0.035);
 }
@@ -120,16 +120,16 @@
 #recordsSection .filter-group input,
 #recordsSection .filter-group select {
   width: 100%;
-  height: 46px;
+  height: 42px;
 
   border: 1px solid #d8e2ee;
-  border-radius: 13px;
+  border-radius: var(--wmo-radius-md);
   background: #ffffff;
 
   padding: 0 13px;
 
   color: #0f172a;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 650;
 
   outline: none;
@@ -156,17 +156,18 @@
 }
 
 #recordsSection #generateWasteReportBtn {
-  width: 100%;
-  height: 46px;
-  min-height: 46px;
+  width: 180px;
+  max-width: 100%;
+  height: 42px;
+  min-height: 42px;
 
   display: inline-flex;
   align-items: center;
   justify-content: center;
 
   border: 1px solid #15803d;
-  border-radius: 13px;
-  background: linear-gradient(135deg, #15803d, #16a34a);
+  border-radius: var(--wmo-radius-md);
+  background: var(--wmo-primary);
   color: #ffffff;
 
   font-size: 13px;
@@ -176,12 +177,33 @@
 
   cursor: pointer;
 
-  box-shadow: 0 12px 24px rgba(22, 163, 74, 0.18);
+  box-shadow: none;
 
   transition:
     transform 0.16s ease,
     box-shadow 0.16s ease,
     filter 0.16s ease;
+}
+
+#recordsSection #generateWasteReportBtn svg {
+  width: 17px;
+  height: 17px;
+  margin-right: 8px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+@media (min-width: 1199px) {
+  #recordsSection .filter-group:nth-child(1) { grid-column: span 4; }
+  #recordsSection .filter-group:nth-child(2) { grid-column: span 3; }
+  #recordsSection .filter-group:nth-child(3) { grid-column: span 2; }
+  #recordsSection .filter-group:nth-child(4) { grid-column: span 3; }
+  #recordsSection .filter-group:nth-child(5),
+  #recordsSection .filter-group:nth-child(6),
+  #recordsSection .filter-group:nth-child(7) { grid-column: span 2; }
 }
 
 #recordsSection #generateWasteReportBtn:hover {
@@ -203,7 +225,7 @@
   overflow-y: hidden;
 
   border: 1px solid #e1e8f0;
-  border-radius: 18px;
+  border-radius: var(--wmo-radius-lg);
   background: #ffffff;
 
   box-shadow: 0 14px 34px rgba(15, 23, 42, 0.04);
@@ -242,7 +264,7 @@
 #recordsSection table,
 #recordsSection .waste-records-table {
   width: 100%;
-  min-width: 1180px;
+  min-width: 1240px;
   border-collapse: collapse;
   table-layout: auto;
 }
@@ -256,7 +278,7 @@
 
   border-bottom: 1px solid #e1e8f0;
 
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 950;
   line-height: 1.2;
   text-align: center;
@@ -265,13 +287,14 @@
 
 #recordsSection tbody td,
 #recordsSection .waste-records-table tbody td {
-  padding: 13px 13px;
+  height: 48px;
+  padding: 12px 13px;
 
   border-bottom: 1px solid #edf2f7;
   background: #ffffff;
   color: #102033;
 
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 650;
   line-height: 1.35;
   text-align: center;
@@ -279,6 +302,16 @@
 
   white-space: nowrap;
 }
+
+#recordsSection thead th:nth-child(5) { box-shadow: inset 0 3px #2563eb; background: #f4f8ff; }
+#recordsSection thead th:nth-child(6) { box-shadow: inset 0 3px #16a34a; background: #f3fbf5; }
+#recordsSection thead th:nth-child(7) { box-shadow: inset 0 3px #f97316; background: #fff8f1; }
+#recordsSection thead th:nth-child(8) { box-shadow: inset 0 3px #8b5cf6; background: #f8f6ff; }
+
+#recordsSection tbody td.waste-cell-trigger:nth-child(5) { color: #1d4ed8 !important; }
+#recordsSection tbody td.waste-cell-trigger:nth-child(6) { color: #15803d !important; }
+#recordsSection tbody td.waste-cell-trigger:nth-child(7) { color: #c2410c !important; }
+#recordsSection tbody td.waste-cell-trigger:nth-child(8) { color: #7e22ce !important; }
 
 #recordsSection tbody tr:hover td {
   background: #f8fafc;
@@ -376,8 +409,8 @@
   align-items: center;
   justify-content: center;
 
-  min-width: 96px;
-  min-height: 30px;
+  min-width: 90px;
+  min-height: 28px;
   padding: 0 12px;
 
   border-radius: 999px;
@@ -406,18 +439,18 @@
 #recordsSection .view-record-btn,
 #recordsSection .waste-action-btn,
 #recordsSection tbody td:last-child button {
-  width: 34px;
-  height: 34px;
-  min-width: 34px;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
 
   display: inline-flex;
   align-items: center;
   justify-content: center;
 
-  border: 1px solid #dbe7f0;
-  border-radius: 10px;
-  background: #ffffff;
-  color: #0f172a;
+  border: 1px solid #cfe0f8;
+  border-radius: var(--wmo-radius-md);
+  background: var(--wmo-info-soft);
+  color: var(--wmo-info);
 
   font-size: 13px;
   font-weight: 900;

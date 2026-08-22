@@ -1890,7 +1890,7 @@ function renderComplaintsTable(complaints) {
       <tr class="complaint-row complaint-${escapeHtml(status)}">
 
         <td>
-          <span class="complaint-subject-main">${subject}</span>
+          <span class="complaint-subject-main" title="${subject}">${subject}</span>
         </td>
 
         <td class="complaint-description-cell" title="${escapeHtml(descriptionRaw)}">
@@ -1914,8 +1914,12 @@ function renderComplaintsTable(complaints) {
         </td>
 
         <td>
-          <button class="complaint-action-btn" data-id="${escapeHtml(item.id)}">
-            View
+          <button type="button" class="complaint-action-btn" data-id="${escapeHtml(item.id)}" aria-label="View complaint details" title="View complaint details">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"></path>
+              <circle cx="12" cy="12" r="2.5"></circle>
+            </svg>
+            <span>View</span>
           </button>
         </td>
 
