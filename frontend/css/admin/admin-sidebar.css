@@ -1,1505 +1,540 @@
 /* =========================================================
    ADMIN SIDEBAR
-   File: css/admin/admin-sidebar.css
-
-   Purpose:
-   - Fixed desktop sidebar
-   - Logo-based Expanded <-> Collapsed sidebar
-   - Clean icons-only collapsed sidebar
-   - No scrollbar in collapsed desktop mode
-   - Mobile drawer compatibility
-
-   Important:
-   - Do NOT control .main-content here.
-   - Main content width/margin belongs to admin-layout.css.
+   Canonical Phase 1 navigation surface.
 ========================================================= */
 
-/* =========================
-   SIDEBAR VARIABLES
-========================= */
-
-:root {
-  --sidebar-expanded-width: 280px;
-  --sidebar-collapsed-width: 88px;
-  --sidebar-transition: 0.28s ease;
+body #adminLayout #dashboardSidebar {
+  position: fixed !important;
+  inset: 0 auto 0 0 !important;
+  z-index: var(--wmo-z-sidebar) !important;
+  width: var(--wmo-sidebar-expanded) !important;
+  min-width: var(--wmo-sidebar-expanded) !important;
+  max-width: var(--wmo-sidebar-expanded) !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  padding: 18px 14px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: space-between !important;
+  gap: 18px !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: var(--wmo-sidebar-bg) !important;
+  box-shadow: none !important;
+  color: #ffffff !important;
+  transition: width 0.2s ease, transform 0.2s ease !important;
 }
 
-/* =========================
-   SIDEBAR BASE
-========================= */
-
-.dashboard-sidebar {
-  width: var(--sidebar-expanded-width);
-  height: 100vh;
-
-  position: fixed;
-  top: 0;
-  left: 0;
-
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-
-  padding: 24px 18px;
-
-  background:
-    radial-gradient(circle at top left, rgba(47, 138, 52, 0.28), transparent 34%),
-    linear-gradient(180deg, #123826 0%, #0f3324 100%);
-  color: #ffffff;
-
-  z-index: 10000;
-
-  overflow-y: auto;
-  overflow-x: hidden;
-
-  box-sizing: border-box;
-
-  transition:
-    width var(--sidebar-transition),
-    padding var(--sidebar-transition),
-    transform var(--sidebar-transition),
-    box-shadow var(--sidebar-transition);
-}
-
-.sidebar-top,
-.sidebar-bottom,
-.sidebar-nav {
+#dashboardSidebar .sidebar-top,
+#dashboardSidebar .sidebar-bottom,
+#dashboardSidebar .sidebar-nav {
+  width: 100%;
   min-width: 0;
 }
 
-.sidebar-top {
-  display: flex;
-  flex-direction: column;
-  gap: 26px;
-}
-
-.sidebar-bottom {
+#dashboardSidebar .sidebar-top {
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 18px;
-  margin-top: 28px;
 }
 
-/* =========================
-   BRAND / LOGO TOGGLE
-========================= */
-
-.sidebar-brand {
-  display: flex;
-  align-items: center;
-  gap: 13px;
-  margin-bottom: 18px;
-  min-width: 0;
-}
-
-.sidebar-logo-toggle {
-  width: 58px;
-  height: 58px;
-  min-width: 58px;
-
-  position: relative;
-
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-
-  border: none;
-  border-radius: 18px;
-  background: transparent;
-  color: #ffffff;
-
-  cursor: pointer;
-
-  transition:
-    transform 0.18s ease,
-    width var(--sidebar-transition),
-    min-width var(--sidebar-transition),
-    height var(--sidebar-transition);
-}
-
-.sidebar-logo-toggle:hover {
-  transform: translateY(-1px);
-}
-
-.sidebar-logo-toggle::after {
-  content: "‹";
-
-  position: absolute;
-  inset: 0;
-
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-
-  border-radius: 18px;
-  background: rgba(15, 23, 42, 0.52);
-  color: #ffffff;
-
-  font-size: 34px;
-  font-weight: 900;
-  line-height: 1;
-
-  opacity: 0;
-  transform: scale(0.92);
-
-  transition:
-    opacity 0.18s ease,
-    transform 0.18s ease,
-    background 0.18s ease;
-}
-
-.sidebar-logo-toggle:hover::after {
-  opacity: 1;
-  transform: scale(1);
-}
-
-.admin-layout.sidebar-collapsed .sidebar-logo-toggle::after {
-  content: "›";
-}
-
-.brand-mark {
-  width: 52px;
-  height: 52px;
-  min-width: 52px;
-
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
-  position: relative;
-  overflow: hidden;
-
-  border-radius: 16px;
-  background: linear-gradient(145deg, #37a044, #248331);
-  color: #ffffff;
-
-  font-size: 25px;
-  font-weight: 900;
-  line-height: 1;
-
-  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.22);
-}
-
-.sidebar-logo-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-.sidebar-logo-fallback {
-  display: none;
-}
-
-.brand-text {
-  min-width: 0;
-  overflow: hidden;
-}
-
-.brand-text h2 {
-  margin: 0;
-  font-size: 21px;
-  font-weight: 900;
-  line-height: 1.1;
-  letter-spacing: -0.3px;
-  white-space: nowrap;
-}
-
-.brand-text p {
-  margin: 5px 0 0;
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.78);
-  white-space: nowrap;
-}
-
-/* =========================
-   NAVIGATION
-========================= */
-
-.sidebar-nav {
+#dashboardSidebar .sidebar-bottom {
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: transparent !important;
 }
 
-.nav-btn {
+#dashboardSidebar .sidebar-brand {
   width: 100%;
-  min-height: 54px;
-
+  min-width: 0;
+  min-height: 52px;
+  margin: 0;
+  padding: 0 6px;
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 11px;
+}
 
-  border: none;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.86);
-
-  text-align: left;
-  border-radius: 16px;
-  padding: 0 18px;
-
-  font-size: 15px;
-  font-weight: 750;
-
-  cursor: pointer;
+#dashboardSidebar .sidebar-logo-toggle {
   position: relative;
-
-  transition:
-    background 0.2s ease,
-    color 0.2s ease,
-    transform 0.2s ease,
-    box-shadow 0.2s ease;
-}
-
-.nav-btn svg,
-.nav-btn i {
-  width: 21px;
-  height: 21px;
-  flex: 0 0 21px;
-  stroke-width: 2;
-  opacity: 0.72;
-}
-
-.nav-btn span {
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.nav-btn:hover {
-  background: rgba(255, 255, 255, 0.075);
+  width: 46px;
+  height: 46px;
+  min-width: 46px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--wmo-radius-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
   color: #ffffff;
-  transform: translateX(2px);
+  box-shadow: none;
 }
 
-.nav-btn.active {
-  background: linear-gradient(135deg, #35a23d, #248a30);
+#dashboardSidebar .sidebar-logo-toggle:focus-visible {
+  outline: 2px solid var(--wmo-soft);
+  outline-offset: 2px;
+}
+
+#dashboardSidebar .sidebar-logo-toggle::after {
+  content: "‹";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--wmo-radius-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(9, 20, 19, 0.76);
   color: #ffffff;
-  box-shadow: 0 12px 24px rgba(47, 138, 52, 0.28);
+  font-size: 24px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.16s ease;
 }
 
-.nav-btn.active svg,
-.nav-btn.active i {
+#dashboardSidebar .sidebar-logo-toggle:hover::after {
   opacity: 1;
 }
 
-.nav-btn:active {
-  transform: scale(0.98);
+#dashboardSidebar .brand-mark {
+  width: 44px !important;
+  height: 44px !important;
+  min-width: 44px !important;
+  max-width: 44px !important;
+  min-height: 44px !important;
+  max-height: 44px !important;
+  border: 1px solid rgba(255, 255, 255, 0.18) !important;
+  border-radius: var(--wmo-radius-md) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  overflow: hidden !important;
+  background: #ffffff !important;
+  box-shadow: none !important;
 }
 
-/* =========================
-   OTHER MENU
-========================= */
-
-.sidebar-other-group {
-  position: relative;
-  min-width: 0;
+#dashboardSidebar .sidebar-logo-img {
+  width: 100% !important;
+  height: 100% !important;
+  padding: 2px !important;
+  display: block !important;
+  object-fit: cover !important;
 }
 
-.sidebar-other-trigger {
-  width: 100%;
-  min-height: 50px;
-
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 16px;
-  padding: 0 14px;
-
-  background: rgba(255, 255, 255, 0.075);
-  color: #ffffff;
-
-  cursor: pointer;
-
-  transition:
-    background 0.18s ease,
-    transform 0.18s ease;
-}
-
-.sidebar-other-trigger:hover {
-  background: rgba(255, 255, 255, 0.11);
-  transform: translateY(-1px);
-}
-
-.sidebar-other-trigger-left {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-
-.sidebar-other-trigger-left svg,
-.sidebar-other-trigger-left i {
-  width: 20px;
-  height: 20px;
-  flex: 0 0 20px;
-}
-
-.sidebar-other-trigger-left span,
-.sidebar-other-arrow {
-  white-space: nowrap;
-}
-
-.sidebar-other-menu {
-  display: grid;
-  gap: 8px;
-  margin-top: 10px;
-}
-
-.sidebar-other-menu.hidden {
+#dashboardSidebar .sidebar-logo-fallback {
   display: none;
 }
 
-.sidebar-other-btn {
-  width: 100%;
-  min-height: 44px;
+#dashboardSidebar .brand-text {
+  min-width: 0;
+  overflow: hidden;
+}
 
-  display: flex;
+#dashboardSidebar .brand-text h2 {
+  margin: 0;
+  overflow: hidden;
+  color: #ffffff;
+  font-size: 18px;
+  font-weight: 750;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#dashboardSidebar .brand-text p {
+  margin: 2px 0 0;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 11.5px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#dashboardSidebar .sidebar-nav {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 5px !important;
+}
+
+body #adminLayout #dashboardSidebar .nav-btn {
+  width: 100% !important;
+  min-height: 44px !important;
+  padding: 0 12px !important;
+  border: 0 !important;
+  border-radius: var(--wmo-radius-md) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 11px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--wmo-sidebar-text) !important;
+  font-size: 13.5px !important;
+  font-weight: 650 !important;
+  line-height: 1 !important;
+  text-align: left !important;
+  transform: none !important;
+  transition: background-color 0.16s ease, color 0.16s ease !important;
+}
+
+#dashboardSidebar .nav-btn svg,
+#dashboardSidebar .nav-btn i {
+  width: 19px !important;
+  height: 19px !important;
+  min-width: 19px !important;
+  flex: 0 0 19px !important;
+  color: currentColor !important;
+  opacity: 0.86 !important;
+  stroke-width: 2 !important;
+}
+
+#dashboardSidebar .nav-btn span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body #adminLayout #dashboardSidebar .nav-btn:hover {
+  background: var(--wmo-sidebar-hover) !important;
+  color: #ffffff !important;
+}
+
+body #adminLayout #dashboardSidebar .nav-btn.active {
+  background: var(--wmo-secondary) !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+#dashboardSidebar .sidebar-other-group {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+body #adminLayout #dashboardSidebar .sidebar-other-trigger {
+  width: 100% !important;
+  min-height: 42px !important;
+  padding: 0 11px !important;
+  border: 0 !important;
+  border-radius: var(--wmo-radius-md) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 10px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--wmo-sidebar-text) !important;
+  font-size: 13px !important;
+  font-weight: 650 !important;
+  transform: none !important;
+  transition: background-color 0.16s ease, color 0.16s ease !important;
+}
+
+body #adminLayout #dashboardSidebar .sidebar-other-trigger:hover,
+body #adminLayout #dashboardSidebar .sidebar-other-trigger[aria-expanded="true"] {
+  background: var(--wmo-sidebar-hover) !important;
+  color: #ffffff !important;
+}
+
+#dashboardSidebar .sidebar-other-trigger-left {
+  min-width: 0;
+  display: inline-flex;
   align-items: center;
   gap: 10px;
-
-  border: none;
-  border-radius: 14px;
-  padding: 0 14px;
-
-  background: rgba(255, 255, 255, 0.055);
-  color: rgba(255, 255, 255, 0.88);
-
-  font-size: 13px;
-  font-weight: 750;
-  text-align: left;
-
-  cursor: pointer;
 }
 
-.sidebar-other-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #ffffff;
+#dashboardSidebar .sidebar-other-trigger-left svg,
+#dashboardSidebar .sidebar-other-trigger-left i {
+  width: 18px !important;
+  height: 18px !important;
+  min-width: 18px !important;
+  color: currentColor !important;
+  stroke-width: 2 !important;
 }
 
-/* =========================
-   USER CARD
-========================= */
-
-.sidebar-user-card {
-  padding: 18px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.085);
-  border: 1px solid rgba(255, 255, 255, 0.055);
-  overflow: hidden;
+#dashboardSidebar .sidebar-other-arrow {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: currentColor;
+  transition: transform 0.16s ease;
 }
 
-.sidebar-user-name {
-  font-size: 16px;
-  font-weight: 900;
-  color: #ffffff;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+#dashboardSidebar .sidebar-other-arrow svg {
+  width: 15px;
+  height: 15px;
 }
 
-.sidebar-user-role {
-  margin-top: 5px;
-  font-size: 13px;
-  line-height: 1.4;
-  color: rgba(255, 255, 255, 0.76);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+#dashboardSidebar .sidebar-other-trigger[aria-expanded="true"] .sidebar-other-arrow {
+  transform: rotate(180deg);
 }
 
-/* =========================
-   LOGOUT
-========================= */
-
-.logout-btn {
+#dashboardSidebar .sidebar-other-menu {
   width: 100%;
-  min-height: 54px;
+  display: grid;
+  gap: 5px;
+  margin-top: 6px;
+}
 
-  border: none;
-  border-radius: 18px;
-  padding: 14px 18px;
+#dashboardSidebar .sidebar-other-menu.hidden,
+body #sidebarOtherMenu.hidden {
+  display: none !important;
+}
 
-  background: linear-gradient(135deg, #ef3030, #d72727);
+body #adminLayout #dashboardSidebar .sidebar-other-btn,
+html body #sidebarOtherMenu.sidebar-other-menu .sidebar-other-btn {
+  width: 100% !important;
+  min-height: 40px !important;
+  padding: 0 11px !important;
+  border: 0 !important;
+  border-radius: var(--wmo-radius-md) !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  background: rgba(255, 255, 255, 0.055) !important;
+  box-shadow: none !important;
+  color: rgba(255, 255, 255, 0.76) !important;
+  font-size: 12.5px !important;
+  font-weight: 650 !important;
+  text-align: left !important;
+  transform: none !important;
+}
+
+body #adminLayout #dashboardSidebar .sidebar-other-btn:hover,
+html body #sidebarOtherMenu.sidebar-other-menu .sidebar-other-btn:hover {
+  background: var(--wmo-sidebar-hover) !important;
+  color: #ffffff !important;
+}
+
+#dashboardSidebar .sidebar-other-btn svg,
+html body #sidebarOtherMenu .sidebar-other-btn svg {
+  width: 17px !important;
+  height: 17px !important;
+  min-width: 17px !important;
+  color: currentColor !important;
+  stroke-width: 2 !important;
+}
+
+html body #sidebarOtherMenu.sidebar-other-menu {
+  position: fixed !important;
+  left: var(--other-menu-left, calc(var(--wmo-sidebar-expanded) + 12px)) !important;
+  top: var(--other-menu-top, auto) !important;
+  bottom: auto !important;
+  z-index: var(--wmo-z-dropdown) !important;
+  width: 250px !important;
+  padding: 8px !important;
+  border: 1px solid var(--wmo-border) !important;
+  border-radius: var(--wmo-radius-lg) !important;
+  display: grid !important;
+  gap: 5px !important;
+  background: var(--wmo-surface) !important;
+  box-shadow: var(--wmo-shadow-subtle) !important;
+  animation: none !important;
+}
+
+html body #sidebarOtherMenu.sidebar-other-menu .sidebar-other-btn {
+  border: 1px solid transparent !important;
+  background: transparent !important;
+  color: var(--wmo-ink) !important;
+}
+
+html body #sidebarOtherMenu.sidebar-other-menu .sidebar-other-btn:hover {
+  border-color: var(--wmo-border) !important;
+  background: var(--wmo-surface-muted) !important;
+  color: var(--wmo-primary) !important;
+}
+
+body #adminLayout #dashboardSidebar .sidebar-user-card {
+  width: 100% !important;
+  min-height: 0 !important;
+  padding: 10px 11px !important;
+  border: 0 !important;
+  border-radius: var(--wmo-radius-md) !important;
+  background: rgba(255, 255, 255, 0.055) !important;
+  box-shadow: none !important;
+  overflow: hidden !important;
+}
+
+#dashboardSidebar .sidebar-user-name {
+  overflow: hidden;
   color: #ffffff;
-
-  font-size: 15px;
-  font-weight: 850;
-
-  cursor: pointer;
-
-  transition:
-    background 0.2s ease,
-    transform 0.2s ease,
-    box-shadow 0.2s ease;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  line-height: 1.3 !important;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.logout-btn:hover {
-  background: linear-gradient(135deg, #f03a3a, #c91f1f);
-  box-shadow: 0 12px 24px rgba(220, 45, 45, 0.24);
+#dashboardSidebar .sidebar-user-role {
+  margin-top: 2px !important;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.6) !important;
+  font-size: 11.5px !important;
+  line-height: 1.35 !important;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.logout-btn:active {
-  transform: scale(0.98);
+body #adminLayout #dashboardSidebar .logout-btn {
+  width: 100% !important;
+  min-height: 40px !important;
+  padding: 0 12px !important;
+  border: 1px solid rgba(254, 226, 226, 0.18) !important;
+  border-radius: var(--wmo-radius-md) !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px !important;
+  background: rgba(180, 35, 24, 0.18) !important;
+  box-shadow: none !important;
+  color: #ffd9d6 !important;
+  font-size: 12.5px !important;
+  font-weight: 700 !important;
+  transform: none !important;
+  transition: background-color 0.16s ease, color 0.16s ease !important;
 }
 
-/* =========================================================
-   COLLAPSED DESKTOP SIDEBAR
-   Clean / centered / no scrollbar
-========================================================= */
+body #adminLayout #dashboardSidebar .logout-btn:hover {
+  background: rgba(180, 35, 24, 0.3) !important;
+  color: #ffffff !important;
+}
 
-@media (min-width: 993px) {
-  .admin-layout.sidebar-collapsed .dashboard-sidebar {
-    width: var(--sidebar-collapsed-width) !important;
-    min-width: var(--sidebar-collapsed-width) !important;
-    max-width: var(--sidebar-collapsed-width) !important;
+#dashboardSidebar .logout-btn svg {
+  width: 17px;
+  height: 17px;
+}
 
-    padding: 18px 0 !important;
+body #adminLayout.sidebar-collapsed #dashboardSidebar {
+  width: var(--wmo-sidebar-collapsed) !important;
+  min-width: var(--wmo-sidebar-collapsed) !important;
+  max-width: var(--wmo-sidebar-collapsed) !important;
+  padding-inline: 12px !important;
+}
 
-    align-items: center !important;
+#adminLayout.sidebar-collapsed #dashboardSidebar .sidebar-brand {
+  justify-content: center;
+  padding-inline: 0;
+}
 
-    overflow: hidden !important;
+#adminLayout.sidebar-collapsed #dashboardSidebar .sidebar-logo-toggle {
+  width: 48px;
+  min-width: 48px;
+}
+
+#adminLayout.sidebar-collapsed #dashboardSidebar .sidebar-logo-toggle::after {
+  content: "›";
+}
+
+#adminLayout.sidebar-collapsed #dashboardSidebar .brand-text,
+#adminLayout.sidebar-collapsed #dashboardSidebar .nav-btn span,
+#adminLayout.sidebar-collapsed #dashboardSidebar .sidebar-other-trigger-left span,
+#adminLayout.sidebar-collapsed #dashboardSidebar .sidebar-other-arrow,
+#adminLayout.sidebar-collapsed #dashboardSidebar .sidebar-user-card,
+#adminLayout.sidebar-collapsed #dashboardSidebar .logout-btn span {
+  display: none !important;
+}
+
+body #adminLayout.sidebar-collapsed #dashboardSidebar .nav-btn,
+body #adminLayout.sidebar-collapsed #dashboardSidebar .sidebar-other-trigger,
+body #adminLayout.sidebar-collapsed #dashboardSidebar .logout-btn {
+  width: 52px !important;
+  min-width: 52px !important;
+  padding: 0 !important;
+  justify-content: center !important;
+}
+
+#sidebarBackdrop.sidebar-backdrop {
+  display: none;
+}
+
+@media (max-width: 992px) {
+  body #adminLayout #dashboardSidebar,
+  body #adminLayout.sidebar-collapsed #dashboardSidebar {
+    width: min(280px, 84vw) !important;
+    min-width: min(280px, 84vw) !important;
+    max-width: min(280px, 84vw) !important;
+    padding: 18px 14px !important;
+    transform: translateX(-100%) !important;
   }
 
-  .admin-layout.sidebar-collapsed .dashboard-sidebar::-webkit-scrollbar {
-    width: 0 !important;
-    height: 0 !important;
-    display: none !important;
+  body #adminLayout #dashboardSidebar.open,
+  body #adminLayout.sidebar-collapsed #dashboardSidebar.open {
+    transform: translateX(0) !important;
+    box-shadow: 16px 0 36px rgba(9, 20, 19, 0.2) !important;
   }
 
-  .admin-layout.sidebar-collapsed .sidebar-top,
-  .admin-layout.sidebar-collapsed .sidebar-bottom,
-  .admin-layout.sidebar-collapsed .sidebar-nav,
-  .admin-layout.sidebar-collapsed .sidebar-brand,
-  .admin-layout.sidebar-collapsed .sidebar-other-group {
+  body #adminLayout.sidebar-collapsed #dashboardSidebar .brand-text,
+  body #adminLayout.sidebar-collapsed #dashboardSidebar .nav-btn span,
+  body #adminLayout.sidebar-collapsed #dashboardSidebar .sidebar-other-trigger-left span,
+  body #adminLayout.sidebar-collapsed #dashboardSidebar .sidebar-other-arrow,
+  body #adminLayout.sidebar-collapsed #dashboardSidebar .sidebar-user-card,
+  body #adminLayout.sidebar-collapsed #dashboardSidebar .logout-btn span {
+    display: block !important;
+  }
+
+  body #adminLayout.sidebar-collapsed #dashboardSidebar .nav-btn,
+  body #adminLayout.sidebar-collapsed #dashboardSidebar .sidebar-other-trigger,
+  body #adminLayout.sidebar-collapsed #dashboardSidebar .logout-btn {
     width: 100% !important;
-    min-width: 0 !important;
-
-    display: flex !important;
-    flex-direction: column !important;
-    align-items: center !important;
+    padding-inline: 12px !important;
+    justify-content: flex-start !important;
   }
 
-  .admin-layout.sidebar-collapsed .sidebar-top {
-    gap: 18px !important;
+  body #adminLayout.sidebar-collapsed #dashboardSidebar .sidebar-other-trigger {
+    justify-content: space-between !important;
   }
 
-  .admin-layout.sidebar-collapsed .sidebar-bottom {
-    gap: 10px !important;
-    margin-top: 16px !important;
-  }
-
-  .admin-layout.sidebar-collapsed .sidebar-nav {
-    gap: 8px !important;
-  }
-
-  .admin-layout.sidebar-collapsed .sidebar-brand {
-    margin: 0 0 14px !important;
-  }
-
-  .admin-layout.sidebar-collapsed .sidebar-logo-toggle {
-    width: 54px !important;
-    height: 54px !important;
-    min-width: 54px !important;
-    max-width: 54px !important;
+  html body #sidebarOtherMenu.sidebar-other-menu {
+    position: static !important;
+    width: 100% !important;
+    margin-top: 6px !important;
     padding: 0 !important;
-    margin: 0 auto !important;
-  }
-
-  .admin-layout.sidebar-collapsed .brand-mark {
-    width: 54px !important;
-    height: 54px !important;
-    min-width: 54px !important;
-    max-width: 54px !important;
-    border-radius: 18px !important;
-  }
-
-  .admin-layout.sidebar-collapsed .nav-btn,
-  .admin-layout.sidebar-collapsed .sidebar-other-trigger,
-  .admin-layout.sidebar-collapsed .logout-btn {
-    width: 48px !important;
-    min-width: 48px !important;
-    max-width: 48px !important;
-
-    height: 48px !important;
-    min-height: 48px !important;
-    max-height: 48px !important;
-
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-
-    padding: 0 !important;
-    margin: 0 auto !important;
-
-    border-radius: 16px !important;
-
-    text-align: center !important;
-    overflow: hidden !important;
-  }
-
-  .admin-layout.sidebar-collapsed .nav-btn {
+    border: 0 !important;
     background: transparent !important;
     box-shadow: none !important;
   }
 
-  .admin-layout.sidebar-collapsed .nav-btn:hover {
-    background: rgba(255, 255, 255, 0.075) !important;
-    transform: none !important;
+  #sidebarBackdrop.sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: var(--wmo-z-sidebar-backdrop);
+    display: block;
+    background: rgba(9, 20, 19, 0.48);
   }
 
-  .admin-layout.sidebar-collapsed .nav-btn.active {
-    background: linear-gradient(135deg, #35a23d, #248a30) !important;
-    box-shadow: 0 12px 24px rgba(47, 138, 52, 0.26) !important;
-  }
-
-  .admin-layout.sidebar-collapsed .nav-btn svg,
-  .admin-layout.sidebar-collapsed .nav-btn i,
-  .admin-layout.sidebar-collapsed .sidebar-other-trigger-left svg,
-  .admin-layout.sidebar-collapsed .sidebar-other-trigger-left i {
-    width: 21px !important;
-    height: 21px !important;
-    flex: 0 0 21px !important;
-
-    display: block !important;
-
-    margin: 0 !important;
-    padding: 0 !important;
-  }
-
-  .admin-layout.sidebar-collapsed .sidebar-other-trigger {
-    background: rgba(255, 255, 255, 0.075) !important;
-    border: 1px solid rgba(255, 255, 255, 0.10) !important;
-  }
-
-  .admin-layout.sidebar-collapsed .sidebar-other-trigger-left {
-    width: 48px !important;
-    height: 48px !important;
-
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-
-    margin: 0 !important;
-    padding: 0 !important;
-    gap: 0 !important;
-  }
-
-  .admin-layout.sidebar-collapsed .brand-text,
-  .admin-layout.sidebar-collapsed .nav-btn span,
-  .admin-layout.sidebar-collapsed .sidebar-user-card,
-  .admin-layout.sidebar-collapsed .sidebar-other-trigger-left span,
-  .admin-layout.sidebar-collapsed .sidebar-other-arrow,
-  .admin-layout.sidebar-collapsed .sidebar-other-menu {
-    display: none !important;
-  }
-
-  .admin-layout.sidebar-collapsed .logout-btn {
-    position: relative !important;
-
-    background: linear-gradient(135deg, #ef4444, #dc2626) !important;
-    color: transparent !important;
-
-    font-size: 0 !important;
-    line-height: 0 !important;
-    text-indent: -9999px !important;
-  }
-
-  .admin-layout.sidebar-collapsed .logout-btn * {
-    display: none !important;
-  }
-
-  .admin-layout.sidebar-collapsed .logout-btn::before {
-    content: "⏻" !important;
-
-    position: absolute !important;
-    inset: 0 !important;
-
-    width: 48px !important;
-    height: 48px !important;
-
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-
-    color: #ffffff !important;
-    font-size: 21px !important;
-    font-weight: 900 !important;
-    line-height: 1 !important;
-    text-indent: 0 !important;
+  #sidebarBackdrop.sidebar-backdrop.hidden {
+    display: none;
   }
 }
 
-/* =========================
-   MOBILE DRAWER SUPPORT
-========================= */
-
-@media (max-width: 992px) {
-  .dashboard-sidebar,
-  .admin-layout.sidebar-collapsed .dashboard-sidebar {
-    width: 280px;
-    max-width: 82vw;
-    height: 100vh;
-
-    padding: 24px 20px;
-
-    transform: translateX(-100%);
-
-    overflow-y: auto;
-    overflow-x: hidden;
-
-    transition:
-      transform var(--sidebar-transition),
-      box-shadow var(--sidebar-transition);
+@media (max-height: 760px) and (min-width: 993px) {
+  body #adminLayout #dashboardSidebar {
+    padding-block: 12px !important;
   }
 
-  .dashboard-sidebar.open,
-  .admin-layout.sidebar-collapsed .dashboard-sidebar.open {
-    transform: translateX(0);
-    box-shadow: 24px 0 70px rgba(15, 23, 42, 0.32);
+  #dashboardSidebar .sidebar-top {
+    gap: 11px;
   }
 
-  .admin-layout.sidebar-collapsed .sidebar-brand {
-    justify-content: flex-start;
-    gap: 13px;
+  body #adminLayout #dashboardSidebar .nav-btn {
+    min-height: 38px !important;
   }
 
-  .admin-layout.sidebar-collapsed .brand-text,
-  .admin-layout.sidebar-collapsed .nav-btn span,
-  .admin-layout.sidebar-collapsed .sidebar-other-trigger-left span,
-  .admin-layout.sidebar-collapsed .sidebar-other-arrow,
-  .admin-layout.sidebar-collapsed .sidebar-user-card {
-    display: block !important;
-  }
-
-  .admin-layout.sidebar-collapsed .nav-btn {
-    width: 100%;
-    justify-content: flex-start;
-    gap: 14px;
-    padding: 0 18px;
-  }
-
-  .admin-layout.sidebar-collapsed .sidebar-other-trigger {
-    width: 100%;
-    justify-content: space-between;
-    padding: 0 14px;
-  }
-
-  .admin-layout.sidebar-collapsed .sidebar-other-trigger-left {
-    justify-content: flex-start;
-    gap: 10px;
-  }
-
-  .admin-layout.sidebar-collapsed .logout-btn {
-    width: 100%;
-    min-height: 54px;
-    padding: 14px 18px;
-    font-size: 15px;
-    color: #ffffff;
-    text-indent: 0;
-  }
-
-  .admin-layout.sidebar-collapsed .logout-btn::before {
-    content: none;
+  #dashboardSidebar .sidebar-user-card {
+    padding-block: 8px !important;
   }
 }
-
-@media (max-width: 480px) {
-  .dashboard-sidebar,
-  .admin-layout.sidebar-collapsed .dashboard-sidebar {
-    max-width: 86vw;
-    padding: 22px 16px;
-  }
-}
-
-@media (min-width: 993px) {
-  .admin-layout.sidebar-collapsed #navUserManagement {
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-  }
-
-  .admin-layout.sidebar-collapsed #navUserManagement svg,
-  .admin-layout.sidebar-collapsed #navUserManagement i {
-    transform: translateX(2px) !important;
-    transform-origin: center center !important;
-  }
-}
-
-/* =========================================================
-   USER MANAGEMENT ICON CENTER FIX
-   File: css/admin/admin-sidebar.css
-
-   Purpose:
-   - Fix only the User Management icon in collapsed sidebar.
-   - The Lucide "users" icon is visually off-center compared to
-     the other icons, so it needs a small horizontal adjustment.
-   - This does not affect expanded sidebar or mobile drawer.
-========================================================= */
-
-@media (min-width: 993px) {
-  .admin-layout.sidebar-collapsed #navUserManagement {
-    position: relative !important;
-  }
-
-  .admin-layout.sidebar-collapsed #navUserManagement svg,
-  .admin-layout.sidebar-collapsed #navUserManagement i {
-    position: relative !important;
-    left: 14px !important;
-    transform: none !important;
-    margin: 0 !important;
-  }
-}
-
-@media (min-width: 993px) {
-  .admin-layout:not(.sidebar-collapsed) .sidebar-other-group {
-    position: relative !important;
-    z-index: 12020 !important;
-  }
-
-  .admin-layout:not(.sidebar-collapsed) .sidebar-other-trigger {
-    position: relative !important;
-    z-index: 2 !important;
-  }
-
-  .admin-layout:not(.sidebar-collapsed) .sidebar-other-menu {
-    position: absolute !important;
-    left: 0 !important;
-    right: 0 !important;
-    bottom: calc(100% + 10px) !important;
-
-    width: 100% !important;
-
-    display: grid !important;
-    gap: 8px !important;
-
-    padding: 10px !important;
-    margin: 0 !important;
-
-    border: 1px solid rgba(255, 255, 255, 0.10) !important;
-    border-radius: 18px !important;
-    background:
-      linear-gradient(180deg, rgba(25, 88, 57, 0.98), rgba(16, 64, 42, 0.98)) !important;
-
-    box-shadow:
-      0 18px 34px rgba(0, 0, 0, 0.24),
-      inset 0 1px 0 rgba(255, 255, 255, 0.07) !important;
-
-    z-index: 12030 !important;
-  }
-
-  .admin-layout:not(.sidebar-collapsed) .sidebar-other-menu.hidden {
-    display: none !important;
-  }
-
-  .admin-layout:not(.sidebar-collapsed) .sidebar-other-btn {
-    width: 100% !important;
-    min-height: 46px !important;
-
-    display: flex !important;
-    align-items: center !important;
-    justify-content: flex-start !important;
-    gap: 11px !important;
-
-    padding: 0 13px !important;
-
-    border-radius: 14px !important;
-    background: rgba(255, 255, 255, 0.07) !important;
-    color: rgba(255, 255, 255, 0.92) !important;
-
-    font-size: 13px !important;
-    font-weight: 800 !important;
-    text-align: left !important;
-    white-space: nowrap !important;
-
-    cursor: pointer !important;
-  }
-
-  .admin-layout:not(.sidebar-collapsed) .sidebar-other-btn:hover {
-    background: rgba(255, 255, 255, 0.13) !important;
-    color: #ffffff !important;
-    transform: none !important;
-  }
-
-  .admin-layout:not(.sidebar-collapsed) .sidebar-other-btn svg,
-  .admin-layout:not(.sidebar-collapsed) .sidebar-other-btn i {
-    width: 18px !important;
-    height: 18px !important;
-    flex: 0 0 18px !important;
-  }
-
-  .admin-layout.sidebar-collapsed .sidebar-other-menu {
-    display: none !important;
-  }
-}
-
-@media (max-width: 992px) {
-  .sidebar-other-group {
-    position: relative !important;
-  }
-
-  .sidebar-other-menu {
-    position: static !important;
-    width: 100% !important;
-    margin-top: 10px !important;
-    padding: 0 !important;
-    background: transparent !important;
-    border: none !important;
-    box-shadow: none !important;
-  }
-
-  .sidebar-other-menu.hidden {
-    display: none !important;
-  }
-}
-
-/* =========================================================
-   SIDEBAR OTHER MENU FINAL FLYOUT FIX
-   File: css/admin/admin-sidebar.css
-
-   Fixes:
-   - Remove unwanted diamond/arrow shape beside submenu
-   - Expanded sidebar: Other submenu opens upward and stays inside sidebar
-   - Collapsed sidebar: Other submenu opens as flyout to the right
-   - No scrollbar in collapsed sidebar
-   - Mobile/tablet: normal dropdown inside drawer
-========================================================= */
-
-/* Remove any pseudo arrow/diamond from previous styles */
-.sidebar-other-group::before,
-.sidebar-other-group::after,
-.sidebar-other-menu::before,
-.sidebar-other-menu::after,
-.sidebar-other-trigger::before,
-.sidebar-other-trigger::after {
-  content: none !important;
-  display: none !important;
-}
-
-/* =========================
-   DESKTOP EXPANDED SIDEBAR
-========================= */
-
-@media (min-width: 993px) {
-  .admin-layout:not(.sidebar-collapsed) .sidebar-other-group {
-    position: relative !important;
-    z-index: 12020 !important;
-  }
-
-  .admin-layout:not(.sidebar-collapsed) .sidebar-other-menu {
-    position: absolute !important;
-    left: 0 !important;
-    right: 0 !important;
-    bottom: calc(100% + 10px) !important;
-
-    width: 100% !important;
-    min-width: 0 !important;
-
-    display: grid !important;
-    gap: 8px !important;
-
-    padding: 10px !important;
-    margin: 0 !important;
-
-    border: 1px solid rgba(255, 255, 255, 0.10) !important;
-    border-radius: 18px !important;
-    background:
-      linear-gradient(180deg, rgba(25, 88, 57, 0.98), rgba(16, 64, 42, 0.98)) !important;
-
-    box-shadow:
-      0 18px 34px rgba(0, 0, 0, 0.24),
-      inset 0 1px 0 rgba(255, 255, 255, 0.07) !important;
-
-    z-index: 12030 !important;
-  }
-
-  .admin-layout:not(.sidebar-collapsed) .sidebar-other-menu.hidden {
-    display: none !important;
-  }
-
-  .admin-layout:not(.sidebar-collapsed) .sidebar-other-btn {
-    width: 100% !important;
-    min-height: 46px !important;
-
-    display: flex !important;
-    align-items: center !important;
-    justify-content: flex-start !important;
-    gap: 11px !important;
-
-    padding: 0 13px !important;
-
-    border-radius: 14px !important;
-    background: rgba(255, 255, 255, 0.07) !important;
-    color: rgba(255, 255, 255, 0.92) !important;
-
-    font-size: 13px !important;
-    font-weight: 800 !important;
-    text-align: left !important;
-    white-space: nowrap !important;
-
-    cursor: pointer !important;
-  }
-
-  .admin-layout:not(.sidebar-collapsed) .sidebar-other-btn:hover {
-    background: rgba(255, 255, 255, 0.13) !important;
-    color: #ffffff !important;
-    transform: none !important;
-  }
-
-  .admin-layout:not(.sidebar-collapsed) .sidebar-other-btn svg,
-  .admin-layout:not(.sidebar-collapsed) .sidebar-other-btn i {
-    width: 18px !important;
-    height: 18px !important;
-    flex: 0 0 18px !important;
-  }
-}
-
-/* =========================
-   DESKTOP COLLAPSED SIDEBAR
-   Other menu must still open when clicking the three-dot button.
-========================= */
-
-@media (min-width: 993px) {
-  .admin-layout.sidebar-collapsed .dashboard-sidebar {
-    overflow-x: visible !important;
-    overflow-y: hidden !important;
-  }
-
-  .admin-layout.sidebar-collapsed .sidebar-bottom,
-  .admin-layout.sidebar-collapsed .sidebar-other-group {
-    position: relative !important;
-    overflow: visible !important;
-    z-index: 12020 !important;
-  }
-
-  .admin-layout.sidebar-collapsed .sidebar-other-menu {
-    position: absolute !important;
-    left: calc(100% + 14px) !important;
-    bottom: 0 !important;
-    right: auto !important;
-
-    width: 235px !important;
-    min-width: 235px !important;
-
-    display: grid !important;
-    gap: 8px !important;
-
-    padding: 10px !important;
-    margin: 0 !important;
-
-    border: 1px solid rgba(255, 255, 255, 0.10) !important;
-    border-radius: 18px !important;
-    background:
-      linear-gradient(180deg, rgba(25, 88, 57, 0.98), rgba(16, 64, 42, 0.98)) !important;
-
-    box-shadow:
-      0 18px 34px rgba(0, 0, 0, 0.26),
-      inset 0 1px 0 rgba(255, 255, 255, 0.07) !important;
-
-    z-index: 12040 !important;
-  }
-
-  .admin-layout.sidebar-collapsed .sidebar-other-menu.hidden {
-    display: none !important;
-  }
-
-  .admin-layout.sidebar-collapsed .sidebar-other-btn {
-    width: 100% !important;
-    min-height: 46px !important;
-
-    display: flex !important;
-    align-items: center !important;
-    justify-content: flex-start !important;
-    gap: 11px !important;
-
-    padding: 0 13px !important;
-
-    border-radius: 14px !important;
-    background: rgba(255, 255, 255, 0.07) !important;
-    color: rgba(255, 255, 255, 0.92) !important;
-
-    font-size: 13px !important;
-    font-weight: 800 !important;
-    text-align: left !important;
-    white-space: nowrap !important;
-
-    cursor: pointer !important;
-  }
-
-  .admin-layout.sidebar-collapsed .sidebar-other-btn:hover {
-    background: rgba(255, 255, 255, 0.13) !important;
-    color: #ffffff !important;
-  }
-
-  .admin-layout.sidebar-collapsed .sidebar-other-btn svg,
-  .admin-layout.sidebar-collapsed .sidebar-other-btn i {
-    width: 18px !important;
-    height: 18px !important;
-    flex: 0 0 18px !important;
-    display: block !important;
-  }
-
-  .admin-layout.sidebar-collapsed .sidebar-other-btn span {
-    display: inline !important;
-    width: auto !important;
-    opacity: 1 !important;
-    visibility: visible !important;
-    pointer-events: auto !important;
-  }
-}
-
-/* =========================
-   MOBILE / TABLET DRAWER
-========================= */
-
-@media (max-width: 992px) {
-  .sidebar-other-group {
-    position: relative !important;
-  }
-
-  .sidebar-other-menu {
-    position: static !important;
-    width: 100% !important;
-    min-width: 0 !important;
-
-    display: grid !important;
-    gap: 8px !important;
-
-    margin-top: 10px !important;
-    padding: 0 !important;
-
-    background: transparent !important;
-    border: none !important;
-    box-shadow: none !important;
-  }
-
-  .sidebar-other-menu.hidden {
-    display: none !important;
-  }
-}
-
-/* =========================================================
-   COLLAPSED OTHER SUBMENU FORCE-SHOW FIX
-   File: css/admin/admin-sidebar.css
-
-   Purpose:
-   - When sidebar is collapsed, clicking the three-dot Other button
-     must show the submenu as a right-side flyout.
-   - Keep hidden class respected.
-   - Remove diamond/arrow artifacts.
-========================================================= */
-
-.sidebar-other-group::before,
-.sidebar-other-group::after,
-.sidebar-other-menu::before,
-.sidebar-other-menu::after {
-  content: none !important;
-  display: none !important;
-}
-
-@media (min-width: 993px) {
-  .admin-layout.sidebar-collapsed .dashboard-sidebar {
-    overflow-x: visible !important;
-    overflow-y: hidden !important;
-  }
-
-  .admin-layout.sidebar-collapsed .sidebar-bottom,
-  .admin-layout.sidebar-collapsed .sidebar-other-group {
-    overflow: visible !important;
-    position: relative !important;
-    z-index: 20000 !important;
-  }
-
-  .admin-layout.sidebar-collapsed #sidebarOtherMenu.sidebar-other-menu {
-    position: absolute !important;
-
-    left: calc(100% + 14px) !important;
-    right: auto !important;
-    bottom: 0 !important;
-    top: auto !important;
-
-    width: 240px !important;
-    min-width: 240px !important;
-    max-width: 240px !important;
-
-    display: grid !important;
-    grid-template-columns: 1fr !important;
-    gap: 8px !important;
-
-    padding: 10px !important;
-    margin: 0 !important;
-
-    border: 1px solid rgba(255, 255, 255, 0.12) !important;
-    border-radius: 18px !important;
-
-    background:
-      linear-gradient(180deg, rgba(25, 88, 57, 0.98), rgba(16, 64, 42, 0.98)) !important;
-
-    box-shadow:
-      0 18px 34px rgba(0, 0, 0, 0.28),
-      inset 0 1px 0 rgba(255, 255, 255, 0.07) !important;
-
-    z-index: 20020 !important;
-  }
-
-  .admin-layout.sidebar-collapsed #sidebarOtherMenu.sidebar-other-menu.hidden {
-    display: none !important;
-  }
-
-  .admin-layout.sidebar-collapsed #sidebarOtherMenu .sidebar-other-btn {
-    width: 100% !important;
-    min-height: 46px !important;
-
-    display: flex !important;
-    align-items: center !important;
-    justify-content: flex-start !important;
-    gap: 11px !important;
-
-    padding: 0 13px !important;
-
-    border: none !important;
-    border-radius: 14px !important;
-
-    background: rgba(255, 255, 255, 0.07) !important;
-    color: rgba(255, 255, 255, 0.94) !important;
-
-    font-size: 13px !important;
-    font-weight: 850 !important;
-    text-align: left !important;
-    white-space: nowrap !important;
-
-    cursor: pointer !important;
-  }
-
-  .admin-layout.sidebar-collapsed #sidebarOtherMenu .sidebar-other-btn:hover {
-    background: rgba(255, 255, 255, 0.14) !important;
-    color: #ffffff !important;
-  }
-
-  .admin-layout.sidebar-collapsed #sidebarOtherMenu .sidebar-other-btn svg,
-  .admin-layout.sidebar-collapsed #sidebarOtherMenu .sidebar-other-btn i {
-    width: 18px !important;
-    height: 18px !important;
-    flex: 0 0 18px !important;
-    display: block !important;
-  }
-
-  .admin-layout.sidebar-collapsed #sidebarOtherMenu .sidebar-other-btn span {
-    display: inline !important;
-    width: auto !important;
-    opacity: 1 !important;
-    visibility: visible !important;
-    pointer-events: auto !important;
-  }
-}
-
-/* =========================================================
-   COLLAPSED OTHER SUBMENU OPEN STATE FINAL FIX
-   File: css/admin/admin-sidebar.css
-
-   Purpose:
-   - Guarantees the Other submenu appears as a right-side flyout
-     when JS removes .hidden / adds .open in collapsed sidebar.
-========================================================= */
-
-@media (min-width: 993px) {
-  .admin-layout.sidebar-collapsed .dashboard-sidebar,
-  .admin-layout.sidebar-collapsed .sidebar-bottom,
-  .admin-layout.sidebar-collapsed .sidebar-other-group {
-    overflow: visible !important;
-  }
-
-  .admin-layout.sidebar-collapsed #sidebarOtherMenu.sidebar-other-menu.open:not(.hidden) {
-    display: grid !important;
-    visibility: visible !important;
-    opacity: 1 !important;
-    pointer-events: auto !important;
-  }
-
-  .admin-layout.sidebar-collapsed #sidebarOtherMenu.sidebar-other-menu.hidden {
-    display: none !important;
-  }
-}
-
-@media (min-width: 993px) {
-  .dashboard-sidebar {
-    isolation: isolate !important;
-  }
-
-  .sidebar-nav {
-    position: relative !important;
-    z-index: 1 !important;
-  }
-
-  .sidebar-nav .nav-btn {
-    position: relative !important;
-    z-index: 1 !important;
-  }
-
-  .sidebar-nav .nav-btn.active {
-    z-index: 2 !important;
-  }
-
-  .sidebar-bottom {
-    position: relative !important;
-    z-index: 30000 !important;
-    overflow: visible !important;
-  }
-
-  .sidebar-other-group {
-    position: relative !important;
-    z-index: 40000 !important;
-    overflow: visible !important;
-  }
-
-  .sidebar-other-trigger {
-    position: relative !important;
-    z-index: 40010 !important;
-  }
-
-  #sidebarOtherMenu.sidebar-other-menu {
-    z-index: 50000 !important;
-  }
-
-  #sidebarOtherMenu.sidebar-other-menu:not(.hidden) {
-    display: grid !important;
-    opacity: 1 !important;
-    visibility: visible !important;
-    pointer-events: auto !important;
-  }
-
-  #sidebarOtherMenu.sidebar-other-menu.hidden {
-    display: none !important;
-  }
-
-  .admin-layout:not(.sidebar-collapsed) #sidebarOtherMenu.sidebar-other-menu {
-    position: absolute !important;
-    left: 0 !important;
-    right: 0 !important;
-    bottom: calc(100% + 10px) !important;
-    top: auto !important;
-
-    width: 100% !important;
-  }
-
-  .admin-layout.sidebar-collapsed #sidebarOtherMenu.sidebar-other-menu {
-    position: absolute !important;
-    left: calc(100% + 14px) !important;
-    right: auto !important;
-    bottom: 0 !important;
-    top: auto !important;
-
-    width: 240px !important;
-    min-width: 240px !important;
-  }
-
-  #sidebarOtherMenu .sidebar-other-btn {
-    position: relative !important;
-    z-index: 50001 !important;
-  }
-}
-
-#sidebarOtherMenu.hidden,
-.sidebar-other-menu.hidden,
-.admin-layout.sidebar-collapsed #sidebarOtherMenu.hidden,
-.admin-layout:not(.sidebar-collapsed) #sidebarOtherMenu.hidden,
-body #sidebarOtherMenu.sidebar-other-menu.hidden {
-  display: none !important;
-  visibility: hidden !important;
-  opacity: 0 !important;
-  pointer-events: none !important;
-}
-
-#sidebarOtherMenu.open:not(.hidden),
-body #sidebarOtherMenu.sidebar-other-menu.open:not(.hidden) {
-  display: grid !important;
-  visibility: visible !important;
-  opacity: 1 !important;
-  pointer-events: auto !important;
-}
-
-@media (min-width: 993px) {
-  .admin-layout.sidebar-collapsed #sidebarOtherMenu.open:not(.hidden) {
-    position: absolute !important;
-    left: calc(100% + 14px) !important;
-    right: auto !important;
-    bottom: 0 !important;
-    top: auto !important;
-
-    width: 240px !important;
-    min-width: 240px !important;
-    max-width: 240px !important;
-  }
-
-  .admin-layout:not(.sidebar-collapsed) #sidebarOtherMenu.open:not(.hidden) {
-    position: absolute !important;
-    left: calc(100% + 14px) !important;
-    right: auto !important;
-    top: 50% !important;
-    bottom: auto !important;
-    transform: translateY(-50%) !important;
-
-    width: 250px !important;
-    min-width: 250px !important;
-    max-width: 250px !important;
-  }
-}
-
-/* =========================================================
-   SIDEBAR OTHER MENU FIXED FLYOUT FINAL FIX
-   File: css/admin/admin-sidebar.css
-
-   Problem:
-   - The Other submenu is clipped/covered because it is positioned
-     inside the sidebar and the main content begins beside the sidebar.
-
-   Fix:
-   - Use a fixed-position flyout so it is never clipped by the sidebar.
-   - JS will set exact top/left based on the Other button position.
-   - Hidden state is respected.
-========================================================= */
-
-#sidebarOtherMenu.hidden,
-.sidebar-other-menu.hidden,
-body #sidebarOtherMenu.sidebar-other-menu.hidden {
-  display: none !important;
-  visibility: hidden !important;
-  opacity: 0 !important;
-  pointer-events: none !important;
-}
-
-#sidebarOtherMenu.open:not(.hidden),
-body #sidebarOtherMenu.sidebar-other-menu.open:not(.hidden) {
-  display: grid !important;
-  visibility: visible !important;
-  opacity: 1 !important;
-  pointer-events: auto !important;
-}
-
-@media (min-width: 993px) {
-  .dashboard-sidebar,
-  .dashboard-sidebar.open,
-  .admin-layout.sidebar-collapsed .dashboard-sidebar {
-    z-index: 100000 !important;
-  }
-
-  .sidebar-other-group,
-  .sidebar-other-trigger {
-    position: relative !important;
-    z-index: 100010 !important;
-  }
-
-  body #sidebarOtherMenu.sidebar-other-menu {
-    position: fixed !important;
-    left: var(--other-menu-left, calc(var(--sidebar-expanded-width, 280px) + 14px)) !important;
-    top: var(--other-menu-top, 520px) !important;
-    right: auto !important;
-    bottom: auto !important;
-    transform: none !important;
-
-    width: 250px !important;
-    min-width: 250px !important;
-    max-width: 250px !important;
-
-    grid-template-columns: 1fr !important;
-    gap: 10px !important;
-
-    padding: 12px !important;
-    margin: 0 !important;
-
-    border: 1px solid rgba(255, 255, 255, 0.12) !important;
-    border-radius: 18px !important;
-    background:
-      linear-gradient(180deg, rgba(25, 88, 57, 0.98), rgba(16, 64, 42, 0.98)) !important;
-
-    box-shadow:
-      0 18px 38px rgba(0, 0, 0, 0.30),
-      inset 0 1px 0 rgba(255, 255, 255, 0.07) !important;
-
-    z-index: 100050 !important;
-  }
-
-  body #sidebarOtherMenu.sidebar-other-menu.hidden {
-    display: none !important;
-  }
-
-  body #sidebarOtherMenu.sidebar-other-menu.open:not(.hidden) {
-    display: grid !important;
-  }
-
-  body #sidebarOtherMenu .sidebar-other-btn {
-    width: 100% !important;
-    min-height: 48px !important;
-
-    display: flex !important;
-    align-items: center !important;
-    justify-content: flex-start !important;
-    gap: 11px !important;
-
-    padding: 0 14px !important;
-
-    border: none !important;
-    border-radius: 14px !important;
-
-    background: rgba(255, 255, 255, 0.08) !important;
-    color: rgba(255, 255, 255, 0.94) !important;
-
-    font-size: 14px !important;
-    font-weight: 850 !important;
-    text-align: left !important;
-    white-space: nowrap !important;
-
-    cursor: pointer !important;
-  }
-
-  body #sidebarOtherMenu .sidebar-other-btn:hover {
-    background: rgba(255, 255, 255, 0.14) !important;
-    color: #ffffff !important;
-  }
-
-  body #sidebarOtherMenu .sidebar-other-btn svg,
-  body #sidebarOtherMenu .sidebar-other-btn i {
-    width: 18px !important;
-    height: 18px !important;
-    flex: 0 0 18px !important;
-    display: block !important;
-  }
-
-  body #sidebarOtherMenu .sidebar-other-btn span {
-    display: inline !important;
-    width: auto !important;
-    opacity: 1 !important;
-    visibility: visible !important;
-    pointer-events: auto !important;
-  }
-}
-
-@media (max-width: 992px) {
-  body #sidebarOtherMenu.sidebar-other-menu {
-    position: static !important;
-    width: 100% !important;
-    min-width: 0 !important;
-    max-width: none !important;
-
-    display: grid !important;
-    grid-template-columns: 1fr !important;
-    gap: 8px !important;
-
-    padding: 10px !important;
-    margin-top: 10px !important;
-
-    border: 1px solid rgba(255, 255, 255, 0.08) !important;
-    border-radius: 18px !important;
-    background: rgba(255, 255, 255, 0.055) !important;
-    box-shadow: none !important;
-  }
-
-  body #sidebarOtherMenu.sidebar-other-menu.hidden {
-    display: none !important;
-  }
-}
-

@@ -80,13 +80,13 @@ body {
   }
 
   .main-content {
-    width: calc(100% - 280px) !important;
-    margin-left: 280px !important;
+    width: calc(100% - var(--wmo-sidebar-expanded)) !important;
+    margin-left: var(--wmo-sidebar-expanded) !important;
   }
 
   .admin-layout.sidebar-collapsed .main-content {
-    width: calc(100% - 88px) !important;
-    margin-left: 88px !important;
+    width: calc(100% - var(--wmo-sidebar-collapsed)) !important;
+    margin-left: var(--wmo-sidebar-collapsed) !important;
   }
 
   .sidebar-toggle-btn {
@@ -241,11 +241,11 @@ body {
     top: 0;
     left: 0;
 
-    width: 280px;
+    width: var(--wmo-sidebar-expanded);
     max-width: 82vw;
     height: 100vh;
 
-    z-index: 10000;
+    z-index: var(--wmo-z-sidebar);
 
     transform: translateX(-100%);
     transition:
@@ -256,14 +256,14 @@ body {
   .dashboard-sidebar.open,
   .admin-layout.sidebar-collapsed .dashboard-sidebar.open {
     transform: translateX(0);
-    box-shadow: 24px 0 70px rgba(15, 23, 42, 0.32);
+    box-shadow: 18px 0 44px rgba(9, 20, 19, 0.22);
   }
 
   .sidebar-backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(15, 23, 42, 0.45);
-    z-index: 9999;
+    background: rgba(9, 20, 19, 0.46);
+    z-index: var(--wmo-z-sidebar-backdrop);
   }
 
   .sidebar-backdrop.hidden {
@@ -277,21 +277,10 @@ body {
     flex-shrink: 0;
   }
 
-  .topbar {
-    align-items: flex-start;
-  }
-
   .topbar-left {
-    width: 100%;
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     gap: 12px;
-  }
-
-  .topbar-actions {
-    width: 100%;
-    justify-content: flex-start;
-    flex-wrap: wrap;
   }
 
   .dashboard-main-grid,
@@ -308,8 +297,10 @@ body {
     overflow-x: auto;
   }
 
-  table {
-    min-width: 800px;
+  .table-shell > table,
+  .complaints-table-shell > table,
+  .recent-records-preview > table {
+    min-width: max(100%, 640px);
   }
 
   /* On mobile/tablet, collapsed state should not hide sidebar labels. */
@@ -349,24 +340,13 @@ body {
     grid-template-columns: 1fr;
   }
 
-  .topbar {
-    flex-direction: column;
-    gap: 12px;
-  }
-
   .topbar-left h1 {
-    font-size: 22px;
+    font-size: 20px;
     line-height: 1.2;
   }
 
   .topbar-subtitle {
     font-size: 13px;
-  }
-
-  .refresh-btn,
-  .view-all-btn {
-    width: 100%;
-    justify-content: center;
   }
 
   .dashboard-header-row,
@@ -452,9 +432,9 @@ body {
   }
 
   .notification-dropdown {
-    right: auto;
-    left: 0;
-    width: 280px;
+    right: 0;
+    left: auto;
+    width: min(360px, calc(100vw - 24px));
     max-width: calc(100vw - 24px);
   }
 
@@ -463,8 +443,10 @@ body {
     width: 96%;
   }
 
-  table {
-    min-width: 720px;
+  .table-shell > table,
+  .complaints-table-shell > table,
+  .recent-records-preview > table {
+    min-width: max(100%, 600px);
   }
 }
 

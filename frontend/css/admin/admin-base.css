@@ -1,18 +1,7 @@
 /* =========================================================
    ADMIN BASE
-   File: css/admin/admin-base.css
-
-   Purpose:
-   - Global reset
-   - Base typography
-   - Page width safety
-   - Global utilities 
-   - Scrollbar styling
+   Reset, typography, accessibility, and global width safety.
 ========================================================= */
-
-/* =========================
-   RESET + GLOBAL BASE
-========================= */
 
 *,
 *::before,
@@ -27,25 +16,37 @@ html {
   max-width: 100%;
   min-height: 100%;
   overflow-x: hidden;
-  scroll-behavior: smooth;
 }
 
 body {
   width: 100%;
   max-width: 100%;
   min-height: 100vh;
-
+  min-height: 100dvh;
   overflow-x: hidden;
-
   font-family: "Inter", Arial, sans-serif;
-  background: #f4f6f3;
-  color: #1f3a2e;
-
+  font-size: 14px;
+  line-height: 1.5;
+  background: var(--wmo-page);
+  color: var(--wmo-ink);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
-/* Prevent media/content from forcing layout overflow */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  color: var(--wmo-ink);
+  font-family: inherit;
+}
+
+p {
+  color: inherit;
+}
+
 img,
 svg,
 canvas,
@@ -64,9 +65,14 @@ button {
   cursor: pointer;
 }
 
-/* =========================
-   GLOBAL UTILITIES
-========================= */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--wmo-secondary);
+  outline-offset: 2px;
+}
 
 .hidden {
   display: none !important;
@@ -75,23 +81,16 @@ button {
 .loading-state,
 .empty-state,
 .error-state {
-  text-align: center;
-  padding: 22px !important;
+  padding: 20px;
+  color: var(--wmo-text-muted);
   font-size: 13px;
-}
-
-.loading-state,
-.empty-state {
-  color: #667085;
+  line-height: 1.45;
+  text-align: center;
 }
 
 .error-state {
-  color: #d92d20;
+  color: var(--wmo-danger);
 }
-
-/* =========================
-   GLOBAL WIDTH SAFETY
-========================= */
 
 .admin-layout,
 .main-content,
@@ -106,22 +105,18 @@ button {
   min-width: 0;
 }
 
-/* =========================
-   SCROLLBAR GLOBAL
-========================= */
-
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
   border-radius: 999px;
+  background: #bdcbc4;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: #95a9a0;
 }
 
 ::-webkit-scrollbar-track {
