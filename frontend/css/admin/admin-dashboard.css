@@ -637,13 +637,13 @@
 }
 
 #dashboardSection.dashboard-executive .dashboard-category-card .segmented-filter {
-  width: 105px !important;
-  min-width: 105px !important;
-  max-width: 105px !important;
-  flex: 0 0 105px !important;
+  width: 118px !important;
+  min-width: 118px !important;
+  max-width: 118px !important;
+  flex: 0 0 118px !important;
   height: 35px !important;
   min-height: 35px !important;
-  grid-template-columns: repeat(3, minmax(33px, 1fr)) !important;
+  grid-template-columns: 34px 44px 34px !important;
 }
 
 #dashboardSection.dashboard-executive .dashboard-category-card .segment-btn {
@@ -1248,5 +1248,586 @@
   }
   #dashboardSection.dashboard-executive .monitoring-alert-card .summary-item {
     grid-template-columns: 32px minmax(0, 1fr) 68px !important;
+  }
+}
+
+/* =========================================================
+   FINAL STRUCTURAL COCKPIT
+
+   Four visual levels: KPI strip, primary monitoring, category
+   analytics, and one shared operations snapshot. These rules
+   intentionally stay Dashboard-scoped so other Admin modules
+   keep their existing surfaces and responsive behavior.
+========================================================= */
+
+#dashboardSection.dashboard-executive {
+  gap: 10px !important;
+}
+
+#dashboardSection.dashboard-executive .page-card,
+#dashboardSection.dashboard-executive .chart-card {
+  border-color: #dce8e1 !important;
+  border-radius: 12px !important;
+  box-shadow: none !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-kpi-strip {
+  gap: 10px !important;
+}
+
+#dashboardSection.dashboard-executive .waste-summary-card {
+  height: 72px !important;
+  min-height: 72px !important;
+  padding: 9px 12px !important;
+  grid-template-columns: 38px minmax(0, 1fr) !important;
+  gap: 9px !important;
+}
+
+#dashboardSection.dashboard-executive .waste-summary-icon {
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px !important;
+  border-radius: 9px !important;
+}
+
+#dashboardSection.dashboard-executive .waste-summary-icon svg {
+  width: 19px !important;
+  height: 19px !important;
+}
+
+#dashboardSection.dashboard-executive .waste-summary-card strong {
+  font-size: 22px !important;
+}
+
+#dashboardSection.dashboard-executive .waste-summary-card span {
+  font-size: 12px !important;
+}
+
+#dashboardSection.dashboard-executive .waste-summary-card small {
+  font-size: 10.75px !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-primary-band {
+  height: 380px !important;
+  grid-template-columns: minmax(0, 63fr) minmax(370px, 37fr) !important;
+  gap: 10px !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-primary-card,
+#dashboardSection.dashboard-executive .dashboard-side-stack {
+  height: 100% !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-primary-card {
+  padding: 12px !important;
+  gap: 6px !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-primary-card .page-card-header {
+  min-height: 40px !important;
+  margin-bottom: 2px !important;
+}
+
+#dashboardSection.dashboard-executive .modern-trend-card,
+#dashboardSection.dashboard-executive .medium-chart-card {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-side-stack {
+  grid-template-rows: 156px minmax(0, 1fr) !important;
+  gap: 10px !important;
+}
+
+#dashboardSection.dashboard-executive .latest-summary-card {
+  order: 1 !important;
+}
+
+#dashboardSection.dashboard-executive .recent-records-card {
+  order: 2 !important;
+}
+
+#dashboardSection.dashboard-executive .latest-summary-card,
+#dashboardSection.dashboard-executive .recent-records-card {
+  padding: 10px 12px !important;
+}
+
+#dashboardSection.dashboard-executive .latest-summary-card .page-card-header,
+#dashboardSection.dashboard-executive .recent-records-card .page-card-header {
+  min-height: 34px !important;
+  margin-bottom: 4px !important;
+}
+
+#dashboardSection.dashboard-executive .latest-summary-card .dashboard-card-icon,
+#dashboardSection.dashboard-executive .recent-records-card .dashboard-card-icon {
+  width: 30px !important;
+  height: 30px !important;
+  min-width: 30px !important;
+}
+
+#dashboardSection.dashboard-executive .latest-summary-card .dashboard-title-with-icon,
+#dashboardSection.dashboard-executive .recent-records-card .dashboard-title-with-icon {
+  grid-template-columns: 30px minmax(0, 1fr) !important;
+  gap: 7px !important;
+}
+
+#dashboardSection.dashboard-executive .latest-summary-card .dashboard-title-with-icon h2,
+#dashboardSection.dashboard-executive .recent-records-card .dashboard-title-with-icon h2 {
+  font-size: 14.5px !important;
+}
+
+#dashboardSection.dashboard-executive .session-row {
+  padding: 3px 10px !important;
+}
+
+#dashboardSection.dashboard-executive .session-label {
+  font-size: 10.25px !important;
+}
+
+#dashboardSection.dashboard-executive .session-value {
+  font-size: 12.5px !important;
+  line-height: 1.06 !important;
+}
+
+#dashboardSection.dashboard-executive .recent-records-preview {
+  flex: 0 0 139px !important;
+  height: 139px !important;
+  max-height: 139px !important;
+  border-radius: 0 !important;
+}
+
+#dashboardSection.dashboard-executive .recent-records-preview th {
+  height: 28px !important;
+  font-size: 10.25px !important;
+}
+
+#dashboardSection.dashboard-executive .recent-records-preview td {
+  height: 37px !important;
+  padding: 5px 6px !important;
+  font-size: 11.25px !important;
+}
+
+#dashboardSection.dashboard-executive .recent-records-preview th:nth-child(1),
+#dashboardSection.dashboard-executive .recent-records-preview td:nth-child(1) { width: 22% !important; }
+#dashboardSection.dashboard-executive .recent-records-preview th:nth-child(2),
+#dashboardSection.dashboard-executive .recent-records-preview td:nth-child(2) { width: 19% !important; }
+#dashboardSection.dashboard-executive .recent-records-preview th:nth-child(3),
+#dashboardSection.dashboard-executive .recent-records-preview td:nth-child(3) { width: 19% !important; }
+#dashboardSection.dashboard-executive .recent-records-preview th:nth-child(4),
+#dashboardSection.dashboard-executive .recent-records-preview td:nth-child(4) { width: 21% !important; }
+#dashboardSection.dashboard-executive .recent-records-preview th:nth-child(5),
+#dashboardSection.dashboard-executive .recent-records-preview td:nth-child(5) { width: 19% !important; }
+
+#dashboardSection.dashboard-executive .recent-records-preview td:nth-child(5) {
+  background:
+    linear-gradient(90deg,
+      transparent 5px,
+      #eef8f1 5px,
+      #eef8f1 calc(100% - 5px),
+      transparent calc(100% - 5px)) center / 100% 22px no-repeat !important;
+  font-size: 10.75px !important;
+  text-align: center !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-support-grid {
+  height: 184px !important;
+  grid-template-columns: minmax(0, 44fr) minmax(0, 56fr) !important;
+  gap: 10px !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-category-card,
+#dashboardSection.dashboard-executive .operations-snapshot-card {
+  height: 100% !important;
+  min-height: 0 !important;
+  padding: 10px 12px !important;
+  overflow: hidden !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-category-card {
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-category-card .page-card-header {
+  min-height: 35px !important;
+  margin-bottom: 6px !important;
+}
+
+#dashboardSection.dashboard-executive #wasteCategoryChart,
+#dashboardSection.dashboard-executive .dashboard-category-card .chart-placeholder {
+  height: 100% !important;
+  max-height: 100% !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
+#dashboardSection.dashboard-executive .operations-snapshot-card {
+  display: grid !important;
+  grid-template-rows: 30px minmax(0, 1fr) !important;
+  gap: 6px !important;
+}
+
+#dashboardSection.dashboard-executive .operations-snapshot-header {
+  min-width: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 10px !important;
+  padding: 0 0 6px !important;
+  border-bottom: 1px solid var(--dashboard-border-light) !important;
+}
+
+#dashboardSection.dashboard-executive .operations-snapshot-header h2 {
+  margin: 0 !important;
+  color: var(--dashboard-ink) !important;
+  font-size: 14.5px !important;
+  line-height: 1 !important;
+  font-weight: 790 !important;
+  letter-spacing: -.015em !important;
+}
+
+#dashboardSection.dashboard-executive .operations-snapshot-header .dashboard-eyebrow {
+  margin-bottom: 1px !important;
+  font-size: 9.5px !important;
+}
+
+#dashboardSection.dashboard-executive .operations-snapshot-status {
+  flex: 0 0 auto !important;
+  color: #4f7061 !important;
+  font-size: 10.5px !important;
+  line-height: 1 !important;
+  font-weight: 700 !important;
+  white-space: nowrap !important;
+}
+
+#dashboardSection.dashboard-executive .operations-snapshot-status::before {
+  content: "" !important;
+  display: inline-block !important;
+  width: 6px !important;
+  height: 6px !important;
+  margin-right: 5px !important;
+  border-radius: 50% !important;
+  background: #35a15e !important;
+  vertical-align: 1px !important;
+}
+
+#dashboardSection.dashboard-executive .operations-snapshot-grid {
+  min-width: 0 !important;
+  min-height: 0 !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 45fr) minmax(0, 55fr) !important;
+  gap: 0 !important;
+}
+
+#dashboardSection.dashboard-executive .operations-panel,
+#dashboardSection.dashboard-executive .compact-recommendation-card.operations-panel,
+#dashboardSection.dashboard-executive .monitoring-alert-card.operations-panel {
+  width: auto !important;
+  height: auto !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0 !important;
+  overflow: hidden !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+#dashboardSection.dashboard-executive .compact-recommendation-card.operations-panel {
+  padding-right: 12px !important;
+  border-right: 1px solid var(--dashboard-border-light) !important;
+}
+
+#dashboardSection.dashboard-executive .monitoring-alert-card.operations-panel {
+  padding-left: 12px !important;
+}
+
+#dashboardSection.dashboard-executive .operations-panel .page-card-header {
+  min-height: 30px !important;
+  height: 30px !important;
+  margin-bottom: 2px !important;
+}
+
+#dashboardSection.dashboard-executive .operations-panel .dashboard-title-with-icon {
+  grid-template-columns: 28px minmax(0, 1fr) !important;
+  gap: 6px !important;
+}
+
+#dashboardSection.dashboard-executive .operations-panel .dashboard-card-icon {
+  width: 28px !important;
+  height: 28px !important;
+  min-width: 28px !important;
+  border-radius: 8px !important;
+}
+
+#dashboardSection.dashboard-executive .operations-panel .dashboard-card-icon svg {
+  width: 16px !important;
+  height: 16px !important;
+}
+
+#dashboardSection.dashboard-executive .operations-panel .dashboard-title-with-icon h2,
+#dashboardSection.dashboard-executive .monitoring-alert-card.operations-panel .dashboard-title-with-icon h2 {
+  font-size: 13.25px !important;
+  line-height: 1.1 !important;
+}
+
+#dashboardSection.dashboard-executive .operations-panel .dashboard-title-with-icon p {
+  display: none !important;
+}
+
+#dashboardSection.dashboard-executive .compact-recommendation-card.operations-panel .summary-list {
+  flex: 0 0 88px !important;
+  height: 88px !important;
+  max-height: 88px !important;
+}
+
+#dashboardSection.dashboard-executive .compact-recommendation-card.operations-panel .summary-item {
+  height: 44px !important;
+  min-height: 44px !important;
+  max-height: 44px !important;
+  padding: 5px 3px !important;
+  grid-template-columns: 16px minmax(0, 1fr) !important;
+  gap: 6px !important;
+  border-left: 0 !important;
+  font-size: 11.5px !important;
+  line-height: 1.25 !important;
+}
+
+#dashboardSection.dashboard-executive .monitoring-alert-card.operations-panel .monitoring-summary-row {
+  height: 34px !important;
+  min-height: 34px !important;
+  margin-bottom: 5px !important;
+}
+
+#dashboardSection.dashboard-executive .monitoring-alert-card.operations-panel .monitoring-mini-box {
+  height: 34px !important;
+  min-height: 34px !important;
+  padding: 5px 8px !important;
+}
+
+#dashboardSection.dashboard-executive .monitoring-alert-card.operations-panel .monitoring-mini-box strong {
+  font-size: 19px !important;
+}
+
+#dashboardSection.dashboard-executive .monitoring-alert-card.operations-panel .monitoring-alert-list {
+  flex: 0 0 49px !important;
+  height: 49px !important;
+  max-height: 49px !important;
+}
+
+#dashboardSection.dashboard-executive .monitoring-alert-card.operations-panel .summary-item {
+  grid-template-columns: 32px minmax(0, 1fr) 80px !important;
+}
+
+@media (min-width: 1101px) and (max-height: 820px) {
+  #dashboardSection.dashboard-executive .waste-summary-card {
+    height: 70px !important;
+    min-height: 70px !important;
+  }
+
+  #dashboardSection.dashboard-executive .dashboard-primary-band {
+    height: 370px !important;
+  }
+
+  #dashboardSection.dashboard-executive .dashboard-side-stack {
+    grid-template-rows: 152px minmax(0, 1fr) !important;
+  }
+
+  #dashboardSection.dashboard-executive .dashboard-support-grid {
+    height: 178px !important;
+  }
+}
+
+@media (min-width: 1101px) and (max-height: 740px) {
+  #dashboardSection.dashboard-executive {
+    gap: 8px !important;
+  }
+
+  #dashboardSection.dashboard-executive .dashboard-kpi-strip,
+  #dashboardSection.dashboard-executive .dashboard-primary-band,
+  #dashboardSection.dashboard-executive .dashboard-support-grid {
+    gap: 8px !important;
+  }
+
+  #dashboardSection.dashboard-executive .waste-summary-card {
+    height: 68px !important;
+    min-height: 68px !important;
+    padding-block: 7px !important;
+  }
+
+  #dashboardSection.dashboard-executive .dashboard-primary-band {
+    height: 354px !important;
+  }
+
+  #dashboardSection.dashboard-executive .dashboard-side-stack {
+    grid-template-rows: 146px minmax(0, 1fr) !important;
+    gap: 8px !important;
+  }
+
+  #dashboardSection.dashboard-executive .dashboard-support-grid {
+    height: 178px !important;
+  }
+
+  #dashboardSection.dashboard-executive .latest-summary-card .page-card-header,
+  #dashboardSection.dashboard-executive .recent-records-card .page-card-header {
+    min-height: 32px !important;
+    margin-bottom: 3px !important;
+  }
+}
+
+@media (min-width: 993px) and (max-width: 1100px) {
+  #dashboardSection.dashboard-executive .dashboard-primary-band,
+  #dashboardSection.dashboard-executive .dashboard-support-grid {
+    height: auto !important;
+  }
+
+  #dashboardSection.dashboard-executive .dashboard-primary-band {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: 250px 200px !important;
+  }
+
+  #dashboardSection.dashboard-executive .dashboard-primary-card {
+    height: 250px !important;
+  }
+
+  #dashboardSection.dashboard-executive .dashboard-side-stack {
+    height: 200px !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    grid-template-rows: 200px !important;
+    gap: 10px !important;
+  }
+
+  #dashboardSection.dashboard-executive .recent-records-preview {
+    flex-basis: 102px !important;
+    height: 102px !important;
+    max-height: 102px !important;
+  }
+
+  #dashboardSection.dashboard-executive .dashboard-support-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  #dashboardSection.dashboard-executive .dashboard-category-card,
+  #dashboardSection.dashboard-executive .operations-snapshot-card {
+    height: 190px !important;
+    min-height: 190px !important;
+  }
+
+  #dashboardSection.dashboard-executive .monitoring-alert-card .summary-item:nth-child(2) {
+    display: none !important;
+  }
+}
+
+@media (max-width: 992px) {
+  #dashboardSection.dashboard-executive .dashboard-primary-band,
+  #dashboardSection.dashboard-executive .dashboard-support-grid,
+  #dashboardSection.dashboard-executive .dashboard-side-stack {
+    height: auto !important;
+    grid-template-columns: 1fr !important;
+    grid-template-rows: auto !important;
+  }
+
+  #dashboardSection.dashboard-executive .dashboard-primary-card {
+    height: 330px !important;
+  }
+
+  #dashboardSection.dashboard-executive .latest-summary-card {
+    height: 172px !important;
+    min-height: 172px !important;
+  }
+
+  #dashboardSection.dashboard-executive .recent-records-card {
+    height: 210px !important;
+    min-height: 210px !important;
+  }
+
+  #dashboardSection.dashboard-executive .recent-records-preview {
+    flex-basis: 139px !important;
+    height: 139px !important;
+    max-height: 139px !important;
+  }
+
+  #dashboardSection.dashboard-executive .dashboard-category-card {
+    height: 205px !important;
+    min-height: 205px !important;
+  }
+
+  #dashboardSection.dashboard-executive .operations-snapshot-card {
+    height: 190px !important;
+    min-height: 190px !important;
+  }
+}
+
+@media (max-width: 720px) {
+  #dashboardSection.dashboard-executive .operations-snapshot-card {
+    height: auto !important;
+    min-height: 0 !important;
+    grid-template-rows: 30px auto !important;
+  }
+
+  #dashboardSection.dashboard-executive .operations-snapshot-grid {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: auto auto !important;
+  }
+
+  #dashboardSection.dashboard-executive .compact-recommendation-card.operations-panel {
+    min-height: 126px !important;
+    padding: 0 0 8px !important;
+    border-right: 0 !important;
+    border-bottom: 1px solid var(--dashboard-border-light) !important;
+  }
+
+  #dashboardSection.dashboard-executive .monitoring-alert-card.operations-panel {
+    min-height: 126px !important;
+    padding: 8px 0 0 !important;
+  }
+}
+
+@media (max-width: 560px) {
+  #dashboardSection.dashboard-executive .waste-summary-card {
+    height: 80px !important;
+    min-height: 80px !important;
+  }
+
+  #dashboardSection.dashboard-executive .dashboard-primary-card {
+    height: 320px !important;
+  }
+
+  #dashboardSection.dashboard-executive .latest-summary-card {
+    height: 176px !important;
+    min-height: 176px !important;
+  }
+
+  #dashboardSection.dashboard-executive .recent-records-card {
+    height: auto !important;
+    min-height: 210px !important;
+  }
+
+  #dashboardSection.dashboard-executive .recent-records-preview {
+    flex: 1 1 auto !important;
+    height: auto !important;
+    max-height: 213px !important;
+  }
+
+  #dashboardSection.dashboard-executive .dashboard-category-card {
+    height: 220px !important;
+    min-height: 220px !important;
+  }
+
+  #dashboardSection.dashboard-executive .operations-snapshot-header {
+    align-items: flex-start !important;
+  }
+
+  #dashboardSection.dashboard-executive .operations-snapshot-status {
+    margin-top: 4px !important;
+  }
+
+  #dashboardSection.dashboard-executive .monitoring-alert-card.operations-panel .summary-item {
+    grid-template-columns: 32px minmax(0, 1fr) 72px !important;
   }
 }
