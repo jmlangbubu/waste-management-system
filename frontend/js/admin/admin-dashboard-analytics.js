@@ -1559,8 +1559,12 @@ function renderCategoryAnalytics(records = validatedWasteRecords) {
         {
           label: "Waste Volume",
           data: items.map((item) => item.value),
-          borderRadius: 12,
-          barThickness: 24,
+          borderRadius: 6,
+          borderSkipped: false,
+          barThickness: 14,
+          maxBarThickness: 16,
+          categoryPercentage: 0.72,
+          barPercentage: 0.86,
           backgroundColor: (context) => {
             const chart = context.chart;
             const { ctx, chartArea } = chart;
@@ -1576,10 +1580,29 @@ function renderCategoryAnalytics(records = validatedWasteRecords) {
         }
       ]
     },
+    plugins: [
+      {
+        id: "wmoCategoryBarPresentation",
+        beforeDatasetsUpdate(chart) {
+          chart.data.datasets.forEach((dataset) => {
+            dataset.borderRadius = 6;
+            dataset.borderSkipped = false;
+          });
+        }
+      }
+    ],
     options: {
       indexAxis: "y",
       responsive: true,
       maintainAspectRatio: false,
+      layout: {
+        padding: {
+          top: 8,
+          right: 12,
+          bottom: 8,
+          left: 6
+        }
+      },
       animation: {
         duration: 900,
         easing: "easeOutQuart"
@@ -1600,18 +1623,46 @@ function renderCategoryAnalytics(records = validatedWasteRecords) {
         x: {
           beginAtZero: true,
           ticks: {
+            color: "#7b8981",
+            padding: 6,
+            maxRotation: 0,
+            minRotation: 0,
+            font: {
+              size: 11,
+              weight: "500"
+            },
             callback: function(value) {
               return formatNumber(value);
             }
           },
           grid: {
-            drawBorder: false
+            color: "rgba(76, 101, 88, 0.10)",
+            lineWidth: 1,
+            drawTicks: false
+          },
+          border: {
+            display: true,
+            color: "rgba(76, 101, 88, 0.16)",
+            width: 1
           }
         },
         y: {
+          ticks: {
+            autoSkip: false,
+            color: "#5f6f66",
+            padding: 10,
+            font: {
+              size: 12,
+              weight: "500"
+            }
+          },
           grid: {
-            display: false,
-            drawBorder: false
+            display: false
+          },
+          border: {
+            display: true,
+            color: "rgba(76, 101, 88, 0.16)",
+            width: 1
           }
         }
       }
