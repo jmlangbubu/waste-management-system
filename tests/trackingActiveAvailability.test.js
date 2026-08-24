@@ -256,6 +256,10 @@ function testFrontendTransitionWiringAndSingleActions() {
   assert.match(dismissActionBlock, /dispatchDismissedStaleTicketIds\.add/);
   assert.doesNotMatch(dismissActionBlock, /dispatchRequest|fetch|POST|PUT|PATCH|DELETE/);
   assert.match(loadActiveBlock, /!isTrackingTruckAvailable\(selectedTruck\) && !selectedTruck\.dispatch/);
+  assert.match(
+    loadActiveBlock,
+    /const selectedLiveDispatch =[\s\S]*if \(!selectedTruck\) \{[\s\S]*if \(selectedLiveDispatch\) \{[\s\S]*return;[\s\S]*resetTrackingView/
+  );
   assert.match(loadActiveBlock, /hydrateSelectedTruckWorkspace\(selectedSessionId, \{ keepView: true \}\)/);
   assert.doesNotMatch(loadActiveBlock, /selectedRoutePolyline\s*=\s*null|clearDispatchPlannedRoute/);
   assert.match(plannedRouteBlock, /\["missing", "stale"\]\.includes\(routeOrigin\.source\)/);

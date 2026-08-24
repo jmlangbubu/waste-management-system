@@ -13,15 +13,19 @@ const {
   DISPATCH_WMO_LOCATION,
   buildDispatchPlannedJourney,
   buildDispatchRouteLayers,
+  buildDispatchSelectionFallbackLayers,
   dispatchContinuousRouteWaypoints,
   dispatchLayerHasVisiblePolyline,
   dispatchOrderActiveRouteStops,
+  dispatchPersistedStopOrder,
   dispatchRouteSegmentWithEndpoints,
   dispatchRoutingFailureState,
   dispatchRoutingResponseIsCurrent,
+  dispatchSavedStopRouteItems,
   dispatchShouldReoptimizeRemaining,
   parseDispatchOsrmRoutePayload,
   resolveDispatchRouteOrigin,
+  resolveDispatchLivePollState,
   requestDispatchRoadJourney
 } = require("../frontend/js/admin/admin-dispatch");
 
@@ -358,6 +362,156 @@ function testFailureRetainsSelectionsAndPreviousRoute() {
   assert.match(dispatchSource, /Your route is still saved\. Please retry\./);
 }
 
+function testDispatchLiveFailureAndAuthoritativeEmptyState() {
+  const activeDispatch = {
+    "58": { dispatch_ticket_id: 2058, ticket_number: "DT-2026-2058" }
+  };
+  const afterFailure = resolveDispatchLivePollState(activeDispatch, undefined, false);
+  const afterAuthoritativeEmpty = resolveDispatchLivePollState(activeDispatch, {}, true);
+
+  assert.strictEqual(
+    afterFailure,
+    activeDispatch,
+    "a failed request must retain the exact last successful dispatch snapshot"
+  );
+  assert.deepEqual(
+    afterAuthoritativeEmpty,
+    {},
+    "a successful empty response must authoritatively clear the dispatch snapshot"
+  );
+
+  const liveLoader = dispatchSource.match(
+    /async function loadDispatchLiveData[\s\S]*?function invalidateDispatchLiveRequests/
+  )?.[0] || "";
+  const failureBlock = liveLoader.slice(liveLoader.indexOf("catch (error)"));
+  const linkedLoader = dispatchSource.match(
+    /async function loadDispatchForTrackingSession[\s\S]*?function dispatchMarkerIcon/
+  )?.[0] || "";
+  assert.match(liveLoader, /resolveDispatchLivePollState\(dispatchLiveBySession, data, true\)/);
+  assert.match(failureBlock, /dispatchLiveLastRequestStatus = "failed"/);
+  assert.doesNotMatch(failureBlock, /dispatchLiveBySession\s*=\s*\{\}/);
+  assert.match(
+    linkedLoader,
+    /if \(dispatchLiveLastRequestFailed\(\)\) return selectedDispatchTicket;[\s\S]*selectedDispatchTicket = null/
+  );
+}
+
+function fallbackLayersForSavedStops(stops) {
+  global.L = fakeLeaflet();
+  global.escapeHtml = (value) => String(value ?? "");
+  try {
+    const items = dispatchSavedStopRouteItems(stops);
+    return {
+      items,
+      layers: buildDispatchSelectionFallbackLayers(
+        items,
+        point(6.09, 125.14),
+        point(DISPATCH_WMO_LOCATION.latitude, DISPATCH_WMO_LOCATION.longitude),
+        null,
+        { currentStopId: 101 }
+      )
+    };
+  } finally {
+    delete global.L;
+    delete global.escapeHtml;
+  }
+}
+
+function markerLabels(layers) {
+  return layers.destinations.layers.map((layer) => {
+    const match = layer.options.icon.html.match(/>([^<]+)</);
+    return match ? match[1] : "";
+  });
+}
+
+function testPersistedStopMarkersAndRoutingFallback() {
+  assert.equal(dispatchPersistedStopOrder({ stop_order: "5" }, 1), 5);
+  assert.equal(dispatchPersistedStopOrder({}, 4), 4);
+
+  const contiguous = fallbackLayersForSavedStops([
+    { id: 103, stop_order: 3, latitude: 6.13, longitude: 125.18, location_name: "Third", stop_status: "pending" },
+    { id: 101, stop_order: 1, latitude: 6.11, longitude: 125.16, location_name: "First", stop_status: "on_the_way" },
+    { id: 102, stop_order: 2, latitude: 6.12, longitude: 125.17, location_name: "Second", stop_status: "pending" }
+  ]);
+  assert.deepEqual(contiguous.items.map(({ stop }) => stop.stop_order), [1, 2, 3]);
+  assert.deepEqual(markerLabels(contiguous.layers), ["1", "2", "3"]);
+
+  const nonContiguous = fallbackLayersForSavedStops([
+    { id: 205, stop_order: 5, latitude: 6.15, longitude: 125.19, location_name: "Fifth", stop_status: "pending" },
+    { id: 201, stop_order: 1, latitude: 6.11, longitude: 125.16, location_name: "First", stop_status: "pending" },
+    { id: 203, stop_order: 3, latitude: 6.13, longitude: 125.18, location_name: "Third", stop_status: "pending" }
+  ]);
+  assert.deepEqual(markerLabels(nonContiguous.layers), ["1", "3", "5"]);
+  assert.notDeepEqual(markerLabels(nonContiguous.layers), ["1", "2", "3"]);
+
+  global.L = fakeLeaflet();
+  global.escapeHtml = (value) => String(value ?? "");
+  try {
+    const routed = buildDispatchRouteLayers(
+      {
+        plannedStops: nonContiguous.items.map(({ stop }) => ({
+          stop,
+          geometry: [point(stop.latitude, stop.longitude)]
+        }))
+      },
+      [[6.09, 125.14], [6.13, 125.18], [6.1060875, 125.1816406]],
+      point(6.09, 125.14),
+      point(DISPATCH_WMO_LOCATION.latitude, DISPATCH_WMO_LOCATION.longitude)
+    );
+    assert.deepEqual(markerLabels(routed), ["1", "3", "5"]);
+  } finally {
+    delete global.L;
+    delete global.escapeHtml;
+  }
+
+  const skipped = fallbackLayersForSavedStops([
+    { id: 302, stop_order: 2, latitude: 6.12, longitude: 125.17, location_name: "Skipped", stop_status: "skipped" }
+  ]);
+  assert.deepEqual(markerLabels(skipped.layers), ["2"]);
+  assert.match(skipped.layers.destinations.layers[0].options.icon.html, /dispatch-route-marker skipped/);
+  assert.match(
+    dispatchSource,
+    /dispatchMarkerIcon\(dispatchPersistedStopOrder\(stop\), "skipped"\)/
+  );
+
+  const sameCoordinate = fallbackLayersForSavedStops([
+    { id: 401, stop_order: 1, latitude: 6.12, longitude: 125.17, location_name: "Same A", stop_status: "pending" },
+    { id: 402, stop_order: 2, latitude: 6.12, longitude: 125.17, location_name: "Same B", stop_status: "pending" },
+    { id: 403, stop_order: 3, latitude: 6.12, longitude: 125.17, location_name: "Same C", stop_status: "pending" }
+  ]);
+  assert.equal(sameCoordinate.layers.destinations.layers.length, 3);
+  assert.notStrictEqual(
+    sameCoordinate.layers.destinations.layers[0],
+    sameCoordinate.layers.destinations.layers[1],
+    "same-coordinate persisted stops must remain separate marker objects"
+  );
+  assert.deepEqual(markerLabels(sameCoordinate.layers), ["1", "2", "3"]);
+  assert.equal(sameCoordinate.layers.planned.layers.length, 0, "fallback must not fabricate a road route");
+  assert.doesNotMatch(
+    sameCoordinate.layers.destinations.layers.map((layer) => layer.options.icon.html).join(""),
+    />\?</
+  );
+}
+
+function testSavedMarkersRenderBeforeRoadRouting() {
+  const activeRenderer = dispatchSource.match(
+    /function renderDispatchPlannedRoute[\s\S]*?function dispatchEventLabel/
+  )?.[0] || "";
+  const immediateSavedMarkerIndex = activeRenderer.indexOf(
+    "dispatchSavedStopRouteItems(details.stops)"
+  );
+  const routingRequestIndex = activeRenderer.indexOf("requestDispatchRoadCostMatrix");
+  const failureSavedMarkerIndex = activeRenderer.indexOf(
+    "dispatchSavedStopRouteItems(details.stops, items)"
+  );
+  assert.ok(immediateSavedMarkerIndex >= 0 && immediateSavedMarkerIndex < routingRequestIndex);
+  assert.ok(failureSavedMarkerIndex > routingRequestIndex);
+  assert.match(
+    activeRenderer,
+    /if \(!dispatchHasVisiblePlannedRoute\(\) && details\.stops\.length\)[\s\S]*renderDispatchSelectionFallback/
+  );
+}
+
 function testPreDispatchOptimizationAndActiveRouteOrderLocking() {
   const preDispatchJourney = buildDispatchPlannedJourney(
     point(6.1, 125.1),
@@ -487,6 +641,9 @@ async function run() {
   testSelectionHydratesTrackingBeforeActiveDispatch();
   testStaleResponseRejection();
   testFailureRetainsSelectionsAndPreviousRoute();
+  testDispatchLiveFailureAndAuthoritativeEmptyState();
+  testPersistedStopMarkersAndRoutingFallback();
+  testSavedMarkersRenderBeforeRoadRouting();
   testPreDispatchOptimizationAndActiveRouteOrderLocking();
   testIssueSelectionPollingAndFailureLifecycle();
   testDrawerRecordsAndTicketFailureDoNotClearRoute();

@@ -60,6 +60,7 @@ const DISPATCH_TICKET_CREATE_FAILURE_MESSAGE =
 let dispatchFocusedStopRow = null;
 let dispatchLocationLookupController = null;
 const dispatchLocationLabelCache = new Map();
+let dispatchLiveLastRequestStatus = "idle";
 
 function dispatchPoint(latitude, longitude) {
   const lat = Number(latitude);
@@ -1246,6 +1247,15 @@ function updateDispatchSetupNotices() {
     ?.classList.toggle("hidden", !dispatchSetupRequired);
 }
 
+function resolveDispatchLivePollState(previousState, data, requestSucceeded) {
+  if (!requestSucceeded) return previousState;
+  return data && typeof data === "object" && !Array.isArray(data) ? data : {};
+}
+
+function dispatchLiveLastRequestFailed() {
+  return dispatchLiveLastRequestStatus === "failed";
+}
+
 async function loadDispatchLiveData() {
   const request = dispatchLiveRequestGuard.begin();
   try {
@@ -1253,17 +1263,15 @@ async function loadDispatchLiveData() {
       signal: request.signal
     });
     if (!dispatchLiveRequestGuard.isCurrent(request)) return dispatchLiveBySession;
-    dispatchLiveBySession =
-      data && typeof data === "object" && !Array.isArray(data) ? data : {};
+    dispatchLiveBySession = resolveDispatchLivePollState(dispatchLiveBySession, data, true);
+    dispatchLiveLastRequestStatus = "success";
     return dispatchLiveBySession;
   } catch (error) {
     if (error?.name === "AbortError") return dispatchLiveBySession;
     if (!dispatchLiveRequestGuard.isCurrent(request)) return dispatchLiveBySession;
-    dispatchLiveBySession = {};
+    dispatchLiveLastRequestStatus = "failed";
     if (error.status !== 503) {
       console.error("Unable to load live dispatch data:", error);
-    } else if (!selectedDispatchTicket) {
-      renderDispatchEmptyPanel();
     }
     return dispatchLiveBySession;
   } finally {
@@ -1434,6 +1442,7 @@ async function loadDispatchForTrackingSession(sessionId, options = {}) {
 
   const liveDispatch = getDispatchLiveForSession(sessionId);
   if (!liveDispatch) {
+    if (dispatchLiveLastRequestFailed()) return selectedDispatchTicket;
     selectedDispatchTicket = null;
     clearDispatchPlannedRoute("live dispatch no longer active");
     renderDispatchEmptyPanel(
@@ -1493,6 +1502,46 @@ function dispatchMarkerIcon(label, className) {
     iconSize: [26, 26],
     iconAnchor: [13, 13]
   });
+}
+
+function dispatchPersistedStopOrder(stop, fallbackOrder = null) {
+  const stopOrder = Number(stop?.stop_order);
+  return Number.isFinite(stopOrder) && stopOrder > 0 ? stopOrder : fallbackOrder;
+}
+
+function dispatchSavedStopRouteItems(stops = [], routeItems = []) {
+  const itemByStopId = new Map(
+    routeItems.map((item) => [String(item?.stop?.id ?? ""), item])
+  );
+  return stops
+    .map((stop, sourceIndex) => ({ stop, sourceIndex }))
+    .sort((first, second) => {
+      const firstOrder = dispatchPersistedStopOrder(first.stop, Number.POSITIVE_INFINITY);
+      const secondOrder = dispatchPersistedStopOrder(second.stop, Number.POSITIVE_INFINITY);
+      return firstOrder - secondOrder || first.sourceIndex - second.sourceIndex;
+    })
+    .map(({ stop }) => {
+      const item = itemByStopId.get(String(stop?.id ?? ""));
+      return {
+        ...(item || {}),
+        stop,
+        metadata: item?.metadata || null,
+        geometry: Array.isArray(item?.geometry) ? item.geometry : []
+      };
+    });
+}
+
+function dispatchStopMarkerClass(stop, currentStopId = null) {
+  const status = String(stop?.stop_status || "").toLowerCase();
+  if (status === "completed") return "completed";
+  if (status === "skipped") return "skipped";
+  if (
+    ["arrived", "on_the_way", "current"].includes(status) ||
+    (currentStopId !== null && Number(stop?.id) === Number(currentStopId))
+  ) {
+    return "current";
+  }
+  return "";
 }
 
 function dispatchSegmentColor(stop, isCurrent) {
@@ -2047,13 +2096,13 @@ async function hydrateDispatchTicketStopRouteItem(stop, signal) {
 function renderDispatchTerminalStopMarkers(layers, completedStops, skippedStops) {
   completedStops.forEach((stop) => {
     L.marker([stop.latitude, stop.longitude], {
-      icon: dispatchMarkerIcon(stop.stop_order, "completed"),
+      icon: dispatchMarkerIcon(dispatchPersistedStopOrder(stop), "completed"),
       pane: DISPATCH_MARKER_PANE
     }).bindTooltip(`${stop.location_name} - completed`).addTo(layers.destinations);
   });
   skippedStops.forEach((stop) => {
     L.marker([stop.latitude, stop.longitude], {
-      icon: dispatchMarkerIcon("S", "skipped"),
+      icon: dispatchMarkerIcon(dispatchPersistedStopOrder(stop), "skipped"),
       pane: DISPATCH_MARKER_PANE
     }).bindTooltip(`${stop.location_name} - skipped`).addTo(layers.destinations);
   });
@@ -2078,7 +2127,10 @@ function renderDispatchOptimizedTicketOrder(details, groups, journey) {
     ...groups.completedStops,
     ...journey.plannedStops.map(({ stop }, index) => ({
       ...stop,
-      stop_order: groups.completedStops.length + index + 1
+      stop_order: dispatchPersistedStopOrder(
+        stop,
+        groups.completedStops.length + index + 1
+      )
     })),
     ...groups.skippedStops
   ];
@@ -2102,6 +2154,15 @@ function renderDispatchPlannedRoute(details, options = {}) {
       : null;
   const routeOrigin = resolveDispatchRouteOrigin(reliableStart);
   const startPoint = routeOrigin.point;
+  if (!dispatchHasVisiblePlannedRoute() && details.stops.length) {
+    renderDispatchSelectionFallback(
+      dispatchSavedStopRouteItems(details.stops),
+      startPoint,
+      wmo,
+      reliableStart,
+      { currentStopId: groups.currentStop?.id || null }
+    );
+  }
   const truckRouteKey = `${selectedTrackingTruck?.truck_id || "none"}:${selectedTrackingTruck?.session_id || selectedSessionId || "none"}`;
   const signature = `ticket:${ticketId}:${truckRouteKey}:` + details.stops.map((stop) =>
     `${stop.id}:${stop.stop_status}:${Number(stop.latitude).toFixed(5)},${Number(stop.longitude).toFixed(5)}`
@@ -2204,7 +2265,10 @@ function renderDispatchPlannedRoute(details, options = {}) {
         ...groups.completedStops,
         ...journey.plannedStops.map(({ stop }, index) => ({
           ...stop,
-          stop_order: groups.completedStops.length + index + 1
+          stop_order: dispatchPersistedStopOrder(
+            stop,
+            groups.completedStops.length + index + 1
+          )
         }))
       ];
       dispatchLastSuccessfulRouteCoordinates = routeCoordinates.map(([lat, lng]) => ({ lat, lng }));
@@ -2244,7 +2308,13 @@ function renderDispatchPlannedRoute(details, options = {}) {
         previous_route_retained: dispatchHasVisiblePlannedRoute()
       });
       if (!dispatchHasVisiblePlannedRoute()) {
-        renderDispatchSelectionFallback(items, startPoint, wmo, reliableStart);
+        renderDispatchSelectionFallback(
+          dispatchSavedStopRouteItems(details.stops, items),
+          startPoint,
+          wmo,
+          reliableStart,
+          { currentStopId: groups.currentStop?.id || null }
+        );
       }
       updateDispatchRoutePreviewNotice("error");
     } finally {
@@ -2626,6 +2696,7 @@ function renderDispatchOptimizedRouteList(stops = dispatchOptimizedRouteStops) {
     return;
   }
   list.innerHTML = routeStops.map((stop, index) => {
+    const displayOrder = dispatchPersistedStopOrder(stop, index + 1);
     const status = String(stop.stop_status || "pending").toLowerCase();
     const stateClass = status === "completed"
       ? "completed"
@@ -2643,9 +2714,9 @@ function renderDispatchOptimizedRouteList(stops = dispatchOptimizedRouteStops) {
           : "Pending";
     return `
       <div class="dispatch-optimized-route-item ${stateClass}">
-        <span class="dispatch-route-order">${index + 1}</span>
+        <span class="dispatch-route-order">${displayOrder}</span>
         <div>
-          <strong>${dispatchEscape(stop.operator_label || stop.name || stop.location_name || `Destination ${index + 1}`)}</strong>
+          <strong>${dispatchEscape(stop.operator_label || stop.name || stop.location_name || `Destination ${displayOrder}`)}</strong>
           <small>${dispatchEscape(stop.barangay || stop.address_reference || "General Santos City")}</small>
         </div>
         <span class="dispatch-route-state">${stateLabel}</span>
@@ -2814,7 +2885,10 @@ function buildDispatchRouteLayers(journey, routeCoordinates, startPoint, wmoPoin
       .addTo(layers.start);
   }
   journey.plannedStops.forEach(({ stop, geometry }, index) => {
-    const optimizedOrder = index + 1 + (Number(options.orderOffset) || 0);
+    const optimizedOrder = dispatchPersistedStopOrder(
+      stop,
+      index + 1 + (Number(options.orderOffset) || 0)
+    );
     if (geometry.length > 1) {
       L.polyline(geometry.map((point) => [point.lat, point.lng]), {
         color: "#2d73c7",
@@ -2826,13 +2900,7 @@ function buildDispatchRouteLayers(journey, routeCoordinates, startPoint, wmoPoin
         .bindTooltip(`${stop.location_name || `Stop ${optimizedOrder}`} - verified OSM geometry`)
         .addTo(layers.geometry);
     }
-    const markerClass = stop.stop_status === "completed"
-      ? "completed"
-      : stop.stop_status === "skipped"
-        ? "skipped"
-        : Number(stop.id) === Number(currentStopId)
-          ? "current"
-          : "";
+    const markerClass = dispatchStopMarkerClass(stop, currentStopId);
     L.marker([stop.latitude, stop.longitude], {
       icon: dispatchMarkerIcon(optimizedOrder, markerClass),
       pane: DISPATCH_MARKER_PANE
@@ -2849,8 +2917,7 @@ function buildDispatchRouteLayers(journey, routeCoordinates, startPoint, wmoPoin
   return layers;
 }
 
-function renderDispatchSelectionFallback(items, startPoint, wmoPoint, reliableStart) {
-  if (dispatchHasVisiblePlannedRoute()) return;
+function buildDispatchSelectionFallbackLayers(items, startPoint, wmoPoint, reliableStart, options = {}) {
   const layers = createDispatchPlannedLayerGroups({ detached: true });
   L.marker([wmoPoint.lat, wmoPoint.lng], {
     icon: dispatchMarkerIcon("W", "wmo"),
@@ -2866,7 +2933,8 @@ function renderDispatchSelectionFallback(items, startPoint, wmoPoint, reliableSt
       .bindTooltip("Current reliable truck location")
       .addTo(layers.start);
   }
-  items.forEach(({ stop, geometry }) => {
+  items.forEach(({ stop, geometry }, index) => {
+    const displayOrder = dispatchPersistedStopOrder(stop, index + 1);
     const points = (geometry || []).map((point) =>
       dispatchPoint(point.latitude ?? point.lat, point.longitude ?? point.lng ?? point.lon)
     ).filter(Boolean);
@@ -2877,12 +2945,27 @@ function renderDispatchSelectionFallback(items, startPoint, wmoPoint, reliableSt
       }).bindTooltip(`${stop.location_name} - selected verified geometry`).addTo(layers.geometry);
     }
     L.marker([stop.latitude, stop.longitude], {
-      icon: dispatchMarkerIcon("?", ""),
+      icon: dispatchMarkerIcon(
+        displayOrder,
+        dispatchStopMarkerClass(stop, options.currentStopId)
+      ),
       pane: DISPATCH_MARKER_PANE
     })
-      .bindTooltip(`${stop.location_name} - awaiting optimized order`)
+      .bindTooltip(`${stop.location_name || `Stop ${displayOrder}`} - saved destination`)
       .addTo(layers.destinations);
   });
+  return layers;
+}
+
+function renderDispatchSelectionFallback(items, startPoint, wmoPoint, reliableStart, options = {}) {
+  if (dispatchHasVisiblePlannedRoute()) return;
+  const layers = buildDispatchSelectionFallbackLayers(
+    items,
+    startPoint,
+    wmoPoint,
+    reliableStart,
+    options
+  );
   activateDispatchPlannedLayerGroups(layers);
 }
 
@@ -5077,10 +5160,12 @@ if (typeof module !== "undefined" && module.exports) {
     DISPATCH_TICKET_CREATE_FAILURE_MESSAGE,
     buildDispatchPlannedJourney,
     buildDispatchRouteLayers,
+    buildDispatchSelectionFallbackLayers,
     chooseDispatchSegmentOrientation,
     dispatchCatalogStopFromDetail,
     dispatchCatalogDestinationIsSelected,
     dispatchOrderActiveRouteStops,
+    dispatchPersistedStopOrder,
     dispatchPlannerStepName,
     dispatchShouldReoptimizeRemaining,
     dispatchTicketIsLive,
@@ -5104,6 +5189,7 @@ if (typeof module !== "undefined" && module.exports) {
     dispatchSafeTicketErrorMessage,
     dispatchRoutingResponseIsCurrent,
     dispatchRoutingResponsePreservesOrder,
+    dispatchSavedStopRouteItems,
     dispatchContinuousRouteWaypoints,
     dispatchSegmentColor,
     dispatchStopOrientationCandidates,
@@ -5113,6 +5199,7 @@ if (typeof module !== "undefined" && module.exports) {
     parseDispatchOsrmRoutePayload,
     requestDispatchRoadCostMatrix,
     requestDispatchRoadJourney,
-    requestDispatchRoadRoute
+    requestDispatchRoadRoute,
+    resolveDispatchLivePollState
   };
 }

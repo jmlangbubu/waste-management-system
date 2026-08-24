@@ -562,8 +562,15 @@ async function loadActiveTrucks() {
       const selectedTruck = trackingSessions.find(
         (truck) => String(truck.session_id) === String(selectedSessionId)
       );
+      const selectedLiveDispatch = typeof getDispatchLiveForSession === "function"
+        ? getDispatchLiveForSession(selectedSessionId)
+        : null;
 
       if (!selectedTruck) {
+        if (selectedLiveDispatch) {
+          updateTrackingSummaryCards(trucks, selectedTrackingTruck);
+          return;
+        }
         resetTrackingView({ refresh: false });
         updateTrackingSummaryCards(trucks, null);
         return;
