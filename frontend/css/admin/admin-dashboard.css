@@ -541,7 +541,7 @@
   min-width: 0 !important;
   min-height: 0 !important;
   margin: 0 !important;
-  padding: 1px 8px !important;
+  padding: 5px 9px !important;
   display: flex !important;
   flex-direction: column !important;
   justify-content: center !important;
@@ -576,7 +576,7 @@
   min-width: 0 !important;
   color: #28483a !important;
   font-size: 12.5px !important;
-  line-height: 1.2 !important;
+  line-height: 1.1 !important;
   font-weight: 700 !important;
   text-align: left !important;
   white-space: nowrap !important;
@@ -633,6 +633,7 @@
 #dashboardSection.dashboard-executive .dashboard-category-card .dashboard-header-actions {
   width: auto !important;
   flex: 0 0 auto !important;
+  gap: 5px !important;
 }
 
 #dashboardSection.dashboard-executive .dashboard-category-card .segmented-filter {
@@ -640,12 +641,21 @@
   min-width: 105px !important;
   max-width: 105px !important;
   flex: 0 0 105px !important;
+  height: 35px !important;
+  min-height: 35px !important;
   grid-template-columns: repeat(3, minmax(33px, 1fr)) !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-category-card .segment-btn {
+  height: 29px !important;
+  min-height: 29px !important;
+  line-height: 29px !important;
 }
 
 #dashboardSection.dashboard-executive .dashboard-category-card .dashboard-title-with-icon {
   grid-template-columns: 26px minmax(0, 1fr) !important;
   gap: 4px !important;
+  min-height: 35px !important;
 }
 
 #dashboardSection.dashboard-executive .dashboard-category-card .dashboard-card-icon {
@@ -664,6 +674,13 @@
   width: 130px !important;
   min-width: 130px !important;
   max-width: 130px !important;
+  height: 35px !important;
+  min-height: 35px !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-category-card .dashboard-custom-select-btn {
+  height: 35px !important;
+  min-height: 35px !important;
 }
 
 #dashboardSection.dashboard-executive .dashboard-category-card .dashboard-custom-select[data-for="dashboardCategoryPeriodSelect"] {
@@ -688,6 +705,8 @@
   flex: 1 1 auto !important;
   min-height: 0 !important;
   padding: 0 !important;
+  display: flex !important;
+  align-items: center !important;
   overflow: hidden !important;
   border: 0 !important;
   border-radius: 0 !important;
@@ -902,6 +921,12 @@
   overflow: hidden !important;
 }
 
+#dashboardSection.dashboard-executive .monitoring-alert-card .monitoring-alert-list {
+  flex: 0 0 49px !important;
+  height: 49px !important;
+  max-height: 49px !important;
+}
+
 #dashboardSection.dashboard-executive .monitoring-alert-card .summary-item:nth-child(n+2) {
   display: none !important;
 }
@@ -1033,6 +1058,33 @@
   #dashboardSection.dashboard-executive .dashboard-primary-band {
     height: 400px !important;
   }
+
+  #dashboardSection.dashboard-executive .recent-records-preview {
+    flex: 0 0 153px !important;
+    height: 153px !important;
+    max-height: 153px !important;
+  }
+
+  #dashboardSection.dashboard-executive .recent-records-preview td {
+    height: 41px !important;
+  }
+
+  #dashboardSection.dashboard-executive .recent-records-preview th:nth-child(2),
+  #dashboardSection.dashboard-executive .recent-records-preview td:nth-child(2) { width: 18% !important; }
+
+  #dashboardSection.dashboard-executive .recent-records-preview th:nth-child(3),
+  #dashboardSection.dashboard-executive .recent-records-preview td:nth-child(3) { width: 20% !important; }
+
+  #dashboardSection.dashboard-executive .recent-records-preview td:nth-child(5) {
+    background:
+      linear-gradient(90deg,
+        transparent 4px,
+        #eef8f1 4px,
+        #eef8f1 calc(100% - 4px),
+        transparent calc(100% - 4px)) center / 100% 23px no-repeat !important;
+    font-size: 11px !important;
+    text-align: center !important;
+  }
 }
 
 @media (min-width: 1101px) and (max-height: 820px) {
@@ -1043,7 +1095,7 @@
   #dashboardSection.dashboard-executive .monitoring-alert-card { height: 158px !important; min-height: 158px !important; }
 
   #dashboardSection.dashboard-executive #wasteCategoryChart,
-  #dashboardSection.dashboard-executive .dashboard-category-card .chart-placeholder { height: 98px !important; max-height: 98px !important; }
+  #dashboardSection.dashboard-executive .dashboard-category-card .chart-placeholder { height: 100% !important; max-height: 100% !important; }
 
   #dashboardSection.dashboard-executive.active { grid-template-rows: auto auto auto !important; }
   #dashboardSection.dashboard-executive .waste-summary-card { height: 74px !important; min-height: 74px !important; }
@@ -1059,7 +1111,7 @@
   #dashboardSection.dashboard-executive .monitoring-alert-card { height: 155px !important; min-height: 155px !important; }
 
   #dashboardSection.dashboard-executive #wasteCategoryChart,
-  #dashboardSection.dashboard-executive .dashboard-category-card .chart-placeholder { height: 90px !important; max-height: 90px !important; }
+  #dashboardSection.dashboard-executive .dashboard-category-card .chart-placeholder { height: 100% !important; max-height: 100% !important; }
 
   #dashboardSection.dashboard-executive.active { grid-template-rows: auto auto auto !important; }
   #dashboardSection.dashboard-executive .dashboard-title-with-icon p { display: none !important; }
@@ -1070,7 +1122,7 @@
   #dashboardSection.dashboard-executive .dashboard-category-card .dashboard-title-with-icon h2 { font-size: 14px !important; line-height: 1.1 !important; }
   #dashboardSection.dashboard-executive .dashboard-category-card .dashboard-title-with-icon { grid-template-columns: minmax(0, 1fr) !important; gap: 0 !important; }
   #dashboardSection.dashboard-executive .dashboard-category-card .dashboard-card-icon { display: none !important; }
-  #dashboardSection.dashboard-executive .session-row { min-height: 0 !important; padding-block: 1px !important; }
+  #dashboardSection.dashboard-executive .session-row { min-height: 0 !important; padding-block: 5px !important; }
   #dashboardSection.dashboard-executive .monitoring-mini-box { height: 36px !important; min-height: 36px !important; }
 }
 
@@ -1092,6 +1144,18 @@
   #dashboardSection.dashboard-executive .dashboard-category-card { grid-column: 1 / -1 !important; }
   #dashboardSection.dashboard-executive .waste-trend-box { height: 145px !important; }
   #dashboardSection.dashboard-executive .dashboard-primary-card .dashboard-title-with-icon p { display: none !important; }
+
+  #dashboardSection.dashboard-executive .recent-records-preview {
+    flex: 0 0 102px !important;
+    height: 102px !important;
+    max-height: 102px !important;
+  }
+
+  #dashboardSection.dashboard-executive .recent-records-preview th:nth-child(2),
+  #dashboardSection.dashboard-executive .recent-records-preview td:nth-child(2) { width: 16% !important; }
+
+  #dashboardSection.dashboard-executive .recent-records-preview th:nth-child(3),
+  #dashboardSection.dashboard-executive .recent-records-preview td:nth-child(3) { width: 22% !important; }
 
   #dashboardSection.dashboard-executive .dashboard-category-card,
   #dashboardSection.dashboard-executive .compact-recommendation-card,
