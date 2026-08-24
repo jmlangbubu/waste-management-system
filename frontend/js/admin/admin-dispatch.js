@@ -543,7 +543,6 @@ function restoreDispatchRoutePreviewState(snapshot) {
     dispatchCompletedRouteLayerGroup = snapshot.layers.completed;
     dispatchSelectedGeometryLayerGroup = snapshot.layers.geometry;
     dispatchDestinationMarkerLayerGroup = snapshot.layers.destinations;
-    dispatchWmoMarkerLayerGroup = snapshot.layers.wmo;
     dispatchStartMarkerLayerGroup = snapshot.layers.start;
     if (truckMap) {
       [
@@ -552,13 +551,13 @@ function restoreDispatchRoutePreviewState(snapshot) {
         dispatchCompletedRouteLayerGroup,
         dispatchSelectedGeometryLayerGroup,
         dispatchDestinationMarkerLayerGroup,
-        dispatchWmoMarkerLayerGroup,
         dispatchStartMarkerLayerGroup
       ].filter(Boolean).forEach((layerGroup) => {
         if (!truckMap.hasLayer?.(layerGroup)) layerGroup.addTo(truckMap);
       });
     }
   }
+  ensureDispatchWmoMarker();
   renderDispatchOptimizedRouteList(dispatchOptimizedRouteStops);
   if (dispatchHasVisiblePlannedRoute()) {
     updateDispatchRoutePreviewNotice("ready");
@@ -1144,11 +1143,14 @@ function updateDispatchSelectedTruckContext(truck = selectedTrackingTruck) {
   const gpsMeta = typeof getTrackingAvailabilityMeta === "function"
     ? getTrackingAvailabilityMeta(truck)
     : { label: reliablePoint ? "GPS Online" : "GPS Offline", className: reliablePoint ? "active" : "gps-off" };
+  const hasActiveDispatch = Boolean(truck.dispatch);
   const truckLabel = truck.truck_name || truck.truck_display_name || `Truck ${truck.truck_id}`;
   const personnelName = truck.enforcer_name || "Not assigned";
 
   summary?.classList.remove("is-empty");
-  document.getElementById("dispatchSelectedTruckName").textContent = "Available for dispatch";
+  document.getElementById("dispatchSelectedTruckName").textContent = hasActiveDispatch
+    ? "Active Dispatch"
+    : "Available for dispatch";
   document.getElementById("dispatchSelectedTruckStatus").textContent = sessionActive
     ? "Tracking Active"
     : "Tracking Stopped";
@@ -1169,10 +1171,15 @@ function updateDispatchSelectedTruckContext(truck = selectedTrackingTruck) {
   document.getElementById("dispatchPersonnelId").value = truck.enforcer_id || "";
   document.getElementById("dispatchPersonnelName").value = personnelName === "Not assigned" ? "" : personnelName;
   if (warning) {
-    warning.classList.toggle("hidden", sessionActive);
-    warning.textContent = sessionActive
-      ? ""
-      : "The selected tracking session has ended. Choose an active truck to save or dispatch this route.";
+    const warningMessage = !sessionActive
+      ? "The selected tracking session has ended. Choose an active truck to save or dispatch this route."
+      : !dispatchSelectedSessionActive && hasActiveDispatch
+        ? `${gpsMeta.label}. Showing last-known dispatch progress; new dispatch planning remains disabled until fresh GPS resumes.`
+        : !dispatchSelectedSessionActive
+          ? "Fresh reliable GPS is required before this truck can receive a new dispatch."
+          : "";
+    warning.classList.toggle("hidden", !warningMessage);
+    warning.textContent = warningMessage;
   }
   updateDispatchPlannerActions();
 }
@@ -1338,8 +1345,6 @@ function clearDispatchPlannedRoute(reason = "explicit reset") {
     [...new Set([
       dispatchCurrentRouteLayerGroup,
       dispatchSelectedGeometryLayerGroup,
-      dispatchDestinationMarkerLayerGroup,
-      dispatchWmoMarkerLayerGroup,
       dispatchStartMarkerLayerGroup,
       dispatchCompletedRouteLayerGroup,
       dispatchPlannedLayerGroup
@@ -1349,9 +1354,77 @@ function clearDispatchPlannedRoute(reason = "explicit reset") {
   dispatchPlannedLayerGroup = null;
   dispatchCompletedRouteLayerGroup = null;
   dispatchSelectedGeometryLayerGroup = null;
-  dispatchDestinationMarkerLayerGroup = null;
-  dispatchWmoMarkerLayerGroup = null;
   dispatchStartMarkerLayerGroup = null;
+  ensureDispatchWmoMarker();
+}
+
+function createDispatchWmoMarkerLayer() {
+  const layerGroup = L.layerGroup();
+  const wmo = dispatchPoint(DISPATCH_WMO_LOCATION.latitude, DISPATCH_WMO_LOCATION.longitude);
+  if (!wmo) return layerGroup;
+  L.marker([wmo.lat, wmo.lng], {
+    icon: dispatchMarkerIcon("W", "wmo"),
+    pane: DISPATCH_MARKER_PANE
+  })
+    .bindTooltip("Waste Management Office (WMO)")
+    .addTo(layerGroup);
+  return layerGroup;
+}
+
+function ensureDispatchWmoMarker() {
+  if (!truckMap || typeof L === "undefined") return null;
+  if (!dispatchWmoMarkerLayerGroup?.getLayers?.().length) {
+    dispatchWmoMarkerLayerGroup = createDispatchWmoMarkerLayer();
+  }
+  if (!truckMap.hasLayer?.(dispatchWmoMarkerLayerGroup)) {
+    dispatchWmoMarkerLayerGroup.addTo(truckMap);
+  }
+  return dispatchWmoMarkerLayerGroup;
+}
+
+function clearDispatchDestinationMarkers() {
+  if (truckMap && dispatchDestinationMarkerLayerGroup) {
+    truckMap.removeLayer(dispatchDestinationMarkerLayerGroup);
+  }
+  dispatchDestinationMarkerLayerGroup = null;
+}
+
+function dispatchMarkerOrder(stop, index, options = {}) {
+  const fallbackOrder = index + 1 + (Number(options.orderOffset) || 0);
+  return options.usePersistedStopOrder === false
+    ? fallbackOrder
+    : dispatchPersistedStopOrder(stop, fallbackOrder);
+}
+
+function buildDispatchDestinationMarkerLayer(items = [], options = {}) {
+  const layerGroup = L.layerGroup();
+  (Array.isArray(items) ? items : []).forEach(({ stop }, index) => {
+    if (!stop) return;
+    const latitude = Number(stop.latitude);
+    const longitude = Number(stop.longitude);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+    const displayOrder = dispatchMarkerOrder(stop, index, options);
+    L.marker([latitude, longitude], {
+      icon: dispatchMarkerIcon(
+        displayOrder,
+        dispatchStopMarkerClass(stop, options.currentStopId)
+      ),
+      pane: DISPATCH_MARKER_PANE
+    })
+      .bindTooltip(stop.location_name || `Stop ${displayOrder}`)
+      .addTo(layerGroup);
+  });
+  return layerGroup;
+}
+
+function renderDispatchDestinationMarkers(items = [], options = {}) {
+  if (!truckMap || typeof L === "undefined") return null;
+  const nextLayerGroup = buildDispatchDestinationMarkerLayer(items, options);
+  clearDispatchDestinationMarkers();
+  dispatchDestinationMarkerLayerGroup = nextLayerGroup;
+  dispatchDestinationMarkerLayerGroup.addTo(truckMap);
+  ensureDispatchWmoMarker();
+  return dispatchDestinationMarkerLayerGroup;
 }
 
 function createDispatchPlannedLayerGroups(options = {}) {
@@ -1375,7 +1448,6 @@ function activateDispatchPlannedLayerGroups(groups) {
     dispatchCurrentRouteLayerGroup,
     dispatchSelectedGeometryLayerGroup,
     dispatchDestinationMarkerLayerGroup,
-    dispatchWmoMarkerLayerGroup,
     dispatchStartMarkerLayerGroup,
     dispatchCompletedRouteLayerGroup,
     dispatchPlannedLayerGroup
@@ -1385,7 +1457,6 @@ function activateDispatchPlannedLayerGroups(groups) {
   dispatchCompletedRouteLayerGroup = groups.completed;
   dispatchSelectedGeometryLayerGroup = groups.geometry;
   dispatchDestinationMarkerLayerGroup = groups.destinations;
-  dispatchWmoMarkerLayerGroup = groups.wmo;
   dispatchStartMarkerLayerGroup = groups.start;
   [
     groups.geometry,
@@ -1393,9 +1464,9 @@ function activateDispatchPlannedLayerGroups(groups) {
     groups.planned,
     groups.completed,
     groups.destinations,
-    groups.wmo,
     groups.start
   ].forEach((layerGroup) => layerGroup.addTo(truckMap));
+  ensureDispatchWmoMarker();
 }
 
 function clearDispatchTrackingSelection() {
@@ -1404,6 +1475,7 @@ function clearDispatchTrackingSelection() {
   dispatchSelectedSessionActive = false;
   setDispatchAddDestinationMode(false);
   clearDispatchPlannedRoute("tracking selection cleared");
+  clearDispatchDestinationMarkers();
   resetDispatchTicketForm();
   updateDispatchSelectedTruckContext(null);
   renderDispatchEmptyPanel();
@@ -1445,6 +1517,7 @@ async function loadDispatchForTrackingSession(sessionId, options = {}) {
     if (dispatchLiveLastRequestFailed()) return selectedDispatchTicket;
     selectedDispatchTicket = null;
     clearDispatchPlannedRoute("live dispatch no longer active");
+    clearDispatchDestinationMarkers();
     renderDispatchEmptyPanel(
       "This tracking session has no linked ticket yet. Use the inline planner above to save a draft or dispatch it now."
     );
@@ -2542,13 +2615,31 @@ function renderDispatchTicketDetails(details) {
   const nextStop = groups.remainingStops[0] || null;
   const completedCount = groups.completedStops.length;
   const reliablePoint = getDispatchSelectedReliablePoint();
+  const gpsMeta = typeof getTrackingAvailabilityMeta === "function"
+    ? getTrackingAvailabilityMeta(selectedTrackingTruck)
+    : { available: Boolean(reliablePoint), label: reliablePoint ? "GPS Online" : "GPS Offline" };
+  const lastGpsUpdate =
+    selectedTrackingTruck?.location_last_updated ||
+    selectedTrackingTruck?.last_updated_at ||
+    selectedTrackingTruck?.dispatch?.last_gps_update ||
+    null;
   const targetPoint = dispatchPoint(currentStop?.latitude, currentStop?.longitude);
   const distanceMeters = reliablePoint && targetPoint
     ? dispatchDistanceMeters(dispatchPoint(reliablePoint.lat, reliablePoint.lng), targetPoint)
     : null;
   const distanceLabel = Number.isFinite(distanceMeters)
-    ? distanceMeters >= 1000 ? `${(distanceMeters / 1000).toFixed(1)} km away` : `${Math.round(distanceMeters)} m away`
+    ? `${gpsMeta.available ? "" : "Last known: "}${distanceMeters >= 1000 ? `${(distanceMeters / 1000).toFixed(1)} km away` : `${Math.round(distanceMeters)} m away`}`
     : "Distance updating";
+  const locationLabel = reliablePoint
+    ? `${Number(reliablePoint.lat).toFixed(5)}, ${Number(reliablePoint.lng).toFixed(5)}`
+    : "No reliable location recorded";
+  const timedStops = stops.filter((stop) => stop.actual_arrival_at || stop.actual_departure_at);
+  const stopTimingRows = timedStops.map((stop) => `
+    <div>
+      <strong>${dispatchEscape(stop.stop_order)} ${dispatchEscape(stop.location_name)}</strong>
+      <small>${stop.actual_arrival_at ? `Arrived ${dispatchEscape(dispatchFormatDateTime(stop.actual_arrival_at))}` : "Arrival not recorded"}${stop.actual_departure_at ? ` · Departed ${dispatchEscape(dispatchFormatDateTime(stop.actual_departure_at))}` : ""}</small>
+    </div>
+  `).join("");
   const stopActions = currentStop ? `
     ${currentStop.stop_status !== "arrived" ? `<button type="button" data-dispatch-action="arrive" data-ticket-id="${ticket.id}" data-stop-id="${currentStop.id}">Mark Arrived</button>` : ""}
     <button type="button" data-dispatch-action="complete" data-ticket-id="${ticket.id}" data-stop-id="${currentStop.id}">Complete Stop</button>
@@ -2561,9 +2652,19 @@ function renderDispatchTicketDetails(details) {
   const selectedTruckLabel = document.getElementById("dispatchSelectedTruckName");
   if (selectedTruckLabel) selectedTruckLabel.textContent = `Ticket ${ticket.ticket_number}`;
   panel.innerHTML = `
+    <div class="dispatch-live-operation-context">
+      <div><small>Active Dispatch</small><strong>${dispatchEscape(ticket.ticket_number)}</strong></div>
+      <div><small>Started</small><strong>${dispatchEscape(dispatchFormatDateTime(ticket.actual_start_at || ticket.dispatched_at))}</strong></div>
+      <div><small>GPS status</small><strong class="${gpsMeta.available ? "online" : "offline"}">${dispatchEscape(gpsMeta.label)}</strong></div>
+    </div>
     <div class="dispatch-live-progress"><strong>${completedCount} of ${stops.length} destinations completed</strong><progress value="${completedCount}" max="${Math.max(1, stops.length)}">${completedCount} of ${stops.length}</progress></div>
+    <div class="dispatch-last-known-location ${gpsMeta.available ? "is-live" : "is-stale"}">
+      <div><small>${gpsMeta.available ? "Current GPS location" : "Last known location"}</small><strong>${dispatchEscape(locationLabel)}</strong></div>
+      <span>Last GPS update ${dispatchEscape(dispatchFormatDateTime(lastGpsUpdate))}</span>
+    </div>
     <section class="dispatch-live-target current"><small>Current Target</small>${currentStop ? `<div><span>${dispatchEscape(currentStop.stop_order)}</span><strong>${dispatchEscape(currentStop.location_name)}</strong></div><p>${dispatchEscape(distanceLabel)}</p>` : '<strong>Return to WMO</strong>'}</section>
     <div class="dispatch-live-route-preview"><section><small>Next</small>${nextStop ? `<strong>${dispatchEscape(nextStop.stop_order)} ${dispatchEscape(nextStop.location_name)}</strong>` : "<strong>None</strong>"}</section><section><small>Final</small><strong>W Return to WMO</strong></section></div>
+    ${stopTimingRows ? `<div class="dispatch-live-stop-history"><small>Recorded stop activity</small>${stopTimingRows}</div>` : ""}
     <div id="dispatchLiveRouteState" class="dispatch-live-route-state idle" data-route-status="idle"><span aria-hidden="true"></span><strong>Route pending</strong><button type="button" data-dispatch-route-retry hidden>Retry</button></div>
     ${staleWarning}
     <div id="dispatchStopActionSheet" class="dispatch-stop-action-sheet hidden" role="group" aria-label="Update current stop status">${stopActions || '<p>No destination action is currently available.</p>'}<button type="button" id="dispatchStopActionCancelBtn">Cancel</button></div>
@@ -2631,10 +2732,12 @@ function dispatchStopRowTemplate(stop = {}, index = 0) {
   });
   return `
     <article class="dispatch-stop-row" data-dispatch-stop-row data-dispatch-metadata-key="${dispatchEscape(metadataKey)}">
+      <span class="dispatch-stop-planned-number" data-dispatch-stop-number aria-label="Planned stop ${index + 1}">${index + 1}</span>
       <div class="dispatch-stop-row-header">
         <div class="dispatch-required-destination-label">
           <strong>${dispatchEscape(stop.operator_label || stop.name || stop.location_name || "Destination")}</strong>
-          <small>${dispatchEscape(dispatchDestinationTypeLabel(destinationType))}${barangay ? ` - ${dispatchEscape(barangay)}` : ""}</small>
+          <small>${dispatchEscape(stop.address_reference || (barangay ? `Barangay ${barangay}, General Santos City` : "General Santos City"))}</small>
+          <span>${dispatchEscape(dispatchDestinationTypeLabel(destinationType))}${stop.is_verified ? " · Verified" : ""}</span>
         </div>
         <div class="dispatch-stop-row-actions">
           <button type="button" data-dispatch-stop-remove aria-label="Remove destination" title="Remove"><span>Remove</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M8 7l1 13h6l1-13"/></svg></button>
@@ -2740,6 +2843,8 @@ function renumberDispatchStopRows() {
   rows.forEach((row, index) => {
     const number = row.querySelector("[data-dispatch-stop-number]");
     if (number) number.textContent = String(index + 1);
+    const order = row.querySelector('[data-dispatch-field="stop_order"]');
+    if (order) order.value = String(index + 1);
   });
   const wmoOrderElement = document.querySelector("[data-dispatch-wmo-order]");
   if (wmoOrderElement) wmoOrderElement.textContent = "W";
@@ -2778,6 +2883,9 @@ function getDispatchStopDrafts() {
 
 function getDispatchSelectedDestinationDrafts() {
   dispatchSelectedDestinations = getDispatchStopDrafts().sort((first, second) => {
+    if (Number.isInteger(first.stop_order) && Number.isInteger(second.stop_order)) {
+      return first.stop_order - second.stop_order;
+    }
     const firstOrder = dispatchStopMetadata.get(first.metadata_key)?.selection_order || 0;
     const secondOrder = dispatchStopMetadata.get(second.metadata_key)?.selection_order || 0;
     return firstOrder - secondOrder;
@@ -2831,6 +2939,9 @@ function applyDispatchOptimizedDraftOrder(plannedStops) {
     const row = rowsByKey.get(stop.metadata_key);
     const order = row?.querySelector('[data-dispatch-field="stop_order"]');
     if (order) order.value = String(index + 1);
+    const number = row?.querySelector("[data-dispatch-stop-number]");
+    if (number) number.textContent = String(index + 1);
+    if (row) container.appendChild(row);
   });
   dispatchOptimizedRouteStops = plannedStops.map(({ stop, metadata, orientation }, index) => ({
     ...stop,
@@ -2885,10 +2996,7 @@ function buildDispatchRouteLayers(journey, routeCoordinates, startPoint, wmoPoin
       .addTo(layers.start);
   }
   journey.plannedStops.forEach(({ stop, geometry }, index) => {
-    const optimizedOrder = dispatchPersistedStopOrder(
-      stop,
-      index + 1 + (Number(options.orderOffset) || 0)
-    );
+    const optimizedOrder = dispatchMarkerOrder(stop, index, options);
     if (geometry.length > 1) {
       L.polyline(geometry.map((point) => [point.lat, point.lng]), {
         color: "#2d73c7",
@@ -2934,7 +3042,7 @@ function buildDispatchSelectionFallbackLayers(items, startPoint, wmoPoint, relia
       .addTo(layers.start);
   }
   items.forEach(({ stop, geometry }, index) => {
-    const displayOrder = dispatchPersistedStopOrder(stop, index + 1);
+    const displayOrder = dispatchMarkerOrder(stop, index, options);
     const points = (geometry || []).map((point) =>
       dispatchPoint(point.latitude ?? point.lat, point.longitude ?? point.lng ?? point.lon)
     ).filter(Boolean);
@@ -2971,11 +3079,13 @@ function renderDispatchSelectionFallback(items, startPoint, wmoPoint, reliableSt
 
 function renderDispatchDraftOnLiveMap(options = {}) {
   if (!truckMap || !window.L) return;
+  ensureDispatchWmoMarker();
   const stops = getDispatchSelectedDestinationDrafts().filter(
     (stop) => Number.isFinite(stop.latitude) && Number.isFinite(stop.longitude)
   );
   if (!stops.length) {
     clearDispatchPlannedRoute("no selected destinations");
+    clearDispatchDestinationMarkers();
     dispatchLastRoutingSignature = "";
     dispatchPendingRoutingSignature = "";
     dispatchLastRoutingStart = null;
@@ -2991,6 +3101,7 @@ function renderDispatchDraftOnLiveMap(options = {}) {
   const reliableStart = getDispatchSelectedReliablePoint();
   const wmo = dispatchPoint(DISPATCH_WMO_LOCATION.latitude, DISPATCH_WMO_LOCATION.longitude);
   const items = dispatchDraftRouteItems(stops);
+  renderDispatchDestinationMarkers(items, { usePersistedStopOrder: false });
   const routeOrigin = resolveDispatchRouteOrigin(reliableStart, { wmo });
   const startPoint = routeOrigin.point;
   const truckRouteKey = `${selectedTrackingTruck?.truck_id || "none"}:${selectedTrackingTruck?.session_id || selectedSessionId || "none"}`;
@@ -3034,7 +3145,8 @@ function renderDispatchDraftOnLiveMap(options = {}) {
 
       applyDispatchOptimizedDraftOrder(journey.plannedStops);
       const layers = buildDispatchRouteLayers(journey, routeCoordinates, startPoint, wmo, {
-        showTruckMarker: routeOrigin.usesTruckPosition
+        showTruckMarker: routeOrigin.usesTruckPosition,
+        usePersistedStopOrder: false
       });
       activateDispatchPlannedLayerGroups(layers);
       dispatchLastSuccessfulRouteCoordinates = routeCoordinates.map(([lat, lng]) => ({ lat, lng }));
@@ -3084,7 +3196,9 @@ function renderDispatchDraftOnLiveMap(options = {}) {
       });
       items.map(({ metadata }) => metadata?.catalog_id).filter(Boolean)
         .forEach((id) => dispatchRouteErrorCatalogIds.add(String(id)));
-      renderDispatchSelectionFallback(items, startPoint, wmo, reliableStart);
+      renderDispatchSelectionFallback(items, startPoint, wmo, reliableStart, {
+        usePersistedStopOrder: false
+      });
       updateDispatchRoutePreviewNotice("error");
     } finally {
       if (dispatchRoutingAbortController === controller) dispatchRoutingAbortController = null;
@@ -3431,7 +3545,7 @@ function dispatchDestinationRowState(destination) {
       ? { label: "Route error", className: "error" }
       : { label: "Selected", className: "added" };
   }
-  return { label: "Verified", className: "available" };
+  return { label: "Add", className: "available" };
 }
 
 function dispatchDestinationStateBadge(destination) {
@@ -3786,7 +3900,9 @@ function setDispatchDestinationMode(mode) {
   const label = document.getElementById("dispatchDestinationSearchLabel");
   if (input) {
     input.value = "";
-    input.placeholder = mode === "road_segment" ? "Search Gensan roads..." : "Search barangay halls...";
+    input.placeholder = mode === "road_segment"
+      ? "Search road, street, location..."
+      : "Search barangay hall, location...";
   }
   if (label) {
     label.textContent = mode === "road_segment"
@@ -4657,6 +4773,7 @@ async function submitDispatchEnd(event) {
       if (closedSessionId) delete dispatchLiveBySession[String(closedSessionId)];
       selectedDispatchTicket = null;
       clearDispatchPlannedRoute("dispatch ended early");
+      clearDispatchDestinationMarkers();
       resetDispatchTicketForm();
       updateDispatchSelectedTruckContext(selectedTrackingTruck);
       renderDispatchEmptyPanel("Dispatch ended early. GPS tracking remains active independently.");
@@ -5018,7 +5135,7 @@ function setupDispatchModule() {
   }
 
   document.addEventListener("click", (event) => {
-    if (!event.target.closest("#dispatchDestinationSearchWrap")) {
+    if (!event.target.closest("#dispatchDestinationSearchWrap, #dispatchDestinationSuggestions")) {
       renderDispatchDestinationSuggestions("hidden");
     }
     const closeButton = event.target.closest("[data-dispatch-close]");
@@ -5158,9 +5275,11 @@ if (typeof module !== "undefined" && module.exports) {
     DISPATCH_CURRENT_ROUTE_STYLE,
     DISPATCH_COMPLETED_ROUTE_STYLE,
     DISPATCH_TICKET_CREATE_FAILURE_MESSAGE,
+    buildDispatchDestinationMarkerLayer,
     buildDispatchPlannedJourney,
     buildDispatchRouteLayers,
     buildDispatchSelectionFallbackLayers,
+    createDispatchWmoMarkerLayer,
     chooseDispatchSegmentOrientation,
     dispatchCatalogStopFromDetail,
     dispatchCatalogDestinationIsSelected,

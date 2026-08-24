@@ -85,6 +85,7 @@ function testDispatchEndAndGpsReturnTransition() {
     NOW
   );
   assert.equal(duringDispatch.availableTrucks.length, 1);
+  assert.equal(duringDispatch.operationalTrucks.length, 1);
   assert.equal(duringDispatch.availableTrucks[0].dispatch.ticket_number, "DT-2026-0502");
 
   const afterEndFresh = buildTrackingAvailabilitySnapshot([truck], () => null, NOW);
@@ -97,6 +98,7 @@ function testDispatchEndAndGpsReturnTransition() {
     NOW
   );
   assert.deepEqual(afterEndOffline.availableTrucks, []);
+  assert.deepEqual(afterEndOffline.operationalTrucks, []);
 
   const afterGpsReturn = buildTrackingAvailabilitySnapshot(
     [activeTruck({ tracking_status_key: "active", location_last_updated: new Date(NOW).toISOString() })],
@@ -121,9 +123,24 @@ function testActiveDispatchSurvivesGpsOutage() {
     () => activeDispatch,
     NOW
   );
+  const resumedSnapshot = buildTrackingAvailabilitySnapshot(
+    [activeTruck({
+      tracking_status_key: "active",
+      location_last_updated: new Date(NOW).toISOString()
+    })],
+    () => activeDispatch,
+    NOW
+  );
 
   assert.deepEqual(staleSnapshot.availableTrucks, []);
   assert.deepEqual(offlineSnapshot.availableTrucks, []);
+  assert.equal(staleSnapshot.operationalTrucks.length, 1);
+  assert.equal(offlineSnapshot.operationalTrucks.length, 1);
+  assert.equal(staleSnapshot.operationalTrucks[0].dispatch, activeDispatch);
+  assert.equal(offlineSnapshot.operationalTrucks[0].dispatch, activeDispatch);
+  assert.equal(resumedSnapshot.availableTrucks.length, 1);
+  assert.equal(resumedSnapshot.operationalTrucks.length, 1);
+  assert.equal(resumedSnapshot.operationalTrucks[0].dispatch, activeDispatch);
   assert.equal(staleSnapshot.sessions[0].dispatch, activeDispatch);
   assert.equal(offlineSnapshot.sessions[0].dispatch, activeDispatch);
   assert.equal(getTrackingAvailabilityMeta(staleSnapshot.sessions[0], NOW).label, "GPS Stale");
@@ -193,8 +210,8 @@ function testEmptyStateRendering() {
   } finally {
     global.document = originalDocument;
   }
-  assert.match(container.innerHTML, /No active trucks/);
-  assert.match(container.innerHTML, /Trucks will appear here when GPS tracking is active\./);
+  assert.match(container.innerHTML, /No available trucks or active dispatches/);
+  assert.match(container.innerHTML, /Fresh trucks and ongoing dispatches will appear here\./);
 }
 
 function testFrontendTransitionWiringAndSingleActions() {
@@ -239,6 +256,8 @@ function testFrontendTransitionWiringAndSingleActions() {
   );
 
   assert.match(tracking, /const trucks = snapshot\.availableTrucks/);
+  assert.match(tracking, /trackingOperationalTrucks = snapshot\.operationalTrucks/);
+  assert.match(tracking, /renderActiveTruckList\(trackingOperationalTrucks\)/);
   assert.match(tracking, /setInterval\(\(\) => \{[\s\S]*?loadActiveTrucks\(\);[\s\S]*?\}, 5000\)/);
   assert.match(loadLinkedBlock, /selectedDispatchTicket = null/);
   assert.match(loadLinkedBlock, /clearDispatchPlannedRoute\("live dispatch no longer active"\)/);
@@ -250,6 +269,8 @@ function testFrontendTransitionWiringAndSingleActions() {
   assert.match(endBlock, /await loadActiveTrucks\(\)/);
   assert.doesNotMatch(endBlock, /stopTracking|force-stop|Stop Truck/);
   assert.match(activeCardBlock, /truck-status-label[^\n]*\$\{statusMeta\.className\}[\s\S]*\$\{escapeHtml\(statusMeta\.label\)\}/);
+  assert.match(activeCardBlock, /Active Dispatch/);
+  assert.match(activeCardBlock, /Last-known progress/);
   assert.doesNotMatch(activeCardBlock, /GPS off|GPS live/i);
   assert.match(staleWarningBlock, /dismiss-stale/);
   assert.doesNotMatch(staleWarningBlock, /data-dispatch-action="end"|keep-active/);
@@ -269,6 +290,9 @@ function testFrontendTransitionWiringAndSingleActions() {
   assert.match(openTicketBlock, /buildDispatchTrackingContext\(details\)/);
   assert.match(openTicketBlock, /loadTruckRoute\(trackingContext\.session_id, \{ keepView: true \}\)/);
   assert.match(openTicketBlock, /setDispatchWorkspaceTab\("plan"\)/);
+  assert.match(dispatch, /Last known location/);
+  assert.match(dispatch, /Last GPS update/);
+  assert.match(dispatch, /Completed[\s\S]*of[\s\S]*stops/);
   assert.equal((html.match(/id="dispatchOpenTicketsBtn"/g) || []).length, 1);
 
   const activeResponseCheckIndex = loadActiveBlock.indexOf(

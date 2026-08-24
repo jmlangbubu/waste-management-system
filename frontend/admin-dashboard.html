@@ -983,15 +983,15 @@
           <section class="tracking-workspace-view active" data-tracking-workspace-view="monitor" role="tabpanel">
             <div class="tracking-workspace-section-heading">
               <div>
-                <strong>Active Trucks</strong>
-                <small>Select an online truck to begin dispatch planning.</small>
+                <strong>Trucks &amp; Active Dispatches</strong>
+                <small>Fresh trucks are dispatch-ready; offline active dispatches remain available for monitoring.</small>
               </div>
             </div>
             <div id="activeTruckList" class="active-truck-list">
               <div class="tracking-empty-state">
                 <span class="tracking-empty-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h11v8H3z"/><path d="M14 10h3.5L21 13.5V15h-7z"/><path d="M7 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM17 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/></svg></span>
-                <strong>No active trucks</strong>
-                <small>Trucks will appear here when GPS tracking is active.</small>
+                <strong>No available trucks or active dispatches</strong>
+                <small>Fresh trucks and ongoing dispatches will appear here.</small>
               </div>
             </div>
           </section>
@@ -1113,13 +1113,17 @@
                       <label class="dispatch-inline-field" id="dispatchDestinationSearchField">
                         <span id="dispatchDestinationSearchLabel">Search Gensan roads</span>
                         <div class="dispatch-combobox" id="dispatchDestinationSearchWrap">
-                          <input type="search" id="dispatchDestinationSearch" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="dispatchDestinationSuggestions" autocomplete="off" placeholder="Search Gensan destinations...">
+                          <input type="search" id="dispatchDestinationSearch" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="dispatchDestinationSuggestions" autocomplete="off" placeholder="Search road, street, location...">
                           <button type="button" class="dispatch-combobox-clear" id="dispatchDestinationSearchClearBtn" aria-label="Clear destination search">
                             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
                           </button>
-                          <div id="dispatchDestinationSuggestions" class="dispatch-combobox-options dispatch-destination-results hidden" role="listbox"></div>
                         </div>
                       </label>
+                      <div class="dispatch-available-destinations-heading">
+                        <strong>Available destinations</strong>
+                        <small>Select a verified catalog location to add it.</small>
+                      </div>
+                      <div id="dispatchDestinationSuggestions" class="dispatch-combobox-options dispatch-destination-results hidden" role="listbox"></div>
                       <button type="button" class="dispatch-browse-all-trigger" id="dispatchBrowseAllBtn">Browse All Gensan Roads</button>
                       <section id="dispatchBrowseAllPanel" class="dispatch-browse-all-panel hidden" aria-live="polite">
                         <div class="dispatch-browse-all-heading">
