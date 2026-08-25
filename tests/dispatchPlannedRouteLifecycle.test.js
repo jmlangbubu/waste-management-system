@@ -337,7 +337,7 @@ function testSelectionHydratesTrackingBeforeActiveDispatch() {
   const selection = trackingSource.match(/function selectTruck[\s\S]*?function bindActiveTruckSelection/)?.[0] || "";
   assert.doesNotMatch(loader, /renderDispatchDraftOnLiveMap/);
   assert.match(loader, /String\(selectedSessionId \|\| ""\) !== String\(sessionId \|\| ""\)/);
-  assert.match(hydration, /await loadTruckRoute\(sessionId, options\)[\s\S]*return loadDispatchForTrackingSession\(sessionId\)/);
+  assert.match(hydration, /await loadTruckRoute\(sessionId, options\)[\s\S]*return loadDispatchForTrackingSession\(sessionId, \{[\s\S]*refreshOnly: options\.keepView === true/);
   assert.match(selection, /void hydrateSelectedTruckWorkspace\(sessionId, \{ keepView: false \}\)/);
   assert.doesNotMatch(selection, /void loadDispatchForTrackingSession/);
   assert.match(dispatchSource, /mustRehydrateRoute[\s\S]*!dispatchHasVisiblePlannedRoute\(\)/);
@@ -607,7 +607,7 @@ function testLiveTransitionRerenderAndPanelActionsDoNotClearRoute() {
     /async function dispatchSelectedTruckNow[\s\S]*?function dispatchTicketQuery/
   )?.[0] || "";
   const liveRenderer = dispatchSource.match(
-    /function renderDispatchTicketDetails\(details\)[\s\S]*?function openDispatchModal/
+    /function renderDispatchTicketDetails\(details, options = \{\}\)[\s\S]*?function openDispatchModal/
   )?.[0] || "";
   const workspaceBindings = dispatchSource.match(
     /workspace\.querySelectorAll\("\[data-dispatch-workspace-action\]"\)[\s\S]*?dispatchPlannerConfirmationCancelBtn/

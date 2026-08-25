@@ -1309,12 +1309,14 @@ function closeDispatchPlannerDrawer({ restoreFocus = true } = {}) {
   const workspace = document.querySelector(".tracking-dispatch-workspace");
   const drawer = document.getElementById("dispatchPlannerDrawer");
   if (!workspace || !drawer) return;
+  markDispatchWorkspaceNavigation();
   const wasOpen = dispatchPlannerOpen;
   dispatchPlannerOpen = false;
   workspace.classList.remove("planner-open");
   drawer.setAttribute("aria-hidden", "true");
   drawer.setAttribute("aria-modal", "false");
   drawer.inert = true;
+  if (dispatchPlannerMode === "live") setDispatchPlannerMode("create");
   applyDispatchWorkspaceView("monitor");
   setDispatchAddDestinationMode(false);
   if (wasOpen) dispatchInvalidateMapAfterDrawerTransition();
@@ -1541,6 +1543,7 @@ async function openDispatchExistingTicketForTruck(truck, ticket, triggerElement 
     renderActiveTruckList(trackingOperationalTrucks);
     updateTrackingSummaryCards(activeTrackingTrucks, truck);
   }
+  const navigationGeneration = markDispatchWorkspaceNavigation();
 
   setDispatchNewTicketEligibility({
     status: "existing_dispatch",
@@ -1562,7 +1565,7 @@ async function openDispatchExistingTicketForTruck(truck, ticket, triggerElement 
     setDispatchWorkspaceTab("plan");
     return hydratedDetails;
   }
-  return openDispatchTicket(existingTicket.id);
+  return openDispatchTicket(existingTicket.id, { navigationGeneration });
 }
 
 async function resolveDispatchTicketBeforePlanning(truck) {
@@ -1912,6 +1915,15 @@ function getDispatchLiveForSession(sessionId) {
   return dispatchLiveBySession[String(sessionId)] || null;
 }
 
+function getDispatchTrackingCardForSession(sessionId) {
+  const liveDispatch = getDispatchLiveForSession(sessionId);
+  if (liveDispatch) return liveDispatch;
+  const monitoringSnapshot = dispatchMonitoringSnapshot(sessionId);
+  return monitoringSnapshot.hasLiveTicket
+    ? dispatchTicketFromDetails(selectedDispatchTicket)
+    : null;
+}
+
 function getDispatchLiveForTicket(ticketId) {
   return Object.values(dispatchLiveBySession || {}).find(
     (dispatch) => String(dispatch?.dispatch_ticket_id || "") === String(ticketId || "")
@@ -2162,15 +2174,128 @@ function renderDispatchEmptyPanel(message) {
   `;
 }
 
+function markDispatchWorkspaceNavigation() {
+  dispatchWorkspaceNavigationGeneration += 1;
+  return dispatchWorkspaceNavigationGeneration;
+}
+
+function dispatchMonitoringSnapshot(sessionId = selectedSessionId) {
+  const ticket = selectedDispatchTicket?.ticket || null;
+  const hasLiveTicket = Boolean(
+    dispatchTicketIsLive(ticket) &&
+    dispatchSessionKey(selectedSessionId) === dispatchSessionKey(sessionId)
+  );
+  return {
+    active: dispatchPlannerMode === "live" && hasLiveTicket,
+    hasLiveTicket,
+    navigationGeneration: dispatchWorkspaceNavigationGeneration,
+    sessionId: dispatchSessionKey(sessionId),
+    ticketId: ticket?.id ?? null
+  };
+}
+
+function dispatchSelectedTicketSnapshotIsCurrent(snapshot = {}) {
+  return Boolean(
+    snapshot.hasLiveTicket &&
+    snapshot.navigationGeneration === dispatchWorkspaceNavigationGeneration &&
+    dispatchSessionKey(selectedSessionId) === dispatchSessionKey(snapshot.sessionId) &&
+    String(selectedDispatchTicket?.ticket?.id ?? "") === String(snapshot.ticketId ?? "")
+  );
+}
+
+function dispatchMonitoringSnapshotIsCurrent(snapshot = {}) {
+  return Boolean(
+    snapshot.active &&
+    dispatchPlannerMode === "live" &&
+    dispatchSelectedTicketSnapshotIsCurrent(snapshot)
+  );
+}
+
+function resolveDispatchMonitoringRefresh(snapshot = {}, details = null) {
+  if (!snapshot.active) return "replace";
+  const ticket = details?.ticket;
+  if (!ticket) return "preserve";
+  if (String(ticket.id ?? "") !== String(snapshot.ticketId ?? "")) return "preserve";
+  if (dispatchTicketIsTerminal(ticket)) return "exit_terminal";
+  return dispatchTicketIsLive(ticket) ? "refresh" : "preserve";
+}
+
+function exitDispatchMonitoringForTerminal(details, sessionId) {
+  const ticket = details?.ticket;
+  if (!dispatchTicketIsTerminal(ticket)) return false;
+  if (sessionId) delete dispatchLiveBySession[String(sessionId)];
+  selectedDispatchTicket = null;
+  clearDispatchPlannedRoute("dispatch became terminal during live refresh");
+  clearDispatchDestinationMarkers();
+  resetDispatchTicketForm();
+  updateDispatchSelectedTruckContext(selectedTrackingTruck);
+  renderDispatchEmptyPanel(
+    ticket.status === "completed"
+      ? "Dispatch completed. GPS tracking remains active independently."
+      : "Dispatch closed early. GPS tracking remains active independently."
+  );
+  closeDispatchPlannerDrawer({ restoreFocus: false });
+  return true;
+}
+
+function refreshDispatchMonitoringDetails(details, options = {}) {
+  selectedDispatchTicket = details;
+  renderDispatchTicketDetails(details, { preserveScroll: true });
+  renderDispatchPlannedRoute(details, {
+    force: Boolean(options.forceRoute),
+    preservePlannerMode: true
+  });
+  return details;
+}
+
 async function loadDispatchForTrackingSession(sessionId, options = {}) {
   if (!sessionId) {
     clearDispatchTrackingSelection();
     return null;
   }
 
+  const monitoringSnapshot = dispatchMonitoringSnapshot(sessionId);
   const liveDispatch = getDispatchLiveForSession(sessionId);
   if (!liveDispatch) {
     if (dispatchLiveLastRequestFailed()) return selectedDispatchTicket;
+    if (monitoringSnapshot.hasLiveTicket) {
+      try {
+        const details = await dispatchRequest(
+          getDispatchTicketApiUrl(monitoringSnapshot.ticketId)
+        );
+        if (!dispatchSelectedTicketSnapshotIsCurrent(monitoringSnapshot)) {
+          return selectedDispatchTicket;
+        }
+        if (!monitoringSnapshot.active) {
+          if (dispatchTicketIsTerminal(details.ticket)) {
+            exitDispatchMonitoringForTerminal(details, sessionId);
+            return null;
+          }
+          if (
+            dispatchTicketIsLive(details.ticket) &&
+            String(details.ticket?.id ?? "") === String(monitoringSnapshot.ticketId ?? "")
+          ) {
+            selectedDispatchTicket = details;
+          }
+          return selectedDispatchTicket;
+        }
+        const refreshAction = resolveDispatchMonitoringRefresh(monitoringSnapshot, details);
+        if (refreshAction === "exit_terminal") {
+          exitDispatchMonitoringForTerminal(details, sessionId);
+          return null;
+        }
+        if (refreshAction === "refresh") {
+          return refreshDispatchMonitoringDetails(details, options);
+        }
+        return selectedDispatchTicket;
+      } catch (error) {
+        if (error.status !== 404 && error.status !== 503) {
+          console.error("Unable to confirm live dispatch state:", error);
+        }
+        return selectedDispatchTicket;
+      }
+    }
+    if (options.refreshOnly) return selectedDispatchTicket;
     selectedDispatchTicket = null;
     clearDispatchPlannedRoute("live dispatch no longer active");
     clearDispatchDestinationMarkers();
@@ -2186,7 +2311,29 @@ async function loadDispatchForTrackingSession(sessionId, options = {}) {
     const details = await dispatchRequest(
       getDispatchTrackingSessionApiUrl(sessionId)
     );
-    if (String(selectedSessionId || "") !== String(sessionId || "")) return null;
+    if (monitoringSnapshot.active) {
+      if (!dispatchMonitoringSnapshotIsCurrent(monitoringSnapshot)) {
+        return selectedDispatchTicket;
+      }
+      const refreshAction = resolveDispatchMonitoringRefresh(monitoringSnapshot, details);
+      if (refreshAction === "exit_terminal") {
+        exitDispatchMonitoringForTerminal(details, sessionId);
+        return null;
+      }
+      if (refreshAction === "refresh") {
+        const forceRoute = Boolean(
+          options.forceRoute ||
+          String(previousTicketId ?? "") !== String(details.ticket?.id ?? "") ||
+          !dispatchHasVisiblePlannedRoute()
+        );
+        return refreshDispatchMonitoringDetails(details, { forceRoute });
+      }
+      return selectedDispatchTicket;
+    }
+    if (
+      monitoringSnapshot.navigationGeneration !== dispatchWorkspaceNavigationGeneration ||
+      String(selectedSessionId || "") !== String(sessionId || "")
+    ) return selectedDispatchTicket;
     const mustRehydrateRoute = Boolean(
       options.forceRoute ||
       String(previousTicketId ?? "") !== String(details.ticket?.id ?? "") ||
@@ -2219,6 +2366,7 @@ async function loadDispatchForTrackingSession(sessionId, options = {}) {
     return details;
   } catch (error) {
     if (error.status === 404) {
+      if (monitoringSnapshot.active || options.refreshOnly) return selectedDispatchTicket;
       selectedDispatchTicket = null;
       renderDispatchEmptyPanel(
         "This tracking session has no linked dispatch ticket yet."
@@ -3271,6 +3419,10 @@ function dispatchTicketIsLive(ticket = {}) {
   return ["dispatched", "in_progress", "returning_to_wmo"].includes(ticket.status);
 }
 
+function dispatchTicketIsTerminal(ticket = {}) {
+  return ["completed", "cancelled"].includes(String(ticket.status || "").toLowerCase());
+}
+
 function dispatchTicketViewMode(ticket = {}) {
   if (dispatchTicketIsLive(ticket)) return "readonly";
   if (ticket.status === "prepared") return "editable";
@@ -3384,11 +3536,13 @@ function renderDispatchTicketDetailsModal(details) {
   `;
 }
 
-function renderDispatchTicketDetails(details) {
+function renderDispatchTicketDetails(details, options = {}) {
   const panel = document.getElementById("dispatchCurrentPanel");
   if (!panel || !details?.ticket) return;
   const ticket = details.ticket;
   const stops = Array.isArray(details.stops) ? details.stops : [];
+  const scrollContainer = panel.closest?.(".dispatch-planner-scroll") || panel;
+  const previousScrollTop = options.preserveScroll ? scrollContainer.scrollTop : null;
   renderDispatchTicketDetailsModal(details);
   renderDispatchOptimizedRouteList(stops);
   if (dispatchTicketViewMode(ticket) !== "readonly") {
@@ -3464,6 +3618,7 @@ function renderDispatchTicketDetails(details) {
     ${staleWarning}
     <div id="dispatchStopActionSheet" class="dispatch-stop-action-sheet hidden" role="group" aria-label="Update current stop status">${stopActions || '<p>No destination action is currently available.</p>'}<button type="button" id="dispatchStopActionCancelBtn">Cancel</button></div>
   `;
+  if (previousScrollTop !== null) scrollContainer.scrollTop = previousScrollTop;
   setDispatchPlannerMode("live");
   const routeStatus = document.getElementById("dispatchRoutePreviewNotice")?.dataset.routeStatus || "idle";
   updateDispatchMapRouteOverlay(routeStatus);
@@ -5389,9 +5544,11 @@ async function loadDispatchRecords() {
   await loadDispatchTickets();
 }
 
-async function openDispatchTicket(ticketId) {
+async function openDispatchTicket(ticketId, options = {}) {
+  const navigationGeneration = options.navigationGeneration ?? markDispatchWorkspaceNavigation();
   try {
     const details = await dispatchRequest(getDispatchTicketApiUrl(ticketId));
+    if (navigationGeneration !== dispatchWorkspaceNavigationGeneration) return;
     selectedDispatchTicket = details;
     if (dispatchTicketIsLive(details.ticket)) {
       const trackingContext = buildDispatchTrackingContext(details);
@@ -5403,6 +5560,7 @@ async function openDispatchTicket(ticketId) {
         updateDispatchSelectedTruckContext(trackingContext);
         if (typeof loadTruckRoute === "function") {
           await loadTruckRoute(trackingContext.session_id, { keepView: true });
+          if (navigationGeneration !== dispatchWorkspaceNavigationGeneration) return;
         }
       }
       renderDispatchTicketDetails(details);
@@ -6214,8 +6372,10 @@ if (typeof module !== "undefined" && module.exports) {
     dispatchPlannerStepName,
     dispatchShouldReoptimizeRemaining,
     dispatchTicketIsLive,
+    dispatchTicketIsTerminal,
     dispatchTicketIsStale,
     dispatchTicketViewMode,
+    resolveDispatchMonitoringRefresh,
     dispatchReportStopStatus,
     dispatchReportActualPoints,
     dispatchReportSuggestedPoints,

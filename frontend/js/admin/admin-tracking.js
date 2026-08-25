@@ -645,8 +645,10 @@ async function loadActiveTrucks() {
       : (data.data || []);
     const snapshot = buildTrackingAvailabilitySnapshot(
       trackingTrucks,
-      (sessionId) => typeof getDispatchLiveForSession === "function"
-        ? getDispatchLiveForSession(sessionId)
+      (sessionId) => typeof getDispatchTrackingCardForSession === "function"
+        ? getDispatchTrackingCardForSession(sessionId)
+        : typeof getDispatchLiveForSession === "function"
+          ? getDispatchLiveForSession(sessionId)
         : null,
       Date.now(),
       typeof dispatchLiveBySession === "object" ? dispatchLiveBySession : {}
@@ -674,8 +676,10 @@ async function loadActiveTrucks() {
       const selectedTruck = trackingOperationalTrucks.find(
         (truck) => String(truck.session_id) === String(selectedSessionId)
       );
-      const selectedLiveDispatch = typeof getDispatchLiveForSession === "function"
-        ? getDispatchLiveForSession(selectedSessionId)
+      const selectedLiveDispatch = typeof getDispatchTrackingCardForSession === "function"
+        ? getDispatchTrackingCardForSession(selectedSessionId)
+        : typeof getDispatchLiveForSession === "function"
+          ? getDispatchLiveForSession(selectedSessionId)
         : null;
 
       if (!selectedTruck) {
@@ -1115,7 +1119,9 @@ async function hydrateSelectedTruckWorkspace(sessionId, options = {}) {
   await loadTruckRoute(sessionId, options);
   if (String(selectedSessionId || "") !== String(sessionId || "")) return null;
   if (typeof loadDispatchForTrackingSession !== "function") return null;
-  return loadDispatchForTrackingSession(sessionId);
+  return loadDispatchForTrackingSession(sessionId, {
+    refreshOnly: options.keepView === true
+  });
 }
 
 function resetTrackingView(options = {}) {
@@ -1485,6 +1491,9 @@ function bindTruckAnalyticsModalActions() {
 }
 
 function selectTruck(sessionId, truckId, options = {}) {
+  if (typeof markDispatchWorkspaceNavigation === "function") {
+    markDispatchWorkspaceNavigation();
+  }
   const isDifferentSession = String(selectedSessionId || "") !== String(sessionId);
   if (isDifferentSession) {
     if (selectedRoutePolyline && truckMap) truckMap.removeLayer(selectedRoutePolyline);
