@@ -806,6 +806,276 @@
   }
 }
 
+/* Phase 2A: clear destination picking and last-known active-dispatch monitoring. */
+#trackingSection .dispatch-add-destinations-section {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+#trackingSection .dispatch-destination-controls {
+  align-content: start;
+  gap: 10px;
+}
+
+#trackingSection .dispatch-available-destinations-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 2px;
+  border-bottom: 1px solid var(--dispatch-border);
+}
+
+#trackingSection .dispatch-available-destinations-heading strong {
+  padding-bottom: 6px;
+  color: var(--dispatch-text);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+#trackingSection .dispatch-available-destinations-heading small {
+  padding-bottom: 6px;
+  color: var(--dispatch-muted);
+  font-size: 8.5px;
+  text-align: right;
+}
+
+#trackingSection .dispatch-combobox-options.dispatch-destination-results {
+  position: static;
+  z-index: auto;
+  display: grid;
+  max-height: 210px;
+  padding: 0;
+  overflow-y: auto;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+#trackingSection .dispatch-combobox-options.dispatch-destination-results.hidden {
+  display: none;
+}
+
+#trackingSection .dispatch-combobox-options.dispatch-destination-results button {
+  min-height: 48px;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--dispatch-border);
+  border-radius: 0;
+}
+
+#trackingSection .dispatch-combobox-options.dispatch-destination-results button:hover,
+#trackingSection .dispatch-combobox-options.dispatch-destination-results button.active {
+  background: rgba(176, 228, 204, 0.22);
+}
+
+#trackingSection .dispatch-combobox-options.dispatch-destination-results button > span {
+  min-width: 0;
+}
+
+#trackingSection .dispatch-combobox-options.dispatch-destination-results button strong {
+  overflow: hidden;
+  color: var(--dispatch-text);
+  font-size: 10.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#trackingSection .dispatch-combobox-options.dispatch-destination-results button small {
+  color: var(--dispatch-muted);
+  font-size: 9px;
+}
+
+#trackingSection .dispatch-combobox-options .dispatch-catalog-state.available {
+  min-width: 42px;
+  padding: 5px 9px;
+  border: 1px solid var(--dispatch-dark);
+  border-radius: 8px;
+  background: var(--dispatch-dark);
+  color: #ffffff;
+  text-align: center;
+}
+
+#trackingSection .dispatch-required-destinations-section {
+  min-height: 150px;
+}
+
+#trackingSection .dispatch-inline-stop-rows {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: 6px;
+}
+
+#trackingSection .dispatch-stop-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 9px;
+  background: #fbfdfc;
+}
+
+#trackingSection .dispatch-stop-planned-number {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--dispatch-dark);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+#trackingSection .dispatch-stop-row-header {
+  display: contents;
+}
+
+#trackingSection .dispatch-required-destination-label {
+  gap: 2px;
+}
+
+#trackingSection .dispatch-required-destination-label strong {
+  font-size: 10.5px;
+}
+
+#trackingSection .dispatch-required-destination-label small {
+  overflow: hidden;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#trackingSection .dispatch-required-destination-label > span {
+  width: max-content;
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: #edf5f0;
+  color: var(--dispatch-dark);
+  font-size: 7.5px;
+  font-weight: 850;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+#trackingSection .dispatch-stop-fields {
+  display: none;
+}
+
+#trackingSection .dispatch-stop-row-actions button {
+  min-width: 54px;
+  padding: 0 7px;
+  border: 1px solid #e6c8c4;
+  border-radius: 8px;
+  background: #fff8f7;
+}
+
+#trackingSection .dispatch-stop-row-actions button span {
+  display: inline !important;
+}
+
+#trackingSection .dispatch-stop-row-actions button svg {
+  display: none;
+}
+
+#trackingSection .dispatch-live-operation-context {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+#trackingSection .dispatch-live-operation-context > div,
+#trackingSection .dispatch-last-known-location {
+  display: grid;
+  gap: 2px;
+  padding: 8px;
+  border: 1px solid var(--dispatch-border);
+  border-radius: 9px;
+  background: #ffffff;
+}
+
+#trackingSection .dispatch-live-operation-context small,
+#trackingSection .dispatch-last-known-location small,
+#trackingSection .dispatch-live-stop-history > small {
+  color: var(--dispatch-muted);
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+#trackingSection .dispatch-live-operation-context strong,
+#trackingSection .dispatch-last-known-location strong {
+  overflow: hidden;
+  color: var(--dispatch-text);
+  font-size: 9.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#trackingSection .dispatch-live-operation-context strong.online {
+  color: var(--dispatch-primary);
+}
+
+#trackingSection .dispatch-live-operation-context strong.offline {
+  color: #9a5a16;
+}
+
+#trackingSection .dispatch-last-known-location {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  background: #fffaf1;
+}
+
+#trackingSection .dispatch-last-known-location.is-live {
+  background: #f4fbf7;
+}
+
+#trackingSection .dispatch-last-known-location span {
+  color: var(--dispatch-muted);
+  font-size: 8.5px;
+  white-space: nowrap;
+}
+
+#trackingSection .dispatch-live-stop-history {
+  display: grid;
+  gap: 5px;
+  padding-top: 7px;
+  border-top: 1px solid var(--dispatch-border);
+}
+
+#trackingSection .dispatch-live-stop-history > div {
+  display: grid;
+  gap: 1px;
+}
+
+#trackingSection .dispatch-live-stop-history strong {
+  color: var(--dispatch-text);
+  font-size: 9px;
+}
+
+#trackingSection .dispatch-live-stop-history small {
+  color: var(--dispatch-muted);
+  font-size: 8.5px;
+}
+
+@media (max-width: 620px) {
+  #trackingSection .dispatch-available-destinations-heading small {
+    display: none;
+  }
+
+  #trackingSection .dispatch-live-operation-context {
+    grid-template-columns: 1fr;
+  }
+
+  #trackingSection .dispatch-last-known-location {
+    grid-template-columns: 1fr;
+  }
+}
+
 #trackingSection .dispatch-stale-warning {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -5100,4 +5370,39 @@ body > #dispatchTicketDetailsModal .dispatch-details-stop small {
     height: 100%;
     max-height: none;
   }
+}
+
+/* Keep the Phase 2A list layout authoritative over earlier compact-card cascades. */
+#trackingSection .dispatch-add-destinations-section {
+  overflow-y: auto;
+}
+
+#trackingSection .dispatch-destination-controls {
+  gap: 10px;
+}
+
+#trackingSection .dispatch-inline-stop-rows {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  flex-wrap: nowrap;
+}
+
+#trackingSection .dispatch-stop-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  flex: none;
+  padding: 8px 9px;
+  background: #fbfdfc;
+}
+
+#trackingSection .dispatch-stop-row-header {
+  display: contents;
+}
+
+#trackingSection .dispatch-stop-fields {
+  display: none;
+}
+
+#trackingSection .dispatch-stop-row-actions button span {
+  display: inline !important;
 }

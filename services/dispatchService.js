@@ -27,6 +27,12 @@ const ACTIVE_TICKET_STATUSES = new Set([
   "in_progress",
   "returning_to_wmo"
 ]);
+const NON_TERMINAL_TICKET_STATUSES = new Set([
+  "prepared",
+  "dispatched",
+  "in_progress",
+  "returning_to_wmo"
+]);
 const END_DISPATCH_REASONS = Object.freeze({
   trip_cancelled: "Trip cancelled",
   vehicle_unavailable: "Vehicle unavailable",
@@ -88,6 +94,16 @@ function duplicateDispatchTicketNumberError(cause = null) {
     "This ticket number is already in use.",
     409,
     "DISPATCH_TICKET_NUMBER_DUPLICATE"
+  );
+  error.cause = cause;
+  return error;
+}
+
+function dispatchTruckAlreadyAssignedError(cause = null) {
+  const error = new DispatchServiceError(
+    "This truck already has a non-terminal dispatch ticket.",
+    409,
+    "DISPATCH_TRUCK_ALREADY_ASSIGNED"
   );
   error.cause = cause;
   return error;
@@ -844,6 +860,100 @@ class DispatchService {
     return rows[0];
   }
 
+  async lockTruckDispatchAssignment(connection, truckId) {
+    const normalizedTruckId = cleanText(truckId, 100);
+    if (!normalizedTruckId) {
+      throw new DispatchServiceError("truck_id is required");
+    }
+
+    const [rows] = await connection.query(
+      `
+        SELECT id
+        FROM truck_tracking_sessions
+        WHERE truck_id = ?
+        ORDER BY id ASC
+        LIMIT 1
+        FOR UPDATE
+      `,
+      [normalizedTruckId]
+    );
+    if (!rows.length) {
+      throw new DispatchServiceError(
+        "The selected active tracking session was not found.",
+        404,
+        "ACTIVE_TRACKING_SESSION_NOT_FOUND"
+      );
+    }
+    return rows[0];
+  }
+
+  async getTicketAfterTruckDispatchLock(connection, ticketId) {
+    const id = requiredId(ticketId, "ticket id");
+    const [ticketReferences] = await connection.query(
+      `
+        SELECT id, truck_id
+        FROM dispatch_tickets
+        WHERE id = ?
+        LIMIT 1
+      `,
+      [id]
+    );
+    if (!ticketReferences.length) {
+      throw new DispatchServiceError(
+        "Dispatch ticket not found",
+        404,
+        "DISPATCH_TICKET_NOT_FOUND"
+      );
+    }
+
+    const referencedTruckId = cleanText(ticketReferences[0].truck_id, 100);
+    await this.lockTruckDispatchAssignment(connection, referencedTruckId);
+    const ticket = await this.getTicketForUpdate(connection, id);
+    if (String(ticket.truck_id) !== String(referencedTruckId)) {
+      await this.lockTruckDispatchAssignment(connection, ticket.truck_id);
+    }
+    return ticket;
+  }
+
+  async assertTruckHasNoOtherNonTerminalDispatch(
+    connection,
+    truckId,
+    options = {}
+  ) {
+    const normalizedTruckId = cleanText(truckId, 100);
+    if (!options.lockAcquired) {
+      await this.lockTruckDispatchAssignment(connection, normalizedTruckId);
+    }
+
+    const statuses = [...NON_TERMINAL_TICKET_STATUSES];
+    const clauses = [
+      "truck_id = ?",
+      `status IN (${statuses.map(() => "?").join(", ")})`
+    ];
+    const parameters = [normalizedTruckId, ...statuses];
+    const excludeTicketId = optionalId(
+      options.excludeTicketId,
+      "exclude ticket id"
+    );
+    if (excludeTicketId !== null) {
+      clauses.push("id <> ?");
+      parameters.push(excludeTicketId);
+    }
+
+    const [rows] = await connection.query(
+      `
+        SELECT id, ticket_number, status
+        FROM dispatch_tickets
+        WHERE ${clauses.join(" AND ")}
+        ORDER BY id ASC
+        LIMIT 1
+        FOR UPDATE
+      `,
+      parameters
+    );
+    if (rows.length) throw dispatchTruckAlreadyAssignedError();
+  }
+
   async getSelectedActiveTrackingSession(connection, trackingSessionId, truckId) {
     const sessionId = requiredId(trackingSessionId, "tracking_session_id");
     const [rows] = await connection.query(
@@ -890,6 +1000,7 @@ class DispatchService {
     });
 
     const ticketId = await this.withTransaction(async (connection) => {
+      await this.lockTruckDispatchAssignment(connection, ticketData.truck_id);
       const selectedSession = await this.getSelectedActiveTrackingSession(
         connection,
         payload.tracking_session_id || payload.trackingSessionId,
@@ -902,6 +1013,11 @@ class DispatchService {
       ticketData.assigned_personnel_name = nullableText(
         selectedSession.enforcer_name,
         255
+      );
+      await this.assertTruckHasNoOtherNonTerminalDispatch(
+        connection,
+        ticketData.truck_id,
+        { lockAcquired: true }
       );
 
       const [duplicateRows] = await connection.query(
@@ -1143,6 +1259,7 @@ class DispatchService {
     const ticketData = validateTicketInput(payload, { now: this.now() });
 
     await this.withTransaction(async (connection) => {
+      await this.lockTruckDispatchAssignment(connection, ticketData.truck_id);
       const ticket = await this.getTicketForUpdate(connection, ticketId);
       if (ticket.status !== "prepared") {
         throw new DispatchServiceError(
@@ -1152,6 +1269,11 @@ class DispatchService {
         );
       }
       ticketData.dispatch_date = ticket.dispatch_date;
+      await this.assertTruckHasNoOtherNonTerminalDispatch(
+        connection,
+        ticketData.truck_id,
+        { excludeTicketId: ticket.id, lockAcquired: true }
+      );
 
       await connection.query(
         `
@@ -1197,7 +1319,7 @@ class DispatchService {
   async issueTicket(ticketId, payload = {}) {
     const actor = normalizeActor(payload);
     await this.withTransaction(async (connection) => {
-      const ticket = await this.getTicketForUpdate(connection, ticketId);
+      const ticket = await this.getTicketAfterTruckDispatchLock(connection, ticketId);
       if (ticket.status === "dispatched") return;
       if (ticket.status !== "prepared") {
         throw new DispatchServiceError(
@@ -1206,6 +1328,11 @@ class DispatchService {
           "DISPATCH_TICKET_NOT_PREPARED"
         );
       }
+      await this.assertTruckHasNoOtherNonTerminalDispatch(
+        connection,
+        ticket.truck_id,
+        { excludeTicketId: ticket.id, lockAcquired: true }
+      );
 
       await connection.query(
         `
@@ -1353,9 +1480,13 @@ class DispatchService {
     ticketId,
     trackingSessionId,
     linkSource,
-    actor
+    actor,
+    lockedTicket = null
   ) {
-    const ticket = await this.getTicketForUpdate(connection, ticketId);
+    const ticket = lockedTicket || await this.getTicketAfterTruckDispatchLock(
+      connection,
+      ticketId
+    );
     if (!["dispatched", "in_progress"].includes(ticket.status)) {
       throw new DispatchServiceError(
         "Issue the dispatch ticket before linking a tracking session",
@@ -1422,6 +1553,12 @@ class DispatchService {
         "TRACKING_SESSION_ALREADY_LINKED"
       );
     }
+
+    await this.assertTruckHasNoOtherNonTerminalDispatch(
+      connection,
+      ticket.truck_id,
+      { excludeTicketId: ticket.id, lockAcquired: true }
+    );
 
     await connection.query(
       `
@@ -1502,7 +1639,7 @@ class DispatchService {
   async linkActiveSession(ticketId, payload = {}) {
     const actor = normalizeActor(payload);
     await this.withTransaction(async (connection) => {
-      const ticket = await this.getTicketForUpdate(connection, ticketId);
+      const ticket = await this.getTicketAfterTruckDispatchLock(connection, ticketId);
       const [activeRows] = await connection.query(
         `
           SELECT id
@@ -1534,7 +1671,8 @@ class DispatchService {
         ticket.id,
         activeRows[0].id,
         "active_truck_match",
-        actor
+        actor,
+        ticket
       );
     });
     return this.getTicketDetails(ticketId);
@@ -2665,6 +2803,7 @@ module.exports.DESTINATION_TYPES = DESTINATION_TYPES;
 module.exports.TICKET_STATUSES = TICKET_STATUSES;
 module.exports.STOP_STATUSES = STOP_STATUSES;
 module.exports.ACTIVE_TICKET_STATUSES = ACTIVE_TICKET_STATUSES;
+module.exports.NON_TERMINAL_TICKET_STATUSES = NON_TERMINAL_TICKET_STATUSES;
 module.exports.END_DISPATCH_REASONS = END_DISPATCH_REASONS;
 module.exports.normalizeEndDispatchReason = normalizeEndDispatchReason;
 module.exports.durationSecondsBetween = durationSecondsBetween;

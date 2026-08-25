@@ -23,6 +23,7 @@ function initializeTruckMap() {
   }).addTo(truckMap);
 
   isTruckMapInitialized = true;
+  if (typeof ensureDispatchWmoMarker === "function") ensureDispatchWmoMarker();
 }
 
 /* =========================================================
@@ -183,7 +184,7 @@ function getTrackingStatusMeta(truck, now = Date.now()) {
 }
 
 function isTrackingTruckAvailable(truck, now = Date.now()) {
-  return getTrackingAvailabilityMeta(truck, now).available === true;
+  return !truck?.dispatch && getTrackingAvailabilityMeta(truck, now).available === true;
 }
 
 function filterAvailableTrackingTrucks(trucks, now = Date.now()) {
@@ -202,11 +203,19 @@ function buildTrackingAvailabilitySnapshot(
     dispatch: dispatchForSession(truck.session_id) || null
   }));
 
+  const availableTrucks = filterAvailableTrackingTrucks(sessions, now);
+  const operationalTrucks = sessions.filter((truck) =>
+    Boolean(truck.dispatch) || isTrackingTruckAvailable(truck, now)
+  );
+
   return {
     sessions,
-    availableTrucks: filterAvailableTrackingTrucks(sessions, now)
+    availableTrucks,
+    operationalTrucks
   };
 }
+
+let trackingOperationalTrucks = [];
 
 function formatTrackingRelativeUpdate(value, now = Date.now()) {
   const date = parseTrackingDate(value);
@@ -552,9 +561,10 @@ async function loadActiveTrucks() {
     );
     const trackingSessions = snapshot.sessions;
     const trucks = snapshot.availableTrucks;
+    trackingOperationalTrucks = snapshot.operationalTrucks;
     activeTrackingTrucks = trucks;
 
-    renderActiveTruckList(trucks);
+    renderActiveTruckList(trackingOperationalTrucks);
     updateTruckMarkers(trucks);
     updateTrackingSummaryCards(trucks);
 
@@ -583,7 +593,7 @@ async function loadActiveTrucks() {
       }
 
       selectedTrackingTruck = selectedTruck;
-      dispatchSelectedSessionActive = true;
+      dispatchSelectedSessionActive = isTrackingTruckAvailable(selectedTruck);
       updateTrackingActionButtons();
       if (typeof updateDispatchSelectedTruckContext === "function") {
         updateDispatchSelectedTruckContext(selectedTruck);
@@ -654,8 +664,8 @@ function renderActiveTruckList(trucks) {
     container.innerHTML = `
       <div class="tracking-empty-state">
         <span class="tracking-empty-icon">${getTrackingInlineIcon("truck")}</span>
-        <strong>No active trucks</strong>
-        <small>Trucks will appear here when GPS tracking is active.</small>
+        <strong>No available trucks or active dispatches</strong>
+        <small>Fresh trucks and ongoing dispatches will appear here.</small>
       </div>
     `;
     return;
@@ -669,9 +679,14 @@ function renderActiveTruckList(trucks) {
     const truckIdentifier = truck.truck_id || truckName;
     const hasLiveDispatch = Boolean(truck.dispatch);
     const dispatchLabel = hasLiveDispatch
-      ? `<small class="dispatch-truck-ticket">Ticket ${escapeHtml(truck.dispatch.ticket_number)} &middot; Tracking Active</small>
-         <small class="dispatch-truck-progress">${Number(truck.dispatch.completed_stops || 0)} of ${Number(truck.dispatch.total_stops || 0)} destinations completed</small>`
+      ? `<small class="dispatch-truck-ticket">Ticket ${escapeHtml(truck.dispatch.ticket_number)} &middot; Active Dispatch</small>
+         <small class="dispatch-truck-progress">Completed ${Number(truck.dispatch.completed_stops || 0)} of ${Number(truck.dispatch.total_stops || 0)} stops</small>`
       : "";
+    const operationalHint = hasLiveDispatch
+      ? statusMeta.available
+        ? "Open active dispatch"
+        : "Open active dispatch · Last-known progress"
+      : "Available for dispatch";
 
     return `
       <button
@@ -693,8 +708,8 @@ function renderActiveTruckList(trucks) {
             <small class="truck-status-label ${statusMeta.className}">${escapeHtml(statusMeta.label)}</small>
           </div>
           ${dispatchLabel}
-          <small class="truck-last-sync">Updated ${escapeHtml(formatTrackingRelativeUpdate(lastUpdated))}</small>
-          <small class="truck-plan-hint">${hasLiveDispatch ? "Open live dispatch" : "Available for dispatch"}</small>
+          <small class="truck-last-sync">Last GPS update ${escapeHtml(formatTrackingRelativeUpdate(lastUpdated))}</small>
+          <small class="truck-plan-hint">${operationalHint}</small>
         </div>
       </button>
     `;
@@ -964,7 +979,11 @@ async function loadTruckRoute(sessionId, options = {}) {
       } else {
         selectedCurrentMarker.setLatLng(currentPoint);
       }
-      selectedCurrentMarker.setPopupContent("Current reliable location");
+      const locationAvailability = getTrackingAvailabilityMeta(selectedTrackingTruck);
+      selectedCurrentMarker.setPopupContent(locationAvailability.available
+        ? "Current reliable location"
+        : `Last known reliable location · ${formatTrackingTimeSafe(currentReliablePoint.recorded_at || currentReliablePoint.created_at || currentReliablePoint.createdAt)}`
+      );
       updateTruckMarkerWithReliableRoutePoint(sessionId, currentReliablePoint);
       if (typeof updateDispatchSelectedTruckContext === "function") {
         updateDispatchSelectedTruckContext(selectedTrackingTruck);
@@ -1386,10 +1405,14 @@ function selectTruck(sessionId, truckId) {
 
   selectedSessionId = sessionId;
   selectedTruckId = truckId;
-  selectedTrackingTruck = activeTrackingTrucks.find(
+  selectedTrackingTruck = trackingOperationalTrucks.find(
+    (truck) => String(truck.session_id) === String(sessionId)
+  ) || activeTrackingTrucks.find(
     (truck) => String(truck.session_id) === String(sessionId)
   ) || null;
-  dispatchSelectedSessionActive = Boolean(selectedTrackingTruck);
+  dispatchSelectedSessionActive = Boolean(
+    selectedTrackingTruck && isTrackingTruckAvailable(selectedTrackingTruck)
+  );
 
   const selectedLabel = document.getElementById("selectedTruckLabel");
   if (selectedLabel) {
@@ -1399,7 +1422,7 @@ function selectTruck(sessionId, truckId) {
   }
 
   updateTrackingActionButtons();
-  renderActiveTruckList(activeTrackingTrucks);
+  renderActiveTruckList(trackingOperationalTrucks);
   updateTrackingSummaryCards(activeTrackingTrucks);
   if (typeof prepareDispatchPlannerForTruck === "function") {
     prepareDispatchPlannerForTruck(selectedTrackingTruck);

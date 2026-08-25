@@ -16,6 +16,7 @@ Module._load = function loadWithMockedDispatchPool(request, parent, isMain) {
 const dispatchServiceModule = require("../services/dispatchService");
 const {
   DispatchService,
+  NON_TERMINAL_TICKET_STATUSES,
   currentManilaDate,
   isDispatchTableMissingError
 } = dispatchServiceModule;
@@ -108,13 +109,16 @@ function createTransactionalPool({
   duplicateTicket = false,
   duplicateOnInsert = false,
   sessionStatus = "active",
-  sessionTruckId = "TRUCK-9"
+  sessionTruckId = "TRUCK-9",
+  existingTickets = []
 } = {}) {
   const state = {
     sequence: new Map(),
     calls: [],
     ticketParameters: null,
     selectedSessionParameters: null,
+    truckLockParameters: null,
+    conflictCheckParameters: null,
     began: false,
     committed: false,
     rolledBack: false,
@@ -128,6 +132,10 @@ function createTransactionalPool({
     async query(sql, parameters = []) {
       const normalizedSql = sql.replace(/\s+/g, " ").trim();
       state.calls.push({ sql: normalizedSql, parameters });
+      if (normalizedSql.startsWith("SELECT id FROM truck_tracking_sessions WHERE truck_id")) {
+        state.truckLockParameters = parameters;
+        return [[{ id: 1 }]];
+      }
       if (normalizedSql.startsWith("SELECT id, truck_id, enforcer_id, enforcer_name, session_status")) {
         state.selectedSessionParameters = parameters;
         return [[{
@@ -137,6 +145,18 @@ function createTransactionalPool({
           enforcer_name: "Stored Session Personnel",
           session_status: sessionStatus
         }]];
+      }
+      if (normalizedSql.startsWith("SELECT id, ticket_number, status FROM dispatch_tickets")) {
+        state.conflictCheckParameters = parameters;
+        const excludedTicketId = normalizedSql.includes("id <> ?")
+          ? Number(parameters.at(-1))
+          : null;
+        const statuses = new Set(parameters.slice(1, 1 + NON_TERMINAL_TICKET_STATUSES.size));
+        return [existingTickets.filter((ticket) =>
+          String(ticket.truck_id) === String(parameters[0]) &&
+          statuses.has(ticket.status) &&
+          Number(ticket.id) !== excludedTicketId
+        )];
       }
       if (normalizedSql.startsWith("SELECT id FROM dispatch_tickets WHERE ticket_number")) {
         return [duplicateTicket ? [{ id: 77 }] : []];
@@ -189,6 +209,98 @@ function ticketPayload(overrides = {}) {
   });
 }
 
+function assertTruckAlreadyAssigned(error) {
+  assert.equal(error.statusCode, 409);
+  assert.equal(error.code, "DISPATCH_TRUCK_ALREADY_ASSIGNED");
+  assert.equal(
+    error.message,
+    "This truck already has a non-terminal dispatch ticket."
+  );
+  return true;
+}
+
+function createLifecyclePool({
+  ticket = {
+    id: 77,
+    truck_id: "TRUCK-9",
+    status: "prepared",
+    dispatch_date: "2026-08-03"
+  },
+  existingTickets = [],
+  linkedTicketId = null,
+  sessionTruckId = "TRUCK-9"
+} = {}) {
+  const state = {
+    calls: [],
+    began: false,
+    committed: false,
+    rolledBack: false,
+    released: false,
+    conflictChecks: 0
+  };
+  const connection = {
+    async beginTransaction() { state.began = true; },
+    async commit() { state.committed = true; },
+    async rollback() { state.rolledBack = true; },
+    release() { state.released = true; },
+    async query(sql, parameters = []) {
+      const normalizedSql = sql.replace(/\s+/g, " ").trim();
+      state.calls.push({ sql: normalizedSql, parameters });
+      if (normalizedSql.startsWith("SELECT id, truck_id FROM dispatch_tickets")) {
+        return [[{ id: ticket.id, truck_id: ticket.truck_id }]];
+      }
+      if (normalizedSql.startsWith("SELECT * FROM dispatch_tickets")) {
+        return [[{ ...ticket }]];
+      }
+      if (normalizedSql.startsWith("SELECT id FROM truck_tracking_sessions WHERE truck_id")) {
+        return [[{ id: 1 }]];
+      }
+      if (normalizedSql.startsWith("SELECT id, ticket_number, status FROM dispatch_tickets")) {
+        state.conflictChecks += 1;
+        const excludedTicketId = normalizedSql.includes("id <> ?")
+          ? Number(parameters.at(-1))
+          : null;
+        const statuses = new Set(parameters.slice(1, 1 + NON_TERMINAL_TICKET_STATUSES.size));
+        return [existingTickets.filter((candidate) =>
+          String(candidate.truck_id) === String(parameters[0]) &&
+          statuses.has(candidate.status) &&
+          Number(candidate.id) !== excludedTicketId
+        )];
+      }
+      if (normalizedSql.startsWith("SELECT id, truck_id, enforcer_id, enforcer_name, session_status, started_at")) {
+        return [[{
+          id: 58,
+          truck_id: sessionTruckId,
+          enforcer_id: 44,
+          enforcer_name: "Stored Session Personnel",
+          session_status: "active",
+          started_at: "2026-08-03 08:00:00"
+        }]];
+      }
+      if (normalizedSql.startsWith("SELECT dispatch_ticket_id FROM dispatch_tracking_sessions")) {
+        return [linkedTicketId === null ? [] : [{ dispatch_ticket_id: linkedTicketId }]];
+      }
+      if (
+        normalizedSql.startsWith("UPDATE dispatch_tickets") ||
+        normalizedSql.startsWith("UPDATE dispatch_tracking_sessions") ||
+        normalizedSql.startsWith("UPDATE dispatch_route_stops") ||
+        normalizedSql.startsWith("DELETE FROM dispatch_route_stops") ||
+        normalizedSql.startsWith("INSERT INTO dispatch_route_stops") ||
+        normalizedSql.startsWith("INSERT INTO dispatch_tracking_sessions") ||
+        normalizedSql.startsWith("INSERT INTO dispatch_events")
+      ) {
+        return [{ affectedRows: 1, insertId: 88 }];
+      }
+      throw new Error(`Unexpected SQL: ${normalizedSql}`);
+    }
+  };
+  return {
+    state,
+    connection,
+    pool: { async getConnection() { return connection; } }
+  };
+}
+
 async function testCreateTicketUsesCurrentManilaDateAndOptimizedStops() {
   const fixedNow = new Date("2026-08-02T16:30:00.000Z");
   const { pool, state } = createTransactionalPool();
@@ -238,16 +350,24 @@ async function testCreateTicketUsesCurrentManilaDateAndOptimizedStops() {
   assert.equal(state.rolledBack, false);
   assert.equal(state.released, true);
   const ticketInsertIndex = state.calls.findIndex((call) => call.sql.startsWith("INSERT INTO dispatch_tickets"));
+  const truckLockIndex = state.calls.findIndex((call) =>
+    call.sql.startsWith("SELECT id FROM truck_tracking_sessions WHERE truck_id")
+  );
   const activeSessionIndex = state.calls.findIndex((call) =>
     call.sql.startsWith("SELECT id, truck_id, enforcer_id, enforcer_name, session_status")
   );
   const duplicateCheckIndex = state.calls.findIndex((call) =>
     call.sql.startsWith("SELECT id FROM dispatch_tickets WHERE ticket_number")
   );
+  const truckConflictIndex = state.calls.findIndex((call) =>
+    call.sql.startsWith("SELECT id, ticket_number, status FROM dispatch_tickets")
+  );
   const stopInsertIndex = state.calls.findIndex((call) => call.sql.startsWith("INSERT INTO dispatch_route_stops"));
   assert.ok(
-    activeSessionIndex >= 0 &&
-    duplicateCheckIndex > activeSessionIndex &&
+    truckLockIndex >= 0 &&
+    activeSessionIndex > truckLockIndex &&
+    truckConflictIndex > activeSessionIndex &&
+    duplicateCheckIndex > truckConflictIndex &&
     ticketInsertIndex > duplicateCheckIndex &&
     stopInsertIndex > ticketInsertIndex
   );
@@ -369,6 +489,77 @@ async function testSelectedActiveSessionMustMatchTruck() {
   assert.equal(ended.state.ticketParameters, null);
 }
 
+async function testCreateRejectsEveryNonTerminalStatusForSameTruck() {
+  for (const status of NON_TERMINAL_TICKET_STATUSES) {
+    const { pool, state } = createTransactionalPool({
+      existingTickets: [{
+        id: 70,
+        ticket_number: `LEGACY-${status}`,
+        truck_id: "TRUCK-9",
+        status
+      }]
+    });
+    const service = new DispatchService(pool, {
+      now: () => new Date("2026-08-03T00:00:00.000Z")
+    });
+
+    await assert.rejects(
+      () => service.createTicket(ticketPayload({ ticket_number: `NEW-${status}` })),
+      assertTruckAlreadyAssigned
+    );
+    assert.equal(state.rolledBack, true, `${status} conflict must roll back`);
+    assert.equal(state.ticketParameters, null, `${status} conflict must not insert`);
+    assert.deepEqual(state.truckLockParameters, ["TRUCK-9"]);
+    assert.deepEqual(state.conflictCheckParameters, [
+      "TRUCK-9",
+      ...NON_TERMINAL_TICKET_STATUSES
+    ]);
+  }
+}
+
+async function testTerminalTicketsAllowNewCreate() {
+  for (const status of ["completed", "cancelled"]) {
+    const { pool, state } = createTransactionalPool({
+      existingTickets: [{
+        id: 70,
+        ticket_number: `OLD-${status}`,
+        truck_id: "TRUCK-9",
+        status
+      }]
+    });
+    const service = new DispatchService(pool, {
+      now: () => new Date("2026-08-03T00:00:00.000Z")
+    });
+    service.getTicketDetails = async (ticketId) => ({ ticket: { id: ticketId } });
+
+    const result = await service.createTicket(
+      ticketPayload({ ticket_number: `NEW-${status}` })
+    );
+    assert.equal(result.ticket.id, 501);
+    assert.equal(state.committed, true, `${status} must permit a new ticket`);
+    assert.ok(state.ticketParameters);
+  }
+}
+
+async function testOtherTruckDoesNotBlockCreate() {
+  const { pool, state } = createTransactionalPool({
+    existingTickets: [{
+      id: 70,
+      ticket_number: "OTHER-TRUCK",
+      truck_id: "TRUCK-10",
+      status: "in_progress"
+    }]
+  });
+  const service = new DispatchService(pool, {
+    now: () => new Date("2026-08-03T00:00:00.000Z")
+  });
+  service.getTicketDetails = async (ticketId) => ({ ticket: { id: ticketId } });
+
+  await service.createTicket(ticketPayload());
+  assert.equal(state.committed, true);
+  assert.deepEqual(state.truckLockParameters, ["TRUCK-9"]);
+}
+
 async function testUnifiedTicketFiltersAreParameterizedAndExcludePersonnel() {
   const calls = [];
   const service = new DispatchService({
@@ -413,9 +604,21 @@ async function testPreparedTicketKeepsItsOriginalOperatingDateAfterMidnight() {
       if (normalizedSql.startsWith("SELECT * FROM dispatch_tickets")) {
         return [[{
           id: 77,
+          truck_id: "TRUCK-9",
           status: "prepared",
           dispatch_date: "2026-08-02"
         }]];
+      }
+      if (normalizedSql.startsWith("SELECT id FROM truck_tracking_sessions WHERE truck_id")) {
+        return [[{ id: 1 }]];
+      }
+      if (normalizedSql.startsWith("SELECT id, ticket_number, status FROM dispatch_tickets")) {
+        assert.deepEqual(parameters, [
+          "TRUCK-9",
+          ...NON_TERMINAL_TICKET_STATUSES,
+          77
+        ]);
+        return [[]];
       }
       if (normalizedSql.startsWith("UPDATE dispatch_tickets")) {
         state.updateParameters = parameters;
@@ -438,6 +641,373 @@ async function testPreparedTicketKeepsItsOriginalOperatingDateAfterMidnight() {
   await service.updatePreparedTicket(77, ticketPayload());
   assert.equal(state.updateParameters[4], "2026-08-02");
   assert.equal(state.committed, true);
+}
+
+async function testPreparedTicketUpdateRejectsOccupiedDestinationTruck() {
+  const { pool, state } = createLifecyclePool({
+    ticket: {
+      id: 77,
+      truck_id: "TRUCK-8",
+      status: "prepared",
+      dispatch_date: "2026-08-03"
+    },
+    existingTickets: [{
+      id: 88,
+      ticket_number: "OCCUPIED-9",
+      truck_id: "TRUCK-9",
+      status: "dispatched"
+    }]
+  });
+  const service = new DispatchService(pool);
+
+  await assert.rejects(
+    () => service.updatePreparedTicket(77, ticketPayload({ truck_id: "TRUCK-9" })),
+    assertTruckAlreadyAssigned
+  );
+  assert.equal(state.rolledBack, true);
+  assert.equal(
+    state.calls.some((call) => call.sql.startsWith("UPDATE dispatch_tickets")),
+    false
+  );
+}
+
+async function testPreparedTicketUpdateExcludesItself() {
+  const { pool, state } = createLifecyclePool({
+    existingTickets: [{
+      id: 77,
+      ticket_number: "CURRENT-77",
+      truck_id: "TRUCK-9",
+      status: "prepared"
+    }]
+  });
+  const service = new DispatchService(pool);
+  service.getTicketDetails = async (ticketId) => ({ ticket: { id: ticketId } });
+
+  await service.updatePreparedTicket(77, ticketPayload());
+  assert.equal(state.committed, true);
+  const conflictCall = state.calls.find((call) =>
+    call.sql.startsWith("SELECT id, ticket_number, status FROM dispatch_tickets")
+  );
+  assert.match(conflictCall.sql, /id <> \?/);
+  assert.deepEqual(conflictCall.parameters, [
+    "TRUCK-9",
+    ...NON_TERMINAL_TICKET_STATUSES,
+    77
+  ]);
+}
+
+async function testIssueRejectsAnotherPreparedTicketForSameTruck() {
+  const { pool, state } = createLifecyclePool({
+    existingTickets: [
+      { id: 77, ticket_number: "CURRENT-77", truck_id: "TRUCK-9", status: "prepared" },
+      { id: 88, ticket_number: "LEGACY-88", truck_id: "TRUCK-9", status: "prepared" }
+    ]
+  });
+  const service = new DispatchService(pool);
+
+  await assert.rejects(() => service.issueTicket(77), assertTruckAlreadyAssigned);
+  assert.equal(state.rolledBack, true);
+  assert.equal(
+    state.calls.some((call) =>
+      call.sql.startsWith("UPDATE dispatch_tickets") &&
+      call.sql.includes("SET status = 'dispatched'")
+    ),
+    false
+  );
+  const referenceIndex = state.calls.findIndex((call) =>
+    call.sql.startsWith("SELECT id, truck_id FROM dispatch_tickets")
+  );
+  const truckLockIndex = state.calls.findIndex((call) =>
+    call.sql.startsWith("SELECT id FROM truck_tracking_sessions WHERE truck_id")
+  );
+  const ticketLockIndex = state.calls.findIndex((call) =>
+    call.sql.startsWith("SELECT * FROM dispatch_tickets")
+  );
+  const conflictIndex = state.calls.findIndex((call) =>
+    call.sql.startsWith("SELECT id, ticket_number, status FROM dispatch_tickets")
+  );
+  assert.ok(
+    referenceIndex >= 0 &&
+    truckLockIndex > referenceIndex &&
+    ticketLockIndex > truckLockIndex &&
+    conflictIndex > ticketLockIndex
+  );
+}
+
+async function testTrackingSessionAlreadyLinkedBehaviorIsUnchanged() {
+  const { pool, state } = createLifecyclePool({
+    ticket: {
+      id: 77,
+      truck_id: "TRUCK-9",
+      status: "dispatched",
+      dispatch_date: "2026-08-03"
+    },
+    linkedTicketId: 88
+  });
+  const service = new DispatchService(pool);
+
+  await assert.rejects(
+    () => service.linkSession(77, { tracking_session_id: 58 }),
+    (error) => {
+      assert.equal(error.statusCode, 409);
+      assert.equal(error.code, "TRACKING_SESSION_ALREADY_LINKED");
+      assert.equal(
+        error.message,
+        "Tracking session is already linked to another dispatch ticket"
+      );
+      return true;
+    }
+  );
+  assert.equal(state.rolledBack, true);
+  assert.equal(state.conflictChecks, 0);
+}
+
+async function testLinkSessionRejectsAnotherNonTerminalTicketForTruck() {
+  const { pool, state } = createLifecyclePool({
+    ticket: {
+      id: 77,
+      truck_id: "TRUCK-9",
+      status: "dispatched",
+      dispatch_date: "2026-08-03"
+    },
+    existingTickets: [
+      { id: 77, ticket_number: "CURRENT-77", truck_id: "TRUCK-9", status: "dispatched" },
+      { id: 88, ticket_number: "OTHER-88", truck_id: "TRUCK-9", status: "prepared" }
+    ]
+  });
+  const service = new DispatchService(pool);
+
+  await assert.rejects(
+    () => service.linkSession(77, { tracking_session_id: 58 }),
+    assertTruckAlreadyAssigned
+  );
+  assert.equal(state.rolledBack, true);
+  assert.equal(state.conflictChecks, 1);
+  assert.equal(
+    state.calls.some((call) => call.sql.startsWith("INSERT INTO dispatch_tracking_sessions")),
+    false
+  );
+}
+
+async function testSameTicketSessionLinkRemainsIdempotent() {
+  const { pool, state } = createLifecyclePool({
+    ticket: {
+      id: 77,
+      truck_id: "TRUCK-9",
+      status: "dispatched",
+      dispatch_date: "2026-08-03"
+    },
+    linkedTicketId: 77,
+    existingTickets: [{
+      id: 77,
+      ticket_number: "CURRENT-77",
+      truck_id: "TRUCK-9",
+      status: "dispatched"
+    }]
+  });
+  const service = new DispatchService(pool);
+  service.getTicketDetails = async (ticketId) => ({ ticket: { id: ticketId } });
+
+  await service.linkSession(77, { tracking_session_id: 58 });
+  assert.equal(state.committed, true);
+  assert.equal(state.conflictChecks, 0);
+  assert.equal(
+    state.calls.some((call) => call.sql.startsWith("INSERT INTO dispatch_tracking_sessions")),
+    false
+  );
+}
+
+function createSharedTruckRowLock() {
+  let held = false;
+  let heldCount = 0;
+  let maxHeldCount = 0;
+  const waiters = [];
+  return {
+    get maxHeldCount() { return maxHeldCount; },
+    async acquire() {
+      if (held) {
+        await new Promise((resolve) => waiters.push(resolve));
+      }
+      held = true;
+      heldCount += 1;
+      maxHeldCount = Math.max(maxHeldCount, heldCount);
+      let released = false;
+      return () => {
+        if (released) return;
+        released = true;
+        heldCount -= 1;
+        held = false;
+        const next = waiters.shift();
+        if (next) next();
+      };
+    }
+  };
+}
+
+async function testConcurrentSameTruckCreatesSerializeAndOnlyOneCommits() {
+  const sharedTickets = [];
+  const truckRowLock = createSharedTruckRowLock();
+  const state = { lockAttempts: 0, commits: 0, rollbacks: 0, lockSql: [] };
+  let releaseSecondAttempt;
+  const secondAttempted = new Promise((resolve) => { releaseSecondAttempt = resolve; });
+  let nextTicketId = 500;
+
+  const pool = {
+    async getConnection() {
+      let releaseTruckLock = null;
+      return {
+        async beginTransaction() {},
+        async commit() {
+          state.commits += 1;
+          releaseTruckLock?.();
+        },
+        async rollback() {
+          state.rollbacks += 1;
+          releaseTruckLock?.();
+        },
+        release() {},
+        async query(sql, parameters = []) {
+          const normalizedSql = sql.replace(/\s+/g, " ").trim();
+          if (normalizedSql.startsWith("SELECT id FROM truck_tracking_sessions WHERE truck_id")) {
+            state.lockAttempts += 1;
+            state.lockSql.push({ sql: normalizedSql, parameters });
+            if (state.lockAttempts === 2) releaseSecondAttempt();
+            releaseTruckLock = await truckRowLock.acquire();
+            return [[{ id: 1 }]];
+          }
+          if (normalizedSql.startsWith("SELECT id, truck_id, enforcer_id, enforcer_name, session_status")) {
+            return [[{
+              id: 58,
+              truck_id: "TRUCK-9",
+              enforcer_id: 44,
+              enforcer_name: "Stored Session Personnel",
+              session_status: "active"
+            }]];
+          }
+          if (normalizedSql.startsWith("SELECT id, ticket_number, status FROM dispatch_tickets")) {
+            return [sharedTickets.filter((ticket) =>
+              ticket.truck_id === parameters[0] &&
+              NON_TERMINAL_TICKET_STATUSES.has(ticket.status)
+            )];
+          }
+          if (normalizedSql.startsWith("SELECT id FROM dispatch_tickets WHERE ticket_number")) {
+            return [sharedTickets.filter((ticket) => ticket.ticket_number === parameters[0])];
+          }
+          if (normalizedSql.startsWith("INSERT INTO dispatch_tickets")) {
+            if (state.lockAttempts < 2) await secondAttempted;
+            const id = ++nextTicketId;
+            sharedTickets.push({
+              id,
+              ticket_number: parameters[0],
+              truck_id: parameters[1],
+              status: "prepared"
+            });
+            return [{ insertId: id }];
+          }
+          if (
+            normalizedSql.startsWith("INSERT INTO dispatch_route_stops") ||
+            normalizedSql.startsWith("INSERT INTO dispatch_events")
+          ) {
+            return [{ affectedRows: 1, insertId: 600 }];
+          }
+          throw new Error(`Unexpected SQL: ${normalizedSql}`);
+        }
+      };
+    }
+  };
+  const service = new DispatchService(pool, {
+    now: () => new Date("2026-08-03T00:00:00.000Z")
+  });
+  service.getTicketDetails = async (ticketId) => ({ ticket: { id: ticketId } });
+
+  const results = await Promise.allSettled([
+    service.createTicket(ticketPayload({ ticket_number: "CONCURRENT-A" })),
+    service.createTicket(ticketPayload({ ticket_number: "CONCURRENT-B" }))
+  ]);
+  const fulfilled = results.filter((result) => result.status === "fulfilled");
+  const rejected = results.filter((result) => result.status === "rejected");
+  assert.equal(fulfilled.length, 1);
+  assert.equal(rejected.length, 1);
+  assertTruckAlreadyAssigned(rejected[0].reason);
+  assert.equal(sharedTickets.length, 1);
+  assert.equal(state.commits, 1);
+  assert.equal(state.rollbacks, 1);
+  assert.equal(state.lockAttempts, 2);
+  assert.equal(truckRowLock.maxHeldCount, 1);
+  assert.ok(state.lockSql.every(({ sql, parameters }) =>
+    sql.includes("ORDER BY id ASC LIMIT 1 FOR UPDATE") &&
+    parameters[0] === "TRUCK-9"
+  ));
+}
+
+async function testConcurrentLegacyPreparedIssuesCannotBothDispatch() {
+  const tickets = [
+    { id: 77, ticket_number: "LEGACY-77", truck_id: "TRUCK-9", status: "prepared" },
+    { id: 88, ticket_number: "LEGACY-88", truck_id: "TRUCK-9", status: "prepared" }
+  ];
+  const truckRowLock = createSharedTruckRowLock();
+  const state = { lockAttempts: 0, dispatchedUpdates: 0 };
+  let releaseSecondAttempt;
+  const secondAttempted = new Promise((resolve) => { releaseSecondAttempt = resolve; });
+
+  const pool = {
+    async getConnection() {
+      let releaseTruckLock = null;
+      return {
+        async beginTransaction() {},
+        async commit() { releaseTruckLock?.(); },
+        async rollback() { releaseTruckLock?.(); },
+        release() {},
+        async query(sql, parameters = []) {
+          const normalizedSql = sql.replace(/\s+/g, " ").trim();
+          if (normalizedSql.startsWith("SELECT id, truck_id FROM dispatch_tickets")) {
+            const ticket = tickets.find((candidate) => candidate.id === Number(parameters[0]));
+            return [ticket ? [{ id: ticket.id, truck_id: ticket.truck_id }] : []];
+          }
+          if (normalizedSql.startsWith("SELECT * FROM dispatch_tickets")) {
+            return [[{ ...tickets.find((ticket) => ticket.id === Number(parameters[0])) }]];
+          }
+          if (normalizedSql.startsWith("SELECT id FROM truck_tracking_sessions WHERE truck_id")) {
+            state.lockAttempts += 1;
+            if (state.lockAttempts === 2) releaseSecondAttempt();
+            releaseTruckLock = await truckRowLock.acquire();
+            return [[{ id: 1 }]];
+          }
+          if (normalizedSql.startsWith("SELECT id, ticket_number, status FROM dispatch_tickets")) {
+            if (state.lockAttempts < 2) await secondAttempted;
+            const excludedTicketId = Number(parameters.at(-1));
+            return [tickets.filter((ticket) =>
+              ticket.truck_id === parameters[0] &&
+              NON_TERMINAL_TICKET_STATUSES.has(ticket.status) &&
+              ticket.id !== excludedTicketId
+            )];
+          }
+          if (
+            normalizedSql.startsWith("UPDATE dispatch_tickets") &&
+            normalizedSql.includes("SET status = 'dispatched'")
+          ) {
+            state.dispatchedUpdates += 1;
+            return [{ affectedRows: 1 }];
+          }
+          if (normalizedSql.startsWith("INSERT INTO dispatch_events")) {
+            return [{ affectedRows: 1, insertId: 600 }];
+          }
+          throw new Error(`Unexpected SQL: ${normalizedSql}`);
+        }
+      };
+    }
+  };
+  const service = new DispatchService(pool);
+
+  const results = await Promise.allSettled([
+    service.issueTicket(77),
+    service.issueTicket(88)
+  ]);
+  assert.equal(results.filter((result) => result.status === "rejected").length, 2);
+  results.forEach((result) => assertTruckAlreadyAssigned(result.reason));
+  assert.equal(state.dispatchedUpdates, 0);
+  assert.equal(state.lockAttempts, 2);
+  assert.equal(truckRowLock.maxHeldCount, 1);
 }
 
 async function testUnexpectedCreateErrorReturnsSafeOperatorMessage() {
@@ -500,6 +1070,35 @@ async function testDuplicateCreateErrorReturnsExactOperatorMessage() {
   }
 }
 
+async function testTruckConflictReturnsExactControllerPayload() {
+  const originalCreateTicket = dispatchServiceModule.createTicket;
+  dispatchServiceModule.createTicket = async () => {
+    throw Object.assign(
+      new Error("This truck already has a non-terminal dispatch ticket."),
+      { statusCode: 409, code: "DISPATCH_TRUCK_ALREADY_ASSIGNED" }
+    );
+  };
+  delete require.cache[require.resolve("../controllers/dispatchController")];
+  const controller = require("../controllers/dispatchController");
+  const response = {
+    statusCode: null,
+    body: null,
+    status(value) { this.statusCode = value; return this; },
+    json(value) { this.body = value; return value; }
+  };
+  try {
+    await controller.createTicket({ body: ticketPayload() }, response);
+    assert.equal(response.statusCode, 409);
+    assert.deepEqual(response.body, {
+      success: false,
+      message: "This truck already has a non-terminal dispatch ticket.",
+      code: "DISPATCH_TRUCK_ALREADY_ASSIGNED"
+    });
+  } finally {
+    dispatchServiceModule.createTicket = originalCreateTicket;
+  }
+}
+
 function testMissingDispatchTableRecognition() {
   assert.equal(
     isDispatchTableMissingError({
@@ -532,11 +1131,23 @@ async function run() {
   await testManualTicketNumberIsRequiredAndPreservesLeadingZeros();
   await testDuplicateTicketNumberIsRejectedSafely();
   await testSelectedActiveSessionMustMatchTruck();
+  await testCreateRejectsEveryNonTerminalStatusForSameTruck();
+  await testTerminalTicketsAllowNewCreate();
+  await testOtherTruckDoesNotBlockCreate();
   await testUnifiedTicketFiltersAreParameterizedAndExcludePersonnel();
   await testSqlFailureRollsBackTicketTransaction();
   await testPreparedTicketKeepsItsOriginalOperatingDateAfterMidnight();
+  await testPreparedTicketUpdateRejectsOccupiedDestinationTruck();
+  await testPreparedTicketUpdateExcludesItself();
+  await testIssueRejectsAnotherPreparedTicketForSameTruck();
+  await testTrackingSessionAlreadyLinkedBehaviorIsUnchanged();
+  await testLinkSessionRejectsAnotherNonTerminalTicketForTruck();
+  await testSameTicketSessionLinkRemainsIdempotent();
+  await testConcurrentSameTruckCreatesSerializeAndOnlyOneCommits();
+  await testConcurrentLegacyPreparedIssuesCannotBothDispatch();
   await testUnexpectedCreateErrorReturnsSafeOperatorMessage();
   await testDuplicateCreateErrorReturnsExactOperatorMessage();
+  await testTruckConflictReturnsExactControllerPayload();
   testMissingDispatchTableRecognition();
   console.log("Dispatch service mock tests passed");
 }
