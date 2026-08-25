@@ -88,8 +88,12 @@ function dispatchTimestampMilliseconds(value) {
   }
   const text = String(value ?? "").trim();
   if (!text) return 0;
-  const date = new Date(text.includes("T") ? text : text.replace(" ", "T"));
-  return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+  const normalized = text.includes("T") ? text : text.replace(" ", "T");
+  const hasExplicitTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(normalized);
+  const date = typeof parseTrackingDate === "function"
+    ? parseTrackingDate(normalized)
+    : new Date(hasExplicitTimezone ? normalized : `${normalized}+08:00`);
+  return !date || Number.isNaN(date.getTime()) ? 0 : date.getTime();
 }
 
 function resolveDispatchRouteOrigin(reliablePoint, options = {}) {
@@ -447,14 +451,86 @@ function updateDispatchGeneratedTicketDisplay(ticketNumber = dispatchTicketNumbe
   }
 }
 
+function dispatchSessionKey(value) {
+  return String(value ?? "").trim();
+}
+
+function dispatchResolveAvailableTrackingSession(
+  sessionId,
+  availableTrucks = activeTrackingTrucks
+) {
+  const sessionKey = dispatchSessionKey(sessionId);
+  if (!sessionKey) return null;
+
+  return (Array.isArray(availableTrucks) ? availableTrucks : []).find(
+    (availableTruck) =>
+      !availableTruck?.dispatch &&
+      dispatchSessionKey(availableTruck?.session_id) === sessionKey
+  ) || null;
+}
+
 function dispatchTruckCanStartNewDispatch(truck, availableTrucks = activeTrackingTrucks) {
   return Boolean(
     truck &&
     !truck.dispatch &&
-    (Array.isArray(availableTrucks) ? availableTrucks : []).some(
-      (availableTruck) => String(availableTruck.session_id) === String(truck.session_id)
-    )
+    dispatchResolveAvailableTrackingSession(truck.session_id, availableTrucks)
   );
+}
+
+function dispatchResolveSelectedNewTicketTruck(
+  sessionId = selectedSessionId,
+  availableTrucks = activeTrackingTrucks
+) {
+  return dispatchResolveAvailableTrackingSession(sessionId, availableTrucks);
+}
+
+function dispatchSelectedTruckIdentity(truck) {
+  if (!truck) return null;
+  const trackingSessionId = dispatchSessionKey(truck.session_id);
+  const truckId = dispatchSessionKey(truck.truck_id);
+  if (!trackingSessionId || !truckId) return null;
+
+  const truckName = String(
+    truck.truck_name || truck.truck_display_name || `Truck ${truckId}`
+  ).trim();
+  return {
+    tracking_session_id: trackingSessionId,
+    truck_id: truckId,
+    truck_name_snapshot: truckName,
+    assigned_personnel_id: dispatchSessionKey(truck.enforcer_id) || null,
+    assigned_personnel_name: String(truck.enforcer_name || "").trim() || null
+  };
+}
+
+function dispatchDefaultRouteName(truck, date = new Date()) {
+  const truckId = dispatchSessionKey(truck?.truck_id);
+  return truckId ? `Truck ${truckId} - ${dispatchManilaOperatingDay(date)}` : "";
+}
+
+function synchronizeDispatchSelectedTruckForm(truck) {
+  const identity = dispatchSelectedTruckIdentity(truck);
+  if (!identity || typeof document === "undefined") return identity;
+
+  document.getElementById("dispatchTrackingSessionId").value = identity.tracking_session_id;
+  document.getElementById("dispatchTruckId").value = identity.truck_id;
+  document.getElementById("dispatchTruckName").value = identity.truck_name_snapshot;
+  document.getElementById("dispatchPersonnelId").value = identity.assigned_personnel_id || "";
+  document.getElementById("dispatchPersonnelName").value = identity.assigned_personnel_name || "";
+  const routeName = document.getElementById("dispatchRouteName");
+  if (routeName && !routeName.value.trim()) {
+    routeName.value = dispatchDefaultRouteName(truck);
+  }
+  return identity;
+}
+
+function synchronizeDispatchSelectedSessionAuthority() {
+  const currentTruck = dispatchResolveSelectedNewTicketTruck();
+  dispatchSelectedSessionActive = Boolean(currentTruck);
+  if (!currentTruck) return null;
+
+  selectedTrackingTruck = currentTruck;
+  synchronizeDispatchSelectedTruckForm(currentTruck);
+  return currentTruck;
 }
 
 function dispatchNewTicketBlockMessage(truck = selectedTrackingTruck) {
@@ -468,10 +544,7 @@ function dispatchNewTicketBlockMessage(truck = selectedTrackingTruck) {
 }
 
 function requireDispatchNewTicketEligibility({ notify = true } = {}) {
-  const eligible = Boolean(
-    dispatchSelectedSessionActive &&
-    dispatchTruckCanStartNewDispatch(selectedTrackingTruck, activeTrackingTrucks)
-  );
+  const eligible = Boolean(synchronizeDispatchSelectedSessionAuthority());
   if (eligible) return true;
 
   const message = dispatchNewTicketBlockMessage();
@@ -633,14 +706,17 @@ function dispatchStatusClass(status) {
 
 function dispatchFormatDateTime(value) {
   if (!value) return "--";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return dispatchEscape(value);
+  const date = typeof parseTrackingDate === "function"
+    ? parseTrackingDate(value)
+    : new Date(value);
+  if (!date || Number.isNaN(date.getTime())) return dispatchEscape(value);
   return date.toLocaleString("en-PH", {
     year: "numeric",
     month: "short",
     day: "2-digit",
     hour: "2-digit",
-    minute: "2-digit"
+    minute: "2-digit",
+    timeZone: "Asia/Manila"
   });
 }
 
@@ -1107,7 +1183,9 @@ function updateDispatchSelectedTruckContext(truck = selectedTrackingTruck) {
   summary?.classList.remove("is-empty");
   document.getElementById("dispatchSelectedTruckName").textContent = hasActiveDispatch
     ? "Active Dispatch"
-    : "Available for dispatch";
+    : dispatchSelectedSessionActive
+      ? "Available for dispatch"
+      : "Unavailable for dispatch";
   document.getElementById("dispatchSelectedTruckStatus").textContent = sessionActive
     ? "Tracking Active"
     : "Tracking Stopped";
@@ -1126,11 +1204,7 @@ function updateDispatchSelectedTruckContext(truck = selectedTrackingTruck) {
   if (assignmentTruck) assignmentTruck.textContent = truck.truck_id || truckLabel;
   if (assignmentGps) assignmentGps.textContent = gpsMeta.label;
 
-  document.getElementById("dispatchTrackingSessionId").value = truck.session_id || "";
-  document.getElementById("dispatchTruckId").value = truck.truck_id || "";
-  document.getElementById("dispatchTruckName").value = truckLabel;
-  document.getElementById("dispatchPersonnelId").value = truck.enforcer_id || "";
-  document.getElementById("dispatchPersonnelName").value = personnelName === "Not assigned" ? "" : personnelName;
+  synchronizeDispatchSelectedTruckForm(truck);
   if (warning) {
     const warningMessage = !sessionActive
       ? "The selected tracking session has ended. Choose an active truck to save or dispatch this route."
@@ -4134,18 +4208,20 @@ function collectDispatchTicketForm() {
   }
 
   const actor = dispatchActorPayload();
+  const selectedIdentity = dispatchSelectedTruckIdentity(
+    dispatchResolveSelectedNewTicketTruck()
+  );
+  const routeName = document.getElementById("dispatchRouteName")?.value.trim() ||
+    dispatchDefaultRouteName(selectedTrackingTruck);
   return {
-    tracking_session_id:
-      document.getElementById("dispatchTrackingSessionId")?.value || null,
-    truck_id: document.getElementById("dispatchTruckId")?.value.trim(),
-    truck_name_snapshot: document.getElementById("dispatchTruckName")?.value.trim(),
-    assigned_personnel_id:
-      document.getElementById("dispatchPersonnelId")?.value || null,
-    assigned_personnel_name:
-      document.getElementById("dispatchPersonnelName")?.value.trim() || null,
+    tracking_session_id: selectedIdentity?.tracking_session_id || null,
+    truck_id: selectedIdentity?.truck_id || "",
+    truck_name_snapshot: selectedIdentity?.truck_name_snapshot || "",
+    assigned_personnel_id: selectedIdentity?.assigned_personnel_id || null,
+    assigned_personnel_name: selectedIdentity?.assigned_personnel_name || null,
     scheduled_start_at: scheduledStart || null,
     expected_return_at: expectedReturn || null,
-    route_name: document.getElementById("dispatchRouteName")?.value.trim(),
+    route_name: routeName,
     route_description:
       document.getElementById("dispatchRouteDescription")?.value.trim() || null,
     notes: document.getElementById("dispatchNotes")?.value.trim() || null,
@@ -4306,10 +4382,12 @@ async function saveDispatchDraft({ notify = true, showResult = true, manageProce
     if (
       !payload.tracking_session_id ||
       !payload.truck_id ||
-      !payload.truck_name_snapshot ||
-      !payload.route_name
+      !payload.truck_name_snapshot
     ) {
       throw new Error("Select an active truck before saving the dispatch ticket.");
+    }
+    if (!payload.route_name) {
+      throw new Error("A route name is required before saving the dispatch ticket.");
     }
     const ticketId = document.getElementById("dispatchEditingTicketId")?.value;
     const details = await dispatchRequest(
@@ -4410,12 +4488,13 @@ async function retryDispatchSessionLink(ticketId) {
 }
 
 async function dispatchSelectedTruckNow() {
-  const selectedSession = document.getElementById("dispatchTrackingSessionId")?.value;
   if (!requireDispatchNewTicketEligibility()) return;
+  const selectedTruck = dispatchResolveSelectedNewTicketTruck();
+  const selectedSession = dispatchSessionKey(selectedTruck?.session_id);
   if (
-    !selectedTrackingTruck ||
+    !selectedTruck ||
     !selectedSession ||
-    String(selectedSession) !== String(selectedSessionId)
+    selectedSession !== dispatchSessionKey(selectedSessionId)
   ) {
     renderDispatchWorkflowResult(
       "Done requires the exact eligible truck session selected from Live Tracking.",
@@ -5418,6 +5497,11 @@ if (typeof module !== "undefined" && module.exports) {
     evaluateDispatchStopOrder,
     dispatchRoutingFailureState,
     dispatchTicketFailureState,
+    dispatchDefaultRouteName,
+    dispatchResolveAvailableTrackingSession,
+    dispatchResolveSelectedNewTicketTruck,
+    dispatchSelectedTruckIdentity,
+    dispatchSessionKey,
     dispatchTruckCanStartNewDispatch,
     dispatchSafeTicketErrorMessage,
     dispatchRoutingResponseIsCurrent,

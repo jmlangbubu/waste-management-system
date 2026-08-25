@@ -351,7 +351,14 @@ function testFrontendTransitionWiringAndSingleActions() {
   assert.doesNotMatch(staleWarningBlock, /data-dispatch-action="end"|keep-active/);
   assert.match(dismissActionBlock, /dispatchDismissedStaleTicketIds\.add/);
   assert.doesNotMatch(dismissActionBlock, /dispatchRequest|fetch|POST|PUT|PATCH|DELETE/);
-  assert.match(loadActiveBlock, /!isTrackingTruckAvailable\(selectedTruck\) && !selectedTruck\.dispatch/);
+  assert.match(
+    loadActiveBlock,
+    /dispatchTruckCanStartNewDispatch\(selectedTruck, activeTrackingTrucks\)/
+  );
+  assert.doesNotMatch(
+    loadActiveBlock,
+    /!isTrackingTruckAvailable\(selectedTruck\)[\s\S]*resetTrackingView/
+  );
   assert.match(
     loadActiveBlock,
     /const selectedLiveDispatch =[\s\S]*if \(!selectedTruck\) \{[\s\S]*if \(selectedLiveDispatch\) \{[\s\S]*return;[\s\S]*resetTrackingView/

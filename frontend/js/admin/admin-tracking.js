@@ -53,7 +53,8 @@ function parseTrackingDate(value) {
   if (!text) return null;
 
   const normalized = text.includes("T") ? text : text.replace(" ", "T");
-  const date = new Date(normalized);
+  const hasExplicitTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(normalized);
+  const date = new Date(hasExplicitTimezone ? normalized : `${normalized}+08:00`);
 
   if (Number.isNaN(date.getTime())) {
     return null;
@@ -63,18 +64,10 @@ function parseTrackingDate(value) {
 }
 
 function formatTrackingTimeSafe(value) {
-  try {
-    if (typeof formatTrackingTime === "function") {
-      return formatTrackingTime(value);
-    }
-  } catch (error) {
-    // Fall back below.
-  }
-
   const date = parseTrackingDate(value);
   if (!date) return "--";
 
-  return date.toLocaleString();
+  return date.toLocaleString("en-PH", { timeZone: "Asia/Manila" });
 }
 
 function getTruckLastUpdateValue(truck) {
@@ -586,14 +579,10 @@ async function loadActiveTrucks() {
         return;
       }
 
-      if (!isTrackingTruckAvailable(selectedTruck) && !selectedTruck.dispatch) {
-        resetTrackingView({ refresh: false });
-        updateTrackingSummaryCards(trucks, null);
-        return;
-      }
-
       selectedTrackingTruck = selectedTruck;
-      dispatchSelectedSessionActive = isTrackingTruckAvailable(selectedTruck);
+      dispatchSelectedSessionActive = typeof dispatchTruckCanStartNewDispatch === "function"
+        ? dispatchTruckCanStartNewDispatch(selectedTruck, activeTrackingTrucks)
+        : isTrackingTruckAvailable(selectedTruck);
       updateTrackingActionButtons();
       if (typeof updateDispatchSelectedTruckContext === "function") {
         updateDispatchSelectedTruckContext(selectedTruck);
@@ -1411,7 +1400,10 @@ function selectTruck(sessionId, truckId) {
     (truck) => String(truck.session_id) === String(sessionId)
   ) || null;
   dispatchSelectedSessionActive = Boolean(
-    selectedTrackingTruck && isTrackingTruckAvailable(selectedTrackingTruck)
+    selectedTrackingTruck &&
+    (typeof dispatchTruckCanStartNewDispatch === "function"
+      ? dispatchTruckCanStartNewDispatch(selectedTrackingTruck, activeTrackingTrucks)
+      : isTrackingTruckAvailable(selectedTrackingTruck))
   );
 
   const selectedLabel = document.getElementById("selectedTruckLabel");
@@ -2514,8 +2506,10 @@ if (typeof module !== "undefined" && module.exports) {
     buildTrackingAvailabilitySnapshot,
     filterAvailableTrackingTrucks,
     formatTrackingRelativeUpdate,
+    formatTrackingTimeSafe,
     getTrackingAvailabilityMeta,
     isTrackingTruckAvailable,
+    parseTrackingDate,
     renderActiveTruckList
   };
 }
