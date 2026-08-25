@@ -466,7 +466,7 @@ function dispatchNormalizeExistingTicket(ticket = {}) {
   const id = ticket.dispatch_ticket_id ?? ticket.id ?? null;
   const ticketNumber = String(ticket.ticket_number || "").trim();
   const status = String(
-    ticket.status || ticket.ticket_status || "in_progress"
+    ticket.status || ticket.ticket_status || ticket.dispatch_status || "in_progress"
   ).trim().toLowerCase();
   if (!id && !ticketNumber) return null;
   return {
@@ -475,6 +475,65 @@ function dispatchNormalizeExistingTicket(ticket = {}) {
     ticket_number: ticketNumber || `#${id}`,
     status
   };
+}
+
+function dispatchTicketMatchesTruck(ticket = {}, truck = {}) {
+  const ticketTruckId = dispatchSessionKey(ticket.truck_id).toLowerCase();
+  const selectedTruckId = dispatchSessionKey(truck.truck_id).toLowerCase();
+  return Boolean(ticketTruckId && selectedTruckId && ticketTruckId === selectedTruckId);
+}
+
+function dispatchTicketFromDetails(details = null) {
+  if (!details?.ticket) return null;
+  const primarySession = (Array.isArray(details.tracking_sessions)
+    ? details.tracking_sessions
+    : []
+  ).find((session) => Number(session.is_primary) === 1) || details.tracking_sessions?.[0] || null;
+  return dispatchNormalizeExistingTicket({
+    ...details.ticket,
+    ...(details.progress || {}),
+    total_stops: details.progress?.total_stops ?? details.stops?.length ?? details.ticket.total_stops,
+    tracking_session_id:
+      details.ticket.tracking_session_id ||
+      primarySession?.tracking_session_id ||
+      null
+  });
+}
+
+function dispatchResolveKnownTicketForTruck(truck, options = {}) {
+  if (!truck) return null;
+  const candidates = [
+    { ticket: options.ticket, attachedToTruck: false },
+    { ticket: truck.dispatch, attachedToTruck: true },
+    { ticket: truck.existing_dispatch_ticket, attachedToTruck: true }
+  ];
+  if (typeof dispatchLiveBySession !== "undefined") {
+    candidates.push({
+      ticket: dispatchLiveBySession[String(truck.session_id)] || null,
+      attachedToTruck: true
+    });
+  }
+  if (typeof selectedDispatchTicket !== "undefined") {
+    candidates.push({
+      ticket: dispatchTicketFromDetails(selectedDispatchTicket),
+      attachedToTruck: false
+    });
+  }
+
+  const normalized = candidates
+    .map(({ ticket, attachedToTruck }) => ({
+      ticket: dispatchNormalizeExistingTicket(ticket),
+      attachedToTruck
+    }))
+    .filter(({ ticket, attachedToTruck }) =>
+      ticket &&
+      (attachedToTruck || dispatchTicketMatchesTruck(ticket, truck)) &&
+      DISPATCH_NON_TERMINAL_TICKET_STATUSES.includes(ticket.status)
+    )
+    .map(({ ticket }) => ticket);
+  return normalized.find((ticket) => dispatchTicketIsLive(ticket)) ||
+    normalized.find((ticket) => ticket.status === "prepared") ||
+    null;
 }
 
 function dispatchFindNonTerminalTicket(tickets = [], truckId = "") {
@@ -491,7 +550,9 @@ function dispatchFindNonTerminalTicket(tickets = [], truckId = "") {
 
 function dispatchResolveEligibilityPriority(options = {}) {
   const truck = options.truck || null;
-  const existingTicket = dispatchNormalizeExistingTicket(truck?.dispatch) ||
+  const existingTicket = dispatchResolveKnownTicketForTruck(truck, {
+    ticket: options.ticket
+  }) ||
     dispatchFindNonTerminalTicket(options.tickets, truck?.truck_id);
   if (existingTicket) {
     return { status: "existing_dispatch", ticket: existingTicket, error: null };
@@ -557,7 +618,7 @@ function dispatchResolveAvailableTrackingSession(
 
   return (Array.isArray(availableTrucks) ? availableTrucks : []).find(
     (availableTruck) =>
-      !availableTruck?.dispatch &&
+      !dispatchResolveKnownTicketForTruck(availableTruck) &&
       dispatchSessionKey(availableTruck?.session_id) === sessionKey
   ) || null;
 }
@@ -565,7 +626,7 @@ function dispatchResolveAvailableTrackingSession(
 function dispatchTruckCanStartNewDispatch(truck, availableTrucks = activeTrackingTrucks) {
   return Boolean(
     truck &&
-    !truck.dispatch &&
+    !dispatchResolveKnownTicketForTruck(truck) &&
     dispatchResolveAvailableTrackingSession(truck.session_id, availableTrucks)
   );
 }
@@ -713,6 +774,22 @@ function renderDispatchEligibilityState() {
 }
 
 function setDispatchNewTicketEligibility(nextState = {}, options = {}) {
+  const requestedStatus = nextState.status || "idle";
+  const confirmedTicket = dispatchResolveKnownTicketForTruck(selectedTrackingTruck, {
+    ticket: nextState.ticket
+  });
+  if (
+    dispatchTicketIsLive(confirmedTicket) &&
+    requestedStatus !== "existing_dispatch"
+  ) {
+    nextState = {
+      ...nextState,
+      status: "existing_dispatch",
+      ticket: confirmedTicket,
+      error: null
+    };
+    options = { ...options, clearRoute: false };
+  }
   dispatchNewTicketEligibility = {
     status: nextState.status || "idle",
     sessionId: nextState.sessionId ?? selectedSessionId ?? null,
@@ -720,6 +797,16 @@ function setDispatchNewTicketEligibility(nextState = {}, options = {}) {
     ticket: nextState.ticket || null,
     error: nextState.error || null
   };
+  if (
+    dispatchNewTicketEligibility.status === "existing_dispatch" &&
+    dispatchNewTicketEligibility.ticket
+  ) {
+    dispatchEligibilityRequestGeneration += 1;
+    dispatchEligibilityRequestGuard.invalidate();
+    if (dispatchTicketIsLive(dispatchNewTicketEligibility.ticket)) {
+      options = { ...options, clearRoute: false };
+    }
+  }
   const blocksNewPlanning = dispatchPlannerMode === "create" &&
     !["idle", "eligible"].includes(dispatchNewTicketEligibility.status);
   if (blocksNewPlanning) {
@@ -743,19 +830,22 @@ async function resolveDispatchNewTicketEligibility(truck = selectedTrackingTruck
   }
   const sessionId = dispatchSessionKey(truck.session_id);
   const truckId = dispatchSessionKey(truck.truck_id);
-  const generation = ++dispatchEligibilityRequestGeneration;
   const baseState = { sessionId, truckId };
   const knownState = dispatchResolveEligibilityPriority({ truck, checking: true });
   if (knownState.status === "existing_dispatch") {
     return setDispatchNewTicketEligibility({ ...baseState, ...knownState });
   }
 
+  const request = dispatchEligibilityRequestGuard.begin();
+  const generation = ++dispatchEligibilityRequestGeneration;
   setDispatchNewTicketEligibility({ ...baseState, status: "checking" });
   try {
     const tickets = await dispatchRequest(
-      `${getDispatchTicketsApiUrl()}?truck=${encodeURIComponent(truckId)}`
+      `${getDispatchTicketsApiUrl()}?truck=${encodeURIComponent(truckId)}`,
+      { signal: request.signal }
     );
     if (
+      !dispatchEligibilityRequestGuard.isCurrent(request) ||
       generation !== dispatchEligibilityRequestGeneration ||
       dispatchSessionKey(selectedSessionId) !== sessionId ||
       dispatchSessionKey(selectedTrackingTruck?.truck_id) !== truckId
@@ -771,7 +861,11 @@ async function resolveDispatchNewTicketEligibility(truck = selectedTrackingTruck
     }
     return dispatchNewTicketEligibility;
   } catch (error) {
-    if (generation !== dispatchEligibilityRequestGeneration) {
+    if (
+      error?.name === "AbortError" ||
+      !dispatchEligibilityRequestGuard.isCurrent(request) ||
+      generation !== dispatchEligibilityRequestGeneration
+    ) {
       return dispatchNewTicketEligibility;
     }
     return setDispatchNewTicketEligibility({
@@ -779,6 +873,8 @@ async function resolveDispatchNewTicketEligibility(truck = selectedTrackingTruck
       status: "error",
       error
     });
+  } finally {
+    dispatchEligibilityRequestGuard.finish(request);
   }
 }
 
@@ -1396,14 +1492,146 @@ function closeDispatchPlannerConfirmation({ accepted = false } = {}) {
   if (!accepted) pending?.returnFocus?.focus?.({ preventScroll: true });
 }
 
-function requestDispatchTruckSelection(sessionId, truckId, triggerElement = null) {
-  const sameSession = String(selectedSessionId || "") === String(sessionId || "");
-  if (sameSession && selectedTrackingTruck) {
-    dispatchPlannerTriggerElement = triggerElement || dispatchPlannerTriggerElement;
-    prepareDispatchPlannerForTruck(selectedTrackingTruck);
+function dispatchTruckForSelection(sessionId, truckId) {
+  const sessionKey = dispatchSessionKey(sessionId);
+  const truckKey = dispatchSessionKey(truckId).toLowerCase();
+  const candidates = [
+    ...(Array.isArray(trackingOperationalTrucks) ? trackingOperationalTrucks : []),
+    ...(Array.isArray(activeTrackingTrucks) ? activeTrackingTrucks : []),
+    selectedTrackingTruck
+  ].filter(Boolean);
+  return candidates.find((truck) =>
+    dispatchSessionKey(truck.session_id) === sessionKey
+  ) || candidates.find((truck) =>
+    dispatchSessionKey(truck.truck_id).toLowerCase() === truckKey
+  ) || null;
+}
+
+function dispatchAttachExistingTicketToTruck(truck, ticket) {
+  if (!truck || !ticket) return truck;
+  if (dispatchTicketIsLive(ticket)) {
+    truck.dispatch = {
+      ...(truck.dispatch || {}),
+      ...ticket,
+      dispatch_ticket_id: ticket.id,
+      dispatch_status: ticket.status
+    };
+    delete truck.existing_dispatch_ticket;
+  } else if (ticket.status === "prepared") {
+    truck.existing_dispatch_ticket = ticket;
+  }
+  return truck;
+}
+
+async function openDispatchExistingTicketForTruck(truck, ticket, triggerElement = null) {
+  const existingTicket = dispatchNormalizeExistingTicket(ticket);
+  if (!truck || !existingTicket?.id) return null;
+  dispatchPlannerTriggerElement = triggerElement || dispatchPlannerTriggerElement;
+  dispatchAttachExistingTicketToTruck(truck, existingTicket);
+
+  const sameSession = dispatchSessionKey(selectedSessionId) === dispatchSessionKey(truck.session_id);
+  if (!sameSession || !selectedTrackingTruck) {
+    selectTruck(truck.session_id, truck.truck_id, {
+      preparePlanner: false,
+      hydrateWorkspace: false
+    });
+  } else {
+    selectedTruckId = truck.truck_id;
+    selectedTrackingTruck = truck;
+    renderActiveTruckList(trackingOperationalTrucks);
+    updateTrackingSummaryCards(activeTrackingTrucks, truck);
+  }
+
+  setDispatchNewTicketEligibility({
+    status: "existing_dispatch",
+    sessionId: truck.session_id,
+    truckId: truck.truck_id,
+    ticket: existingTicket
+  }, { clearRoute: false });
+  updateDispatchSelectedTruckContext(truck);
+
+  const hydratedDetails = typeof selectedDispatchTicket !== "undefined" &&
+    String(selectedDispatchTicket?.ticket?.id || "") === String(existingTicket.id)
+    ? selectedDispatchTicket
+    : null;
+  if (dispatchTicketIsLive(existingTicket) && hydratedDetails) {
+    renderDispatchTicketDetails(hydratedDetails);
+    if (!dispatchHasVisiblePlannedRoute()) {
+      renderDispatchPlannedRoute(hydratedDetails, { force: true });
+    }
+    setDispatchWorkspaceTab("plan");
+    return hydratedDetails;
+  }
+  return openDispatchTicket(existingTicket.id);
+}
+
+async function resolveDispatchTicketBeforePlanning(truck) {
+  const knownTicket = dispatchResolveKnownTicketForTruck(truck);
+  if (knownTicket) return { ticket: knownTicket, stale: false, error: null };
+
+  const sessionId = dispatchSessionKey(truck?.session_id);
+  const truckId = dispatchSessionKey(truck?.truck_id);
+  const request = dispatchEligibilityRequestGuard.begin();
+  const generation = ++dispatchEligibilityRequestGeneration;
+  try {
+    const tickets = await dispatchRequest(
+      `${getDispatchTicketsApiUrl()}?truck=${encodeURIComponent(truckId)}`,
+      { signal: request.signal }
+    );
+    if (
+      !dispatchEligibilityRequestGuard.isCurrent(request) ||
+      generation !== dispatchEligibilityRequestGeneration
+    ) {
+      return { ticket: null, stale: true, error: null };
+    }
+    const newerKnownTicket = dispatchResolveKnownTicketForTruck(truck);
+    return {
+      ticket: newerKnownTicket || dispatchFindNonTerminalTicket(tickets, truckId),
+      stale: false,
+      error: null,
+      sessionId,
+      truckId
+    };
+  } catch (error) {
+    if (
+      error?.name === "AbortError" ||
+      !dispatchEligibilityRequestGuard.isCurrent(request) ||
+      generation !== dispatchEligibilityRequestGeneration
+    ) {
+      return { ticket: null, stale: true, error: null };
+    }
+    return { ticket: null, stale: false, error };
+  } finally {
+    dispatchEligibilityRequestGuard.finish(request);
+  }
+}
+
+async function requestDispatchTruckSelection(sessionId, truckId, triggerElement = null) {
+  const truck = dispatchTruckForSelection(sessionId, truckId);
+  if (!truck) return;
+  const lookup = await resolveDispatchTicketBeforePlanning(truck);
+  if (lookup.stale) return;
+  if (lookup.ticket) {
+    await openDispatchExistingTicketForTruck(truck, lookup.ticket, triggerElement);
     return;
   }
-  if (selectedSessionId && dispatchPlannerHasUnsavedRoute(selectedSessionId)) {
+  if (lookup.error) {
+    dispatchNotify(
+      lookup.error.message || "The truck's dispatch status could not be confirmed.",
+      "error"
+    );
+    return;
+  }
+
+  const selectForNewDispatch = () => {
+    dispatchPlannerTriggerElement = triggerElement;
+    selectTruck(sessionId, truckId, { preparePlanner: false });
+    prepareDispatchPlannerForTruck(selectedTrackingTruck || truck, {
+      ticketLookupCompleted: true
+    });
+  };
+  const sameSession = dispatchSessionKey(selectedSessionId) === dispatchSessionKey(sessionId);
+  if (!sameSession && selectedSessionId && dispatchPlannerHasUnsavedRoute(selectedSessionId)) {
     openDispatchPlannerConfirmation({
       title: "Switch trucks?",
       message: "The current unsaved route will be cleared.",
@@ -1413,14 +1641,12 @@ function requestDispatchTruckSelection(sessionId, truckId, triggerElement = null
       onCancel: () => prepareDispatchPlannerForTruck(selectedTrackingTruck),
       onAccept: () => {
         markDispatchPlannerSaved();
-        dispatchPlannerTriggerElement = triggerElement;
-        selectTruck(sessionId, truckId);
+        selectForNewDispatch();
       }
     });
     return;
   }
-  dispatchPlannerTriggerElement = triggerElement;
-  selectTruck(sessionId, truckId);
+  selectForNewDispatch();
 }
 
 function getDispatchSelectedReliablePoint() {
@@ -1487,9 +1713,15 @@ function updateDispatchSelectedTruckContext(truck = selectedTrackingTruck) {
     dispatchNewTicketEligibility.status === "existing_dispatch"
     ? dispatchNewTicketEligibility.ticket
     : null;
-  const hasActiveDispatch = Boolean(truck.dispatch || eligibilityTicket);
+  const existingTicket = dispatchResolveKnownTicketForTruck(truck, {
+    ticket: eligibilityTicket
+  });
+  const hasActiveDispatch = dispatchTicketIsLive(existingTicket);
+  const hasPreparedTicket = existingTicket?.status === "prepared";
+  const hasExistingTicket = hasActiveDispatch || hasPreparedTicket;
   dispatchSelectedSessionActive =
     sessionActive &&
+    !hasExistingTicket &&
     dispatchTruckCanStartNewDispatch(truck, activeTrackingTrucks);
   const reliablePoint = getDispatchSelectedReliablePoint();
   const gpsMeta = typeof getTrackingAvailabilityMeta === "function"
@@ -1501,9 +1733,11 @@ function updateDispatchSelectedTruckContext(truck = selectedTrackingTruck) {
   summary?.classList.remove("is-empty");
   document.getElementById("dispatchSelectedTruckName").textContent = hasActiveDispatch
     ? "Active Dispatch"
-    : dispatchSelectedSessionActive
-      ? "Available for dispatch"
-      : "Unavailable for dispatch";
+    : hasPreparedTicket
+      ? "Existing Dispatch Ticket"
+      : dispatchSelectedSessionActive
+        ? "Available for dispatch"
+        : "Unavailable for dispatch";
   document.getElementById("dispatchSelectedTruckStatus").textContent = sessionActive
     ? "Tracking Active"
     : "Tracking Stopped";
@@ -1527,7 +1761,7 @@ function updateDispatchSelectedTruckContext(truck = selectedTrackingTruck) {
     const eligibilityBlockVisible = dispatchPlannerMode === "create" &&
       dispatchEligibilityMatchesSelection() &&
       !["idle", "eligible"].includes(dispatchNewTicketEligibility.status);
-    const warningMessage = eligibilityBlockVisible || hasActiveDispatch
+    const warningMessage = eligibilityBlockVisible || hasExistingTicket
       ? ""
       : !sessionActive
       ? "The selected tracking session has ended. Choose an active truck to save or dispatch this route."
@@ -1540,16 +1774,43 @@ function updateDispatchSelectedTruckContext(truck = selectedTrackingTruck) {
   updateDispatchPlannerActions();
 }
 
-function prepareDispatchPlannerForTruck(truck) {
-  if (!truck) return;
+function prepareDispatchPlannerForTruck(truck, options = {}) {
+  if (!truck) return false;
+  const existingTicket = dispatchResolveKnownTicketForTruck(truck);
+  if (existingTicket) {
+    void openDispatchExistingTicketForTruck(
+      truck,
+      existingTicket,
+      dispatchPlannerTriggerElement
+    );
+    return false;
+  }
+  if (!options.ticketLookupCompleted) {
+    void requestDispatchTruckSelection(
+      truck.session_id,
+      truck.truck_id,
+      dispatchPlannerTriggerElement
+    );
+    return false;
+  }
   const previousSessionId = document.getElementById("dispatchTrackingSessionId")?.value;
   const isNewSelection = String(previousSessionId || "") !== String(truck.session_id);
   if (isNewSelection) resetDispatchTicketForm();
   updateDispatchSelectedTruckContext(truck);
+  const gpsEligible = dispatchTruckCanStartNewDispatch(truck, activeTrackingTrucks);
+  setDispatchNewTicketEligibility({
+    status: gpsEligible ? "eligible" : "gps_required",
+    sessionId: truck.session_id,
+    truckId: truck.truck_id
+  });
+  if (!gpsEligible) {
+    renderActiveTruckList(trackingOperationalTrucks);
+    return false;
+  }
   setDispatchPlannerMode("create");
   setDispatchPlannerStep(1, { focus: false });
   setDispatchWorkspaceTab("plan");
-  void resolveDispatchNewTicketEligibility(truck);
+  return true;
 }
 
 function handleDispatchSelectedSessionEnded() {
@@ -5975,6 +6236,7 @@ if (typeof module !== "undefined" && module.exports) {
     dispatchExistingTicketPresentation,
     dispatchFindNonTerminalTicket,
     dispatchNormalizeExistingTicket,
+    dispatchResolveKnownTicketForTruck,
     dispatchResolveEligibilityPriority,
     dispatchResolveAvailableTrackingSession,
     dispatchResolveSelectedNewTicketTruck,

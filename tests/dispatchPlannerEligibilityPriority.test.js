@@ -132,8 +132,13 @@ function testGpsIsEvaluatedOnlyAfterNoTicketIsFound() {
 function testSelectionChecksTicketBeforeGpsAndDoesNotEnterStepTwo() {
   const resolve = functionBlock(
     dispatch,
-    "async function resolveDispatchNewTicketEligibility",
-    "function reconcileDispatchEligibilityWithTracking"
+    "async function resolveDispatchTicketBeforePlanning",
+    "async function requestDispatchTruckSelection"
+  );
+  const request = functionBlock(
+    dispatch,
+    "async function requestDispatchTruckSelection",
+    "function getDispatchSelectedReliablePoint"
   );
   const prepare = functionBlock(
     dispatch,
@@ -146,12 +151,18 @@ function testSelectionChecksTicketBeforeGpsAndDoesNotEnterStepTwo() {
     "function openDispatchPlannerDrawer"
   );
   const ticketLookupIndex = resolve.indexOf("getDispatchTicketsApiUrl");
-  const gpsCheckIndex = resolve.indexOf("dispatchTruckCanStartNewDispatch");
+  const selectionIndex = request.indexOf("selectTruck(sessionId, truckId");
+  const lookupIndex = request.indexOf("resolveDispatchTicketBeforePlanning(truck)");
+  const gpsCheckIndex = prepare.indexOf("dispatchTruckCanStartNewDispatch");
+  const knownTicketIndex = prepare.indexOf("dispatchResolveKnownTicketForTruck");
 
-  assert.ok(ticketLookupIndex >= 0 && ticketLookupIndex < gpsCheckIndex);
-  assert.match(resolve, /dispatchFindNonTerminalTicket|dispatchResolveEligibilityPriority/);
+  assert.ok(ticketLookupIndex >= 0);
+  assert.ok(lookupIndex >= 0 && lookupIndex < selectionIndex);
+  assert.match(resolve, /dispatchFindNonTerminalTicket/);
+  assert.ok(knownTicketIndex >= 0 && knownTicketIndex < gpsCheckIndex);
+  assert.match(request, /if \(lookup\.ticket\) \{[\s\S]*openDispatchExistingTicketForTruck[\s\S]*return/);
   assert.match(prepare, /setDispatchPlannerStep\(1/);
-  assert.match(prepare, /resolveDispatchNewTicketEligibility\(truck\)/);
+  assert.doesNotMatch(prepare, /resolveDispatchNewTicketEligibility\(truck\)/);
   assert.doesNotMatch(prepare, /setDispatchPlannerStep\(2|renderDispatchDraftOnLiveMap/);
   assert.match(setStep, /nextStep === 2[\s\S]*!dispatchEligibilityAllowsPlanning\(\)[\s\S]*return false/);
 }

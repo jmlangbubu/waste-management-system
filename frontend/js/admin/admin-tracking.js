@@ -176,8 +176,59 @@ function getTrackingStatusMeta(truck, now = Date.now()) {
   };
 }
 
+function getTrackingTruckExistingTicket(truck) {
+  if (!truck) return null;
+  if (typeof dispatchResolveKnownTicketForTruck === "function") {
+    return dispatchResolveKnownTicketForTruck(truck);
+  }
+  const ticket = truck.dispatch || truck.existing_dispatch_ticket || null;
+  if (!ticket) return null;
+  const status = String(
+    ticket.status || ticket.ticket_status || ticket.dispatch_status ||
+    (truck.dispatch ? "in_progress" : "")
+  ).trim().toLowerCase();
+  if (!["prepared", "dispatched", "in_progress", "returning_to_wmo"].includes(status)) {
+    return null;
+  }
+  return { ...ticket, status };
+}
+
+function getTrackingTruckDispatchState(truck, now = Date.now()) {
+  const ticket = getTrackingTruckExistingTicket(truck);
+  const status = String(ticket?.status || "").toLowerCase();
+  const gps = getTrackingStatusMeta(truck, now);
+  if (["dispatched", "in_progress", "returning_to_wmo"].includes(status)) {
+    return {
+      key: "active_dispatch",
+      ticket,
+      gps,
+      title: "Active Dispatch",
+      actionLabel: "Open Live Dispatch",
+      available: false
+    };
+  }
+  if (status === "prepared") {
+    return {
+      key: "prepared_dispatch",
+      ticket,
+      gps,
+      title: "Existing Dispatch Ticket",
+      actionLabel: "View Ticket",
+      available: false
+    };
+  }
+  return {
+    key: gps.available ? "available" : "unavailable",
+    ticket: null,
+    gps,
+    title: gps.available ? "Available for dispatch" : "Unavailable for dispatch",
+    actionLabel: gps.available ? "Plan Dispatch" : "Review Availability",
+    available: gps.available
+  };
+}
+
 function isTrackingTruckAvailable(truck, now = Date.now()) {
-  return !truck?.dispatch && getTrackingAvailabilityMeta(truck, now).available === true;
+  return getTrackingTruckDispatchState(truck, now).available === true;
 }
 
 function filterAvailableTrackingTrucks(trucks, now = Date.now()) {
@@ -724,26 +775,33 @@ function renderActiveTruckList(trucks) {
   container.innerHTML = trucks.map((truck) => {
     const isSelected = String(selectedSessionId) === String(truck.session_id);
     const statusMeta = getTrackingStatusMeta(truck);
+    const dispatchState = getTrackingTruckDispatchState(truck);
     const lastUpdated = getTruckLastUpdateValue(truck);
     const truckName = truck.truck_name || truck.truck_display_name || `Truck ${truck.truck_id || "-"}`;
     const truckIdentifier = truck.truck_id || truckName;
-    const hasLiveDispatch = Boolean(truck.dispatch);
+    const existingTicket = dispatchState.ticket;
+    const hasLiveDispatch = dispatchState.key === "active_dispatch";
+    const hasPreparedDispatch = dispatchState.key === "prepared_dispatch";
     const dispatchLabel = hasLiveDispatch
-      ? `<small class="dispatch-truck-ticket">Ticket ${escapeHtml(truck.dispatch.ticket_number)} &middot; Active Dispatch</small>
-         <small class="dispatch-truck-progress">Completed ${Number(truck.dispatch.completed_stops || 0)} of ${Number(truck.dispatch.total_stops || 0)} stops</small>`
-      : "";
+      ? `<small class="dispatch-truck-ticket">Ticket ${escapeHtml(existingTicket.ticket_number)} &middot; Active Dispatch</small>
+         <small class="dispatch-truck-progress">Completed ${Number(existingTicket.completed_stops || 0)} of ${Number(existingTicket.total_stops || 0)} stops</small>`
+      : hasPreparedDispatch
+        ? `<small class="dispatch-truck-ticket">Ticket ${escapeHtml(existingTicket.ticket_number)} &middot; Existing Dispatch Ticket</small>`
+        : "";
     const operationalHint = hasLiveDispatch
       ? statusMeta.available
-        ? "Open active dispatch"
-        : "Open active dispatch · Last-known progress"
-      : statusMeta.available
-        ? "Available for dispatch"
-        : "Unavailable for new dispatch";
+        ? "Open Live Dispatch"
+        : "Open Live Dispatch · Last-known progress"
+      : hasPreparedDispatch
+        ? "View Ticket"
+        : dispatchState.title;
     const actionLabel = hasLiveDispatch
-      ? "Open live dispatch for"
-      : statusMeta.available
-        ? "Plan dispatch for"
-        : "Review dispatch availability for";
+      ? "Open Live Dispatch for"
+      : hasPreparedDispatch
+        ? "View Ticket for"
+        : dispatchState.available
+          ? "Plan dispatch for"
+          : "Review dispatch availability for";
 
     return `
       <button
@@ -1426,7 +1484,7 @@ function bindTruckAnalyticsModalActions() {
   });
 }
 
-function selectTruck(sessionId, truckId) {
+function selectTruck(sessionId, truckId, options = {}) {
   const isDifferentSession = String(selectedSessionId || "") !== String(sessionId);
   if (isDifferentSession) {
     if (selectedRoutePolyline && truckMap) truckMap.removeLayer(selectedRoutePolyline);
@@ -1462,10 +1520,12 @@ function selectTruck(sessionId, truckId) {
   updateTrackingActionButtons();
   renderActiveTruckList(trackingOperationalTrucks);
   updateTrackingSummaryCards(activeTrackingTrucks);
-  if (typeof prepareDispatchPlannerForTruck === "function") {
+  if (options.preparePlanner !== false && typeof prepareDispatchPlannerForTruck === "function") {
     prepareDispatchPlannerForTruck(selectedTrackingTruck);
   }
-  void hydrateSelectedTruckWorkspace(sessionId, { keepView: false });
+  if (options.hydrateWorkspace !== false) {
+    void hydrateSelectedTruckWorkspace(sessionId, { keepView: false });
+  }
 }
 
 function bindActiveTruckSelection() {
@@ -1476,7 +1536,7 @@ function bindActiveTruckSelection() {
     const card = event.target.closest("[data-tracking-session-id]");
     if (!card) return;
     if (typeof requestDispatchTruckSelection === "function") {
-      requestDispatchTruckSelection(
+      void requestDispatchTruckSelection(
         card.dataset.trackingSessionId,
         card.dataset.trackingTruckId,
         card
@@ -2554,6 +2614,8 @@ if (typeof module !== "undefined" && module.exports) {
     formatTrackingRelativeUpdate,
     formatTrackingTimeSafe,
     getTrackingAvailabilityMeta,
+    getTrackingTruckDispatchState,
+    getTrackingTruckExistingTicket,
     isTrackingTruckAvailable,
     parseTrackingDate,
     renderActiveTruckList,
