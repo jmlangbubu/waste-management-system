@@ -4181,6 +4181,37 @@
   color: #32734b;
 }
 
+#trackingSection .dispatch-assignment-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+#trackingSection .dispatch-assignment-summary > span {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 10px 11px;
+  border: 1px solid #d6e2da;
+  border-radius: 12px;
+  background: #f7faf8;
+  color: #718077;
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+#trackingSection .dispatch-assignment-summary strong {
+  overflow: hidden;
+  color: #244638;
+  font-size: 11px;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
+}
+
 #trackingSection .dispatch-destination-controls {
   display: grid;
   min-width: 0;

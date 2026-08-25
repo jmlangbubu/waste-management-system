@@ -260,7 +260,7 @@ function testPlannedRouteStyleAndPane() {
     "solid actual trail and synchronization gaps must remain dark green"
   );
   assert.match(dashboardSource, /> Actual trail</);
-  assert.match(dashboardSource, /> Suggested route</);
+  assert.match(dashboardSource, /> Assigned route</);
   assert.match(dashboardSource, /> Current truck</);
   assert.match(dashboardSource, /> Destination</);
 }
@@ -500,7 +500,7 @@ function testSavedMarkersRenderBeforeRoadRouting() {
   const immediateSavedMarkerIndex = activeRenderer.indexOf(
     "dispatchSavedStopRouteItems(details.stops)"
   );
-  const routingRequestIndex = activeRenderer.indexOf("requestDispatchRoadCostMatrix");
+  const routingRequestIndex = activeRenderer.indexOf("requestDispatchRoadJourney");
   const failureSavedMarkerIndex = activeRenderer.indexOf(
     "dispatchSavedStopRouteItems(details.stops, items)"
   );
@@ -512,7 +512,7 @@ function testSavedMarkersRenderBeforeRoadRouting() {
   );
 }
 
-function testPreDispatchOptimizationAndActiveRouteOrderLocking() {
+function testAssignmentAndActiveRouteOrderLocking() {
   const preDispatchJourney = buildDispatchPlannedJourney(
     point(6.1, 125.1),
     point(6.1, 125.13),
@@ -531,8 +531,8 @@ function testPreDispatchOptimizationAndActiveRouteOrderLocking() {
   );
   assert.deepEqual(
     preDispatchJourney.plannedStops.map(({ stop }) => stop.id),
-    [2, 1],
-    "pre-dispatch planning must remain free to optimize the selected stops"
+    [1, 2],
+    "pre-dispatch planning must preserve the personnel-assigned order"
   );
   const routeStops = [{ id: 1 }, { id: 2 }, { id: 3 }];
   assert.deepEqual(
@@ -565,10 +565,10 @@ function testIssueSelectionPollingAndFailureLifecycle() {
     /function buildDispatchRouteLayers[\s\S]*?function renderDispatchSelectionFallback/
   )?.[0] || "";
   assert.match(dispatchNow, /renderDispatchTicketDetails\(details\)[\s\S]*renderDispatchPlannedRoute\(details\)/);
-  assert.match(activeRenderer, /const routeOrigin = resolveDispatchRouteOrigin\(reliableStart\)/);
+  assert.match(activeRenderer, /const startPoint = wmo/);
   assert.match(activeRenderer, /createDispatchPlannedLayerGroups\(\{ detached: true \}\)/);
   assert.match(activeRenderer, /requestDispatchRoadJourney[\s\S]*activateDispatchPlannedLayerGroups\(layers\)/);
-  assert.match(activeRenderer, /\["missing", "stale"\]\.includes\(routeOrigin\.source\)[\s\S]*!options\.force[\s\S]*dispatchHasVisiblePlannedRoute\(\)/);
+  assert.doesNotMatch(activeRenderer, /resolveDispatchRouteOrigin|requestDispatchRoadCostMatrix/);
   assert.match(activeRenderer, /if \(!dispatchHasVisiblePlannedRoute\(\)\) \{\s*renderDispatchSelectionFallback/);
   assert.doesNotMatch(activeRenderer, /clearDispatchPlannedRoute/);
   assert.doesNotMatch(activeRenderer, /renderDispatchCompletedRouteGeometry/);
@@ -644,7 +644,7 @@ async function run() {
   testDispatchLiveFailureAndAuthoritativeEmptyState();
   testPersistedStopMarkersAndRoutingFallback();
   testSavedMarkersRenderBeforeRoadRouting();
-  testPreDispatchOptimizationAndActiveRouteOrderLocking();
+  testAssignmentAndActiveRouteOrderLocking();
   testIssueSelectionPollingAndFailureLifecycle();
   testDrawerRecordsAndTicketFailureDoNotClearRoute();
   testLiveTransitionRerenderAndPanelActionsDoNotClearRoute();

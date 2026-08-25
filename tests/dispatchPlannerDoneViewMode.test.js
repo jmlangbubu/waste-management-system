@@ -48,7 +48,7 @@ function testEditableEligibilityAndTwoStepShell() {
   assert.match(dashboard, /id="dispatchNowBtn"[^>]*>Done</);
 }
 
-function testAutomaticRouteAndDoneReadiness() {
+function testAssignedRouteAndDoneReadiness() {
   const addRow = functionBlock(
     dispatch,
     "function addDispatchStopRow",
@@ -61,11 +61,12 @@ function testAutomaticRouteAndDoneReadiness() {
   );
   assert.match(addRow, /renderDispatchDraftOnLiveMap\(\)/);
   assert.match(draftRoute, /renderDispatchDestinationMarkers\(items, \{ usePersistedStopOrder: false \}\)/);
-  assert.match(draftRoute, /applyDispatchOptimizedDraftOrder\(journey\.plannedStops\)/);
+  assert.match(draftRoute, /applyDispatchAssignedDraftOrder\(journey\.plannedStops\)/);
+  assert.doesNotMatch(draftRoute, /requestDispatchRoadCostMatrix/);
   assert.match(draftRoute, /buildDispatchRouteLayers\([\s\S]*usePersistedStopOrder: false/);
   assert.match(draftRoute, /renderDispatchSelectionFallback\([\s\S]*usePersistedStopOrder: false/);
 
-  assert.equal(readyState({ ticketNumberValid: false }).canFinalize, false);
+  assert.equal(readyState({ ticketNumberValid: false }).canFinalize, true);
   assert.equal(readyState({ destinationCount: 0, optimizedCount: 0 }).canFinalize, false);
   assert.equal(readyState({ routePreparing: true }).canFinalize, false);
   assert.equal(readyState({ optimizedCount: 2 }).canFinalize, false);
@@ -153,8 +154,10 @@ function testPersistedOrderAndTerminalReuseContracts() {
     "function filterAvailableTrackingTrucks"
   );
   assert.match(readonlyRoute, /sort\([\s\S]*first\.stop_order[\s\S]*second\.stop_order/);
-  assert.match(plannedRoute, /lockedPrefixCount: items\.length/);
-  assert.match(plannedRoute, /dispatchPersistedStopOrder/);
+  assert.match(plannedRoute, /const routeStops = dispatchSavedStopRouteItems\(details\.stops\)/);
+  assert.match(plannedRoute, /const startPoint = wmo/);
+  assert.doesNotMatch(plannedRoute, /requestDispatchRoadCostMatrix|lockedPrefixCount/);
+  assert.match(plannedRoute, /usePersistedStopOrder: true/);
   assert.match(trackingEligibility, /!truck\?\.dispatch/);
 }
 
@@ -191,7 +194,7 @@ function testDestinationPickerPresentation() {
 
 function run() {
   testEditableEligibilityAndTwoStepShell();
-  testAutomaticRouteAndDoneReadiness();
+  testAssignedRouteAndDoneReadiness();
   testDoneReusesExistingLifecycleAndFailurePreservesDraft();
   testFinalizedTicketsAlwaysUseReadOnlyMode();
   testPersistedOrderAndTerminalReuseContracts();

@@ -99,7 +99,7 @@ function testSavedMarkersUseOnlyPersistedStopOrder() {
   });
 }
 
-function testOptimizedRouteMarkersIgnorePreOptimizationDraftNumbers() {
+function testAssignedRouteMarkersUseSequentialDraftNumbers() {
   withLeaflet(() => {
     const items = draftItems([9, 4, 7]);
     const route = buildDispatchRouteLayers(
@@ -153,7 +153,7 @@ function testPlannerPresentationContract() {
 function run() {
   testDraftMarkersExistBeforeSaveAndUseReviewedOrder();
   testSavedMarkersUseOnlyPersistedStopOrder();
-  testOptimizedRouteMarkersIgnorePreOptimizationDraftNumbers();
+  testAssignedRouteMarkersUseSequentialDraftNumbers();
   testLayerOwnershipAndFailureOrder();
   testPlannerPresentationContract();
   console.log("dispatchPlannerMapOfflineVisibility.test.js: all assertions passed");

@@ -995,7 +995,7 @@ class DispatchService {
   async createTicket(payload = {}) {
     const ticketData = validateTicketInput(payload, {
       includeCreator: true,
-      requireTicketNumber: true,
+      requireTicketNumber: false,
       now: this.now()
     });
 
@@ -1020,17 +1020,10 @@ class DispatchService {
         { lockAcquired: true }
       );
 
-      const [duplicateRows] = await connection.query(
-        `
-          SELECT id
-          FROM dispatch_tickets
-          WHERE ticket_number = ?
-          LIMIT 1
-          FOR UPDATE
-        `,
-        [ticketData.ticket_number]
+      ticketData.ticket_number = await this.generateTicketNumber(
+        connection,
+        Number(ticketData.dispatch_date.slice(0, 4))
       );
-      if (duplicateRows.length) throw duplicateDispatchTicketNumberError();
 
       let ticketResult;
       try {
