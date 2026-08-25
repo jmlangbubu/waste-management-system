@@ -1060,13 +1060,12 @@
 
               <div id="dispatchPlannerStepHeader" class="dispatch-step-header">
                 <div>
-                  <span id="dispatchPlannerStepCount">Step 1 of 3</span>
+                  <span id="dispatchPlannerStepCount">Step 1 of 2</span>
                   <strong id="dispatchPlannerStepTitle">Ticket</strong>
                 </div>
                 <ol class="dispatch-step-indicator" aria-label="Dispatch planner progress">
                   <li class="active" data-dispatch-step-indicator="1"><span>1</span><small>Ticket</small></li>
                   <li data-dispatch-step-indicator="2"><span>2</span><small>Destinations</small></li>
-                  <li data-dispatch-step-indicator="3"><span>3</span><small>Review</small></li>
                 </ol>
               </div>
 
@@ -1089,7 +1088,10 @@
                 <section class="dispatch-step-panel dispatch-destinations-step" data-dispatch-step-panel="2" aria-labelledby="dispatchAddDestinationsHeading" hidden>
                   <section class="dispatch-planner-section dispatch-add-destinations-section">
                     <div class="dispatch-picker-heading">
-                      <div><strong id="dispatchAddDestinationsHeading">Add Destinations</strong></div>
+                      <div>
+                        <strong id="dispatchAddDestinationsHeading">Destinations</strong>
+                        <small>Choose collection stops for this dispatch.</small>
+                      </div>
                       <span>Verified Gensan catalog</span>
                     </div>
                     <fieldset id="dispatchDestinationControls" class="dispatch-destination-controls" disabled>
@@ -1113,15 +1115,16 @@
                       <label class="dispatch-inline-field" id="dispatchDestinationSearchField">
                         <span id="dispatchDestinationSearchLabel">Search Gensan roads</span>
                         <div class="dispatch-combobox" id="dispatchDestinationSearchWrap">
-                          <input type="search" id="dispatchDestinationSearch" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="dispatchDestinationSuggestions" autocomplete="off" placeholder="Search road, street, location...">
-                          <button type="button" class="dispatch-combobox-clear" id="dispatchDestinationSearchClearBtn" aria-label="Clear destination search">
+                          <svg class="dispatch-combobox-search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m16 16 4 4"/></svg>
+                          <input type="search" id="dispatchDestinationSearch" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="dispatchDestinationSuggestions" autocomplete="off" placeholder="Search road, street or location...">
+                          <button type="button" class="dispatch-combobox-clear hidden" id="dispatchDestinationSearchClearBtn" aria-label="Clear destination search" hidden>
                             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
                           </button>
                         </div>
                       </label>
                       <div class="dispatch-available-destinations-heading">
-                        <strong>Available destinations</strong>
-                        <small>Select a verified catalog location to add it.</small>
+                        <strong>Available Locations</strong>
+                        <small>Select a verified catalog location.</small>
                       </div>
                       <div id="dispatchDestinationSuggestions" class="dispatch-combobox-options dispatch-destination-results hidden" role="listbox"></div>
                       <button type="button" class="dispatch-browse-all-trigger" id="dispatchBrowseAllBtn">Browse All Gensan Roads</button>
@@ -1164,35 +1167,21 @@
 
                   <section class="dispatch-planner-section dispatch-required-destinations-section" aria-labelledby="dispatchRequiredDestinationsHeading">
                     <div class="dispatch-section-heading-row">
-                      <div><strong id="dispatchRequiredDestinationsHeading">Selected Destinations <span id="dispatchRequiredDestinationCount">&middot; 0 selected</span></strong></div>
-                      <button type="button" class="dispatch-text-action" id="dispatchClearRouteBtn" disabled>Clear All</button>
+                      <div><strong id="dispatchRequiredDestinationsHeading">Selected Route <span id="dispatchRequiredDestinationCount">0 stops</span></strong></div>
+                      <button type="button" class="dispatch-text-action hidden" id="dispatchClearRouteBtn" disabled hidden>Clear All</button>
                     </div>
-                    <p class="dispatch-selection-order-note">The system will arrange the best travel order.</p>
+                    <p class="dispatch-selection-order-note">The route order will be optimized automatically.</p>
                     <div id="dispatchStopRows" class="dispatch-stop-rows dispatch-inline-stop-rows">
-                      <div class="dispatch-route-empty">No destinations selected yet.</div>
-                    </div>
-                  </section>
-                </section>
-
-                <section class="dispatch-step-panel dispatch-review-step" data-dispatch-step-panel="3" aria-labelledby="dispatchOptimizedRouteHeading" hidden>
-                  <div class="dispatch-review-summary" id="dispatchReviewSummary">Ticket -- &middot; Truck --</div>
-                  <section class="dispatch-planner-section dispatch-optimized-route-section">
-                    <div class="dispatch-section-heading-row">
-                      <div>
-                        <strong id="dispatchOptimizedRouteHeading">Optimized Route</strong>
-                        <span>Numbering matches the map and WMO remains final.</span>
-                      </div>
-                    </div>
-                    <div id="dispatchOptimizedRouteList" class="dispatch-optimized-route-list" aria-live="polite">
-                      <div class="dispatch-route-empty">Add destinations to calculate the optimized order.</div>
+                      <div class="dispatch-route-empty dispatch-selected-route-empty"><strong>No destinations selected.</strong><span>Search above to add collection stops.</span></div>
                     </div>
                     <div class="dispatch-wmo-return" aria-label="Required final route point">
                       <span class="dispatch-stop-order" data-dispatch-wmo-order>W</span>
                       <div><strong>Return to WMO</strong><small>Required final endpoint</small></div>
                       <span class="dispatch-locked-badge">Final</span>
                     </div>
+                    <div id="dispatchOptimizedRouteList" class="dispatch-visually-hidden" aria-hidden="true"></div>
                   </section>
-                  <section class="dispatch-planner-section dispatch-route-status-section" aria-labelledby="dispatchRouteStatusHeading">
+                  <section class="dispatch-route-status-section" aria-labelledby="dispatchRouteStatusHeading">
                     <div class="dispatch-section-heading-row">
                       <div><strong id="dispatchRouteStatusHeading">Route Status</strong></div>
                       <button type="button" class="dispatch-text-action" id="dispatchRefreshRouteBtn">Retry Route</button>
@@ -1209,9 +1198,7 @@
               <footer class="dispatch-form-actions dispatch-inline-form-actions" aria-label="Dispatch planner actions">
                 <button type="button" class="dispatch-inline-action secondary hidden" id="dispatchStepBackBtn">Back</button>
                 <button type="button" class="dispatch-inline-action primary" id="dispatchStepContinueBtn">Continue</button>
-                <button type="button" class="dispatch-inline-action primary hidden" id="dispatchStepReviewBtn">Review Route</button>
-                <button type="submit" class="dispatch-inline-action secondary hidden" id="dispatchSaveTicketBtn">Save Draft</button>
-                <button type="button" class="dispatch-inline-action primary hidden" id="dispatchNowBtn" disabled>Dispatch Now</button>
+                <button type="button" class="dispatch-inline-action primary hidden" id="dispatchNowBtn" disabled>Done</button>
                 <button type="button" class="dispatch-inline-action secondary hidden" id="dispatchViewActiveRouteBtn">View Route</button>
                 <details id="dispatchLiveActionsMenu" class="dispatch-live-actions-menu hidden">
                   <summary aria-label="More dispatch actions">&bull;&bull;&bull;</summary>

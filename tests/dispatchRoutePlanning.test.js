@@ -481,7 +481,7 @@ function testManualTicketNumberAndUnifiedTicketsWorkflow() {
   assert.match(dashboard, /id="dispatchReportModal"/);
 
   assert.match(source, /destinationControls\.disabled = !destinationsEnabled/);
-  assert.match(source, /saveButton\.disabled = Boolean\([\s\S]*!ticketNumberValid/);
+  assert.match(source, /dispatchPlannerFinalizationState\([\s\S]*ticketNumberValid/);
   assert.doesNotMatch(ticketInputHandler, /dispatchRequest|saveDispatchDraft|createTicket/);
   assert.match(collectForm, /ticket_number: ticketNumber/);
   assert.match(collectForm, /tracking_session_id:/);
@@ -493,7 +493,7 @@ function testManualTicketNumberAndUnifiedTicketsWorkflow() {
   assert.match(recordRenderer, /ticket\.issued_at \|\| ticket\.created_at/);
 }
 
-function testFocusedThreeStepPlannerAndLiveMonitor() {
+function testFocusedTwoStepPlannerAndLiveMonitor() {
   const source = fs.readFileSync(
     path.join(__dirname, "..", "frontend", "js", "admin", "admin-dispatch.js"),
     "utf8"
@@ -516,10 +516,6 @@ function testFocusedThreeStepPlannerAndLiveMonitor() {
   );
   const stepTwo = dashboard.slice(
     dashboard.indexOf('data-dispatch-step-panel="2"'),
-    dashboard.indexOf('data-dispatch-step-panel="3"')
-  );
-  const stepThree = dashboard.slice(
-    dashboard.indexOf('data-dispatch-step-panel="3"'),
     dashboard.indexOf('id="dispatchCurrentPanel"')
   );
   const stepTransition = source.match(/function setDispatchPlannerStep[\s\S]*?function openDispatchPlannerDrawer/)?.[0] || "";
@@ -530,19 +526,18 @@ function testFocusedThreeStepPlannerAndLiveMonitor() {
     dashboard.indexOf('<!-- USER MANAGEMENT -->')
   );
 
-  assert.equal([...dashboard.matchAll(/data-dispatch-step-panel="[123]"/g)].length, 3);
+  assert.equal([...dashboard.matchAll(/data-dispatch-step-panel="[123]"/g)].length, 2);
   assert.match(stepOne, /dispatchTicketNumber/);
   assert.match(stepOne, /Truck number and operating date are assigned automatically\./);
   assert.doesNotMatch(stepOne, /dispatchDestinationSearch|dispatchOptimizedRouteList|dispatchCurrentPanel/);
   assert.match(stepTwo, /dispatchDestinationSearch/);
   assert.match(stepTwo, /dispatchStopRows/);
-  assert.match(stepTwo, /The system will arrange the best travel order\./);
-  assert.doesNotMatch(stepTwo, /dispatchOptimizedRouteList|Return to WMO|data-dispatch-stop-number/);
-  assert.match(stepThree, /dispatchOptimizedRouteList/);
-  assert.match(stepThree, /Return to WMO/);
+  assert.match(stepTwo, /The route order will be optimized automatically\./);
+  assert.match(stepTwo, /dispatchOptimizedRouteList|Return to WMO/);
+  assert.doesNotMatch(dashboard, /data-dispatch-step-panel="3"|Review Route/);
   assert.match(dashboard, /id="dispatchStepContinueBtn"/);
-  assert.match(dashboard, /id="dispatchStepReviewBtn"/);
   assert.match(dashboard, /id="dispatchStepBackBtn"/);
+  assert.match(dashboard, /id="dispatchNowBtn"[^>]*>Done</);
   assert.match(dashboard, /id="dispatchUpdateStopStatusBtn"/);
   assert.match(dashboard, /id="dispatchViewActiveRouteBtn"/);
   assert.ok(dashboard.indexOf("dispatch-inline-form-actions") > dashboard.indexOf("dispatch-step-viewport"));
@@ -593,8 +588,8 @@ function testRoutingResponseOrderAndUiRequirements() {
   assert.match(source, /DISPATCH_BROWSE_DESTINATION_BATCH_SIZE = 20/);
   assert.match(source, /label: "Selected"/);
   assert.doesNotMatch(source, /data-dispatch-stop-move=/);
-  assert.match(dashboard, /Optimized Route/i);
-  assert.match(dashboard, /Numbering matches the map and WMO remains final\./);
+  assert.match(dashboard, /Selected Route/i);
+  assert.match(dashboard, /route order will be optimized automatically\./i);
   assert.match(dashboard, /Return to WMO/);
   assert.equal(dispatchWmoStopOrder(4), 5);
   assert.equal(dispatchSegmentColor({ stop_status: "completed" }, false), "#2e8b57");
@@ -620,7 +615,7 @@ async function run() {
   testOperatingDateAndRecordFiltersAreNotClientControlled();
   testStaleDispatchWarningDoesNotChangeLifecycle();
   testManualTicketNumberAndUnifiedTicketsWorkflow();
-  testFocusedThreeStepPlannerAndLiveMonitor();
+  testFocusedTwoStepPlannerAndLiveMonitor();
   testRoutingResponseOrderAndUiRequirements();
   assert.deepEqual(DISPATCH_WMO_LOCATION, {
     latitude: 6.1060875,

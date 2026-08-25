@@ -144,8 +144,8 @@ function testLayerOwnershipAndFailureOrder() {
 }
 
 function testPlannerPresentationContract() {
-  assert.match(dashboardSource, /Search road, street, location\.\.\./);
-  assert.match(dashboardSource, /Available destinations/);
+  assert.match(dashboardSource, /Search road, street or location\.\.\./);
+  assert.match(dashboardSource, /Available Locations/);
   assert.match(dispatchSource, /data-dispatch-stop-number/);
   assert.match(dashboardSource, /Trucks &amp; Active Dispatches/);
 }

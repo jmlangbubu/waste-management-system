@@ -200,7 +200,7 @@ function testNewDispatchWorkflowEligibilityGuard() {
   );
   const saveBlock = dispatch.slice(
     dispatch.indexOf("async function saveDispatchDraft"),
-    dispatch.indexOf("async function submitDispatchTicketForm")
+    dispatch.indexOf("function submitDispatchTicketForm")
   );
   const dispatchNowBlock = dispatch.slice(
     dispatch.indexOf("async function dispatchSelectedTruckNow"),
@@ -215,11 +215,11 @@ function testNewDispatchWorkflowEligibilityGuard() {
   assert.match(eligibilityBlock, /availableTrucks[\s\S]*session_id/);
   assert.match(contextBlock, /dispatchTruckCanStartNewDispatch\(truck, activeTrackingTrucks\)/);
   assert.match(prepareBlock, /if \(truck\.dispatch\)[\s\S]*setDispatchPlannerMode\("live"\)[\s\S]*return/);
-  assert.match(plannerActionsBlock, /reviewButton\.disabled = !dispatchSelectedSessionActive/);
+  assert.match(plannerActionsBlock, /dispatchPlannerFinalizationState\([\s\S]*sessionEligible: dispatchSelectedSessionActive/);
   assert.match(saveBlock, /requireDispatchNewTicketEligibility/);
   assert.match(dispatchNowBlock, /if \(!requireDispatchNewTicketEligibility\(\)\) return/);
   assert.match(setupBlock, /dispatchStepContinueBtn[\s\S]*requireDispatchNewTicketEligibility/);
-  assert.match(setupBlock, /dispatchStepReviewBtn[\s\S]*requireDispatchNewTicketEligibility/);
+  assert.match(setupBlock, /dispatchNowBtn[\s\S]*dispatchSelectedTruckNow/);
 }
 
 function testFilteringAndRelativeUpdateLabel() {
