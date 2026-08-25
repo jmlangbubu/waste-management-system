@@ -58,6 +58,12 @@ const DISPATCH_TICKET_CREATE_FAILURE_MESSAGE =
   "Dispatch ticket could not be created. Your route is still saved. Please retry.";
 const DISPATCH_ORDERED_ROUTE_REQUIRED_MESSAGE =
   "An ordered road route is required before saving this dispatch.";
+const DISPATCH_NON_TERMINAL_TICKET_STATUSES = Object.freeze([
+  "prepared",
+  "dispatched",
+  "in_progress",
+  "returning_to_wmo"
+]);
 
 let dispatchFocusedStopRow = null;
 let dispatchLocationLookupController = null;
@@ -455,6 +461,93 @@ function dispatchSessionKey(value) {
   return String(value ?? "").trim();
 }
 
+function dispatchNormalizeExistingTicket(ticket = {}) {
+  if (!ticket || typeof ticket !== "object") return null;
+  const id = ticket.dispatch_ticket_id ?? ticket.id ?? null;
+  const ticketNumber = String(ticket.ticket_number || "").trim();
+  const status = String(
+    ticket.status || ticket.ticket_status || "in_progress"
+  ).trim().toLowerCase();
+  if (!id && !ticketNumber) return null;
+  return {
+    ...ticket,
+    id,
+    ticket_number: ticketNumber || `#${id}`,
+    status
+  };
+}
+
+function dispatchFindNonTerminalTicket(tickets = [], truckId = "") {
+  const truckKey = dispatchSessionKey(truckId).toLowerCase();
+  if (!truckKey) return null;
+  const ticket = (Array.isArray(tickets) ? tickets : []).find((candidate) =>
+    dispatchSessionKey(candidate?.truck_id).toLowerCase() === truckKey &&
+    DISPATCH_NON_TERMINAL_TICKET_STATUSES.includes(
+      String(candidate?.status || "").trim().toLowerCase()
+    )
+  );
+  return dispatchNormalizeExistingTicket(ticket);
+}
+
+function dispatchResolveEligibilityPriority(options = {}) {
+  const truck = options.truck || null;
+  const existingTicket = dispatchNormalizeExistingTicket(truck?.dispatch) ||
+    dispatchFindNonTerminalTicket(options.tickets, truck?.truck_id);
+  if (existingTicket) {
+    return { status: "existing_dispatch", ticket: existingTicket, error: null };
+  }
+  if (options.checking) {
+    return { status: "checking", ticket: null, error: null };
+  }
+  if (options.error) {
+    return { status: "error", ticket: null, error: options.error };
+  }
+  if (options.gpsEligible) {
+    return { status: "eligible", ticket: null, error: null };
+  }
+  return { status: "gps_required", ticket: null, error: null };
+}
+
+function dispatchEligibilityMatchesSelection(state = dispatchNewTicketEligibility) {
+  return Boolean(
+    state &&
+    dispatchSessionKey(state.sessionId) === dispatchSessionKey(selectedSessionId) &&
+    dispatchSessionKey(state.truckId) === dispatchSessionKey(selectedTrackingTruck?.truck_id)
+  );
+}
+
+function dispatchEligibilityAllowsPlanning(state = dispatchNewTicketEligibility) {
+  return dispatchEligibilityMatchesSelection(state) && state.status === "eligible";
+}
+
+function dispatchEligibilityTicketLabel(ticket = {}) {
+  const ticketNumber = String(ticket.ticket_number || ticket.id || "").trim();
+  if (!ticketNumber) return "Ticket unavailable";
+  return /^ticket\b/i.test(ticketNumber) ? ticketNumber : `Ticket ${ticketNumber}`;
+}
+
+function dispatchExistingTicketPresentation(ticket = {}, truckLabel = "This truck") {
+  const status = String(ticket.status || "").trim().toLowerCase();
+  const prepared = status === "prepared";
+  return prepared
+    ? {
+        isLive: false,
+        eyebrow: "Existing dispatch ticket",
+        title: "EXISTING DISPATCH TICKET",
+        message: `${truckLabel} already has a prepared dispatch ticket.`,
+        guidance: "View the prepared ticket to review or resume its existing workflow.",
+        actionLabel: "View Ticket"
+      }
+    : {
+        isLive: ["dispatched", "in_progress", "returning_to_wmo"].includes(status),
+        eyebrow: "Active dispatch found",
+        title: "ACTIVE DISPATCH FOUND",
+        message: `${truckLabel} already has an active dispatch.`,
+        guidance: "Open the existing dispatch to review its route and current progress.",
+        actionLabel: "Open Live Dispatch"
+      };
+}
+
 function dispatchResolveAvailableTrackingSession(
   sessionId,
   availableTrucks = activeTrackingTrucks
@@ -533,23 +626,229 @@ function synchronizeDispatchSelectedSessionAuthority() {
   return currentTruck;
 }
 
+function renderDispatchEligibilityState() {
+  if (typeof document === "undefined") return;
+  const panel = document.getElementById("dispatchEligibilityPanel");
+  if (!panel) return;
+  const state = dispatchEligibilityMatchesSelection()
+    ? dispatchNewTicketEligibility
+    : { status: "idle", ticket: null, error: null };
+  const blocked = dispatchPlannerMode === "create" &&
+    Boolean(selectedTrackingTruck) &&
+    !["idle", "eligible"].includes(state.status);
+
+  document.getElementById("dispatchTicketForm")
+    ?.classList.toggle("has-eligibility-blocker", blocked);
+  dispatchSetElementVisible(panel, blocked);
+  dispatchSetElementVisible(
+    document.getElementById("dispatchPlannerStepHeader"),
+    dispatchPlannerMode === "create" && !blocked
+  );
+  document.querySelectorAll("[data-dispatch-step-panel]").forEach((stepPanel) => {
+    const active = dispatchPlannerMode === "create" &&
+      !blocked &&
+      Number(stepPanel.dataset.dispatchStepPanel) === dispatchPlannerStep;
+    stepPanel.classList.toggle("active", active);
+    stepPanel.hidden = !active;
+  });
+  if (!blocked) return;
+
+  const truckLabel = String(
+    selectedTrackingTruck?.truck_id ||
+    selectedTrackingTruck?.truck_name ||
+    "This truck"
+  );
+  const existingTicketPresentation = dispatchExistingTicketPresentation(
+    state.ticket,
+    truckLabel
+  );
+  const content = state.status === "existing_dispatch"
+    ? existingTicketPresentation
+    : state.status === "gps_required"
+      ? {
+          eyebrow: "New dispatch unavailable",
+          title: "GPS LOCATION REQUIRED",
+          message: `${truckLabel} does not currently have a fresh reliable GPS location.`,
+          guidance: "Keep tracking enabled and wait for a fresh GPS update before creating a new dispatch."
+        }
+      : state.status === "error"
+        ? {
+            eyebrow: "Eligibility check unavailable",
+            title: "DISPATCH STATUS UNAVAILABLE",
+            message: "The truck's dispatch status could not be confirmed.",
+            guidance: String(state.error?.message || "Try selecting the truck again.")
+          }
+        : {
+            eyebrow: "Checking dispatch status",
+            title: "CHECKING TRUCK ELIGIBILITY",
+            message: `Checking whether ${truckLabel} can receive a new dispatch.`,
+            guidance: ""
+          };
+
+  panel.dataset.eligibilityStatus = state.status;
+  document.getElementById("dispatchEligibilityEyebrow").textContent = content.eyebrow;
+  document.getElementById("dispatchEligibilityTitle").textContent = content.title;
+  document.getElementById("dispatchEligibilityMessage").textContent = content.message;
+  document.getElementById("dispatchEligibilityGuidance").textContent = content.guidance;
+
+  const hasExistingTicket = state.status === "existing_dispatch" && Boolean(state.ticket);
+  const meta = document.getElementById("dispatchEligibilityMeta");
+  dispatchSetElementVisible(meta, hasExistingTicket);
+  if (hasExistingTicket) {
+    document.getElementById("dispatchEligibilityTicket").textContent =
+      dispatchEligibilityTicketLabel(state.ticket);
+    document.getElementById("dispatchEligibilityStatus").textContent =
+      dispatchStatusLabel(state.ticket.status);
+  }
+  const openButton = document.getElementById("dispatchOpenExistingBtn");
+  dispatchSetElementVisible(openButton, hasExistingTicket && Boolean(state.ticket?.id));
+  if (openButton) {
+    openButton.dataset.dispatchTicketId = state.ticket?.id || "";
+    openButton.textContent = existingTicketPresentation.actionLabel;
+  }
+
+  document.getElementById("dispatchSessionWarning")?.classList.add("hidden");
+  document.getElementById("dispatchTicketFormError")?.classList.add("hidden");
+  document.getElementById("dispatchWorkflowResult")?.classList.add("hidden");
+}
+
+function setDispatchNewTicketEligibility(nextState = {}, options = {}) {
+  dispatchNewTicketEligibility = {
+    status: nextState.status || "idle",
+    sessionId: nextState.sessionId ?? selectedSessionId ?? null,
+    truckId: nextState.truckId ?? selectedTrackingTruck?.truck_id ?? null,
+    ticket: nextState.ticket || null,
+    error: nextState.error || null
+  };
+  const blocksNewPlanning = dispatchPlannerMode === "create" &&
+    !["idle", "eligible"].includes(dispatchNewTicketEligibility.status);
+  if (blocksNewPlanning) {
+    dispatchPlannerStep = 1;
+    if (options.clearRoute !== false && typeof document !== "undefined") {
+      clearDispatchPlannedRoute(`new dispatch ${dispatchNewTicketEligibility.status}`);
+      clearDispatchDestinationMarkers();
+    }
+  }
+  if (selectedTrackingTruck && typeof updateDispatchSelectedTruckContext === "function") {
+    updateDispatchSelectedTruckContext(selectedTrackingTruck);
+  }
+  renderDispatchEligibilityState();
+  updateDispatchPlannerActions();
+  return dispatchNewTicketEligibility;
+}
+
+async function resolveDispatchNewTicketEligibility(truck = selectedTrackingTruck) {
+  if (!truck) {
+    setDispatchNewTicketEligibility({ status: "idle", sessionId: null, truckId: null });
+    return dispatchNewTicketEligibility;
+  }
+  const sessionId = dispatchSessionKey(truck.session_id);
+  const truckId = dispatchSessionKey(truck.truck_id);
+  const generation = ++dispatchEligibilityRequestGeneration;
+  const baseState = { sessionId, truckId };
+  const knownState = dispatchResolveEligibilityPriority({ truck, checking: true });
+  if (knownState.status === "existing_dispatch") {
+    return setDispatchNewTicketEligibility({ ...baseState, ...knownState });
+  }
+
+  setDispatchNewTicketEligibility({ ...baseState, status: "checking" });
+  try {
+    const tickets = await dispatchRequest(
+      `${getDispatchTicketsApiUrl()}?truck=${encodeURIComponent(truckId)}`
+    );
+    if (
+      generation !== dispatchEligibilityRequestGeneration ||
+      dispatchSessionKey(selectedSessionId) !== sessionId ||
+      dispatchSessionKey(selectedTrackingTruck?.truck_id) !== truckId
+    ) {
+      return dispatchNewTicketEligibility;
+    }
+    const gpsEligible = dispatchTruckCanStartNewDispatch(truck, activeTrackingTrucks);
+    const resolved = dispatchResolveEligibilityPriority({ truck, tickets, gpsEligible });
+    setDispatchNewTicketEligibility({ ...baseState, ...resolved });
+    if (resolved.status === "eligible" && dispatchPlannerMode === "create") {
+      renderDispatchDraftOnLiveMap();
+      updateDispatchPlannerDestinationUi();
+    }
+    return dispatchNewTicketEligibility;
+  } catch (error) {
+    if (generation !== dispatchEligibilityRequestGeneration) {
+      return dispatchNewTicketEligibility;
+    }
+    return setDispatchNewTicketEligibility({
+      ...baseState,
+      status: "error",
+      error
+    });
+  }
+}
+
+function reconcileDispatchEligibilityWithTracking(truck = selectedTrackingTruck) {
+  if (!truck || !dispatchEligibilityMatchesSelection()) return;
+  const current = dispatchNewTicketEligibility;
+  const knownTicket = dispatchNormalizeExistingTicket(truck.dispatch);
+  if (knownTicket) {
+    setDispatchNewTicketEligibility({
+      status: "existing_dispatch",
+      sessionId: truck.session_id,
+      truckId: truck.truck_id,
+      ticket: knownTicket
+    }, { clearRoute: dispatchPlannerMode === "create" });
+    return;
+  }
+  if (["idle", "checking", "error", "existing_dispatch"].includes(current.status)) return;
+  const gpsEligible = dispatchTruckCanStartNewDispatch(truck, activeTrackingTrucks);
+  const nextStatus = gpsEligible ? "eligible" : "gps_required";
+  if (nextStatus === current.status) return;
+  setDispatchNewTicketEligibility({
+    status: nextStatus,
+    sessionId: truck.session_id,
+    truckId: truck.truck_id
+  });
+  if (nextStatus === "eligible" && dispatchPlannerMode === "create") {
+    renderDispatchDraftOnLiveMap();
+  }
+}
+
 function dispatchNewTicketBlockMessage(truck = selectedTrackingTruck) {
-  if (truck?.dispatch) {
-    const ticketNumber = truck.dispatch.ticket_number;
+  const state = dispatchEligibilityMatchesSelection()
+    ? dispatchNewTicketEligibility
+    : null;
+  const existingTicket = state?.status === "existing_dispatch"
+    ? state.ticket
+    : dispatchNormalizeExistingTicket(truck?.dispatch);
+  if (existingTicket) {
+    const ticketNumber = existingTicket.ticket_number;
     return ticketNumber
       ? `${ticketNumber} is already active for this truck. Open the existing dispatch to monitor its progress.`
       : "This truck already has an active dispatch. Open the existing dispatch to monitor its progress.";
   }
+  if (state?.status === "checking") {
+    return "Wait while the truck's existing dispatch status is checked.";
+  }
+  if (state?.status === "error") {
+    return state.error?.message || "The truck's dispatch status could not be confirmed.";
+  }
   return "Fresh reliable GPS and an active tracking session are required before starting a new dispatch.";
 }
 
-function requireDispatchNewTicketEligibility({ notify = true } = {}) {
-  const eligible = Boolean(synchronizeDispatchSelectedSessionAuthority());
+function requireDispatchNewTicketEligibility() {
+  const eligible = dispatchEligibilityAllowsPlanning() &&
+    Boolean(synchronizeDispatchSelectedSessionAuthority());
   if (eligible) return true;
-
-  const message = dispatchNewTicketBlockMessage();
-  renderDispatchWorkflowResult(message, "error");
-  if (notify) dispatchNotify(message, "error");
+  if (
+    dispatchEligibilityMatchesSelection() &&
+    dispatchNewTicketEligibility.status === "eligible"
+  ) {
+    setDispatchNewTicketEligibility({
+      status: "gps_required",
+      sessionId: selectedSessionId,
+      truckId: selectedTrackingTruck?.truck_id
+    });
+  } else {
+    renderDispatchEligibilityState();
+    updateDispatchPlannerActions();
+  }
   return false;
 }
 
@@ -846,10 +1145,17 @@ function setDispatchPlannerMode(mode = "create") {
   const eyebrow = document.getElementById("dispatchDrawerEyebrow");
   if (eyebrow) eyebrow.textContent = "Operations Workspace";
   updateDispatchPlannerActions();
+  renderDispatchEligibilityState();
 }
 
 function setDispatchPlannerStep(step, options = {}) {
-  dispatchPlannerStep = Math.max(1, Math.min(2, Number(step) || 1));
+  const nextStep = Math.max(1, Math.min(2, Number(step) || 1));
+  if (nextStep === 2 && !dispatchEligibilityAllowsPlanning()) {
+    renderDispatchEligibilityState();
+    updateDispatchPlannerActions();
+    return false;
+  }
+  dispatchPlannerStep = nextStep;
   if (dispatchPlannerMode !== "create") setDispatchPlannerMode("create");
   document.querySelectorAll("[data-dispatch-step-panel]").forEach((panel) => {
     const active = Number(panel.dataset.dispatchStepPanel) === dispatchPlannerStep;
@@ -874,6 +1180,7 @@ function setDispatchPlannerStep(step, options = {}) {
     ? document.getElementById("dispatchStepContinueBtn")
     : document.getElementById("dispatchDestinationSearch");
   focusTarget?.focus?.({ preventScroll: true });
+  return true;
 }
 
 function openDispatchPlannerDrawer({ focusSearch = true } = {}) {
@@ -979,8 +1286,9 @@ function updateDispatchPlannerActions() {
   const viewRouteButton = document.getElementById("dispatchViewActiveRouteBtn");
   const liveActionsMenu = document.getElementById("dispatchLiveActionsMenu");
   const endDispatchButton = document.getElementById("dispatchEndActiveBtn");
+  const eligibilityReady = dispatchEligibilityAllowsPlanning();
   const destinationsEnabled = Boolean(
-    selectedTrackingTruck && dispatchSelectedSessionActive
+    selectedTrackingTruck && dispatchSelectedSessionActive && eligibilityReady
   );
   const routeReadiness = getDispatchCurrentAssignedRouteReadiness();
   const finalizationState = dispatchPlannerFinalizationState({
@@ -991,15 +1299,18 @@ function updateDispatchPlannerActions() {
   });
 
   const creating = dispatchPlannerMode === "create";
-  dispatchSetElementVisible(backButton, creating && dispatchPlannerStep > 1);
-  dispatchSetElementVisible(continueButton, creating && dispatchPlannerStep === 1);
-  dispatchSetElementVisible(dispatchNowButton, creating && dispatchPlannerStep === 2);
-  dispatchSetElementVisible(clearButton, creating && dispatchPlannerStep === 2 && destinationCount > 0);
+  dispatchSetElementVisible(backButton, creating && eligibilityReady && dispatchPlannerStep > 1);
+  dispatchSetElementVisible(continueButton, creating && eligibilityReady && dispatchPlannerStep === 1);
+  dispatchSetElementVisible(dispatchNowButton, creating && eligibilityReady && dispatchPlannerStep === 2);
+  dispatchSetElementVisible(clearButton, creating && eligibilityReady && dispatchPlannerStep === 2 && destinationCount > 0);
   dispatchSetElementVisible(updateStopButton, !creating);
   dispatchSetElementVisible(viewRouteButton, !creating);
   dispatchSetElementVisible(liveActionsMenu, !creating);
   if (continueButton) {
-    continueButton.disabled = !selectedTrackingTruck || !dispatchSelectedSessionActive || dispatchPlannerOperationProcessing;
+    continueButton.disabled = !selectedTrackingTruck ||
+      !dispatchSelectedSessionActive ||
+      !eligibilityReady ||
+      dispatchPlannerOperationProcessing;
   }
   if (destinationControls) destinationControls.disabled = !destinationsEnabled;
   if (destinationHint) {
@@ -1033,9 +1344,13 @@ function updateDispatchPlannerActions() {
 }
 
 function requireDispatchAssignmentForDestinations() {
-  if (selectedTrackingTruck && dispatchSelectedSessionActive) return true;
+  if (
+    selectedTrackingTruck &&
+    dispatchSelectedSessionActive &&
+    dispatchEligibilityAllowsPlanning()
+  ) return true;
   updateDispatchPlannerActions();
-  dispatchNotify("Select a dispatch-ready truck before adding destinations.", "error");
+  renderDispatchEligibilityState();
   return false;
 }
 
@@ -1169,7 +1484,11 @@ function updateDispatchSelectedTruckContext(truck = selectedTrackingTruck) {
   selectedTrackingTruck = truck;
   const sessionActive =
     String(truck.session_status || "active").toLowerCase() === "active";
-  const hasActiveDispatch = Boolean(truck.dispatch);
+  const eligibilityTicket = dispatchEligibilityMatchesSelection() &&
+    dispatchNewTicketEligibility.status === "existing_dispatch"
+    ? dispatchNewTicketEligibility.ticket
+    : null;
+  const hasActiveDispatch = Boolean(truck.dispatch || eligibilityTicket);
   dispatchSelectedSessionActive =
     sessionActive &&
     dispatchTruckCanStartNewDispatch(truck, activeTrackingTrucks);
@@ -1206,10 +1525,13 @@ function updateDispatchSelectedTruckContext(truck = selectedTrackingTruck) {
 
   synchronizeDispatchSelectedTruckForm(truck);
   if (warning) {
-    const warningMessage = !sessionActive
+    const eligibilityBlockVisible = dispatchPlannerMode === "create" &&
+      dispatchEligibilityMatchesSelection() &&
+      !["idle", "eligible"].includes(dispatchNewTicketEligibility.status);
+    const warningMessage = eligibilityBlockVisible || hasActiveDispatch
+      ? ""
+      : !sessionActive
       ? "The selected tracking session has ended. Choose an active truck to save or dispatch this route."
-      : hasActiveDispatch
-        ? `${gpsMeta.label}. The existing active dispatch remains available for monitoring; new dispatch planning stays disabled until it ends.`
       : !dispatchSelectedSessionActive
           ? "Fresh reliable GPS is required before this truck can receive a new dispatch."
           : "";
@@ -1225,20 +1547,10 @@ function prepareDispatchPlannerForTruck(truck) {
   const isNewSelection = String(previousSessionId || "") !== String(truck.session_id);
   if (isNewSelection) resetDispatchTicketForm();
   updateDispatchSelectedTruckContext(truck);
+  setDispatchPlannerMode("create");
+  setDispatchPlannerStep(1, { focus: false });
   setDispatchWorkspaceTab("plan");
-  if (truck.dispatch) {
-    if (isNewSelection) {
-      selectedDispatchTicket = null;
-      const panel = document.getElementById("dispatchCurrentPanel");
-      if (panel) {
-        panel.innerHTML = '<div class="dispatch-panel-empty"><div><strong>Loading Dispatch Details</strong><p>The finalized route and current progress are being loaded.</p></div></div>';
-      }
-    }
-    setDispatchPlannerMode("live");
-    return;
-  }
-  renderDispatchDraftOnLiveMap();
-  updateDispatchPlannerDestinationUi();
+  void resolveDispatchNewTicketEligibility(truck);
 }
 
 function handleDispatchSelectedSessionEnded() {
@@ -1518,6 +1830,14 @@ function activateDispatchPlannedLayerGroups(groups) {
 }
 
 function clearDispatchTrackingSelection() {
+  dispatchEligibilityRequestGeneration += 1;
+  dispatchNewTicketEligibility = {
+    status: "idle",
+    sessionId: null,
+    truckId: null,
+    ticket: null,
+    error: null
+  };
   selectedDispatchTicket = null;
   dispatchPendingLinkTicketId = null;
   dispatchSelectedSessionActive = false;
@@ -1585,6 +1905,10 @@ async function loadDispatchForTrackingSession(sessionId, options = {}) {
       !dispatchHasVisiblePlannedRoute()
     );
     selectedDispatchTicket = details;
+    const deferExistingDispatchOpen = dispatchPlannerMode === "create" &&
+      dispatchEligibilityMatchesSelection() &&
+      dispatchNewTicketEligibility.status === "existing_dispatch";
+    if (deferExistingDispatchOpen) return details;
     renderDispatchTicketDetails(details);
     const plannerVisible = !document.querySelector('[data-tracking-workspace-view="plan"]')?.hidden;
     const preserveUnsavedDraft = dispatchPlannerHasUnsavedRoute(sessionId);
@@ -3270,6 +3594,9 @@ function renderDispatchSelectionFallback(items, startPoint, wmoPoint, reliableSt
 
 function renderDispatchDraftOnLiveMap(options = {}) {
   if (!truckMap || !window.L) return;
+  if (dispatchPlannerMode === "create" && !dispatchEligibilityAllowsPlanning()) {
+    return;
+  }
   ensureDispatchWmoMarker();
   const stops = getDispatchSelectedDestinationDrafts().filter(
     (stop) => Number.isFinite(stop.latitude) && Number.isFinite(stop.longitude)
@@ -5176,6 +5503,21 @@ function setupDispatchModule() {
   document.getElementById("dispatchPlannerCloseBtn")?.addEventListener("click", () => {
     closeDispatchPlannerDrawer();
   });
+  document.getElementById("dispatchEligibilityBackBtn")?.addEventListener("click", () => {
+    closeDispatchPlannerDrawer();
+  });
+  document.getElementById("dispatchOpenExistingBtn")?.addEventListener("click", async (event) => {
+    const ticketId = event.currentTarget.dataset.dispatchTicketId;
+    if (!ticketId || dispatchPlannerOperationProcessing) return;
+    dispatchPlannerOperationProcessing = true;
+    updateDispatchPlannerActions();
+    try {
+      await openDispatchTicket(ticketId);
+    } finally {
+      dispatchPlannerOperationProcessing = false;
+      updateDispatchPlannerActions();
+    }
+  });
   document.getElementById("dispatchStepContinueBtn")?.addEventListener("click", () => {
     if (!requireDispatchNewTicketEligibility()) return;
     setDispatchPlannerStep(2);
@@ -5463,6 +5805,7 @@ if (typeof module !== "undefined" && module.exports) {
     DISPATCH_COMPLETED_ROUTE_STYLE,
     DISPATCH_TICKET_CREATE_FAILURE_MESSAGE,
     DISPATCH_ORDERED_ROUTE_REQUIRED_MESSAGE,
+    DISPATCH_NON_TERMINAL_TICKET_STATUSES,
     buildDispatchDestinationMarkerLayer,
     buildDispatchPlannedJourney,
     buildDispatchRouteLayers,
@@ -5498,6 +5841,10 @@ if (typeof module !== "undefined" && module.exports) {
     dispatchRoutingFailureState,
     dispatchTicketFailureState,
     dispatchDefaultRouteName,
+    dispatchExistingTicketPresentation,
+    dispatchFindNonTerminalTicket,
+    dispatchNormalizeExistingTicket,
+    dispatchResolveEligibilityPriority,
     dispatchResolveAvailableTrackingSession,
     dispatchResolveSelectedNewTicketTruck,
     dispatchSelectedTruckIdentity,

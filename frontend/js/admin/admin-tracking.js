@@ -198,7 +198,8 @@ function buildTrackingAvailabilitySnapshot(
 
   const availableTrucks = filterAvailableTrackingTrucks(sessions, now);
   const operationalTrucks = sessions.filter((truck) =>
-    Boolean(truck.dispatch) || isTrackingTruckAvailable(truck, now)
+    Boolean(truck.dispatch) ||
+    String(truck?.session_status || "").toLowerCase() === "active"
   );
 
   return {
@@ -587,6 +588,9 @@ async function loadActiveTrucks() {
       if (typeof updateDispatchSelectedTruckContext === "function") {
         updateDispatchSelectedTruckContext(selectedTruck);
       }
+      if (typeof reconcileDispatchEligibilityWithTracking === "function") {
+        reconcileDispatchEligibilityWithTracking(selectedTruck);
+      }
       updateTrackingSummaryCards(trucks, selectedTruck);
 
       await hydrateSelectedTruckWorkspace(selectedSessionId, { keepView: true });
@@ -675,7 +679,14 @@ function renderActiveTruckList(trucks) {
       ? statusMeta.available
         ? "Open active dispatch"
         : "Open active dispatch · Last-known progress"
-      : "Available for dispatch";
+      : statusMeta.available
+        ? "Available for dispatch"
+        : "Unavailable for new dispatch";
+    const actionLabel = hasLiveDispatch
+      ? "Open live dispatch for"
+      : statusMeta.available
+        ? "Plan dispatch for"
+        : "Review dispatch availability for";
 
     return `
       <button
@@ -684,7 +695,7 @@ function renderActiveTruckList(trucks) {
         data-tracking-session-id="${typeof dispatchEscape === "function" ? dispatchEscape(truck.session_id) : escapeHtml(truck.session_id)}"
         data-tracking-truck-id="${escapeHtml(truck.truck_id || "")}"
         aria-pressed="${isSelected}"
-        aria-label="${hasLiveDispatch ? "Open live dispatch for" : "Plan dispatch for"} ${escapeHtml(truckIdentifier)}, ${escapeHtml(statusMeta.label)}"
+        aria-label="${actionLabel} ${escapeHtml(truckIdentifier)}, ${escapeHtml(statusMeta.label)}"
       >
         <span class="truck-item-icon">${getTrackingInlineIcon("truck")}</span>
 
@@ -938,20 +949,6 @@ async function loadTruckRoute(sessionId, options = {}) {
     const startPoint = latlngs[0];
     const currentReliablePoint = routeResult.markerPoint;
 
-    if (!selectedStartMarker) {
-      const startIcon = L.divIcon({
-        className: "custom-start-marker",
-        html: '<span class="tracking-route-endpoint start"></span>',
-        iconSize: [18, 18],
-        iconAnchor: [9, 9]
-      });
-      selectedStartMarker = L.marker(startPoint, { icon: startIcon, pane: "dispatchMarkerPane" })
-        .addTo(trackingCurrentTruckLayerGroup || truckMap)
-        .bindPopup("Reliable route start");
-    } else {
-      selectedStartMarker.setLatLng(startPoint);
-    }
-
     if (currentReliablePoint) {
       const currentPoint = [currentReliablePoint.lat, currentReliablePoint.lng];
       selectedReliableRoutePoint = currentReliablePoint;
@@ -1016,11 +1013,6 @@ function resetTrackingView(options = {}) {
   }
 
   clearTrackingGapPolylines();
-
-  if (selectedStartMarker && truckMap) {
-    (trackingCurrentTruckLayerGroup || truckMap).removeLayer(selectedStartMarker);
-    selectedStartMarker = null;
-  }
 
   if (selectedCurrentMarker && truckMap) {
     (trackingCurrentTruckLayerGroup || truckMap).removeLayer(selectedCurrentMarker);
@@ -1385,9 +1377,7 @@ function selectTruck(sessionId, truckId) {
     if (selectedRoutePolyline && truckMap) truckMap.removeLayer(selectedRoutePolyline);
     selectedRoutePolyline = null;
     clearTrackingGapPolylines();
-    if (selectedStartMarker && truckMap) (trackingCurrentTruckLayerGroup || truckMap).removeLayer(selectedStartMarker);
     if (selectedCurrentMarker && truckMap) (trackingCurrentTruckLayerGroup || truckMap).removeLayer(selectedCurrentMarker);
-    selectedStartMarker = null;
     selectedCurrentMarker = null;
     selectedReliableRoutePoint = null;
   }

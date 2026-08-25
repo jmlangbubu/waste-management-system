@@ -1073,6 +1073,26 @@
               <div class="dispatch-step-viewport">
                 <div id="dispatchSessionWarning" class="dispatch-session-warning hidden" role="alert"></div>
 
+                <section id="dispatchEligibilityPanel" class="dispatch-eligibility-panel hidden" aria-live="polite" hidden>
+                  <div class="dispatch-eligibility-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 1 0 18 9 9 0 0 1 0-18Z"/><path d="M12 8v5M12 16.5v.5"/></svg>
+                  </div>
+                  <div class="dispatch-eligibility-copy">
+                    <small id="dispatchEligibilityEyebrow">Checking dispatch status</small>
+                    <h3 id="dispatchEligibilityTitle">Checking truck eligibility</h3>
+                    <p id="dispatchEligibilityMessage">Confirming that this truck can receive a new dispatch.</p>
+                    <dl id="dispatchEligibilityMeta" class="dispatch-eligibility-meta hidden" hidden>
+                      <div><dt>Ticket</dt><dd id="dispatchEligibilityTicket">--</dd></div>
+                      <div><dt>Status</dt><dd id="dispatchEligibilityStatus">--</dd></div>
+                    </dl>
+                    <p id="dispatchEligibilityGuidance" class="dispatch-eligibility-guidance"></p>
+                    <div class="dispatch-eligibility-actions">
+                      <button type="button" class="dispatch-inline-action primary hidden" id="dispatchOpenExistingBtn" hidden>View Ticket</button>
+                      <button type="button" class="dispatch-inline-action secondary" id="dispatchEligibilityBackBtn">Back</button>
+                    </div>
+                  </div>
+                </section>
+
                 <section class="dispatch-step-panel active" data-dispatch-step-panel="1" aria-labelledby="dispatchTicketNumberHeading">
                   <div class="dispatch-step-intro">
                     <small>Dispatch Assignment</small>

@@ -628,7 +628,6 @@
 
 /* Leaflet marker */
 .custom-truck-marker .truck-marker-shell,
-.custom-start-marker,
 .custom-current-marker {
   filter: drop-shadow(0 5px 10px rgba(15, 23, 42, 0.2));
 }

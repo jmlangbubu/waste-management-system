@@ -62,7 +62,6 @@ let truckMarkers = {};
 let selectedSessionId = null;
 let selectedTruckId = null;
 let selectedRoutePolyline = null;
-let selectedStartMarker = null;
 let selectedCurrentMarker = null;
 let trackingCurrentTruckLayerGroup = null;
 let trackingPollInterval = null;
@@ -135,6 +134,14 @@ let dispatchPlannerOperationProcessing = false;
 let dispatchLastRouteDistanceMeters = null;
 let dispatchPlannerStep = 1;
 let dispatchPlannerMode = "create";
+let dispatchNewTicketEligibility = {
+  status: "idle",
+  sessionId: null,
+  truckId: null,
+  ticket: null,
+  error: null
+};
+let dispatchEligibilityRequestGeneration = 0;
 let dispatchWorkspaceView = "plan";
 let dispatchActiveRouteOrderSignature = "";
 let dispatchHasFittedActiveRoute = false;
