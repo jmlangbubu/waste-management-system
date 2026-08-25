@@ -104,6 +104,40 @@ async function testSequenceInitializesAndIncrementsWithoutDuplicates() {
   assert.equal(calls.filter((sql) => /FOR UPDATE/.test(sql)).length, 2);
 }
 
+async function testConcurrentTicketNumberReservationsAreUnique() {
+  const sequenceLock = createSharedTruckRowLock();
+  let lastValue = 0;
+  const makeConnection = () => {
+    let releaseSequenceLock = null;
+    return {
+      async query(sql, parameters = []) {
+        const normalizedSql = sql.replace(/\s+/g, " ").trim();
+        if (normalizedSql.startsWith("INSERT INTO dispatch_ticket_sequences")) {
+          return [{ affectedRows: 1 }];
+        }
+        if (normalizedSql.startsWith("SELECT `last_value`")) {
+          releaseSequenceLock = await sequenceLock.acquire();
+          return [[{ last_value: lastValue }]];
+        }
+        if (normalizedSql.startsWith("UPDATE dispatch_ticket_sequences")) {
+          lastValue = Number(parameters[0]);
+          releaseSequenceLock?.();
+          return [{ affectedRows: 1 }];
+        }
+        throw new Error(`Unexpected SQL: ${normalizedSql}`);
+      }
+    };
+  };
+  const service = new DispatchService({});
+  const ticketNumbers = await Promise.all([
+    service.generateTicketNumber(makeConnection(), 2026),
+    service.generateTicketNumber(makeConnection(), 2026)
+  ]);
+  assert.deepEqual(ticketNumbers.sort(), ["DPT-2026-0001", "DPT-2026-0002"]);
+  assert.equal(new Set(ticketNumbers).size, 2);
+  assert.equal(sequenceLock.maxHeldCount, 1);
+}
+
 function createTransactionalPool({
   failTicketInsert = false,
   duplicateTicket = false,
@@ -301,7 +335,7 @@ function createLifecyclePool({
   };
 }
 
-async function testCreateTicketUsesCurrentManilaDateAndOptimizedStops() {
+async function testCreateTicketGeneratesNumberAndPreservesAssignedStops() {
   const fixedNow = new Date("2026-08-02T16:30:00.000Z");
   const { pool, state } = createTransactionalPool();
   const service = new DispatchService(pool, { now: () => fixedNow });
@@ -334,7 +368,7 @@ async function testCreateTicketUsesCurrentManilaDateAndOptimizedStops() {
   }));
   assert.equal(details.ticket.id, 501);
   assert.equal(currentManilaDate(fixedNow), "2026-08-03");
-  assert.equal(state.ticketParameters[0], "00090009");
+  assert.equal(state.ticketParameters[0], "DPT-2026-0001");
   assert.equal(state.ticketParameters[5], "2026-08-03");
   assert.notEqual(state.ticketParameters[5], "2099-12-31");
   assert.deepEqual(state.selectedSessionParameters, [58]);
@@ -343,7 +377,7 @@ async function testCreateTicketUsesCurrentManilaDateAndOptimizedStops() {
   assert.notEqual(state.ticketParameters[3], 999);
   assert.equal(
     state.calls.some((call) => call.sql.includes("dispatch_ticket_sequences")),
-    false
+    true
   );
   assert.equal(state.began, true);
   assert.equal(state.committed, true);
@@ -356,8 +390,8 @@ async function testCreateTicketUsesCurrentManilaDateAndOptimizedStops() {
   const activeSessionIndex = state.calls.findIndex((call) =>
     call.sql.startsWith("SELECT id, truck_id, enforcer_id, enforcer_name, session_status")
   );
-  const duplicateCheckIndex = state.calls.findIndex((call) =>
-    call.sql.startsWith("SELECT id FROM dispatch_tickets WHERE ticket_number")
+  const sequenceLockIndex = state.calls.findIndex((call) =>
+    call.sql.startsWith("SELECT `last_value`") && call.sql.includes("FOR UPDATE")
   );
   const truckConflictIndex = state.calls.findIndex((call) =>
     call.sql.startsWith("SELECT id, ticket_number, status FROM dispatch_tickets")
@@ -367,8 +401,8 @@ async function testCreateTicketUsesCurrentManilaDateAndOptimizedStops() {
     truckLockIndex >= 0 &&
     activeSessionIndex > truckLockIndex &&
     truckConflictIndex > activeSessionIndex &&
-    duplicateCheckIndex > truckConflictIndex &&
-    ticketInsertIndex > duplicateCheckIndex &&
+    sequenceLockIndex > truckConflictIndex &&
+    ticketInsertIndex > sequenceLockIndex &&
     stopInsertIndex > ticketInsertIndex
   );
   const stopInserts = state.calls.filter((call) =>
@@ -408,53 +442,42 @@ async function testNewTicketIgnoresEveryClientDispatchDateVariant() {
   }
 }
 
-async function testManualTicketNumberIsRequiredAndPreservesLeadingZeros() {
-  const service = new DispatchService({
-    async getConnection() {
-      throw new Error("A transaction must not start for invalid input");
-    }
-  });
-  await assert.rejects(
-    () => service.createTicket(ticketPayload({ ticket_number: "   " })),
-    (error) => {
-      assert.equal(error.message, "Enter the ticket number to continue.");
-      assert.equal(error.code, "DISPATCH_TICKET_NUMBER_REQUIRED");
-      return true;
-    }
-  );
-
-  const { pool, state } = createTransactionalPool();
-  const validService = new DispatchService(pool, {
-    now: () => new Date("2026-08-03T00:00:00.000Z")
-  });
-  validService.getTicketDetails = async (ticketId) => ({ ticket: { id: ticketId } });
-  await validService.createTicket(ticketPayload({ ticket_number: "  000042  " }));
-  assert.equal(state.ticketParameters[0], "000042");
-}
-
-async function testDuplicateTicketNumberIsRejectedSafely() {
-  for (const options of [{ duplicateTicket: true }, { duplicateOnInsert: true }]) {
-    const { pool, state } = createTransactionalPool(options);
+async function testCreateIgnoresClientTicketNumberAndGeneratesCanonicalNumber() {
+  for (const suppliedTicketNumber of [undefined, "   ", "  000042  ", "CLIENT-OVERRIDE"]) {
+    const { pool, state } = createTransactionalPool();
     const service = new DispatchService(pool, {
       now: () => new Date("2026-08-03T00:00:00.000Z")
     });
-    await assert.rejects(
-      () => service.createTicket(ticketPayload()),
-      (error) => {
-        assert.equal(error.message, "This ticket number is already in use.");
-        assert.equal(error.code, "DISPATCH_TICKET_NUMBER_DUPLICATE");
-        assert.equal(error.statusCode, 409);
-        assert.doesNotMatch(error.message, /SQL|duplicate entry|ticket_number/i);
-        return true;
-      }
-    );
-    assert.equal(state.committed, false);
-    assert.equal(state.rolledBack, true);
-    assert.equal(
-      state.calls.some((call) => call.sql.startsWith("INSERT INTO dispatch_route_stops")),
-      false
-    );
+    service.getTicketDetails = async (ticketId) => ({ ticket: { id: ticketId } });
+    const payload = ticketPayload();
+    if (suppliedTicketNumber === undefined) delete payload.ticket_number;
+    else payload.ticket_number = suppliedTicketNumber;
+    await service.createTicket(payload);
+    assert.equal(state.ticketParameters[0], "DPT-2026-0001");
   }
+}
+
+async function testGeneratedDuplicateTicketNumberIsRejectedSafely() {
+  const { pool, state } = createTransactionalPool({ duplicateOnInsert: true });
+  const service = new DispatchService(pool, {
+    now: () => new Date("2026-08-03T00:00:00.000Z")
+  });
+  await assert.rejects(
+    () => service.createTicket(ticketPayload()),
+    (error) => {
+      assert.equal(error.message, "This ticket number is already in use.");
+      assert.equal(error.code, "DISPATCH_TICKET_NUMBER_DUPLICATE");
+      assert.equal(error.statusCode, 409);
+      assert.doesNotMatch(error.message, /SQL|duplicate entry|ticket_number/i);
+      return true;
+    }
+  );
+  assert.equal(state.committed, false);
+  assert.equal(state.rolledBack, true);
+  assert.equal(
+    state.calls.some((call) => call.sql.startsWith("INSERT INTO dispatch_route_stops")),
+    false
+  );
 }
 
 async function testSelectedActiveSessionMustMatchTruck() {
@@ -847,7 +870,7 @@ function createSharedTruckRowLock() {
 async function testConcurrentSameTruckCreatesSerializeAndOnlyOneCommits() {
   const sharedTickets = [];
   const truckRowLock = createSharedTruckRowLock();
-  const state = { lockAttempts: 0, commits: 0, rollbacks: 0, lockSql: [] };
+  const state = { lockAttempts: 0, commits: 0, rollbacks: 0, lockSql: [], sequence: 0 };
   let releaseSecondAttempt;
   const secondAttempted = new Promise((resolve) => { releaseSecondAttempt = resolve; });
   let nextTicketId = 500;
@@ -889,6 +912,16 @@ async function testConcurrentSameTruckCreatesSerializeAndOnlyOneCommits() {
               ticket.truck_id === parameters[0] &&
               NON_TERMINAL_TICKET_STATUSES.has(ticket.status)
             )];
+          }
+          if (normalizedSql.startsWith("INSERT INTO dispatch_ticket_sequences")) {
+            return [{ affectedRows: 1 }];
+          }
+          if (normalizedSql.startsWith("SELECT `last_value`")) {
+            return [[{ last_value: state.sequence }]];
+          }
+          if (normalizedSql.startsWith("UPDATE dispatch_ticket_sequences")) {
+            state.sequence = Number(parameters[0]);
+            return [{ affectedRows: 1 }];
           }
           if (normalizedSql.startsWith("SELECT id FROM dispatch_tickets WHERE ticket_number")) {
             return [sharedTickets.filter((ticket) => ticket.ticket_number === parameters[0])];
@@ -1126,10 +1159,11 @@ function testMissingDispatchTableRecognition() {
 async function run() {
   await testTicketNumberSequenceUsesLock();
   await testSequenceInitializesAndIncrementsWithoutDuplicates();
-  await testCreateTicketUsesCurrentManilaDateAndOptimizedStops();
+  await testConcurrentTicketNumberReservationsAreUnique();
+  await testCreateTicketGeneratesNumberAndPreservesAssignedStops();
   await testNewTicketIgnoresEveryClientDispatchDateVariant();
-  await testManualTicketNumberIsRequiredAndPreservesLeadingZeros();
-  await testDuplicateTicketNumberIsRejectedSafely();
+  await testCreateIgnoresClientTicketNumberAndGeneratesCanonicalNumber();
+  await testGeneratedDuplicateTicketNumberIsRejectedSafely();
   await testSelectedActiveSessionMustMatchTruck();
   await testCreateRejectsEveryNonTerminalStatusForSameTruck();
   await testTerminalTicketsAllowNewCreate();

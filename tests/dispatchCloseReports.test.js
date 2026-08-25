@@ -285,7 +285,7 @@ function testRouteSecurityAndFrontendLifecycle() {
   assert.match(frontend, /Detailed trip events are not recorded for this dispatch\./);
   assert.match(frontend, /No actual GPS trail recorded\./);
   assert.match(frontend, /Dark green: actual GPS trail/);
-  assert.match(frontend, /Blue: suggested route/);
+  assert.match(frontend, /Blue: assigned route/);
   assert.match(frontend, /status === "closed_early" \? "Closed At" : "Ended At"/);
   assert.match(frontend, /Destination Progress/);
   assert.match(frontend, /metrics\.returned_to_wmo_at \? `<div><span>Return to WMO/);

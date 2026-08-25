@@ -953,7 +953,7 @@
 
         <div class="tracking-map-legend" aria-label="Map legend">
           <span><i class="tracking-legend-line actual"></i> Actual trail</span>
-          <span><i class="tracking-legend-line planned"></i> Suggested route</span>
+          <span><i class="tracking-legend-line planned"></i> Assigned route</span>
           <span><i class="tracking-legend-dot current"></i> Current truck</span>
           <span><i class="tracking-legend-destination">1</i> Destination</span>
         </div>
@@ -1048,6 +1048,7 @@
           <section class="tracking-workspace-view" data-tracking-workspace-view="plan" role="tabpanel" hidden>
             <form id="dispatchTicketForm" class="dispatch-inline-planner" novalidate>
               <input type="hidden" id="dispatchEditingTicketId">
+              <input type="hidden" id="dispatchTicketNumber">
               <input type="hidden" id="dispatchTrackingSessionId">
               <input type="hidden" id="dispatchTruckId">
               <input type="hidden" id="dispatchTruckName">
@@ -1074,15 +1075,16 @@
 
                 <section class="dispatch-step-panel active" data-dispatch-step-panel="1" aria-labelledby="dispatchTicketNumberHeading">
                   <div class="dispatch-step-intro">
-                    <small>Ticket Number</small>
-                    <h3 id="dispatchTicketNumberHeading">Create a dispatch ticket</h3>
-                    <p>Truck number and operating date are assigned automatically.</p>
+                    <small>Dispatch Assignment</small>
+                    <h3 id="dispatchTicketNumberHeading">Confirm truck assignment</h3>
+                    <p>The ticket number will be generated securely by the backend.</p>
                   </div>
-                  <label class="dispatch-inline-field dispatch-ticket-number-field" for="dispatchTicketNumber">
-                    <span>Ticket Number</span>
-                    <input type="text" id="dispatchTicketNumber" maxlength="100" autocomplete="off" placeholder="Enter ticket number" aria-describedby="dispatchTicketNumberHint">
-                  </label>
-                  <p id="dispatchTicketNumberHint" class="dispatch-ticket-number-hint">Enter the ticket number to continue.</p>
+                  <div class="dispatch-assignment-summary" aria-describedby="dispatchTicketNumberHint">
+                    <span>Truck<strong data-dispatch-assignment-truck>Selected truck</strong></span>
+                    <span>Ticket<strong id="dispatchGeneratedTicketNumber">Auto-generated</strong></span>
+                    <span>GPS<strong data-dispatch-assignment-gps>Current status shown above</strong></span>
+                  </div>
+                  <p id="dispatchTicketNumberHint" class="dispatch-ticket-number-hint">Generated automatically when dispatch is finalized.</p>
                 </section>
 
                 <section class="dispatch-step-panel dispatch-destinations-step" data-dispatch-step-panel="2" aria-labelledby="dispatchAddDestinationsHeading" hidden>
@@ -1168,7 +1170,7 @@
                         <button type="button" class="dispatch-text-action hidden" id="dispatchClearRouteBtn" disabled hidden>Clear All</button>
                       </div>
                     </div>
-                    <p class="dispatch-selection-order-note">The route order will be optimized automatically.</p>
+                    <p class="dispatch-selection-order-note">Stops will be visited in the order shown below.</p>
                     <div id="dispatchStopRows" class="dispatch-stop-rows dispatch-inline-stop-rows">
                       <div class="dispatch-route-empty dispatch-selected-route-empty"><strong>No collection stops selected yet.</strong><span>Search above to add destinations.</span></div>
                     </div>

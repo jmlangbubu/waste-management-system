@@ -358,8 +358,9 @@ function testFrontendTransitionWiringAndSingleActions() {
   );
   assert.match(loadActiveBlock, /hydrateSelectedTruckWorkspace\(selectedSessionId, \{ keepView: true \}\)/);
   assert.doesNotMatch(loadActiveBlock, /selectedRoutePolyline\s*=\s*null|clearDispatchPlannedRoute/);
-  assert.match(plannedRouteBlock, /\["missing", "stale"\]\.includes\(routeOrigin\.source\)/);
-  assert.match(plannedRouteBlock, /dispatchHasVisiblePlannedRoute\(\)[\s\S]*updateDispatchRoutePreviewNotice\("ready"\)[\s\S]*return/);
+  assert.match(plannedRouteBlock, /const startPoint = wmo/);
+  assert.match(plannedRouteBlock, /dispatchSavedStopRouteItems\(details\.stops\)[\s\S]*renderDispatchSelectionFallback/);
+  assert.doesNotMatch(plannedRouteBlock, /resolveDispatchRouteOrigin|requestDispatchRoadCostMatrix/);
   assert.doesNotMatch(plannedRouteBlock.slice(0, plannedRouteBlock.indexOf("const reroute")), /clearDispatchPlannedRoute/);
   assert.match(openTicketBlock, /dispatchTicketIsLive\(details\.ticket\)/);
   assert.match(openTicketBlock, /buildDispatchTrackingContext\(details\)/);
