@@ -584,7 +584,7 @@ function testDrawerRecordsAndTicketFailureDoNotClearRoute() {
     /workspace\.querySelectorAll\("\[data-dispatch-workspace-action\]"\)[\s\S]*?dispatchPlannerBackBtn/
   )?.[0] || "";
   const saveDraft = dispatchSource.match(
-    /async function saveDispatchDraft[\s\S]*?async function submitDispatchTicketForm/
+    /async function saveDispatchDraft[\s\S]*?function submitDispatchTicketForm/
   )?.[0] || "";
   assert.doesNotMatch(drawerFunctions, /clearDispatchPlannedRoute|resetDispatchTicketForm/);
   assert.doesNotMatch(workspaceActions, /clearDispatchPlannedRoute|resetDispatchTicketForm/);
