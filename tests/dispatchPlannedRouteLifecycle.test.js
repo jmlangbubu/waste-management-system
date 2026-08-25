@@ -316,7 +316,10 @@ function testReadyRequiresAnAttachedPolyline() {
   assert.equal(dispatchLayerHasVisiblePolyline(visibleGroup, visibleMap), true);
   assert.equal(dispatchLayerHasVisiblePolyline(markerOnlyGroup, visibleMap), false);
   assert.equal(dispatchLayerHasVisiblePolyline(visibleGroup, { hasLayer: () => false }), false);
-  assert.match(dispatchSource, /normalizedStatus === "ready" && !dispatchHasVisiblePlannedRoute\(\)/);
+  assert.match(
+    dispatchSource,
+    /const routeReady = dispatchPlannerMode === "create"[\s\S]*getDispatchCurrentAssignedRouteReadiness\(\)\.routeReady[\s\S]*dispatchHasVisiblePlannedRoute\(\)[\s\S]*normalizedStatus === "ready" && !routeReady/
+  );
   assert.match(dispatchSource, /updateDispatchRoutePreviewNotice\("complete"\)/);
 }
 

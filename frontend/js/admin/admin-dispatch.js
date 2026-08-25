@@ -56,6 +56,8 @@ const DISPATCH_COMPLETED_ROUTE_STYLE = Object.freeze({
 });
 const DISPATCH_TICKET_CREATE_FAILURE_MESSAGE =
   "Dispatch ticket could not be created. Your route is still saved. Please retry.";
+const DISPATCH_ORDERED_ROUTE_REQUIRED_MESSAGE =
+  "An ordered road route is required before saving this dispatch.";
 
 let dispatchFocusedStopRow = null;
 let dispatchLocationLookupController = null;
@@ -876,14 +878,7 @@ function dispatchPlannerHasUnsavedRoute(sessionId = selectedSessionId) {
 }
 
 function dispatchPlannerFinalizationState(options = {}) {
-  const destinationCount = Number(options.destinationCount || 0);
-  const routeReady = Boolean(
-    destinationCount > 0 &&
-    !options.routePreparing &&
-    Number(options.optimizedCount || 0) === destinationCount &&
-    options.hasSuccessfulRouteState &&
-    options.hasVisibleRoute
-  );
+  const routeReady = Boolean(options.routeReady);
   return {
     routeReady,
     canFinalize: Boolean(
@@ -911,14 +906,11 @@ function updateDispatchPlannerActions() {
   const destinationsEnabled = Boolean(
     selectedTrackingTruck && dispatchSelectedSessionActive
   );
+  const routeReadiness = getDispatchCurrentAssignedRouteReadiness();
   const finalizationState = dispatchPlannerFinalizationState({
-    destinationCount,
     hasTruck: Boolean(selectedTrackingTruck),
     sessionEligible: dispatchSelectedSessionActive,
-    routePreparing: Boolean(dispatchPendingRoutingSignature),
-    optimizedCount: dispatchOptimizedRouteStops.length,
-    hasSuccessfulRouteState: Boolean(dispatchLastSuccessfulRouteState),
-    hasVisibleRoute: dispatchHasVisiblePlannedRoute(),
+    routeReady: routeReadiness.routeReady,
     processing: dispatchPlannerOperationProcessing
   });
 
@@ -1314,6 +1306,8 @@ function clearDispatchPlannedRoute(reason = "explicit reset") {
   dispatchLastSuccessfulRouteCoordinates = [];
   dispatchLastSuccessfulRouteState = null;
   dispatchLastRouteDistanceMeters = null;
+  dispatchLastRoutingSignature = "";
+  dispatchLastRoutingStart = null;
   dispatchOptimizedRouteStops = [];
   renderDispatchOptimizedRouteList([]);
   dispatchOffRouteSince = null;
@@ -1634,7 +1628,10 @@ function updateDispatchRoutePreviewNotice(status = "idle") {
   let normalizedStatus = ["loading", "ready", "error", "complete"].includes(status)
     ? status
     : "idle";
-  if (normalizedStatus === "ready" && !dispatchHasVisiblePlannedRoute()) {
+  const routeReady = dispatchPlannerMode === "create"
+    ? getDispatchCurrentAssignedRouteReadiness().routeReady
+    : dispatchHasVisiblePlannedRoute();
+  if (normalizedStatus === "ready" && !routeReady) {
     normalizedStatus = "error";
   }
   notice.dataset.routeStatus = normalizedStatus;
@@ -2926,6 +2923,132 @@ function dispatchSelectedSetSignature(items) {
   }).join("|");
 }
 
+function dispatchAssignedRouteSignature(items = [], options = {}) {
+  const wmo = dispatchPoint(
+    options.wmo?.lat ?? options.wmo?.latitude ?? DISPATCH_WMO_LOCATION.latitude,
+    options.wmo?.lng ?? options.wmo?.longitude ?? DISPATCH_WMO_LOCATION.longitude
+  );
+  if (!wmo) return "";
+  const wmoSignature = `${wmo.lat.toFixed(5)},${wmo.lng.toFixed(5)}`;
+  const routeContext = String(options.routeContext || "unassigned");
+  return [
+    "draft",
+    routeContext,
+    `wmo:${wmoSignature}`,
+    dispatchSelectedSetSignature(items),
+    `wmo:${wmoSignature}`
+  ].join(":");
+}
+
+function dispatchAssignedRouteReadiness(options = {}) {
+  const destinationCount = Number(options.destinationCount || 0);
+  const routeState = options.routeState || null;
+  const journey = routeState?.journey || null;
+  const plannedStops = Array.isArray(journey?.plannedStops) ? journey.plannedStops : [];
+  const connectorLegs = Array.isArray(journey?.connectorLegs) ? journey.connectorLegs : [];
+  const wmo = dispatchPoint(
+    options.wmo?.lat ?? options.wmo?.latitude ?? DISPATCH_WMO_LOCATION.latitude,
+    options.wmo?.lng ?? options.wmo?.longitude ?? DISPATCH_WMO_LOCATION.longitude
+  );
+  const firstConnector = connectorLegs[0];
+  const returnConnector = connectorLegs.at(-1);
+  const hasWmoOrigin = Boolean(
+    wmo && firstConnector?.start && dispatchDistanceMeters(firstConnector.start, wmo) <= 0.5
+  );
+  const hasWmoReturn = Boolean(
+    wmo &&
+    returnConnector?.is_wmo_return &&
+    returnConnector?.end &&
+    dispatchDistanceMeters(returnConnector.end, wmo) <= 0.5
+  );
+  const currentSignature = String(options.currentSignature || "");
+  const successfulSignature = String(routeState?.assignmentSignature || "");
+  const routeReady = Boolean(
+    destinationCount > 0 &&
+    options.assignedOrderKnown &&
+    options.destinationsValid &&
+    !options.routePreparing &&
+    currentSignature &&
+    successfulSignature === currentSignature &&
+    plannedStops.length === destinationCount &&
+    routeState?.originSource === "wmo" &&
+    hasWmoOrigin &&
+    hasWmoReturn &&
+    Number(options.routeCoordinateCount || 0) >= 2 &&
+    options.hasVisibleRoute
+  );
+  return {
+    routeReady,
+    routePreparing: Boolean(options.routePreparing),
+    currentSignature,
+    successfulSignature,
+    hasWmoOrigin,
+    hasWmoReturn
+  };
+}
+
+function requireDispatchAssignedRouteReady(readiness) {
+  if (readiness?.routePreparing) {
+    throw new Error("Wait for the assigned route update to finish before saving.");
+  }
+  if (!readiness?.routeReady) {
+    throw new Error(DISPATCH_ORDERED_ROUTE_REQUIRED_MESSAGE);
+  }
+  return true;
+}
+
+function getDispatchCurrentAssignedRouteReadiness(selectedStops = getDispatchStopDrafts()) {
+  const orderedStops = [...selectedStops].sort((first, second) =>
+    Number(first.stop_order) - Number(second.stop_order)
+  );
+  const assignedOrderKnown = orderedStops.length > 0 && orderedStops.every((stop, index) =>
+    Number.isInteger(stop.stop_order) && stop.stop_order === index + 1
+  );
+  const destinationsValid = orderedStops.length > 0 && orderedStops.every((stop) =>
+    Boolean(stop.location_name) &&
+    Number.isFinite(stop.latitude) && stop.latitude >= -90 && stop.latitude <= 90 &&
+    Number.isFinite(stop.longitude) && stop.longitude >= -180 && stop.longitude <= 180
+  );
+  const items = assignedOrderKnown && destinationsValid
+    ? dispatchDraftRouteItems(orderedStops)
+    : [];
+  const routeContext = `${selectedTrackingTruck?.truck_id || "none"}:${selectedTrackingTruck?.session_id || selectedSessionId || "none"}`;
+  const currentSignature = items.length
+    ? dispatchAssignedRouteSignature(items, { routeContext })
+    : "";
+  return dispatchAssignedRouteReadiness({
+    destinationCount: orderedStops.length,
+    assignedOrderKnown,
+    destinationsValid,
+    currentSignature,
+    routeState: dispatchLastSuccessfulRouteState,
+    routePreparing: Boolean(dispatchPendingRoutingSignature),
+    routeCoordinateCount: dispatchLastSuccessfulRouteCoordinates.length,
+    hasVisibleRoute: dispatchHasVisiblePlannedRoute()
+  });
+}
+
+function clearDispatchRouteReadinessError() {
+  const errorBox = document.getElementById("dispatchTicketFormError");
+  if (errorBox?.textContent?.includes(DISPATCH_ORDERED_ROUTE_REQUIRED_MESSAGE)) {
+    errorBox.textContent = "";
+    errorBox.classList.add("hidden");
+  }
+  const result = document.getElementById("dispatchWorkflowResult");
+  if (
+    result?.textContent?.includes(DISPATCH_ORDERED_ROUTE_REQUIRED_MESSAGE) &&
+    result.querySelector?.("[data-dispatch-retry-dispatch]")
+  ) {
+    renderDispatchStepProgress(
+      0,
+      "success",
+      "The assigned road route is ready. Retry dispatch to continue.",
+      null,
+      { retryDispatch: true }
+    );
+  }
+}
+
 function dispatchDraftsInAssignedOrder(selectedStops = []) {
   return selectedStops
     .map((stop, sourceIndex) => ({ stop, sourceIndex }))
@@ -3097,7 +3220,7 @@ function renderDispatchDraftOnLiveMap(options = {}) {
   renderDispatchDestinationMarkers(items, { usePersistedStopOrder: false });
   const startPoint = wmo;
   const truckRouteKey = `${selectedTrackingTruck?.truck_id || "none"}:${selectedTrackingTruck?.session_id || selectedSessionId || "none"}`;
-  const signature = `draft:${truckRouteKey}:${dispatchSelectedSetSignature(items)}`;
+  const signature = dispatchAssignedRouteSignature(items, { routeContext: truckRouteKey, wmo });
   const reroute = evaluateDispatchDynamicReroute(startPoint, signature, { force: options.force });
   dispatchOffRouteSince = reroute.offRouteSince;
   if (!reroute.shouldReroute) return;
@@ -3137,7 +3260,11 @@ function renderDispatchDraftOnLiveMap(options = {}) {
       });
       activateDispatchPlannedLayerGroups(layers);
       dispatchLastSuccessfulRouteCoordinates = routeCoordinates.map(([lat, lng]) => ({ lat, lng }));
-      dispatchLastSuccessfulRouteState = { journey, originSource: "wmo" };
+      dispatchLastSuccessfulRouteState = {
+        journey,
+        originSource: "wmo",
+        assignmentSignature: signature
+      };
       dispatchLastRouteDistanceMeters = Number.isFinite(Number(journey.total_cost_meters))
         ? Number(journey.total_cost_meters)
         : null;
@@ -3145,6 +3272,10 @@ function renderDispatchDraftOnLiveMap(options = {}) {
       dispatchLastRoutingStart = startPoint;
       dispatchOffRouteSince = null;
       dispatchRouteErrorCatalogIds.clear();
+      if (generation === dispatchRoutingGeneration) {
+        dispatchPendingRoutingSignature = "";
+      }
+      clearDispatchRouteReadinessError();
       updateDispatchRoutePreviewNotice("ready");
       dispatchRouteDebug("planned route rendered", {
         generation_id: generation,
@@ -3943,15 +4074,9 @@ function setDispatchDestinationMode(mode) {
 function collectDispatchTicketForm() {
   const selectedStops = getDispatchStopDrafts();
   if (!selectedStops.length) throw new Error("Add at least one route stop.");
-  if (dispatchPendingRoutingSignature) {
-    throw new Error("Wait for the assigned route update to finish before saving.");
-  }
-  if (
-    dispatchOptimizedRouteStops.length !== selectedStops.length ||
-    !dispatchLastSuccessfulRouteState
-  ) {
-    throw new Error("An ordered road route is required before saving this dispatch.");
-  }
+  requireDispatchAssignedRouteReady(
+    getDispatchCurrentAssignedRouteReadiness(selectedStops)
+  );
   const stops = dispatchDraftsInAssignedOrder(selectedStops);
   const orders = stops.map((stop) => stop.stop_order);
   if (orders.some((order) => !Number.isInteger(order) || order <= 0)) {
@@ -5258,6 +5383,7 @@ if (typeof module !== "undefined" && module.exports) {
     DISPATCH_CURRENT_ROUTE_STYLE,
     DISPATCH_COMPLETED_ROUTE_STYLE,
     DISPATCH_TICKET_CREATE_FAILURE_MESSAGE,
+    DISPATCH_ORDERED_ROUTE_REQUIRED_MESSAGE,
     buildDispatchDestinationMarkerLayer,
     buildDispatchPlannedJourney,
     buildDispatchRouteLayers,
@@ -5266,6 +5392,8 @@ if (typeof module !== "undefined" && module.exports) {
     chooseDispatchSegmentOrientation,
     dispatchCatalogStopFromDetail,
     dispatchCatalogDestinationIsSelected,
+    dispatchAssignedRouteReadiness,
+    dispatchAssignedRouteSignature,
     dispatchOrderActiveRouteStops,
     dispatchPersistedStopOrder,
     dispatchPlannerFinalizationState,
@@ -5294,6 +5422,7 @@ if (typeof module !== "undefined" && module.exports) {
     dispatchSafeTicketErrorMessage,
     dispatchRoutingResponseIsCurrent,
     dispatchRoutingResponsePreservesOrder,
+    requireDispatchAssignedRouteReady,
     dispatchSavedStopRouteItems,
     dispatchContinuousRouteWaypoints,
     dispatchSegmentColor,
