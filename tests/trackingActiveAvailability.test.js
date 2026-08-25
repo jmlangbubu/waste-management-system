@@ -102,7 +102,8 @@ function testDispatchEndAndGpsReturnTransition() {
     NOW
   );
   assert.deepEqual(afterEndOffline.availableTrucks, []);
-  assert.deepEqual(afterEndOffline.operationalTrucks, []);
+  assert.equal(afterEndOffline.operationalTrucks.length, 1);
+  assert.equal(afterEndOffline.operationalTrucks[0].dispatch, null);
 
   const afterGpsReturn = buildTrackingAvailabilitySnapshot(
     [activeTruck({ tracking_status_key: "active", location_last_updated: new Date(NOW).toISOString() })],
@@ -151,7 +152,7 @@ function testActiveDispatchSurvivesGpsOutage() {
   assert.equal(getTrackingAvailabilityMeta(offlineSnapshot.sessions[0], NOW).label, "GPS Offline");
 }
 
-function testStaleTruckWithoutDispatchIsNotOperationalOrAvailable() {
+function testStaleTruckWithoutDispatchRemainsVisibleButUnavailable() {
   const snapshot = buildTrackingAvailabilitySnapshot(
     [activeTruck({
       location_last_updated: new Date(NOW - TRACKING_GPS_AVAILABILITY_WINDOW_MS - 1).toISOString()
@@ -161,7 +162,8 @@ function testStaleTruckWithoutDispatchIsNotOperationalOrAvailable() {
   );
 
   assert.deepEqual(snapshot.availableTrucks, []);
-  assert.deepEqual(snapshot.operationalTrucks, []);
+  assert.equal(snapshot.operationalTrucks.length, 1);
+  assert.equal(snapshot.operationalTrucks[0].dispatch, null);
   assert.equal(getTrackingAvailabilityMeta(snapshot.sessions[0], NOW).label, "GPS Stale");
 }
 
@@ -214,7 +216,9 @@ function testNewDispatchWorkflowEligibilityGuard() {
   assert.match(eligibilityBlock, /!truck\.dispatch/);
   assert.match(eligibilityBlock, /availableTrucks[\s\S]*session_id/);
   assert.match(contextBlock, /dispatchTruckCanStartNewDispatch\(truck, activeTrackingTrucks\)/);
-  assert.match(prepareBlock, /if \(truck\.dispatch\)[\s\S]*setDispatchPlannerMode\("live"\)[\s\S]*return/);
+  assert.match(prepareBlock, /setDispatchPlannerStep\(1, \{ focus: false \}\)/);
+  assert.match(prepareBlock, /resolveDispatchNewTicketEligibility\(truck\)/);
+  assert.doesNotMatch(prepareBlock, /setDispatchPlannerStep\(2|renderDispatchDraftOnLiveMap/);
   assert.match(plannerActionsBlock, /dispatchPlannerFinalizationState\([\s\S]*sessionEligible: dispatchSelectedSessionActive/);
   assert.match(saveBlock, /requireDispatchNewTicketEligibility/);
   assert.match(dispatchNowBlock, /if \(!requireDispatchNewTicketEligibility\(\)\) return/);
@@ -346,6 +350,7 @@ function testFrontendTransitionWiringAndSingleActions() {
   assert.match(activeCardBlock, /truck-status-label[^\n]*\$\{statusMeta\.className\}[\s\S]*\$\{escapeHtml\(statusMeta\.label\)\}/);
   assert.match(activeCardBlock, /Active Dispatch/);
   assert.match(activeCardBlock, /Last-known progress/);
+  assert.match(activeCardBlock, /Unavailable for new dispatch/);
   assert.doesNotMatch(activeCardBlock, /GPS off|GPS live/i);
   assert.match(staleWarningBlock, /dismiss-stale/);
   assert.doesNotMatch(staleWarningBlock, /data-dispatch-action="end"|keep-active/);
@@ -427,7 +432,7 @@ function run() {
   testAvailabilityBoundaryAndSignals();
   testDispatchEndAndGpsReturnTransition();
   testActiveDispatchSurvivesGpsOutage();
-  testStaleTruckWithoutDispatchIsNotOperationalOrAvailable();
+  testStaleTruckWithoutDispatchRemainsVisibleButUnavailable();
   testNewDispatchWorkflowEligibilityGuard();
   testFilteringAndRelativeUpdateLabel();
   testActiveEndpointKeepsManilaTimestampCurrent();

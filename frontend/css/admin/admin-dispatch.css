@@ -2640,10 +2640,6 @@
   box-shadow: 0 2px 9px rgba(15, 23, 42, 0.3);
 }
 
-#trackingSection .tracking-route-endpoint.start {
-  background: #198754;
-}
-
 #trackingSection .tracking-route-endpoint.current {
   width: 20px;
   height: 20px;
@@ -6266,6 +6262,165 @@ body > #dispatchTicketDetailsModal .dispatch-details-stop small {
   background: #e9eeeb;
   color: #87958e;
   box-shadow: none;
+}
+
+#trackingSection .dispatch-inline-planner.has-eligibility-blocker {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+#trackingSection .dispatch-inline-planner.has-eligibility-blocker .dispatch-step-viewport {
+  display: grid;
+  min-height: 0;
+  place-items: center;
+  padding: 18px;
+  overflow-y: auto;
+}
+
+#trackingSection .dispatch-inline-planner.has-eligibility-blocker .dispatch-inline-form-actions {
+  display: none;
+}
+
+#trackingSection .dispatch-eligibility-panel {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: start;
+  gap: 13px;
+  width: min(100%, 390px);
+  padding: 18px;
+  border: 1px solid var(--dispatch-border);
+  border-radius: 16px;
+  background: var(--dispatch-surface);
+  box-shadow: 0 12px 30px rgba(9, 20, 19, 0.08);
+}
+
+#trackingSection .dispatch-eligibility-panel[hidden],
+#trackingSection .dispatch-eligibility-panel.hidden {
+  display: none !important;
+}
+
+#trackingSection .dispatch-eligibility-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 13px;
+  background: rgba(64, 138, 113, 0.12);
+  color: var(--dispatch-primary);
+}
+
+#trackingSection .dispatch-eligibility-icon svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+#trackingSection .dispatch-eligibility-copy {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+#trackingSection .dispatch-eligibility-copy > small {
+  color: var(--dispatch-primary);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+#trackingSection .dispatch-eligibility-copy h3,
+#trackingSection .dispatch-eligibility-copy p,
+#trackingSection .dispatch-eligibility-copy dl {
+  margin: 0;
+}
+
+#trackingSection .dispatch-eligibility-copy h3 {
+  color: var(--dispatch-text);
+  font-size: 17px;
+  line-height: 1.2;
+}
+
+#trackingSection .dispatch-eligibility-copy p {
+  color: var(--dispatch-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+#trackingSection .dispatch-eligibility-guidance:empty {
+  display: none;
+}
+
+#trackingSection .dispatch-eligibility-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  padding: 8px;
+  border-radius: 11px;
+  background: var(--dispatch-page);
+}
+
+#trackingSection .dispatch-eligibility-meta[hidden],
+#trackingSection .dispatch-eligibility-meta.hidden {
+  display: none !important;
+}
+
+#trackingSection .dispatch-eligibility-meta > div {
+  display: grid;
+  gap: 2px;
+}
+
+#trackingSection .dispatch-eligibility-meta dt {
+  color: var(--dispatch-muted);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+#trackingSection .dispatch-eligibility-meta dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--dispatch-text);
+  font-size: 10px;
+  font-weight: 850;
+}
+
+#trackingSection .dispatch-eligibility-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 3px;
+}
+
+#trackingSection .dispatch-eligibility-actions .dispatch-inline-action {
+  min-height: 36px;
+}
+
+@media (max-width: 520px) {
+  #trackingSection .dispatch-inline-planner.has-eligibility-blocker .dispatch-step-viewport {
+    padding: 12px;
+  }
+
+  #trackingSection .dispatch-eligibility-panel {
+    grid-template-columns: 36px minmax(0, 1fr);
+    gap: 10px;
+    padding: 14px;
+  }
+
+  #trackingSection .dispatch-eligibility-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 11px;
+  }
+
+  #trackingSection .dispatch-eligibility-actions .dispatch-inline-action {
+    flex: 1 1 120px;
+  }
 }
 
 @media (max-width: 520px) {

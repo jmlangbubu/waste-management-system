@@ -166,7 +166,9 @@ function testFinalizedTicketsAlwaysUseReadOnlyMode() {
     "function bindActiveTruckSelection"
   );
 
-  assert.match(prepare, /if \(truck\.dispatch\)[\s\S]*setDispatchPlannerMode\("live"\)[\s\S]*return/);
+  assert.match(prepare, /setDispatchPlannerMode\("create"\)/);
+  assert.match(prepare, /resolveDispatchNewTicketEligibility\(truck\)/);
+  assert.doesNotMatch(prepare, /setDispatchPlannerMode\("live"\)/);
   assert.match(selectTruck, /prepareDispatchPlannerForTruck\(selectedTrackingTruck\)/);
   assert.match(openTicket, /dispatchTicketIsLive\(details\.ticket\)[\s\S]*renderDispatchTicketDetails\(details\)[\s\S]*setDispatchWorkspaceTab\("plan"\)/);
   assert.match(details, /dispatchTicketViewMode\(ticket\) !== "readonly"/);
