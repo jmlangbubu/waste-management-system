@@ -189,12 +189,31 @@ function filterAvailableTrackingTrucks(trucks, now = Date.now()) {
 function buildTrackingAvailabilitySnapshot(
   trackingTrucks,
   dispatchForSession = () => null,
-  now = Date.now()
+  now = Date.now(),
+  liveDispatches = {}
 ) {
   const sessions = (Array.isArray(trackingTrucks) ? trackingTrucks : []).map((truck) => ({
     ...truck,
     dispatch: dispatchForSession(truck.session_id) || null
   }));
+
+  const knownSessionIds = new Set(sessions.map((truck) => String(truck.session_id)));
+  Object.entries(liveDispatches && typeof liveDispatches === "object" ? liveDispatches : {})
+    .forEach(([sessionId, dispatch]) => {
+      if (!dispatch || knownSessionIds.has(String(sessionId))) return;
+      sessions.push({
+        session_id: sessionId,
+        truck_id: dispatch.truck_id,
+        truck_name: dispatch.truck_name_snapshot || dispatch.truck_id,
+        session_status: dispatch.tracking_session_status || "active",
+        latitude: dispatch.last_latitude,
+        longitude: dispatch.last_longitude,
+        location_last_updated: dispatch.last_gps_update || dispatch.tracking_last_updated_at,
+        last_updated_at: dispatch.tracking_last_updated_at,
+        last_location_status: dispatch.gps_status,
+        dispatch
+      });
+    });
 
   const availableTrucks = filterAvailableTrackingTrucks(sessions, now);
   const operationalTrucks = sessions.filter((truck) =>
@@ -207,6 +226,32 @@ function buildTrackingAvailabilitySnapshot(
     availableTrucks,
     operationalTrucks
   };
+}
+
+function resolveTrackingMonitoredDispatch(trucks = [], selectedSession = null) {
+  const activeDispatches = (Array.isArray(trucks) ? trucks : [])
+    .filter((truck) => truck?.dispatch && truck?.session_id !== null && truck?.session_id !== undefined)
+    .sort((first, second) => {
+      const ticketDelta = Number(second.dispatch?.dispatch_ticket_id || second.dispatch?.id || 0) -
+        Number(first.dispatch?.dispatch_ticket_id || first.dispatch?.id || 0);
+      return ticketDelta || String(first.session_id).localeCompare(String(second.session_id));
+    });
+  if (selectedSession !== null && selectedSession !== undefined && String(selectedSession) !== "") {
+    return activeDispatches.find(
+      (truck) => String(truck.session_id) === String(selectedSession)
+    ) || null;
+  }
+  return activeDispatches[0] || null;
+}
+
+function trackingRouteSignature(routePoints = []) {
+  return (Array.isArray(routePoints) ? routePoints : []).map((point) => [
+    point.stableId ?? point.id ?? "",
+    point.timestamp || "",
+    Number(point.lat).toFixed(6),
+    Number(point.lng).toFixed(6)
+  ].join(":"))
+    .join("|");
 }
 
 let trackingOperationalTrucks = [];
@@ -551,19 +596,31 @@ async function loadActiveTrucks() {
       trackingTrucks,
       (sessionId) => typeof getDispatchLiveForSession === "function"
         ? getDispatchLiveForSession(sessionId)
-        : null
+        : null,
+      Date.now(),
+      typeof dispatchLiveBySession === "object" ? dispatchLiveBySession : {}
     );
     const trackingSessions = snapshot.sessions;
     const trucks = snapshot.availableTrucks;
     trackingOperationalTrucks = snapshot.operationalTrucks;
     activeTrackingTrucks = trucks;
 
+    if (!selectedSessionId) {
+      const monitoredDispatch = resolveTrackingMonitoredDispatch(trackingOperationalTrucks);
+      if (monitoredDispatch) {
+        selectedSessionId = monitoredDispatch.session_id;
+        selectedTruckId = monitoredDispatch.truck_id;
+        selectedTrackingTruck = monitoredDispatch;
+        renderActiveTruckList(trackingOperationalTrucks);
+      }
+    }
+
     renderActiveTruckList(trackingOperationalTrucks);
     updateTruckMarkers(trucks);
     updateTrackingSummaryCards(trucks);
 
     if (selectedSessionId) {
-      const selectedTruck = trackingSessions.find(
+      const selectedTruck = trackingOperationalTrucks.find(
         (truck) => String(truck.session_id) === String(selectedSessionId)
       );
       const selectedLiveDispatch = typeof getDispatchLiveForSession === "function"
@@ -882,69 +939,66 @@ async function loadTruckRoute(sessionId, options = {}) {
     const routeResult = buildTrackingDisplayRoute(routeLogs);
     const routePoints = routeResult.displayedPoints;
 
-    if (selectedRoutePolyline) {
-      truckMap.removeLayer(selectedRoutePolyline);
-      selectedRoutePolyline = null;
-    }
-
-    clearTrackingGapPolylines();
-
-    updateTrackingRouteStats(routeResult);
-
     if (!routePoints.length) {
-      const lastUpdated = document.getElementById("trackingLastUpdated");
-      if (lastUpdated) {
-        lastUpdated.textContent = "--";
-      }
+      if (!selectedRoutePolyline) updateTrackingRouteStats(routeResult);
       return;
     }
 
+    updateTrackingRouteStats(routeResult);
+
     const latlngs = routePoints.map((p) => [p.lat, p.lng]);
-    selectedRoutePolyline = L.featureGroup().addTo(truckMap);
-    let solidSegment = [latlngs[0]];
-    const addSolidSegment = (segment) => {
-      if (segment.length < 2) return;
-      L.polyline(segment, {
-        color: TRACKING_ACTUAL_ROUTE_COLOR,
-        weight: 5,
-        opacity: 0.9,
-        pane: "trackingActualRoutePane",
-        lineCap: "round",
-        lineJoin: "round"
-      }).addTo(selectedRoutePolyline);
-    };
+    const nextRouteSignature = trackingRouteSignature(routePoints);
+    const routeChanged = nextRouteSignature !== selectedRouteSignature || !selectedRoutePolyline;
+    if (routeChanged) {
+      if (selectedRoutePolyline) truckMap.removeLayer(selectedRoutePolyline);
+      clearTrackingGapPolylines();
+      selectedRoutePolyline = L.featureGroup().addTo(truckMap);
+      let solidSegment = [latlngs[0]];
+      const addSolidSegment = (segment) => {
+        if (segment.length < 2) return;
+        L.polyline(segment, {
+          color: TRACKING_ACTUAL_ROUTE_COLOR,
+          weight: 5,
+          opacity: 0.9,
+          pane: "trackingActualRoutePane",
+          lineCap: "round",
+          lineJoin: "round"
+        }).addTo(selectedRoutePolyline);
+      };
 
-    for (let index = 1; index < routePoints.length; index++) {
-      const previous = routePoints[index - 1];
-      const current = routePoints[index];
-      const hasConfirmedGap =
-        previous.timestamp &&
-        current.timestamp &&
-        current.timestamp - previous.timestamp > TRACKING_ROUTE_GAP_MS;
+      for (let index = 1; index < routePoints.length; index++) {
+        const previous = routePoints[index - 1];
+        const current = routePoints[index];
+        const hasConfirmedGap =
+          previous.timestamp &&
+          current.timestamp &&
+          current.timestamp - previous.timestamp > TRACKING_ROUTE_GAP_MS;
 
-      if (hasConfirmedGap) {
-        addSolidSegment(solidSegment);
-        const gapLine = L.polyline(
-          [
-            [previous.lat, previous.lng],
-            [current.lat, current.lng]
-          ],
-          {
-            color: TRACKING_ACTUAL_ROUTE_COLOR,
-            weight: 4,
-            opacity: 0.7,
-            pane: "trackingActualRoutePane",
-            dashArray: "8, 10"
-          }
-        ).addTo(truckMap);
-        gapLine.bindPopup("Connected display segment after a confirmed synchronization gap.");
-        window.trackingGapPolylines.push(gapLine);
-        solidSegment = [[current.lat, current.lng]];
-      } else {
-        solidSegment.push([current.lat, current.lng]);
+        if (hasConfirmedGap) {
+          addSolidSegment(solidSegment);
+          const gapLine = L.polyline(
+            [
+              [previous.lat, previous.lng],
+              [current.lat, current.lng]
+            ],
+            {
+              color: TRACKING_ACTUAL_ROUTE_COLOR,
+              weight: 4,
+              opacity: 0.7,
+              pane: "trackingActualRoutePane",
+              dashArray: "8, 10"
+            }
+          ).addTo(truckMap);
+          gapLine.bindPopup("Connected display segment after a confirmed synchronization gap.");
+          window.trackingGapPolylines.push(gapLine);
+          solidSegment = [[current.lat, current.lng]];
+        } else {
+          solidSegment.push([current.lat, current.lng]);
+        }
       }
+      addSolidSegment(solidSegment);
+      selectedRouteSignature = nextRouteSignature;
     }
-    addSolidSegment(solidSegment);
 
     const startPoint = latlngs[0];
     const currentReliablePoint = routeResult.markerPoint;
@@ -976,7 +1030,7 @@ async function loadTruckRoute(sessionId, options = {}) {
       }
     }
 
-    if (!keepView) {
+    if (!keepView && routeChanged) {
       if (selectedRoutePolyline.getLayers().length) {
         truckMap.fitBounds(selectedRoutePolyline.getBounds(), {
           padding: [20, 20]
@@ -1023,6 +1077,7 @@ function resetTrackingView(options = {}) {
   selectedTruckId = null;
   selectedTrackingTruck = null;
   selectedReliableRoutePoint = null;
+  selectedRouteSignature = "";
   dispatchSelectedSessionActive = false;
   if (typeof clearDispatchTrackingSelection === "function") {
     clearDispatchTrackingSelection();
@@ -1376,6 +1431,7 @@ function selectTruck(sessionId, truckId) {
   if (isDifferentSession) {
     if (selectedRoutePolyline && truckMap) truckMap.removeLayer(selectedRoutePolyline);
     selectedRoutePolyline = null;
+    selectedRouteSignature = "";
     clearTrackingGapPolylines();
     if (selectedCurrentMarker && truckMap) (trackingCurrentTruckLayerGroup || truckMap).removeLayer(selectedCurrentMarker);
     selectedCurrentMarker = null;
@@ -2500,6 +2556,8 @@ if (typeof module !== "undefined" && module.exports) {
     getTrackingAvailabilityMeta,
     isTrackingTruckAvailable,
     parseTrackingDate,
-    renderActiveTruckList
+    renderActiveTruckList,
+    resolveTrackingMonitoredDispatch,
+    trackingRouteSignature
   };
 }

@@ -197,8 +197,10 @@ function testPersistedOrderAndTerminalReuseContracts() {
     "function filterAvailableTrackingTrucks"
   );
   assert.match(readonlyRoute, /sort\([\s\S]*first\.stop_order[\s\S]*second\.stop_order/);
-  assert.match(plannedRoute, /const routeStops = dispatchSavedStopRouteItems\(details\.stops\)/);
-  assert.match(plannedRoute, /const startPoint = wmo/);
+  assert.match(plannedRoute, /const routeStops = activeTicket[\s\S]*dispatchActiveRouteStops\(details, groups\)[\s\S]*dispatchSavedStopRouteItems\(details\.stops\)/);
+  assert.match(plannedRoute, /getTrackingAvailabilityMeta\(selectedTrackingTruck\)\.available/);
+  assert.match(plannedRoute, /resolveDispatchRouteOrigin\(activeRoutePoint, \{ wmo \}\)/);
+  assert.match(plannedRoute, /const startPoint = routeOrigin\.point \|\| wmo/);
   assert.doesNotMatch(plannedRoute, /requestDispatchRoadCostMatrix|lockedPrefixCount/);
   assert.match(plannedRoute, /usePersistedStopOrder: true/);
   assert.match(trackingEligibility, /!truck\?\.dispatch/);

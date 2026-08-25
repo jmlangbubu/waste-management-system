@@ -725,8 +725,7 @@ function setDispatchNewTicketEligibility(nextState = {}, options = {}) {
   if (blocksNewPlanning) {
     dispatchPlannerStep = 1;
     if (options.clearRoute !== false && typeof document !== "undefined") {
-      clearDispatchPlannedRoute(`new dispatch ${dispatchNewTicketEligibility.status}`);
-      clearDispatchDestinationMarkers();
+      clearDispatchDraftPlannerLayers(`new dispatch ${dispatchNewTicketEligibility.status}`);
     }
   }
   if (selectedTrackingTruck && typeof updateDispatchSelectedTruckContext === "function") {
@@ -1697,6 +1696,11 @@ function clearDispatchPlannedRoute(reason = "explicit reset") {
   dispatchOptimizedRouteStops = [];
   renderDispatchOptimizedRouteList([]);
   dispatchOffRouteSince = null;
+  dispatchActiveRouteOrderSignature = "";
+  dispatchHasFittedActiveRoute = false;
+  dispatchActiveRouteTicketId = null;
+  dispatchActiveRouteSessionId = null;
+  dispatchActiveRouteMarkerSignature = "";
   dispatchRouteDebug("planned route cleared", {
     reason,
     generation_id: dispatchRoutingGeneration
@@ -1716,6 +1720,29 @@ function clearDispatchPlannedRoute(reason = "explicit reset") {
   dispatchSelectedGeometryLayerGroup = null;
   dispatchStartMarkerLayerGroup = null;
   ensureDispatchWmoMarker();
+}
+
+function dispatchActiveMonitoringMatchesSelection() {
+  return Boolean(
+    dispatchTicketIsLive(selectedDispatchTicket?.ticket) &&
+    dispatchActiveRouteTicketId !== null &&
+    String(dispatchActiveRouteTicketId) === String(selectedDispatchTicket?.ticket?.id || "") &&
+    String(dispatchActiveRouteSessionId || "") === String(selectedSessionId || "")
+  );
+}
+
+function clearDispatchDraftPlannerLayers(reason = "draft planner reset") {
+  if (dispatchActiveMonitoringMatchesSelection()) {
+    dispatchRouteDebug("active dispatch route retained", {
+      reason,
+      ticket_id: dispatchActiveRouteTicketId,
+      tracking_session_id: dispatchActiveRouteSessionId
+    });
+    return false;
+  }
+  clearDispatchPlannedRoute(reason);
+  clearDispatchDestinationMarkers();
+  return true;
 }
 
 function createDispatchWmoMarkerLayer() {
@@ -1908,7 +1935,13 @@ async function loadDispatchForTrackingSession(sessionId, options = {}) {
     const deferExistingDispatchOpen = dispatchPlannerMode === "create" &&
       dispatchEligibilityMatchesSelection() &&
       dispatchNewTicketEligibility.status === "existing_dispatch";
-    if (deferExistingDispatchOpen) return details;
+    if (deferExistingDispatchOpen) {
+      renderDispatchPlannedRoute(details, {
+        force: mustRehydrateRoute,
+        preservePlannerMode: true
+      });
+      return details;
+    }
     renderDispatchTicketDetails(details);
     const plannerVisible = !document.querySelector('[data-tracking-workspace-view="plan"]')?.hidden;
     const preserveUnsavedDraft = dispatchPlannerHasUnsavedRoute(sessionId);
@@ -2569,7 +2602,7 @@ function renderDispatchCompletedRouteGeometry(layers, completedItems = []) {
   });
 }
 
-function renderDispatchAssignedTicketOrder(details) {
+function renderDispatchAssignedTicketOrder(details, options = {}) {
   const assignedStops = (details?.stops || [])
     .map((stop, sourceIndex) => ({ stop, sourceIndex }))
     .sort((first, second) =>
@@ -2578,21 +2611,92 @@ function renderDispatchAssignedTicketOrder(details) {
       first.sourceIndex - second.sourceIndex
     )
     .map(({ stop }) => stop);
-  renderDispatchTicketDetails({
-    ...details,
-    stops: assignedStops
-  });
+  if (!options.preservePlannerMode) {
+    renderDispatchTicketDetails({
+      ...details,
+      stops: assignedStops
+    });
+  }
   renderDispatchOptimizedRouteList(assignedStops);
+}
+
+function dispatchActiveRouteMarkerStateSignature(details = {}) {
+  const ticketId = details.ticket?.id || "unknown";
+  return `ticket:${ticketId}:` + dispatchSavedStopRouteItems(details.stops || [])
+    .map(({ stop }, index) => [
+      stop.id ?? index,
+      dispatchPersistedStopOrder(stop, index + 1),
+      stop.stop_status || "pending",
+      Number(stop.latitude).toFixed(6),
+      Number(stop.longitude).toFixed(6)
+    ].join(":"))
+    .join("|");
+}
+
+function dispatchActiveRouteStops(details = {}, groups = splitDispatchOperationalStops(details.stops || [])) {
+  return dispatchSavedStopRouteItems([
+    groups.currentStop,
+    ...groups.remainingStops
+  ].filter(Boolean)).map(({ stop }) => stop);
+}
+
+function renderDispatchPersistedActiveMarkers(details, groups) {
+  const ticketId = details.ticket?.id || null;
+  const trackingContext = buildDispatchTrackingContext(details);
+  const sessionId = trackingContext?.session_id || selectedSessionId || null;
+  const activeSelectionChanged = dispatchActiveRouteTicketId !== null && (
+    String(dispatchActiveRouteTicketId) !== String(ticketId || "") ||
+    String(dispatchActiveRouteSessionId || "") !== String(sessionId || "")
+  );
+  if (activeSelectionChanged) {
+    clearDispatchPlannedRoute("active dispatch selection changed");
+    clearDispatchDestinationMarkers();
+  }
+
+  if (String(dispatchActiveRouteTicketId || "") !== String(ticketId || "")) {
+    dispatchHasFittedActiveRoute = false;
+  }
+  dispatchActiveRouteTicketId = ticketId;
+  dispatchActiveRouteSessionId = sessionId;
+
+  const markerSignature = dispatchActiveRouteMarkerStateSignature(details);
+  const markerLayerVisible = Boolean(
+    dispatchDestinationMarkerLayerGroup?.getLayers?.().length &&
+    (!truckMap?.hasLayer || truckMap.hasLayer(dispatchDestinationMarkerLayerGroup))
+  );
+  if (markerSignature !== dispatchActiveRouteMarkerSignature || !markerLayerVisible) {
+    renderDispatchDestinationMarkers(
+      dispatchSavedStopRouteItems(details.stops || []),
+      {
+        currentStopId: groups.currentStop?.id || null,
+        usePersistedStopOrder: true
+      }
+    );
+    dispatchActiveRouteMarkerSignature = markerSignature;
+  }
 }
 
 function renderDispatchPlannedRoute(details, options = {}) {
   if (!truckMap || !window.L || !details || !Array.isArray(details.stops)) return;
+  const activeTicket = dispatchTicketIsLive(details.ticket);
   const groups = splitDispatchOperationalStops(details.stops);
-  const routeStops = dispatchSavedStopRouteItems(details.stops).map(({ stop }) => stop);
+  const routeStops = activeTicket
+    ? dispatchActiveRouteStops(details, groups)
+    : dispatchSavedStopRouteItems(details.stops).map(({ stop }) => stop);
   const ticketId = details.ticket?.id || "unknown";
   const wmo = dispatchPoint(DISPATCH_WMO_LOCATION.latitude, DISPATCH_WMO_LOCATION.longitude);
-  const startPoint = wmo;
-  if (!dispatchHasVisiblePlannedRoute() && details.stops.length) {
+  const selectedRoutePoint = getDispatchSelectedReliablePoint();
+  const activeGpsAvailable = typeof getTrackingAvailabilityMeta !== "function" ||
+    getTrackingAvailabilityMeta(selectedTrackingTruck).available;
+  const activeRoutePoint = activeGpsAvailable ? selectedRoutePoint : null;
+  const routeOrigin = activeTicket
+    ? resolveDispatchRouteOrigin(activeRoutePoint, { wmo })
+    : { point: wmo, source: "wmo", usesTruckPosition: false };
+  const startPoint = routeOrigin.point || wmo;
+
+  if (activeTicket) {
+    renderDispatchPersistedActiveMarkers(details, groups);
+  } else if (!dispatchHasVisiblePlannedRoute() && details.stops.length) {
     renderDispatchSelectionFallback(
       dispatchSavedStopRouteItems(details.stops),
       startPoint,
@@ -2602,8 +2706,18 @@ function renderDispatchPlannedRoute(details, options = {}) {
     );
   }
   const signature = `ticket:${ticketId}:` + routeStops.map((stop) =>
-    `${stop.id}:${stop.stop_status}:${Number(stop.latitude).toFixed(5)},${Number(stop.longitude).toFixed(5)}`
+    `${stop.id}:${dispatchPersistedStopOrder(stop)}:${stop.stop_status}:${Number(stop.latitude).toFixed(5)},${Number(stop.longitude).toFixed(5)}`
   ).join("|");
+
+  if (
+    activeTicket &&
+    ["missing", "stale"].includes(routeOrigin.source) &&
+    dispatchHasVisiblePlannedRoute()
+  ) {
+    renderDispatchAssignedTicketOrder(details, options);
+    updateDispatchRoutePreviewNotice("ready");
+    return;
+  }
 
   if (!routeStops.length && dispatchDistanceMeters(startPoint, wmo) < 0.1) {
     const layers = createDispatchPlannedLayerGroups({ detached: true });
@@ -2614,6 +2728,10 @@ function renderDispatchPlannedRoute(details, options = {}) {
       .bindTooltip("Required WMO return point").addTo(layers.wmo);
     renderDispatchTerminalStopMarkers(layers, groups.completedStops, groups.skippedStops);
     activateDispatchPlannedLayerGroups(layers);
+    if (activeTicket) {
+      dispatchActiveRouteOrderSignature = "";
+      dispatchActiveRouteMarkerSignature = dispatchActiveRouteMarkerStateSignature(details);
+    }
     dispatchLastRoutingSignature = signature;
     dispatchLastRoutingStart = startPoint;
     dispatchLastSuccessfulRouteCoordinates = [];
@@ -2625,11 +2743,15 @@ function renderDispatchPlannedRoute(details, options = {}) {
   const reroute = evaluateDispatchDynamicReroute(startPoint, signature, { force: options.force });
   dispatchOffRouteSince = reroute.offRouteSince;
   if (!reroute.shouldReroute) {
-    renderDispatchAssignedTicketOrder(details);
+    renderDispatchAssignedTicketOrder(details, options);
+    if (dispatchHasVisiblePlannedRoute()) updateDispatchRoutePreviewNotice("ready");
     return;
   }
   const calculationSignature = `${signature}:${startPoint.lat.toFixed(5)},${startPoint.lng.toFixed(5)}`;
-  if (dispatchPendingRoutingSignature === calculationSignature) return;
+  if (dispatchPendingRoutingSignature === calculationSignature) {
+    updateDispatchRoutePreviewNotice("loading");
+    return;
+  }
 
   clearTimeout(dispatchRoutingRequestTimer);
   dispatchRoutingAbortController?.abort();
@@ -2670,22 +2792,28 @@ function renderDispatchPlannedRoute(details, options = {}) {
         currentStopId,
         usePersistedStopOrder: true
       });
+      if (activeTicket) {
+        renderDispatchTerminalStopMarkers(layers, groups.completedStops, groups.skippedStops);
+      }
       activateDispatchPlannedLayerGroups(layers);
-      dispatchOptimizedRouteStops = journey.plannedStops.map(({ stop }) => stop);
+      dispatchOptimizedRouteStops = activeTicket
+        ? dispatchSavedStopRouteItems(details.stops).map(({ stop }) => stop)
+        : journey.plannedStops.map(({ stop }) => stop);
       dispatchLastSuccessfulRouteCoordinates = routeCoordinates.map(([lat, lng]) => ({ lat, lng }));
       dispatchLastSuccessfulRouteState = {
         journey,
         completedStops: groups.completedStops,
         skippedStops: groups.skippedStops,
-        originSource: "wmo"
+        originSource: routeOrigin.source
       };
-      dispatchActiveRouteOrderSignature = journey.plannedStops
-        .map(({ stop }) => String(stop.id))
-        .join(">");
+      if (activeTicket) {
+        dispatchActiveRouteOrderSignature = routeStops.map((stop) => String(stop.id)).join(">");
+        dispatchActiveRouteMarkerSignature = dispatchActiveRouteMarkerStateSignature(details);
+      }
       dispatchLastRouteDistanceMeters = Number.isFinite(Number(journey.total_cost_meters))
         ? Number(journey.total_cost_meters)
         : null;
-      renderDispatchAssignedTicketOrder(details);
+      renderDispatchAssignedTicketOrder(details, options);
       dispatchLastRoutingSignature = signature;
       dispatchLastRoutingStart = startPoint;
       dispatchOffRouteSince = null;
@@ -2709,13 +2837,17 @@ function renderDispatchPlannedRoute(details, options = {}) {
         previous_route_retained: dispatchHasVisiblePlannedRoute()
       });
       if (!dispatchHasVisiblePlannedRoute()) {
-        renderDispatchSelectionFallback(
-          dispatchSavedStopRouteItems(details.stops, items),
-          startPoint,
-          wmo,
-          null,
-          { currentStopId: groups.currentStop?.id || null }
-        );
+        if (activeTicket) {
+          renderDispatchPersistedActiveMarkers(details, groups);
+        } else {
+          renderDispatchSelectionFallback(
+            dispatchSavedStopRouteItems(details.stops, items),
+            startPoint,
+            wmo,
+            null,
+            { currentStopId: groups.currentStop?.id || null }
+          );
+        }
       }
       updateDispatchRoutePreviewNotice("error");
     } finally {
@@ -3602,8 +3734,7 @@ function renderDispatchDraftOnLiveMap(options = {}) {
     (stop) => Number.isFinite(stop.latitude) && Number.isFinite(stop.longitude)
   );
   if (!stops.length) {
-    clearDispatchPlannedRoute("no selected destinations");
-    clearDispatchDestinationMarkers();
+    if (!clearDispatchDraftPlannerLayers("no selected destinations")) return;
     dispatchLastRoutingSignature = "";
     dispatchPendingRoutingSignature = "";
     dispatchLastRoutingStart = null;
@@ -4587,8 +4718,6 @@ function resetDispatchTicketForm() {
   dispatchBrowseDestinationOpen = false;
   dispatchBrowseDestinationVisibleCount = DISPATCH_BROWSE_DESTINATION_BATCH_SIZE;
   dispatchHasFittedDraftRoute = false;
-  dispatchHasFittedActiveRoute = false;
-  dispatchActiveRouteOrderSignature = "";
   dispatchDestinationSearchController?.abort();
   clearTimeout(dispatchDestinationSearchTimer);
   dispatchStopMetadata.clear();
@@ -5816,6 +5945,8 @@ if (typeof module !== "undefined" && module.exports) {
     dispatchCatalogDestinationIsSelected,
     dispatchAssignedRouteReadiness,
     dispatchAssignedRouteSignature,
+    dispatchActiveRouteMarkerStateSignature,
+    dispatchActiveRouteStops,
     dispatchOrderActiveRouteStops,
     dispatchPersistedStopOrder,
     dispatchPlannerFinalizationState,
