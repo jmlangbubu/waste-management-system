@@ -2830,7 +2830,7 @@ function closeDispatchModal(modalId) {
 }
 
 function dispatchSelectedRouteEmptyMarkup() {
-  return '<div class="dispatch-route-empty dispatch-selected-route-empty"><strong>No destinations selected.</strong><span>Search above to add collection stops.</span></div>';
+  return '<div class="dispatch-route-empty dispatch-selected-route-empty"><strong>No collection stops selected yet.</strong><span>Search above to add destinations.</span></div>';
 }
 
 function dispatchStopRowTemplate(stop = {}, index = 0) {
@@ -3728,21 +3728,26 @@ function renderDispatchPopularDestinations() {
   const container = document.getElementById("dispatchPopularDestinations");
   if (!container) return;
   const section = container.closest(".dispatch-popular-section");
-  if (!dispatchPopularDestinationResults.length) {
-    container.innerHTML = "";
+  const queryActive = Boolean(document.getElementById("dispatchDestinationSearch")?.value.trim());
+  if (queryActive) {
     section?.classList.add("hidden");
     return;
   }
   section?.classList.remove("hidden");
+  if (!dispatchPopularDestinationResults.length) {
+    container.innerHTML = '<div class="dispatch-combobox-message dispatch-catalog-instruction">Type to search Gensan roads and locations.</div>';
+    return;
+  }
   container.innerHTML = dispatchPopularDestinationResults.map((destination, index) => {
     const rowState = dispatchDestinationRowState(destination);
     const unavailable = rowState.className === "loading" ||
       dispatchCatalogDestinationIsSelected(destination.id);
+    const label = destination.display_label || destination.name;
     return `
-      <button type="button" data-dispatch-popular-index="${index}" ${unavailable ? "disabled" : ""}>
-        <span>${dispatchEscape(destination.display_label || destination.name)}</span>
-        ${dispatchDestinationStateBadge(destination)}
-      </button>
+      <article class="dispatch-catalog-result-row">
+        <span><strong>${dispatchEscape(label)}</strong><small>${dispatchEscape(dispatchDestinationTypeLabel(destination.destination_type))} · ${dispatchEscape(destination.barangay || "General Santos City")}</small></span>
+        <button type="button" class="dispatch-catalog-add-action ${dispatchEscape(rowState.className)}" data-dispatch-popular-index="${index}" aria-label="${dispatchEscape(`${rowState.label} ${label}`)}" ${unavailable ? "disabled" : ""}>${dispatchDestinationActionLabel(destination)}</button>
+      </article>
     `;
   }).join("");
 }
@@ -3986,6 +3991,9 @@ async function performDispatchDestinationSearch() {
 function scheduleDispatchDestinationSearch({ immediate = false } = {}) {
   clearTimeout(dispatchDestinationSearchTimer);
   const searchInput = document.getElementById("dispatchDestinationSearch");
+  document
+    .querySelector(".dispatch-popular-section")
+    ?.classList.toggle("hidden", Boolean(searchInput?.value.trim()));
   dispatchSetElementVisible(
     document.getElementById("dispatchDestinationSearchClearBtn"),
     Boolean(searchInput?.value.trim())

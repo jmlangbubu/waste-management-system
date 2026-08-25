@@ -1089,10 +1089,9 @@
                   <section class="dispatch-planner-section dispatch-add-destinations-section">
                     <div class="dispatch-picker-heading">
                       <div>
-                        <strong id="dispatchAddDestinationsHeading">Destinations</strong>
-                        <small>Choose collection stops for this dispatch.</small>
+                        <strong id="dispatchAddDestinationsHeading">Add Destinations</strong>
+                        <small>Choose a road, street, or barangay destination.</small>
                       </div>
-                      <span>Verified Gensan catalog</span>
                     </div>
                     <fieldset id="dispatchDestinationControls" class="dispatch-destination-controls" disabled>
                       <div class="dispatch-destination-modes" role="group" aria-label="Destination type">
@@ -1105,15 +1104,8 @@
                           Barangay Hall
                         </button>
                       </div>
-                      <div class="dispatch-popular-section hidden">
-                        <div class="dispatch-picker-subheading">
-                          <strong id="dispatchPopularDestinationHeading">Frequently Used</strong>
-                          <small>Based on actual dispatch usage</small>
-                        </div>
-                        <div id="dispatchPopularDestinations" class="dispatch-popular-destinations" aria-live="polite"></div>
-                      </div>
                       <label class="dispatch-inline-field" id="dispatchDestinationSearchField">
-                        <span id="dispatchDestinationSearchLabel">Search Gensan roads</span>
+                        <span id="dispatchDestinationSearchLabel" class="dispatch-visually-hidden">Search Gensan roads</span>
                         <div class="dispatch-combobox" id="dispatchDestinationSearchWrap">
                           <svg class="dispatch-combobox-search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m16 16 4 4"/></svg>
                           <input type="search" id="dispatchDestinationSearch" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="dispatchDestinationSuggestions" autocomplete="off" placeholder="Search road, street or location...">
@@ -1124,7 +1116,10 @@
                       </label>
                       <div class="dispatch-available-destinations-heading">
                         <strong>Available Locations</strong>
-                        <small>Select a verified catalog location.</small>
+                        <small>Verified Gensan catalog</small>
+                      </div>
+                      <div class="dispatch-popular-section hidden">
+                        <div id="dispatchPopularDestinations" class="dispatch-popular-destinations" aria-live="polite"></div>
                       </div>
                       <div id="dispatchDestinationSuggestions" class="dispatch-combobox-options dispatch-destination-results hidden" role="listbox"></div>
                       <button type="button" class="dispatch-browse-all-trigger" id="dispatchBrowseAllBtn">Browse All Gensan Roads</button>
@@ -1167,12 +1162,15 @@
 
                   <section class="dispatch-planner-section dispatch-required-destinations-section" aria-labelledby="dispatchRequiredDestinationsHeading">
                     <div class="dispatch-section-heading-row">
-                      <div><strong id="dispatchRequiredDestinationsHeading">Selected Route <span id="dispatchRequiredDestinationCount">0 stops</span></strong></div>
-                      <button type="button" class="dispatch-text-action hidden" id="dispatchClearRouteBtn" disabled hidden>Clear All</button>
+                      <div><strong id="dispatchRequiredDestinationsHeading">Selected Route</strong></div>
+                      <div class="dispatch-selected-route-meta">
+                        <span id="dispatchRequiredDestinationCount">0 stops</span>
+                        <button type="button" class="dispatch-text-action hidden" id="dispatchClearRouteBtn" disabled hidden>Clear All</button>
+                      </div>
                     </div>
                     <p class="dispatch-selection-order-note">The route order will be optimized automatically.</p>
                     <div id="dispatchStopRows" class="dispatch-stop-rows dispatch-inline-stop-rows">
-                      <div class="dispatch-route-empty dispatch-selected-route-empty"><strong>No destinations selected.</strong><span>Search above to add collection stops.</span></div>
+                      <div class="dispatch-route-empty dispatch-selected-route-empty"><strong>No collection stops selected yet.</strong><span>Search above to add destinations.</span></div>
                     </div>
                     <div class="dispatch-wmo-return" aria-label="Required final route point">
                       <span class="dispatch-stop-order" data-dispatch-wmo-order>W</span>
