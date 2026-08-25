@@ -358,7 +358,10 @@ function testFailureRetainsSelectionsAndPreviousRoute() {
     preservePreviousRoute: true,
     drawStraightFallback: false
   });
-  assert.match(dispatchSource, /if \(!dispatchHasVisiblePlannedRoute\(\)\) \{\s*renderDispatchSelectionFallback/);
+  assert.match(
+    dispatchSource,
+    /if \(!dispatchHasVisiblePlannedRoute\(\)\) \{[\s\S]*if \(activeTicket\) \{[\s\S]*renderDispatchPersistedActiveMarkers\(details, groups\)[\s\S]*renderDispatchSelectionFallback/
+  );
   assert.match(dispatchSource, /previous_route_retained: dispatchHasVisiblePlannedRoute\(\)/);
   assert.doesNotMatch(dispatchSource, /drawStraightFallback\s*:\s*true/);
   assert.match(dispatchSource, /restoreDispatchRoutePreviewState\(routeSnapshot\)/);
@@ -568,11 +571,14 @@ function testIssueSelectionPollingAndFailureLifecycle() {
     /function buildDispatchRouteLayers[\s\S]*?function renderDispatchSelectionFallback/
   )?.[0] || "";
   assert.match(dispatchNow, /renderDispatchTicketDetails\(details\)[\s\S]*renderDispatchPlannedRoute\(details\)/);
-  assert.match(activeRenderer, /const startPoint = wmo/);
+  assert.match(activeRenderer, /const activeRoutePoint = activeGpsAvailable \? selectedRoutePoint : null/);
+  assert.match(activeRenderer, /resolveDispatchRouteOrigin\(activeRoutePoint, \{ wmo \}\)/);
+  assert.match(activeRenderer, /const startPoint = routeOrigin\.point \|\| wmo/);
   assert.match(activeRenderer, /createDispatchPlannedLayerGroups\(\{ detached: true \}\)/);
   assert.match(activeRenderer, /requestDispatchRoadJourney[\s\S]*activateDispatchPlannedLayerGroups\(layers\)/);
-  assert.doesNotMatch(activeRenderer, /resolveDispatchRouteOrigin|requestDispatchRoadCostMatrix/);
-  assert.match(activeRenderer, /if \(!dispatchHasVisiblePlannedRoute\(\)\) \{\s*renderDispatchSelectionFallback/);
+  assert.doesNotMatch(activeRenderer, /requestDispatchRoadCostMatrix/);
+  assert.match(activeRenderer, /renderDispatchPersistedActiveMarkers\(details, groups\)/);
+  assert.match(activeRenderer, /renderDispatchTerminalStopMarkers\(layers, groups\.completedStops, groups\.skippedStops\)/);
   assert.doesNotMatch(activeRenderer, /clearDispatchPlannedRoute/);
   assert.doesNotMatch(activeRenderer, /renderDispatchCompletedRouteGeometry/);
   assert.doesNotMatch(routeLayers, /color: "#408a71"/);
@@ -623,7 +629,7 @@ function testDiagnosticsAndExplicitClearReasons() {
   ]) {
     assert.ok(dispatchSource.includes(token), `missing route diagnostic: ${token}`);
   }
-  assert.match(dispatchSource, /clearDispatchPlannedRoute\("no selected destinations"\)/);
+  assert.match(dispatchSource, /clearDispatchDraftPlannerLayers\("no selected destinations"\)/);
   assert.match(dispatchSource, /clearDispatchPlannedRoute\("tracking selection cleared"\)/);
 }
 
