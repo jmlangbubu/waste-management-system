@@ -213,11 +213,13 @@ function testNewDispatchWorkflowEligibilityGuard() {
     dispatch.indexOf('if (typeof window !== "undefined")')
   );
 
-  assert.match(eligibilityBlock, /!truck\.dispatch/);
+  assert.match(eligibilityBlock, /!dispatchResolveKnownTicketForTruck\(truck\)/);
   assert.match(eligibilityBlock, /availableTrucks[\s\S]*session_id/);
   assert.match(contextBlock, /dispatchTruckCanStartNewDispatch\(truck, activeTrackingTrucks\)/);
   assert.match(prepareBlock, /setDispatchPlannerStep\(1, \{ focus: false \}\)/);
-  assert.match(prepareBlock, /resolveDispatchNewTicketEligibility\(truck\)/);
+  assert.match(prepareBlock, /dispatchResolveKnownTicketForTruck\(truck\)/);
+  assert.match(prepareBlock, /requestDispatchTruckSelection/);
+  assert.doesNotMatch(prepareBlock, /resolveDispatchNewTicketEligibility\(truck\)/);
   assert.doesNotMatch(prepareBlock, /setDispatchPlannerStep\(2|renderDispatchDraftOnLiveMap/);
   assert.match(plannerActionsBlock, /dispatchPlannerFinalizationState\([\s\S]*sessionEligible: dispatchSelectedSessionActive/);
   assert.match(saveBlock, /requireDispatchNewTicketEligibility/);
@@ -350,7 +352,8 @@ function testFrontendTransitionWiringAndSingleActions() {
   assert.match(activeCardBlock, /truck-status-label[^\n]*\$\{statusMeta\.className\}[\s\S]*\$\{escapeHtml\(statusMeta\.label\)\}/);
   assert.match(activeCardBlock, /Active Dispatch/);
   assert.match(activeCardBlock, /Last-known progress/);
-  assert.match(activeCardBlock, /Unavailable for new dispatch/);
+  assert.match(activeCardBlock, /dispatchState\.title/);
+  assert.match(tracking, /title: gps\.available \? "Available for dispatch" : "Unavailable for dispatch"/);
   assert.doesNotMatch(activeCardBlock, /GPS off|GPS live/i);
   assert.match(staleWarningBlock, /dismiss-stale/);
   assert.doesNotMatch(staleWarningBlock, /data-dispatch-action="end"|keep-active/);

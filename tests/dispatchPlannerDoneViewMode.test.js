@@ -167,7 +167,10 @@ function testFinalizedTicketsAlwaysUseReadOnlyMode() {
   );
 
   assert.match(prepare, /setDispatchPlannerMode\("create"\)/);
-  assert.match(prepare, /resolveDispatchNewTicketEligibility\(truck\)/);
+  assert.match(prepare, /dispatchResolveKnownTicketForTruck\(truck\)/);
+  assert.match(prepare, /openDispatchExistingTicketForTruck/);
+  assert.match(prepare, /requestDispatchTruckSelection/);
+  assert.doesNotMatch(prepare, /resolveDispatchNewTicketEligibility\(truck\)/);
   assert.doesNotMatch(prepare, /setDispatchPlannerMode\("live"\)/);
   assert.match(selectTruck, /prepareDispatchPlannerForTruck\(selectedTrackingTruck\)/);
   assert.match(openTicket, /dispatchTicketIsLive\(details\.ticket\)[\s\S]*renderDispatchTicketDetails\(details\)[\s\S]*setDispatchWorkspaceTab\("plan"\)/);
@@ -203,7 +206,7 @@ function testPersistedOrderAndTerminalReuseContracts() {
   assert.match(plannedRoute, /const startPoint = routeOrigin\.point \|\| wmo/);
   assert.doesNotMatch(plannedRoute, /requestDispatchRoadCostMatrix|lockedPrefixCount/);
   assert.match(plannedRoute, /usePersistedStopOrder: true/);
-  assert.match(trackingEligibility, /!truck\?\.dispatch/);
+  assert.match(trackingEligibility, /getTrackingTruckDispatchState\(truck, now\)\.available/);
 }
 
 function testDestinationPickerPresentation() {

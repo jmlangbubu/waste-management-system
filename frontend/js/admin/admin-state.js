@@ -143,6 +143,7 @@ let dispatchNewTicketEligibility = {
   error: null
 };
 let dispatchEligibilityRequestGeneration = 0;
+const dispatchEligibilityRequestGuard = createLatestResponseGuard();
 let dispatchWorkspaceView = "plan";
 let dispatchActiveRouteOrderSignature = "";
 let dispatchHasFittedActiveRoute = false;
