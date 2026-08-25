@@ -8,11 +8,15 @@ const {
   filterAvailableTrackingTrucks,
   formatTrackingRelativeUpdate,
   getTrackingAvailabilityMeta,
+  isTrackingTruckAvailable,
   renderActiveTruckList
 } = require("../frontend/js/admin/admin-tracking.js");
 const {
   createLatestResponseGuard
 } = require("../frontend/js/admin/admin-state.js");
+const {
+  dispatchTruckCanStartNewDispatch
+} = require("../frontend/js/admin/admin-dispatch.js");
 
 const ROOT = path.resolve(__dirname, "..");
 const NOW = Date.parse("2026-08-13T08:00:00.000Z");
@@ -84,9 +88,9 @@ function testDispatchEndAndGpsReturnTransition() {
     () => liveDispatch,
     NOW
   );
-  assert.equal(duringDispatch.availableTrucks.length, 1);
+  assert.deepEqual(duringDispatch.availableTrucks, []);
   assert.equal(duringDispatch.operationalTrucks.length, 1);
-  assert.equal(duringDispatch.availableTrucks[0].dispatch.ticket_number, "DT-2026-0502");
+  assert.equal(duringDispatch.operationalTrucks[0].dispatch.ticket_number, "DT-2026-0502");
 
   const afterEndFresh = buildTrackingAvailabilitySnapshot([truck], () => null, NOW);
   assert.equal(afterEndFresh.availableTrucks.length, 1);
@@ -138,13 +142,84 @@ function testActiveDispatchSurvivesGpsOutage() {
   assert.equal(offlineSnapshot.operationalTrucks.length, 1);
   assert.equal(staleSnapshot.operationalTrucks[0].dispatch, activeDispatch);
   assert.equal(offlineSnapshot.operationalTrucks[0].dispatch, activeDispatch);
-  assert.equal(resumedSnapshot.availableTrucks.length, 1);
+  assert.deepEqual(resumedSnapshot.availableTrucks, []);
   assert.equal(resumedSnapshot.operationalTrucks.length, 1);
   assert.equal(resumedSnapshot.operationalTrucks[0].dispatch, activeDispatch);
   assert.equal(staleSnapshot.sessions[0].dispatch, activeDispatch);
   assert.equal(offlineSnapshot.sessions[0].dispatch, activeDispatch);
   assert.equal(getTrackingAvailabilityMeta(staleSnapshot.sessions[0], NOW).label, "GPS Stale");
   assert.equal(getTrackingAvailabilityMeta(offlineSnapshot.sessions[0], NOW).label, "GPS Offline");
+}
+
+function testStaleTruckWithoutDispatchIsNotOperationalOrAvailable() {
+  const snapshot = buildTrackingAvailabilitySnapshot(
+    [activeTruck({
+      location_last_updated: new Date(NOW - TRACKING_GPS_AVAILABILITY_WINDOW_MS - 1).toISOString()
+    })],
+    () => null,
+    NOW
+  );
+
+  assert.deepEqual(snapshot.availableTrucks, []);
+  assert.deepEqual(snapshot.operationalTrucks, []);
+  assert.equal(getTrackingAvailabilityMeta(snapshot.sessions[0], NOW).label, "GPS Stale");
+}
+
+function testNewDispatchWorkflowEligibilityGuard() {
+  const activeDispatch = { dispatch_ticket_id: 502, ticket_number: "DT-2026-0502" };
+  const freshWithoutDispatch = activeTruck({ dispatch: null });
+  const freshWithDispatch = activeTruck({ dispatch: activeDispatch });
+
+  assert.equal(
+    dispatchTruckCanStartNewDispatch(freshWithoutDispatch, [freshWithoutDispatch]),
+    true
+  );
+  assert.equal(
+    dispatchTruckCanStartNewDispatch(freshWithDispatch, [freshWithDispatch]),
+    false
+  );
+  assert.equal(isTrackingTruckAvailable(freshWithDispatch, NOW), false);
+  assert.equal(dispatchTruckCanStartNewDispatch(freshWithoutDispatch, []), false);
+
+  const dispatch = read("frontend/js/admin/admin-dispatch.js");
+  const eligibilityBlock = dispatch.slice(
+    dispatch.indexOf("function dispatchTruckCanStartNewDispatch"),
+    dispatch.indexOf("function dispatchNewTicketBlockMessage")
+  );
+  const contextBlock = dispatch.slice(
+    dispatch.indexOf("function updateDispatchSelectedTruckContext"),
+    dispatch.indexOf("function prepareDispatchPlannerForTruck")
+  );
+  const prepareBlock = dispatch.slice(
+    dispatch.indexOf("function prepareDispatchPlannerForTruck"),
+    dispatch.indexOf("function handleDispatchSelectedSessionEnded")
+  );
+  const plannerActionsBlock = dispatch.slice(
+    dispatch.indexOf("function updateDispatchPlannerActions"),
+    dispatch.indexOf("function requireDispatchTicketNumberForDestinations")
+  );
+  const saveBlock = dispatch.slice(
+    dispatch.indexOf("async function saveDispatchDraft"),
+    dispatch.indexOf("async function submitDispatchTicketForm")
+  );
+  const dispatchNowBlock = dispatch.slice(
+    dispatch.indexOf("async function dispatchSelectedTruckNow"),
+    dispatch.indexOf("function dispatchTicketQuery")
+  );
+  const setupBlock = dispatch.slice(
+    dispatch.indexOf("function setupDispatchModule"),
+    dispatch.indexOf('if (typeof window !== "undefined")')
+  );
+
+  assert.match(eligibilityBlock, /!truck\.dispatch/);
+  assert.match(eligibilityBlock, /availableTrucks[\s\S]*session_id/);
+  assert.match(contextBlock, /dispatchTruckCanStartNewDispatch\(truck, activeTrackingTrucks\)/);
+  assert.match(prepareBlock, /if \(truck\.dispatch\)[\s\S]*setDispatchPlannerMode\("live"\)[\s\S]*return/);
+  assert.match(plannerActionsBlock, /reviewButton\.disabled = !dispatchSelectedSessionActive/);
+  assert.match(saveBlock, /requireDispatchNewTicketEligibility/);
+  assert.match(dispatchNowBlock, /if \(!requireDispatchNewTicketEligibility\(\)\) return/);
+  assert.match(setupBlock, /dispatchStepContinueBtn[\s\S]*requireDispatchNewTicketEligibility/);
+  assert.match(setupBlock, /dispatchStepReviewBtn[\s\S]*requireDispatchNewTicketEligibility/);
 }
 
 function testFilteringAndRelativeUpdateLabel() {
@@ -344,6 +419,8 @@ function run() {
   testAvailabilityBoundaryAndSignals();
   testDispatchEndAndGpsReturnTransition();
   testActiveDispatchSurvivesGpsOutage();
+  testStaleTruckWithoutDispatchIsNotOperationalOrAvailable();
+  testNewDispatchWorkflowEligibilityGuard();
   testFilteringAndRelativeUpdateLabel();
   testActiveEndpointKeepsManilaTimestampCurrent();
   testEmptyStateRendering();

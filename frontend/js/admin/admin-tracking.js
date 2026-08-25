@@ -184,7 +184,7 @@ function getTrackingStatusMeta(truck, now = Date.now()) {
 }
 
 function isTrackingTruckAvailable(truck, now = Date.now()) {
-  return getTrackingAvailabilityMeta(truck, now).available === true;
+  return !truck?.dispatch && getTrackingAvailabilityMeta(truck, now).available === true;
 }
 
 function filterAvailableTrackingTrucks(trucks, now = Date.now()) {
@@ -593,7 +593,7 @@ async function loadActiveTrucks() {
       }
 
       selectedTrackingTruck = selectedTruck;
-      dispatchSelectedSessionActive = true;
+      dispatchSelectedSessionActive = isTrackingTruckAvailable(selectedTruck);
       updateTrackingActionButtons();
       if (typeof updateDispatchSelectedTruckContext === "function") {
         updateDispatchSelectedTruckContext(selectedTruck);
