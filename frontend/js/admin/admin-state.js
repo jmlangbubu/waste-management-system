@@ -135,6 +135,7 @@ let dispatchPlannerOperationProcessing = false;
 let dispatchLastRouteDistanceMeters = null;
 let dispatchPlannerStep = 1;
 let dispatchPlannerMode = "create";
+let dispatchWorkspaceNavigationGeneration = 0;
 let dispatchNewTicketEligibility = {
   status: "idle",
   sessionId: null,

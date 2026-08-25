@@ -454,7 +454,7 @@ function testFailureStateStaleResponsesAndActualGpsIndependence() {
     "utf8"
   );
   const clearFunction = source.match(/function clearDispatchPlannedRoute\([^)]*\)[\s\S]*?function createDispatchPlannedLayerGroups/);
-  const ticketDetailsFunction = source.match(/function renderDispatchTicketDetails\(details\)[\s\S]*?function openDispatchModal/);
+  const ticketDetailsFunction = source.match(/function renderDispatchTicketDetails\(details, options = \{\}\)[\s\S]*?function openDispatchModal/);
   assert.ok(clearFunction);
   assert.ok(ticketDetailsFunction);
   assert.doesNotMatch(clearFunction[0], /selectedRoutePolyline/);
@@ -535,7 +535,7 @@ function testGeneratedTicketNumberAndUnifiedTicketsWorkflow() {
   const selectedTruckHeader = dashboard.match(/id="dispatchSelectedTruckSummary"[\s\S]*?dispatch-workspace-actions/)?.[0] || "";
   const activeTruckRenderer = trackingSource.match(/function renderActiveTruckList\(trucks\)[\s\S]*?function updateTruckMarkers/)?.[0] || "";
   const recordRenderer = source.match(/function renderDispatchRecordCards[\s\S]*?async function loadDispatchTickets/)?.[0] || "";
-  const ticketDetailsRenderer = source.match(/function renderDispatchTicketDetails\(details\)[\s\S]*?function openDispatchModal/)?.[0] || "";
+  const ticketDetailsRenderer = source.match(/function renderDispatchTicketDetails\(details, options = \{\}\)[\s\S]*?function openDispatchModal/)?.[0] || "";
   const ticketDetailsModalRenderer = source.match(/function renderDispatchTicketDetailsModal\(details\)[\s\S]*?function renderDispatchTicketDetails/)?.[0] || "";
   const collectForm = source.match(/function collectDispatchTicketForm\(\)[\s\S]*?function resetDispatchTicketForm/)?.[0] || "";
 
@@ -606,7 +606,7 @@ function testFocusedTwoStepPlannerAndLiveMonitor() {
   );
   const stepTransition = source.match(/function setDispatchPlannerStep[\s\S]*?function openDispatchPlannerDrawer/)?.[0] || "";
   const workspaceTransition = source.match(/function setDispatchWorkspaceTab[\s\S]*?function dispatchPlannerHasUnsavedRoute/)?.[0] || "";
-  const liveRenderer = source.match(/function renderDispatchTicketDetails\(details\)[\s\S]*?function openDispatchModal/)?.[0] || "";
+  const liveRenderer = source.match(/function renderDispatchTicketDetails\(details, options = \{\}\)[\s\S]*?function openDispatchModal/)?.[0] || "";
   const trackingSection = dashboard.slice(
     dashboard.indexOf('<section id="trackingSection"'),
     dashboard.indexOf('<!-- USER MANAGEMENT -->')

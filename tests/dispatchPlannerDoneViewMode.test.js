@@ -152,7 +152,7 @@ function testFinalizedTicketsAlwaysUseReadOnlyMode() {
   );
   const details = functionBlock(
     dispatch,
-    "function renderDispatchTicketDetails(details)",
+    "function renderDispatchTicketDetails(details, options = {})",
     "const DISPATCH_PORTAL_MODAL_IDS"
   );
   const openTicket = functionBlock(
