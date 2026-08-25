@@ -22,14 +22,9 @@ function functionBlock(source, start, end) {
 
 function readyState(overrides = {}) {
   return dispatchPlannerFinalizationState({
-    destinationCount: 3,
-    ticketNumberValid: true,
     hasTruck: true,
     sessionEligible: true,
-    routePreparing: false,
-    optimizedCount: 3,
-    hasSuccessfulRouteState: true,
-    hasVisibleRoute: true,
+    routeReady: true,
     processing: false,
     ...overrides
   });
@@ -66,13 +61,59 @@ function testAssignedRouteAndDoneReadiness() {
   assert.match(draftRoute, /buildDispatchRouteLayers\([\s\S]*usePersistedStopOrder: false/);
   assert.match(draftRoute, /renderDispatchSelectionFallback\([\s\S]*usePersistedStopOrder: false/);
 
-  assert.equal(readyState({ ticketNumberValid: false }).canFinalize, true);
-  assert.equal(readyState({ destinationCount: 0, optimizedCount: 0 }).canFinalize, false);
-  assert.equal(readyState({ routePreparing: true }).canFinalize, false);
-  assert.equal(readyState({ optimizedCount: 2 }).canFinalize, false);
-  assert.equal(readyState({ hasSuccessfulRouteState: false }).canFinalize, false);
-  assert.equal(readyState({ hasVisibleRoute: false }).canFinalize, false);
+  assert.equal(readyState({ routeReady: false }).canFinalize, false);
+  assert.equal(readyState({ processing: true }).canFinalize, false);
   assert.equal(readyState().canFinalize, true);
+}
+
+function testSingleAuthoritativeRouteReadyContract() {
+  const finalization = functionBlock(
+    dispatch,
+    "function dispatchPlannerFinalizationState",
+    "function updateDispatchPlannerActions"
+  );
+  const plannerActions = functionBlock(
+    dispatch,
+    "function updateDispatchPlannerActions",
+    "function requireDispatchAssignmentForDestinations"
+  );
+  const collectForm = functionBlock(
+    dispatch,
+    "function collectDispatchTicketForm",
+    "function resetDispatchTicketForm"
+  );
+  const draftRoute = functionBlock(
+    dispatch,
+    "function renderDispatchDraftOnLiveMap",
+    "function renderDispatchPlanningMap"
+  );
+  const routeNotice = functionBlock(
+    dispatch,
+    "function updateDispatchRoutePreviewNotice",
+    "function updateDispatchMapRouteOverlay"
+  );
+  const clearReadinessError = functionBlock(
+    dispatch,
+    "function clearDispatchRouteReadinessError",
+    "function dispatchDraftsInAssignedOrder"
+  );
+  const setup = functionBlock(
+    dispatch,
+    "function setupDispatchModule",
+    'if (typeof window !== "undefined")'
+  );
+
+  assert.match(finalization, /const routeReady = Boolean\(options\.routeReady\)/);
+  assert.doesNotMatch(finalization, /optimizedCount|hasSuccessfulRouteState|hasVisibleRoute/);
+  assert.match(plannerActions, /getDispatchCurrentAssignedRouteReadiness\(\)/);
+  assert.match(plannerActions, /routeReady: routeReadiness\.routeReady/);
+  assert.match(collectForm, /requireDispatchAssignedRouteReady[\s\S]*getDispatchCurrentAssignedRouteReadiness\(selectedStops\)/);
+  assert.doesNotMatch(collectForm, /dispatchOptimizedRouteStops|optimization|cost matrix/i);
+  assert.match(draftRoute, /assignmentSignature: signature/);
+  assert.match(draftRoute, /dispatchPendingRoutingSignature = ""[\s\S]*clearDispatchRouteReadinessError\(\)[\s\S]*updateDispatchRoutePreviewNotice\("ready"\)/);
+  assert.match(routeNotice, /getDispatchCurrentAssignedRouteReadiness\(\)\.routeReady/);
+  assert.match(clearReadinessError, /Retry dispatch to continue/);
+  assert.match(setup, /data-dispatch-retry-dispatch[\s\S]*dispatchSelectedTruckNow\(\)/);
 }
 
 function testDoneReusesExistingLifecycleAndFailurePreservesDraft() {
@@ -195,6 +236,7 @@ function testDestinationPickerPresentation() {
 function run() {
   testEditableEligibilityAndTwoStepShell();
   testAssignedRouteAndDoneReadiness();
+  testSingleAuthoritativeRouteReadyContract();
   testDoneReusesExistingLifecycleAndFailurePreservesDraft();
   testFinalizedTicketsAlwaysUseReadOnlyMode();
   testPersistedOrderAndTerminalReuseContracts();
