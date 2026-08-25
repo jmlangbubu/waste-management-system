@@ -7,9 +7,12 @@ const {
   DISPATCH_ROUTING_MOVEMENT_METERS,
   DISPATCH_ROUTING_OFF_ROUTE_METERS,
   DISPATCH_ROUTING_OFF_ROUTE_HOLD_MS,
+  DISPATCH_ORDERED_ROUTE_REQUIRED_MESSAGE,
   DISPATCH_TICKET_CREATE_FAILURE_MESSAGE,
   buildDispatchPlannedJourney,
   chooseDispatchSegmentOrientation,
+  dispatchAssignedRouteReadiness,
+  dispatchAssignedRouteSignature,
   dispatchCatalogStopFromDetail,
   dispatchCatalogDestinationIsSelected,
   dispatchDistanceToRouteMeters,
@@ -27,6 +30,7 @@ const {
   evaluateDispatchDynamicReroute,
   matchDispatchCatalogCandidateForStop,
   requestDispatchRoadCostMatrix,
+  requireDispatchAssignedRouteReady,
   splitDispatchOperationalStops
 } = require("../frontend/js/admin/admin-dispatch");
 
@@ -144,6 +148,111 @@ function testDraftRemovalRenumbersWithoutReordering() {
   const ticketStops = dispatchDraftsInAssignedOrder(selectedDestinations);
   assert.deepEqual(ticketStops.map((stop) => stop.location_name), ["A", "C"]);
   assert.deepEqual(ticketStops.map((stop) => stop.stop_order), [1, 2]);
+}
+
+function successfulAssignedRouteState(items, signature) {
+  const wmo = {
+    lat: DISPATCH_WMO_LOCATION.latitude,
+    lng: DISPATCH_WMO_LOCATION.longitude
+  };
+  return {
+    assignmentSignature: signature,
+    originSource: "wmo",
+    journey: buildDispatchPlannedJourney(wmo, wmo, items)
+  };
+}
+
+function assignedRouteReadiness(items, routeState, overrides = {}) {
+  const signature = dispatchAssignedRouteSignature(items, {
+    routeContext: "TRUCK-9:58"
+  });
+  return dispatchAssignedRouteReadiness({
+    destinationCount: items.length,
+    assignedOrderKnown: true,
+    destinationsValid: true,
+    currentSignature: signature,
+    routeState,
+    routePreparing: false,
+    routeCoordinateCount: 5,
+    hasVisibleRoute: true,
+    ...overrides
+  });
+}
+
+function testAssignedRouteReadinessTracksExactPersonnelOrder() {
+  const a = pointStop(1, 1, 6.11, 125.11);
+  const b = pointStop(2, 2, 6.12, 125.12);
+  const c = pointStop(3, 3, 6.13, 125.13);
+  const assignedAbc = [a, b, c];
+  const abcSignature = dispatchAssignedRouteSignature(assignedAbc, {
+    routeContext: "TRUCK-9:58"
+  });
+  const abcRouteState = successfulAssignedRouteState(assignedAbc, abcSignature);
+  const abcReadiness = assignedRouteReadiness(assignedAbc, abcRouteState);
+
+  assert.equal(abcReadiness.routeReady, true);
+  assert.equal(abcReadiness.hasWmoOrigin, true);
+  assert.equal(abcReadiness.hasWmoReturn, true);
+  assert.doesNotThrow(() => requireDispatchAssignedRouteReady(abcReadiness));
+  assert.match(abcSignature, /wmo:6\.10609,125\.18164[\s\S]*wmo:6\.10609,125\.18164/);
+
+  const assignedAcb = [a, { ...c, stop: { ...c.stop, stop_order: 2 } }, { ...b, stop: { ...b.stop, stop_order: 3 } }];
+  const acbSignature = dispatchAssignedRouteSignature(assignedAcb, {
+    routeContext: "TRUCK-9:58"
+  });
+  assert.notEqual(acbSignature, abcSignature);
+  const staleOrderReadiness = assignedRouteReadiness(assignedAcb, abcRouteState);
+  assert.equal(staleOrderReadiness.routeReady, false);
+  assert.throws(
+    () => requireDispatchAssignedRouteReady(staleOrderReadiness),
+    new RegExp(DISPATCH_ORDERED_ROUTE_REQUIRED_MESSAGE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+  );
+
+  const acbRouteState = successfulAssignedRouteState(assignedAcb, acbSignature);
+  const acbReadiness = assignedRouteReadiness(assignedAcb, acbRouteState);
+  assert.equal(acbReadiness.routeReady, true);
+  assert.deepEqual(
+    acbRouteState.journey.plannedStops.map(({ stop }) => stop.id),
+    [1, 3, 2]
+  );
+  assert.doesNotThrow(() => requireDispatchAssignedRouteReady(acbReadiness));
+}
+
+function testAssignedRouteReadinessInvalidatesRemovalFailureAndRetry() {
+  const a = pointStop(1, 1, 6.11, 125.11);
+  const b = pointStop(2, 2, 6.12, 125.12);
+  const c = pointStop(3, 3, 6.13, 125.13);
+  const assignedAbc = [a, b, c];
+  const abcSignature = dispatchAssignedRouteSignature(assignedAbc, {
+    routeContext: "TRUCK-9:58"
+  });
+  const abcRouteState = successfulAssignedRouteState(assignedAbc, abcSignature);
+  const remainingAc = [a, { ...c, stop: { ...c.stop, stop_order: 2 } }];
+
+  assert.equal(assignedRouteReadiness(remainingAc, abcRouteState).routeReady, false);
+  assert.equal(assignedRouteReadiness(remainingAc, null, {
+    routeCoordinateCount: 0,
+    hasVisibleRoute: false
+  }).routeReady, false);
+  assert.equal(assignedRouteReadiness(remainingAc, abcRouteState, {
+    routePreparing: true
+  }).routeReady, false);
+  assert.throws(
+    () => requireDispatchAssignedRouteReady({ routePreparing: true, routeReady: false }),
+    /Wait for the assigned route update/
+  );
+
+  const acSignature = dispatchAssignedRouteSignature(remainingAc, {
+    routeContext: "TRUCK-9:58"
+  });
+  const acRouteState = successfulAssignedRouteState(remainingAc, acSignature);
+  const retryReadiness = assignedRouteReadiness(remainingAc, acRouteState);
+  assert.equal(retryReadiness.routeReady, true);
+  assert.deepEqual(
+    dispatchDraftsInAssignedOrder(remainingAc.map(({ stop }) => stop)).map((stop) => [stop.location_name, stop.stop_order]),
+    [["Point 1", 1], ["Point 3", 2]]
+  );
+  assert.doesNotThrow(() => requireDispatchAssignedRouteReady(retryReadiness));
 }
 
 function testTruckPositionCannotReorderAssignment() {
@@ -350,7 +459,7 @@ function testFailureStateStaleResponsesAndActualGpsIndependence() {
   assert.ok(ticketDetailsFunction);
   assert.doesNotMatch(clearFunction[0], /selectedRoutePolyline/);
   assert.doesNotMatch(ticketDetailsFunction[0], /dispatchEscape\(stop\.latitude\)|dispatchEscape\(stop\.longitude\)/);
-  assert.match(source, /activateDispatchPlannedLayerGroups\(layers\)[\s\S]*dispatchLastSuccessfulRouteState = \{ journey, originSource:/);
+  assert.match(source, /activateDispatchPlannedLayerGroups\(layers\)[\s\S]*dispatchLastSuccessfulRouteState = \{[\s\S]*journey,[\s\S]*originSource: "wmo",[\s\S]*assignmentSignature: signature/);
   assert.match(source, /if \(dispatchHasVisiblePlannedRoute\(\)\) return;/);
   assert.match(source, /const routeSnapshot = captureDispatchRoutePreviewState\(\)/);
   assert.match(source, /catch \(error\) \{[\s\S]*restoreDispatchRoutePreviewState\(routeSnapshot\)/);
@@ -583,6 +692,8 @@ async function run() {
   testManualOrderWinsOverLowerTravelCost();
   testClosestStopDoesNotMoveAheadOfAssignedOrder();
   testDraftRemovalRenumbersWithoutReordering();
+  testAssignedRouteReadinessTracksExactPersonnelOrder();
+  testAssignedRouteReadinessInvalidatesRemovalFailureAndRetry();
   testTruckPositionCannotReorderAssignment();
   testContinuousJourneyAndFixedWmo();
   testRoadOrientationUsesApproachAndDepartureCosts();
