@@ -571,7 +571,7 @@ function testGeneratedTicketNumberAndUnifiedTicketsWorkflow() {
   assert.doesNotMatch(source, /dispatchPlannerFinalizationState\([\s\S]*ticketNumberValid/);
   assert.doesNotMatch(collectForm, /ticket_number:/);
   assert.match(collectForm, /tracking_session_id:/);
-  assert.match(source, /getElementById\("dispatchTruckId"\)\.value = truck\.truck_id/);
+  assert.match(source, /getElementById\("dispatchTruckId"\)\.value = identity\.truck_id/);
   assert.doesNotMatch(recordRenderer, /assigned_personnel|personnel/i);
   assert.doesNotMatch(ticketDetailsRenderer, /assigned_personnel_name|Personnel/);
   assert.match(ticketDetailsModalRenderer, /assigned_personnel_name/);
