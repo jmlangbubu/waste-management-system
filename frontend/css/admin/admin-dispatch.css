@@ -5838,27 +5838,302 @@ body > #dispatchTicketDetailsModal .dispatch-details-stop small {
   }
 }
 
-/* Keep the Phase 2A list layout authoritative over earlier compact-card cascades. */
-#trackingSection .dispatch-add-destinations-section {
+/* Step 2 destination hierarchy: one scroll surface with flat internal sections. */
+#trackingSection .dispatch-step-header {
+  gap: 10px;
+  padding: 9px 12px;
+}
+
+#trackingSection .dispatch-step-header > div > strong {
+  font-size: 13.5px;
+}
+
+#trackingSection .dispatch-step-indicator {
+  gap: 5px;
+}
+
+#trackingSection .dispatch-step-indicator li {
+  grid-template-columns: 20px auto;
+  align-items: center;
+  justify-items: start;
+  gap: 4px;
+}
+
+#trackingSection .dispatch-step-indicator li span {
+  width: 20px;
+  height: 20px;
+}
+
+#trackingSection .dispatch-step-indicator small {
+  font-size: 8px;
+}
+
+#trackingSection .dispatch-destinations-step {
+  display: block;
+  height: 100%;
+  padding: 0 4px 12px 0;
+  overflow-x: hidden;
   overflow-y: auto;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}
+
+#trackingSection .dispatch-destinations-step .dispatch-planner-section {
+  min-width: 0;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+#trackingSection .dispatch-add-destinations-section {
+  overflow: visible;
+}
+
+#trackingSection .dispatch-picker-heading {
+  display: block;
+  margin: 0 0 10px;
+}
+
+#trackingSection .dispatch-picker-heading > div {
+  gap: 3px;
+}
+
+#trackingSection .dispatch-picker-heading strong {
+  font-size: 11.5px;
+}
+
+#trackingSection .dispatch-picker-heading > div > small {
+  color: var(--dispatch-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1.4;
+  text-transform: none;
 }
 
 #trackingSection .dispatch-destination-controls {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  gap: 9px;
+  overflow: visible;
+}
+
+#trackingSection .dispatch-destination-modes {
+  gap: 6px;
+  margin: 0;
+}
+
+#trackingSection .dispatch-destination-modes button {
+  min-width: 0;
+  min-height: 38px;
+  padding: 7px 8px;
+  border-radius: 10px;
+}
+
+#trackingSection #dispatchDestinationSearchField {
+  display: block;
+  min-width: 0;
+  margin: 0;
+}
+
+#trackingSection .dispatch-combobox,
+#trackingSection .dispatch-combobox input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+#trackingSection .dispatch-combobox input {
+  height: 43px;
+  min-height: 43px;
+  padding: 9px 34px;
+  border: 1px solid var(--dispatch-border);
+  border-radius: 11px;
+  background: var(--dispatch-surface);
+  font-size: 12px;
+}
+
+#trackingSection .dispatch-combobox input:focus-visible {
+  border-color: var(--dispatch-primary);
+  outline: 3px solid rgba(64, 138, 113, 0.14);
+}
+
+#trackingSection .dispatch-combobox-search-icon {
+  left: 11px;
+}
+
+#trackingSection .dispatch-combobox-clear {
+  right: 7px;
+}
+
+#trackingSection .dispatch-available-destinations-heading {
+  align-items: center;
+  margin-top: 2px;
+  padding: 7px 0 6px;
+  border-bottom: 1px solid var(--dispatch-border);
+}
+
+#trackingSection .dispatch-available-destinations-heading strong,
+#trackingSection .dispatch-available-destinations-heading small {
+  padding: 0;
+}
+
+#trackingSection .dispatch-available-destinations-heading strong {
+  font-size: 9.5px;
+}
+
+#trackingSection .dispatch-available-destinations-heading small {
+  font-size: 8.5px;
+}
+
+#trackingSection .dispatch-popular-section,
+#trackingSection .dispatch-popular-destinations,
+#trackingSection .dispatch-combobox-options.dispatch-destination-results,
+#trackingSection .dispatch-browse-all-panel,
+#trackingSection .dispatch-browse-all-list {
+  width: 100%;
+  min-width: 0;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overscroll-behavior: auto;
+}
+
+#trackingSection .dispatch-popular-section.hidden,
+#trackingSection .dispatch-combobox-options.dispatch-destination-results.hidden {
+  display: none;
+}
+
+#trackingSection .dispatch-popular-destinations {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+
+#trackingSection .dispatch-catalog-result-row,
+#trackingSection .dispatch-browse-road {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
   gap: 10px;
+  min-height: 52px;
+  padding: 7px 2px;
+  border: 0;
+  border-bottom: 1px solid var(--dispatch-border);
+  border-radius: 0;
+  background: transparent;
+}
+
+#trackingSection .dispatch-catalog-result-row > span,
+#trackingSection .dispatch-browse-road > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+#trackingSection .dispatch-catalog-result-row strong,
+#trackingSection .dispatch-browse-road strong {
+  overflow: hidden;
+  color: var(--dispatch-text);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#trackingSection .dispatch-catalog-result-row small,
+#trackingSection .dispatch-browse-road small {
+  overflow: hidden;
+  color: var(--dispatch-muted);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#trackingSection .dispatch-popular-destinations .dispatch-catalog-add-action,
+#trackingSection .dispatch-combobox-options.dispatch-destination-results .dispatch-catalog-add-action,
+#trackingSection .dispatch-browse-road .dispatch-catalog-add-action {
+  display: inline-flex;
+  width: auto;
+  min-width: 58px;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 10px;
+  border: 1px solid var(--dispatch-dark);
+  border-radius: 8px;
+  background: var(--dispatch-dark);
+  color: #ffffff;
+  font-size: 9px;
+  font-weight: 850;
+}
+
+#trackingSection .dispatch-catalog-instruction,
+#trackingSection .dispatch-combobox-message {
+  min-height: 48px;
+  box-sizing: border-box;
+  padding: 15px 2px;
+  color: var(--dispatch-muted);
+  font-size: 9.5px;
+  line-height: 1.4;
+}
+
+#trackingSection .dispatch-destinations-step .dispatch-required-destinations-section {
+  display: grid;
+  grid-template-rows: auto auto auto auto;
+  gap: 7px;
+  min-height: 0;
+  margin-top: 16px;
+  padding-top: 13px;
+  overflow: visible;
+  border-top: 1px solid var(--dispatch-border);
+}
+
+#trackingSection .dispatch-selected-route-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+}
+
+#trackingSection #dispatchRequiredDestinationCount {
+  color: var(--dispatch-muted);
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+#trackingSection .dispatch-selection-order-note {
+  margin: -2px 0 1px;
 }
 
 #trackingSection .dispatch-inline-stop-rows {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  flex-wrap: nowrap;
+  gap: 0;
+  max-height: none;
+  padding: 0;
+  overflow: visible;
 }
 
 #trackingSection .dispatch-stop-row {
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr) auto;
-  flex: none;
-  padding: 8px 9px;
-  background: #fbfdfc;
+  min-width: 0;
+  min-height: 52px;
+  padding: 8px 2px;
+  border: 0;
+  border-bottom: 1px solid var(--dispatch-border);
+  border-radius: 0;
+  background: transparent;
 }
 
 #trackingSection .dispatch-stop-row-header {
@@ -5869,6 +6144,115 @@ body > #dispatchTicketDetailsModal .dispatch-details-stop small {
   display: none;
 }
 
+#trackingSection .dispatch-stop-row-actions button {
+  min-width: 54px;
+  padding: 0 3px;
+  border: 0;
+  background: transparent;
+}
+
 #trackingSection .dispatch-stop-row-actions button span {
   display: inline !important;
+}
+
+#trackingSection .dispatch-selected-route-empty {
+  display: grid;
+  min-height: 60px;
+  box-sizing: border-box;
+  align-content: center;
+  gap: 3px;
+  padding: 8px 2px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+}
+
+#trackingSection .dispatch-selected-route-empty strong {
+  color: var(--dispatch-text);
+  font-size: 10.5px;
+}
+
+#trackingSection .dispatch-selected-route-empty span {
+  color: var(--dispatch-muted);
+  font-size: 9.5px;
+}
+
+#trackingSection .dispatch-wmo-return {
+  min-height: 44px;
+  padding: 8px 2px;
+  border: 0;
+  border-top: 1px solid var(--dispatch-border);
+  border-radius: 0;
+  background: transparent;
+}
+
+#trackingSection .dispatch-wmo-return .dispatch-stop-order {
+  width: 25px;
+  height: 25px;
+}
+
+#trackingSection .dispatch-wmo-return strong {
+  font-size: 10.5px;
+}
+
+#trackingSection .dispatch-wmo-return small,
+#trackingSection .dispatch-locked-badge {
+  font-size: 8.5px;
+}
+
+#trackingSection .dispatch-route-status-section {
+  gap: 5px;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid var(--dispatch-border);
+}
+
+#trackingSection .dispatch-route-preview-notice {
+  min-height: 0;
+  padding: 7px 2px;
+  border: 0;
+  background: transparent;
+}
+
+#trackingSection .dispatch-inline-form-actions {
+  align-items: center;
+  padding: 9px 12px;
+  box-shadow: 0 -5px 16px rgba(9, 20, 19, 0.05);
+}
+
+#trackingSection .dispatch-inline-form-actions #dispatchStepBackBtn {
+  margin-right: auto;
+}
+
+#trackingSection .dispatch-inline-form-actions #dispatchStepContinueBtn,
+#trackingSection .dispatch-inline-form-actions #dispatchNowBtn {
+  margin-left: auto;
+}
+
+#trackingSection .dispatch-inline-form-actions #dispatchNowBtn:disabled {
+  border-color: #d2dcd6;
+  background: #e9eeeb;
+  color: #87958e;
+  box-shadow: none;
+}
+
+@media (max-width: 520px) {
+  #trackingSection .dispatch-step-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  #trackingSection .dispatch-step-indicator li {
+    grid-template-columns: 20px;
+  }
+
+  #trackingSection .dispatch-step-indicator small {
+    display: none;
+  }
+
+  #trackingSection .dispatch-catalog-result-row,
+  #trackingSection .dispatch-browse-road,
+  #trackingSection .dispatch-stop-row {
+    column-gap: 8px;
+  }
 }

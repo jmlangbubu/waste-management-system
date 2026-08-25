@@ -159,14 +159,34 @@ function testPersistedOrderAndTerminalReuseContracts() {
 }
 
 function testDestinationPickerPresentation() {
+  const destinationStepStart = dashboard.indexOf('data-dispatch-step-panel="2"');
+  const destinationStepEnd = dashboard.indexOf('id="dispatchCurrentPanel"', destinationStepStart);
+  const destinationStep = dashboard.slice(destinationStepStart, destinationStepEnd);
+  const presentationCss = css.slice(css.indexOf("/* Step 2 destination hierarchy"));
+
+  assert.ok(destinationStepStart > dashboard.indexOf('id="dispatchPlannerStepHeader"'));
+  assert.ok(destinationStep.indexOf("dispatchAddDestinationsHeading") >= 0);
+  assert.ok(destinationStep.indexOf("dispatchDestinationSearchField") > destinationStep.indexOf("dispatchAddDestinationsHeading"));
+  assert.ok(destinationStep.indexOf("dispatch-available-destinations-heading") > destinationStep.indexOf("dispatchDestinationSearchField"));
+  assert.ok(destinationStep.indexOf("dispatchRequiredDestinationsHeading") > destinationStep.indexOf("dispatch-available-destinations-heading"));
+  assert.ok(destinationStep.indexOf("dispatch-wmo-return") > destinationStep.indexOf("dispatchRequiredDestinationsHeading"));
+  assert.ok(dashboard.indexOf("dispatch-inline-form-actions") > destinationStepEnd);
+
+  assert.match(dashboard, /Add Destinations/);
   assert.match(dashboard, /Search road, street or location\.\.\./);
   assert.match(dashboard, /Available Locations/);
   assert.match(dashboard, /Selected Route/);
-  assert.match(dashboard, /No destinations selected\.[\s\S]*Search above to add collection stops\./);
+  assert.match(dashboard, /No collection stops selected yet\.[\s\S]*Search above to add destinations\./);
+  assert.match(dispatch, /Type to search Gensan roads and locations\./);
+  assert.match(dispatch, /dispatch-catalog-result-row[\s\S]*data-dispatch-popular-index/);
+  assert.match(dispatch, /dispatch-stop-planned-number/);
   assert.match(dispatch, /dispatch-catalog-add-action/);
   assert.match(dispatch, /dispatchSetElementVisible\([\s\S]*dispatchDestinationSearchClearBtn/);
-  assert.match(css, /\.dispatch-destinations-step[\s\S]*overflow-y:\s*auto/);
-  assert.match(css, /\.dispatch-combobox-options\.dispatch-destination-results,[\s\S]*max-height:\s*none/);
+  assert.match(presentationCss, /\.dispatch-destinations-step[\s\S]*overflow-x:\s*hidden;[\s\S]*overflow-y:\s*auto/);
+  assert.match(presentationCss, /\.dispatch-add-destinations-section[\s\S]*overflow:\s*visible/);
+  assert.match(presentationCss, /\.dispatch-combobox-options\.dispatch-destination-results,[\s\S]*max-height:\s*none/);
+  assert.match(presentationCss, /\.dispatch-inline-stop-rows[\s\S]*overflow:\s*visible/);
+  assert.doesNotMatch(presentationCss, /\.dispatch-add-destinations-section\s*\{[^}]*overflow-y:\s*auto/);
 }
 
 function run() {
