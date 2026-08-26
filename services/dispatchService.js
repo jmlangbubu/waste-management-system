@@ -1,8 +1,19 @@
 const db = require("../config/dbPromise");
 const {
+  GpsValidationError,
+  MAX_RELIABLE_ACCURACY_METERS,
   validateGpsPointForStorage,
   qualifyGpsPointForOperationalUse
 } = require("../utils/gpsValidation");
+
+const DISPATCH_STOP_TRANSITION_RULES = Object.freeze({
+  departureHysteresisMeters: 25,
+  confirmationSampleCount: 3,
+  arrivalConfirmationSeconds: 60,
+  departureConfirmationSeconds: 30,
+  arrivalCandidateGapMs: 90000,
+  departureCandidateGapMs: 60000
+});
 
 const TICKET_STATUSES = new Set([
   "prepared",
@@ -55,6 +66,47 @@ const DESTINATION_CATALOG_TABLE_NAMES = new Set([
 const DESTINATION_TYPES = new Set(["road_segment", "barangay_hall"]);
 const DEFAULT_DESTINATION_LIMIT = 20;
 const MAX_DESTINATION_LIMIT = 1000;
+
+function qualifyDispatchStopEvidence(locationLog = {}, options = {}) {
+  const referenceTimeMs = Number.isFinite(Number(options.referenceTimeMs))
+    ? Number(options.referenceTimeMs)
+    : Date.now();
+
+  try {
+    const point = validateGpsPointForStorage(locationLog, {
+      allowNumericString: true,
+      timestampRequired: true,
+      nowMs: referenceTimeMs
+    });
+
+    if (
+      point.accuracy === null ||
+      point.accuracy <= 0 ||
+      point.accuracy > MAX_RELIABLE_ACCURACY_METERS
+    ) {
+      return {
+        qualified: false,
+        reason: "unreliable_accuracy",
+        point: null
+      };
+    }
+
+    return {
+      qualified: true,
+      reason: "qualified",
+      point
+    };
+  } catch (error) {
+    if (error instanceof GpsValidationError) {
+      return {
+        qualified: false,
+        reason: error.code,
+        point: null
+      };
+    }
+    throw error;
+  }
+}
 
 class DispatchServiceError extends Error {
   constructor(message, statusCode = 400, code = "DISPATCH_ERROR") {
@@ -2288,11 +2340,6 @@ class DispatchService {
   async processAutomaticLocationLog(relationId, locationLog) {
     const relationKey = requiredId(relationId, "dispatch tracking relation id");
     const logId = requiredId(locationLog.id, "location log id");
-    const latitude = Number(locationLog.latitude);
-    const longitude = Number(locationLog.longitude);
-    const accuracy = Number(locationLog.accuracy);
-    const recordedAt = locationLog.recorded_at;
-
     await this.withTransaction(async (connection) => {
       const [relationRows] = await connection.query(
         `
@@ -2311,6 +2358,12 @@ class DispatchService {
       if (!relationRows.length) return;
 
       const relation = relationRows[0];
+      if (
+        String(locationLog.session_id) !== String(relation.tracking_session_id)
+      ) {
+        return;
+      }
+
       if (["completed", "cancelled"].includes(relation.dispatch_status)) {
         await connection.query(
           `
@@ -2340,44 +2393,46 @@ class DispatchService {
       );
 
       const stop = stopRows[0];
-      const accurate =
-        Number.isFinite(accuracy) && accuracy > 0 && accuracy <= 50;
-      const validCoordinates =
-        Number.isFinite(latitude) &&
-        Number.isFinite(longitude) &&
-        latitude >= -90 &&
-        latitude <= 90 &&
-        longitude >= -180 &&
-        longitude <= 180;
+      const evidence = qualifyDispatchStopEvidence(locationLog, {
+        referenceTimeMs: this.now().getTime()
+      });
 
-      if (stop && validCoordinates) {
-        const distance = haversineMeters(
-          latitude,
-          longitude,
-          Number(stop.latitude),
-          Number(stop.longitude)
-        );
+      if (stop) {
+        const qualifiedLocationLog = evidence.qualified
+          ? { ...locationLog, ...evidence.point }
+          : locationLog;
+        const distance = evidence.qualified
+          ? haversineMeters(
+              evidence.point.latitude,
+              evidence.point.longitude,
+              Number(stop.latitude),
+              Number(stop.longitude)
+            )
+          : null;
 
         if (stop.stop_status !== "arrived") {
           const arrivalQualifies =
-            accurate && distance <= Number(stop.geofence_radius_meters);
+            evidence.qualified &&
+            distance <= Number(stop.geofence_radius_meters);
           await this.advanceArrivalCandidate(
             connection,
             relation,
             stop,
-            locationLog,
+            qualifiedLocationLog,
             arrivalQualifies,
             distance
           );
         } else {
           const departureQualifies =
-            accurate &&
-            distance > Number(stop.geofence_radius_meters) + 25;
+            evidence.qualified &&
+            distance >
+              Number(stop.geofence_radius_meters) +
+                DISPATCH_STOP_TRANSITION_RULES.departureHysteresisMeters;
           await this.advanceDepartureCandidate(
             connection,
             relation,
             stop,
-            locationLog,
+            qualifiedLocationLog,
             departureQualifies,
             distance
           );
@@ -2449,7 +2504,8 @@ class DispatchService {
     const hasLongGap =
       previousTime > 0 &&
       currentTime > previousTime &&
-      currentTime - previousTime > 90000;
+      currentTime - previousTime >
+        DISPATCH_STOP_TRANSITION_RULES.arrivalCandidateGapMs;
     const candidateAt =
       stop.arrival_candidate_at && !hasLongGap
         ? stop.arrival_candidate_at
@@ -2463,8 +2519,11 @@ class DispatchService {
       (currentTime - new Date(candidateAt).getTime()) / 1000
     );
 
-    if (candidateCount >= 3 && elapsedSeconds >= 60) {
-      await connection.query(
+    if (
+      candidateCount >= DISPATCH_STOP_TRANSITION_RULES.confirmationSampleCount &&
+      elapsedSeconds >= DISPATCH_STOP_TRANSITION_RULES.arrivalConfirmationSeconds
+    ) {
+      const [arrivalResult] = await connection.query(
         `
           UPDATE dispatch_route_stops
           SET stop_status = 'arrived',
@@ -2476,8 +2535,13 @@ class DispatchService {
           WHERE id = ?
             AND stop_status NOT IN ('arrived', 'completed', 'skipped')
         `,
-        [locationLog.recorded_at, stop.id]
+        [candidateAt, stop.id]
       );
+
+      if (!arrivalResult || Number(arrivalResult.affectedRows || 0) === 0) {
+        return;
+      }
+
       await connection.query(
         `
           UPDATE dispatch_tickets
@@ -2493,13 +2557,18 @@ class DispatchService {
         dispatch_route_stop_id: stop.id,
         tracking_session_id: relation.tracking_session_id,
         event_type: "arrived_at_stop",
-        event_at: locationLog.recorded_at,
+        event_at: candidateAt,
         event_source: "automatic",
         actor_type: "system",
         latitude: locationLog.latitude,
         longitude: locationLog.longitude,
         accuracy_meters: locationLog.accuracy,
-        details: { distance_meters: Math.round(distance) },
+        details: {
+          distance_meters: Math.round(distance),
+          confirmed_at: locationLog.recorded_at,
+          confirming_location_log_id: locationLog.id,
+          candidate_sample_count: candidateCount
+        },
         idempotency_key: `auto-arrive:${relation.dispatch_ticket_id}:${stop.id}`
       });
       return;
@@ -2545,7 +2614,8 @@ class DispatchService {
     const hasLongGap =
       previousTime > 0 &&
       currentTime > previousTime &&
-      currentTime - previousTime > 60000;
+      currentTime - previousTime >
+        DISPATCH_STOP_TRANSITION_RULES.departureCandidateGapMs;
     const candidateAt =
       stop.departure_candidate_at && !hasLongGap
         ? stop.departure_candidate_at
@@ -2559,8 +2629,31 @@ class DispatchService {
       (currentTime - new Date(candidateAt).getTime()) / 1000
     );
 
-    if (candidateCount >= 3 && elapsedSeconds >= 30) {
-      await connection.query(
+    if (
+      candidateCount >= DISPATCH_STOP_TRANSITION_RULES.confirmationSampleCount &&
+      elapsedSeconds >= DISPATCH_STOP_TRANSITION_RULES.departureConfirmationSeconds
+    ) {
+      const arrivalTime = new Date(stop.actual_arrival_at).getTime();
+      const departureTime = new Date(candidateAt).getTime();
+      if (
+        !Number.isFinite(arrivalTime) ||
+        !Number.isFinite(departureTime) ||
+        departureTime < arrivalTime
+      ) {
+        await connection.query(
+          `
+            UPDATE dispatch_route_stops
+            SET departure_candidate_at = NULL,
+                departure_candidate_count = 0,
+                updated_at = NOW()
+            WHERE id = ?
+          `,
+          [stop.id]
+        );
+        return;
+      }
+
+      const [departureResult] = await connection.query(
         `
           UPDATE dispatch_route_stops
           SET stop_status = 'completed',
@@ -2568,6 +2661,7 @@ class DispatchService {
               departure_source = 'automatic',
               stop_duration_seconds = CASE
                 WHEN actual_arrival_at IS NULL THEN stop_duration_seconds
+                WHEN ? < actual_arrival_at THEN stop_duration_seconds
                 ELSE TIMESTAMPDIFF(SECOND, actual_arrival_at, ?)
               END,
               completed_at = COALESCE(completed_at, ?),
@@ -2578,24 +2672,35 @@ class DispatchService {
             AND stop_status = 'arrived'
         `,
         [
-          locationLog.recorded_at,
-          locationLog.recorded_at,
-          locationLog.recorded_at,
+          candidateAt,
+          candidateAt,
+          candidateAt,
+          candidateAt,
           stop.id
         ]
       );
+
+      if (!departureResult || Number(departureResult.affectedRows || 0) === 0) {
+        return;
+      }
+
       await this.insertEvent(connection, {
         dispatch_ticket_id: relation.dispatch_ticket_id,
         dispatch_route_stop_id: stop.id,
         tracking_session_id: relation.tracking_session_id,
         event_type: "departed_stop",
-        event_at: locationLog.recorded_at,
+        event_at: candidateAt,
         event_source: "automatic",
         actor_type: "system",
         latitude: locationLog.latitude,
         longitude: locationLog.longitude,
         accuracy_meters: locationLog.accuracy,
-        details: { distance_meters: Math.round(distance) },
+        details: {
+          distance_meters: Math.round(distance),
+          confirmed_at: locationLog.recorded_at,
+          confirming_location_log_id: locationLog.id,
+          candidate_sample_count: candidateCount
+        },
         idempotency_key: `auto-depart:${relation.dispatch_ticket_id}:${stop.id}`
       });
       await this.updateNextStop(connection, relation.dispatch_ticket_id);
@@ -2808,3 +2913,6 @@ module.exports.NON_TERMINAL_TICKET_STATUSES = NON_TERMINAL_TICKET_STATUSES;
 module.exports.END_DISPATCH_REASONS = END_DISPATCH_REASONS;
 module.exports.normalizeEndDispatchReason = normalizeEndDispatchReason;
 module.exports.durationSecondsBetween = durationSecondsBetween;
+module.exports.qualifyDispatchStopEvidence = qualifyDispatchStopEvidence;
+module.exports.DISPATCH_STOP_TRANSITION_RULES =
+  DISPATCH_STOP_TRANSITION_RULES;
