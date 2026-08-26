@@ -28,7 +28,10 @@ Module._load = function loadWithMockedTrackingPool(request, parent, isMain) {
   }
   return originalModuleLoad.call(this, request, parent, isMain);
 };
-const { TrackingService } = require("../services/trackingService");
+const {
+  TrackingService,
+  TrackingStartEligibilityError
+} = require("../services/trackingService");
 Module._load = originalModuleLoad;
 
 const NOW_MS = Date.parse("2026-08-17T10:00:00+08:00");
@@ -407,7 +410,7 @@ async function testHistoricalQueuedBatchPreservesOriginalRecordedAt() {
   ));
 }
 
-async function testCoordinateFreeAndroidStartMatchesBackendContract() {
+async function testCoordinateFreeNewStartIsRejectedBeforeInsert() {
   const service = new TrackingService();
   service.autoStopExpiredSessions = async () => {};
   service.ensureTrackingSessionReportColumns = async () => {};
@@ -426,24 +429,22 @@ async function testCoordinateFreeAndroidStartMatchesBackendContract() {
     throw new Error(`Unexpected SQL: ${normalized}`);
   };
 
-  const result = await service.startTrackingSession({
-    truck_id: "TRUCK-9",
-    enforcer_id: 7,
-    enforcer_name: "Test Enforcer",
-    device_id: "test-device",
-    shift_end_time: "2026-08-17 17:00:00"
-  });
-
-  assert.deepEqual(result, {
-    alreadyActive: false,
-    sessionId: 58,
-    notification: null
-  });
-  const insert = calls.find((call) =>
-    call.sql.startsWith("INSERT INTO truck_tracking_sessions")
+  await assert.rejects(
+    () => service.startTrackingSession({
+      truck_id: "TRUCK-9",
+      enforcer_id: 7,
+      enforcer_name: "Test Enforcer",
+      device_id: "test-device",
+      shift_end_time: "2026-08-17 17:00:00"
+    }),
+    (error) => error instanceof TrackingStartEligibilityError &&
+      error.code === "TRACKING_START_GPS_REQUIRED" &&
+      error.statusCode === 400
   );
-  assert.ok(insert);
-  assert.deepEqual(insert.parameters.slice(7, 11), [null, null, null, null]);
+
+  assert.equal(calls.some((call) =>
+    call.sql.startsWith("INSERT INTO truck_tracking_sessions")
+  ), false);
 }
 
 async function testAlreadyActiveStartResponseKeepsExistingSessionId() {
@@ -618,7 +619,7 @@ async function run() {
   await testAllDuplicateBatchPerformsNoWritesOrRecalculation();
   await testQueuedBatchPreparesAndRecalculatesOnlyOnce();
   await testHistoricalQueuedBatchPreservesOriginalRecordedAt();
-  await testCoordinateFreeAndroidStartMatchesBackendContract();
+  await testCoordinateFreeNewStartIsRejectedBeforeInsert();
   await testAlreadyActiveStartResponseKeepsExistingSessionId();
   await testStoppedSessionHistoricalQueuePointRemainsSupported();
   await testWebAdminStopUsesFixedStopTypeAndIsIdempotent();
