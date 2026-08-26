@@ -3,9 +3,14 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const {
+  dispatchTicketIsLive,
   dispatchTicketIsTerminal,
   resolveDispatchMonitoringRefresh
 } = require("../frontend/js/admin/admin-dispatch.js");
+const {
+  buildTrackingAvailabilitySnapshot,
+  getTrackingAvailabilityMeta
+} = require("../frontend/js/admin/admin-tracking.js");
 
 const ROOT = path.resolve(__dirname, "..");
 const dispatchSource = fs.readFileSync(
@@ -177,6 +182,42 @@ function testTerminalTicketIsOnlyPollingExit() {
   );
 }
 
+function testTrackingPollToleratesNoSelectedDispatchTicket() {
+  assert.equal(dispatchTicketIsLive(null), false);
+  assert.equal(dispatchTicketIsLive(undefined), false);
+  assert.equal(dispatchTicketIsLive({}), false);
+  assert.equal(dispatchTicketIsLive({ status: "prepared" }), false);
+  assert.equal(dispatchTicketIsLive({ status: "completed" }), false);
+  assert.equal(dispatchTicketIsLive({ status: "cancelled" }), false);
+  assert.equal(dispatchTicketIsLive({ status: "dispatched" }), true);
+  assert.equal(dispatchTicketIsLive({ status: "in_progress" }), true);
+  assert.equal(dispatchTicketIsLive({ status: "returning_to_wmo" }), true);
+
+  const now = Date.parse("2026-08-26T02:00:00.000Z");
+  const truck = {
+    session_id: 58,
+    truck_id: "TRUCK-9",
+    session_status: "active",
+    latitude: 6.1063,
+    longitude: 125.1818,
+    accuracy: 12,
+    tracking_status_key: "active",
+    location_last_updated: new Date(now - 30_000).toISOString()
+  };
+  const snapshot = buildTrackingAvailabilitySnapshot(
+    [truck],
+    () => dispatchTicketIsLive(null) ? { status: "in_progress" } : null,
+    now
+  );
+
+  assert.equal(snapshot.sessions.length, 1);
+  assert.equal(snapshot.sessions[0].dispatch, null);
+  assert.equal(snapshot.availableTrucks.length, 1);
+  assert.equal(snapshot.availableTrucks[0].truck_id, "TRUCK-9");
+  assert.equal(snapshot.operationalTrucks.length, 1);
+  assert.equal(getTrackingAvailabilityMeta(snapshot.availableTrucks[0], now).label, "GPS Online");
+}
+
 function testActiveDispatchPriorityCannotBecomeAvailable() {
   const eligibility = functionBlock(
     dispatchSource,
@@ -245,6 +286,7 @@ function run() {
   testActiveRouteRemainsVisibleDuringPolling();
   testExplicitBackAndCloseExitMonitoring();
   testTerminalTicketIsOnlyPollingExit();
+  testTrackingPollToleratesNoSelectedDispatchTicket();
   testActiveDispatchPriorityCannotBecomeAvailable();
   testSameTicketRefreshPreservesScrollPosition();
   testPollingHydrationIsRefreshOnly();
