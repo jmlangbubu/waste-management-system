@@ -2137,18 +2137,27 @@ class DispatchService {
             ELSE NULL
           END AS actual_distance_km,
           COALESCE(route_counts.route_logs_count, 0) AS actual_gps_point_count,
-          COUNT(drs.id) AS total_stops,
-          SUM(drs.stop_status = 'completed') AS completed_stops,
-          SUM(drs.stop_status = 'skipped') AS skipped_stops,
-          SUM(COALESCE(drs.stop_duration_seconds, 0)) AS total_stop_duration_seconds,
+          COALESCE(stop_summary.total_stops, 0) AS total_stops,
+          stop_summary.completed_stops,
+          stop_summary.skipped_stops,
+          COALESCE(stop_summary.total_stop_duration_seconds, 0) AS total_stop_duration_seconds,
           TIMESTAMPDIFF(
             SECOND,
             dt.actual_start_at,
             dt.actual_end_at
           ) AS total_dispatch_duration_seconds
         FROM dispatch_tickets dt
-        LEFT JOIN dispatch_route_stops drs
-          ON drs.dispatch_ticket_id = dt.id
+        LEFT JOIN (
+          SELECT
+            dispatch_ticket_id,
+            COUNT(*) AS total_stops,
+            SUM(stop_status = 'completed') AS completed_stops,
+            SUM(stop_status = 'skipped') AS skipped_stops,
+            SUM(COALESCE(stop_duration_seconds, 0)) AS total_stop_duration_seconds
+          FROM dispatch_route_stops
+          GROUP BY dispatch_ticket_id
+        ) stop_summary
+          ON stop_summary.dispatch_ticket_id = dt.id
         LEFT JOIN dispatch_events closure_event
           ON closure_event.id = (
             SELECT de_close.id
@@ -2185,7 +2194,6 @@ class DispatchService {
         ) route_counts
           ON route_counts.session_id = primary_link.tracking_session_id
         WHERE ${clauses.join(" AND ")}
-        GROUP BY dt.id
         ORDER BY
           COALESCE(dt.actual_end_at, dt.completed_at, dt.cancelled_at, dt.updated_at) DESC,
           dt.id DESC

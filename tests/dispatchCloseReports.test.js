@@ -179,7 +179,82 @@ async function testReportListIsTicketCenteredAndExcludesActiveDispatches() {
   assert.doesNotMatch(reportSql, /dt\.status IN \('dispatched', 'in_progress'/);
   assert.match(reportSql, /dispatch_closed_early/);
   assert.match(reportSql, /primary_link\.tracking_session_id/);
+  assert.match(
+    reportSql,
+    /FROM dispatch_route_stops GROUP BY dispatch_ticket_id \) stop_summary ON stop_summary\.dispatch_ticket_id = dt\.id/
+  );
+  assert.match(reportSql, /COALESCE\(stop_summary\.total_stops, 0\) AS total_stops/);
+  assert.doesNotMatch(reportSql, /LEFT JOIN dispatch_route_stops drs/);
+  assert.doesNotMatch(reportSql, /GROUP BY dt\.id/);
   assert.match(reportSql, /ORDER BY COALESCE\(dt\.actual_end_at/);
+}
+
+async function captureReportQuery(filters = {}, rows = []) {
+  let reportSql = "";
+  let reportParameters = null;
+  const service = new DispatchService({
+    async query(sql, parameters) {
+      reportSql = String(sql).replace(/\s+/g, " ").trim();
+      reportParameters = parameters;
+      return [rows];
+    }
+  });
+  const result = await service.getReports(filters);
+  return { reportSql, reportParameters, result };
+}
+
+async function testReportListPreservesTerminalStatusFilters() {
+  const completedRow = { id: 1, status: "completed" };
+  const completed = await captureReportQuery(
+    { status: "completed" },
+    [completedRow]
+  );
+  assert.match(completed.reportSql, /dt\.status = 'completed'/);
+  assert.deepEqual(completed.reportParameters, []);
+  assert.deepEqual(completed.result, [completedRow]);
+
+  const closedEarlyRow = { id: 2, status: "closed_early", stored_status: "cancelled" };
+  const closedEarly = await captureReportQuery(
+    { status: "closed_early" },
+    [closedEarlyRow]
+  );
+  assert.match(closedEarly.reportSql, /closure_event\.id IS NOT NULL/);
+  assert.deepEqual(closedEarly.reportParameters, []);
+  assert.deepEqual(closedEarly.result, [closedEarlyRow]);
+
+  const cancelledRow = { id: 3, status: "cancelled" };
+  const cancelled = await captureReportQuery(
+    { status: "cancelled" },
+    [cancelledRow]
+  );
+  assert.match(
+    cancelled.reportSql,
+    /dt\.status = 'cancelled' AND closure_event\.id IS NULL/
+  );
+  assert.deepEqual(cancelled.reportParameters, []);
+  assert.deepEqual(cancelled.result, [cancelledRow]);
+}
+
+async function testReportListPreservesDateAndTruckFilters() {
+  const query = await captureReportQuery({
+    date_from: "2026-08-01",
+    date_to: "2026-08-31",
+    truck: "TRUCK-7"
+  });
+  assert.match(query.reportSql, /dt\.dispatch_date >= \?/);
+  assert.match(query.reportSql, /dt\.dispatch_date <= \?/);
+  assert.match(query.reportSql, /\(dt\.truck_id = \? OR dt\.truck_name_snapshot LIKE \?\)/);
+  assert.deepEqual(query.reportParameters, [
+    "2026-08-01",
+    "2026-08-31",
+    "TRUCK-7",
+    "%TRUCK-7%"
+  ]);
+}
+
+async function testReportListReturnsSuccessfulEmptyResult() {
+  const query = await captureReportQuery();
+  assert.deepEqual(query.result, []);
 }
 
 async function testReportDetailsUseOnlyPersistedTripData() {
@@ -260,6 +335,26 @@ async function testControllerUsesServerSessionActor() {
   }
 }
 
+async function testControllerReturnsSuccessfulEmptyReportList() {
+  const original = dispatchModule.getReports;
+  dispatchModule.getReports = async () => [];
+  delete require.cache[require.resolve("../controllers/dispatchController")];
+  const controller = require("../controllers/dispatchController");
+  const response = {
+    statusCode: 500,
+    body: null,
+    status(value) { this.statusCode = value; return this; },
+    json(value) { this.body = value; return value; }
+  };
+  try {
+    await controller.getReports({ query: {} }, response);
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.body, { success: true, data: [] });
+  } finally {
+    dispatchModule.getReports = original;
+  }
+}
+
 function testRouteSecurityAndFrontendLifecycle() {
   const routes = read("routes/dispatchRoutes.js");
   assert.match(routes, /router\.use\(requireWebAuth\)/);
@@ -298,8 +393,12 @@ async function run() {
   await testActiveDispatchCanBeClosedEarlyIdempotently();
   await testCompletedDispatchCannotBeClosedEarly();
   await testReportListIsTicketCenteredAndExcludesActiveDispatches();
+  await testReportListPreservesTerminalStatusFilters();
+  await testReportListPreservesDateAndTruckFilters();
+  await testReportListReturnsSuccessfulEmptyResult();
   await testReportDetailsUseOnlyPersistedTripData();
   await testControllerUsesServerSessionActor();
+  await testControllerReturnsSuccessfulEmptyReportList();
   testRouteSecurityAndFrontendLifecycle();
   console.log("Dispatch close and reports tests passed");
 }
