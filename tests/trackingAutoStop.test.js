@@ -42,6 +42,7 @@ function createTestService() {
   service.backfillTrackingCompletedNotifications = async () => 0;
   service.createGpsTrackingNotification = async () => null;
   service.createTrackingCompletedNotification = async () => null;
+  service.upsertLastLocation = async () => {};
   return service;
 }
 
@@ -98,6 +99,13 @@ function testLegacySchedulerApiCannotStartATimer() {
 async function assertSessionCanStartAt(startedAt, requestedCompatibilityTime) {
   const service = createTestService();
   service.getManilaNowDateTime = () => startedAt;
+  service.validateNewTrackingStartLocation = () => ({
+    latitude: 6.1060875,
+    longitude: 125.1816406,
+    accuracy: 10,
+    recorded_at: startedAt,
+    distanceFromWmoMeters: 0
+  });
   const calls = [];
 
   queryHandler = async (sql, parameters = []) => {

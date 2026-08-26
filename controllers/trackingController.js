@@ -53,9 +53,13 @@ exports.startTrackingSession = async (req, res) => {
         });
     } catch (error) {
         console.error('startTrackingSession error:', error);
-        return res.status(400).json({
+        const statusCode = Number(error.statusCode) || 500;
+        return res.status(statusCode).json({
             success: false,
-            message: error.message || 'Failed to start tracking session'
+            message: statusCode >= 500
+                ? 'Unable to start the tracking session right now.'
+                : error.message || 'Unable to start the tracking session.',
+            code: error.code || 'TRACKING_START_FAILED'
         });
     }
 };

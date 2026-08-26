@@ -12,7 +12,20 @@ const WMO_GEOFENCE = Object.freeze({
     radiusMeters: 100
 });
 
+class TrackingStartEligibilityError extends Error {
+    constructor(message, code, statusCode = 400) {
+        super(message);
+        this.name = "TrackingStartEligibilityError";
+        this.code = code;
+        this.statusCode = statusCode;
+    }
+}
+
 class TrackingService {
+    constructor() {
+        this.trackingStartOperations = new Map();
+    }
+
     cleanText(value) {
         if (value === null || value === undefined) return "";
 
@@ -81,6 +94,77 @@ class TrackingService {
 
     calculateDistanceMeters(lat1, lon1, lat2, lon2) {
         return this.calculateDistanceKm(lat1, lon1, lat2, lon2) * 1000;
+    }
+
+    validateNewTrackingStartLocation(data = {}, referenceTimeMs = Date.now()) {
+        const requiredFields = ["latitude", "longitude", "accuracy", "recorded_at"];
+        const missingEvidence = requiredFields.some((field) => (
+            !Object.prototype.hasOwnProperty.call(data, field) ||
+            data[field] === null ||
+            data[field] === undefined ||
+            (typeof data[field] === "string" && data[field].trim() === "")
+        ));
+
+        if (missingEvidence) {
+            throw new TrackingStartEligibilityError(
+                "Qualified GPS evidence is required to start a new tracking session.",
+                "TRACKING_START_GPS_REQUIRED"
+            );
+        }
+
+        const qualification = qualifyGpsPointForOperationalUse({
+            latitude: data.latitude,
+            longitude: data.longitude,
+            accuracy: data.accuracy,
+            recorded_at: data.recorded_at
+        }, { referenceTimeMs });
+
+        if (!qualification.reliable) {
+            if (qualification.reason === "unreliable_accuracy") {
+                throw new TrackingStartEligibilityError(
+                    "GPS accuracy must be 50 meters or better to start tracking.",
+                    "TRACKING_START_GPS_INACCURATE"
+                );
+            }
+
+            if (qualification.reason === "stale_location") {
+                throw new TrackingStartEligibilityError(
+                    "A GPS sample from the last 5 minutes is required to start tracking.",
+                    "TRACKING_START_GPS_STALE"
+                );
+            }
+
+            if (qualification.reason === "GPS_TIMESTAMP_FUTURE") {
+                throw new TrackingStartEligibilityError(
+                    "The GPS sample time is too far in the future.",
+                    "TRACKING_START_GPS_FUTURE"
+                );
+            }
+
+            throw new TrackingStartEligibilityError(
+                "The GPS evidence for starting tracking is invalid.",
+                "TRACKING_START_GPS_INVALID"
+            );
+        }
+
+        const distanceFromWmoMeters = this.calculateDistanceMeters(
+            qualification.point.latitude,
+            qualification.point.longitude,
+            WMO_GEOFENCE.latitude,
+            WMO_GEOFENCE.longitude
+        );
+
+        if (distanceFromWmoMeters > WMO_GEOFENCE.radiusMeters) {
+            throw new TrackingStartEligibilityError(
+                "A new tracking session can start only inside the WMO area.",
+                "TRACKING_START_OUTSIDE_WMO"
+            );
+        }
+
+        return {
+            ...qualification.point,
+            distanceFromWmoMeters
+        };
     }
 
     getTrackingStatusDescription(statusKey) {
@@ -786,7 +870,41 @@ class TrackingService {
 
 
 
-    async startTrackingSession(data) {
+    async startTrackingSession(data = {}) {
+        const truckId = this.cleanText(data && data.truck_id);
+
+        if (!truckId) {
+            throw new TrackingStartEligibilityError(
+                "truck_id is required",
+                "TRACKING_START_TRUCK_REQUIRED"
+            );
+        }
+
+        const activeOperation = this.trackingStartOperations.get(truckId);
+        if (activeOperation) {
+            const result = await activeOperation;
+            return {
+                ...result,
+                alreadyActive: true
+            };
+        }
+
+        const operation = this.startTrackingSessionForTruck({
+            ...data,
+            truck_id: truckId
+        });
+        this.trackingStartOperations.set(truckId, operation);
+
+        try {
+            return await operation;
+        } finally {
+            if (this.trackingStartOperations.get(truckId) === operation) {
+                this.trackingStartOperations.delete(truckId);
+            }
+        }
+    }
+
+    async startTrackingSessionForTruck(data = {}) {
         await this.ensureTrackingSessionReportColumns();
 
         const {
@@ -794,14 +912,8 @@ class TrackingService {
             enforcer_id = null,
             enforcer_name = null,
             device_id = null,
-            shift_end_time,
-            start_latitude = null,
-            start_longitude = null
+            shift_end_time
         } = data;
-
-        if (!truck_id) {
-            throw new Error("truck_id is required");
-        }
 
         const startedAt = this.getManilaNowDateTime();
         const compatibilityShiftEnd = this.normalizeDateTimeText(shift_end_time) || startedAt;
@@ -844,6 +956,8 @@ class TrackingService {
             };
         }
 
+        const startLocation = this.validateNewTrackingStartLocation(data, Date.now());
+
         const insertSql = `
             INSERT INTO truck_tracking_sessions (
                 truck_id,
@@ -875,11 +989,11 @@ class TrackingService {
             startedAt,
             compatibilityShiftEnd,
             compatibilityShiftEnd,
-            start_latitude,
-            start_longitude,
-            start_latitude,
-            start_longitude,
-            startedAt,
+            startLocation.latitude,
+            startLocation.longitude,
+            startLocation.latitude,
+            startLocation.longitude,
+            startLocation.recorded_at,
             startedAt,
             startedAt,
             startedAt
@@ -887,19 +1001,18 @@ class TrackingService {
 
         const sessionId = result.insertId;
 
-        if (start_latitude != null && start_longitude != null) {
-            await this.upsertLastLocation({
-                truck_id,
-                session_id: sessionId,
-                latitude: start_latitude,
-                longitude: start_longitude,
-                speed: null,
-                accuracy: null,
-                heading: null,
-                altitude: null,
-                status: "active"
-            });
-        }
+        await this.upsertLastLocation({
+            truck_id,
+            session_id: sessionId,
+            latitude: startLocation.latitude,
+            longitude: startLocation.longitude,
+            speed: null,
+            accuracy: startLocation.accuracy,
+            heading: null,
+            altitude: null,
+            recorded_at: startLocation.recorded_at,
+            status: "active"
+        });
 
         const notification = await this.createGpsTrackingNotification("on", {
             truck_id,
@@ -2138,4 +2251,5 @@ const trackingService = new TrackingService();
 
 module.exports = trackingService;
 module.exports.TrackingService = TrackingService;
+module.exports.TrackingStartEligibilityError = TrackingStartEligibilityError;
 module.exports.WMO_GEOFENCE = WMO_GEOFENCE;
