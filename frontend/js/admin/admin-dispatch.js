@@ -3416,7 +3416,7 @@ function renderDispatchLegacyTicketDetails(details) {
 }
 
 function dispatchTicketIsLive(ticket = {}) {
-  return ["dispatched", "in_progress", "returning_to_wmo"].includes(ticket.status);
+  return ["dispatched", "in_progress", "returning_to_wmo"].includes(ticket?.status);
 }
 
 function dispatchTicketIsTerminal(ticket = {}) {
