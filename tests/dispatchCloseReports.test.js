@@ -274,7 +274,13 @@ async function testReportDetailsUseOnlyPersistedTripData() {
       cancellation_reason: "Mechanical issue"
     },
     stops: [
-      { id: 1, stop_order: 1, location_name: "Pioneer Avenue", stop_status: "completed" },
+      {
+        id: 1,
+        stop_order: 1,
+        location_name: "Pioneer Avenue",
+        stop_status: "completed",
+        stop_duration_seconds: 1800
+      },
       { id: 2, stop_order: 2, location_name: "Pendatun Avenue", stop_status: "on_the_way" }
     ],
     tracking_sessions: [{ tracking_session_id: 501, session_distance_km: 19.8 }],
@@ -295,10 +301,105 @@ async function testReportDetailsUseOnlyPersistedTripData() {
   assert.equal(report.ticket.closed_by_name, "Trusted WMO Operator");
   assert.equal(report.metrics.dispatch_duration_seconds, 10800);
   assert.equal(report.metrics.actual_distance_km, null, "distance needs actual GPS rows");
+  assert.equal(report.metrics.destination_count, 2);
+  assert.equal(report.metrics.completed_stops, 1);
+  assert.equal(report.metrics.skipped_stops, 0);
+  assert.equal(report.metrics.total_stop_duration_seconds, 1800);
   assert.equal(report.metrics.returned_to_wmo_at, null, "return must not be invented");
+  assert.equal(report.planned_route_snapshot, null, "legacy reports must not fabricate a planned route");
   assert.deepEqual(report.events.map((event) => event.event_type), ["dispatch_closed_early"]);
   assert.equal(report.stops[1].stop_status, "on_the_way");
   assert.equal(durationSecondsBetween("bad", "also bad"), null);
+}
+
+async function testCompletedReportDetailsPreservePersistedOperationalHistory() {
+  const routeLogs = [
+    {
+      id: 1,
+      latitude: 6.1060875,
+      longitude: 125.1816406,
+      accuracy: 8,
+      recorded_at: "2026-08-12 08:00:00"
+    },
+    {
+      id: 2,
+      latitude: 6.112,
+      longitude: 125.19,
+      accuracy: 10,
+      recorded_at: "2026-08-12 12:00:00"
+    }
+  ];
+  const service = new DispatchService({
+    async query(sql, parameters) {
+      assert.match(sql, /FROM truck_location_logs/);
+      assert.match(sql, /ORDER BY recorded_at ASC, id ASC/);
+      assert.deepEqual(parameters, [501]);
+      return [routeLogs];
+    }
+  });
+  service.getTicketDetails = async () => ({
+    ticket: {
+      id: 92,
+      ticket_number: "DPT-2026-0092",
+      status: "completed",
+      actual_start_at: "2026-08-12 08:00:00",
+      actual_end_at: "2026-08-12 16:30:00"
+    },
+    stops: [
+      {
+        id: 11,
+        stop_order: 1,
+        location_name: "Pioneer Avenue",
+        stop_status: "completed",
+        actual_arrival_at: "2026-08-12 12:00:00",
+        actual_departure_at: "2026-08-12 12:30:00",
+        stop_duration_seconds: 1800
+      },
+      {
+        id: 12,
+        stop_order: 2,
+        location_name: "Pendatun Avenue",
+        stop_status: "skipped",
+        skip_reason: "Road blocked",
+        actual_arrival_at: null,
+        actual_departure_at: null,
+        stop_duration_seconds: null
+      }
+    ],
+    tracking_sessions: [{ tracking_session_id: 501, session_distance_km: 24.7 }],
+    progress: { total_stops: 2, completed_stops: 1, skipped_stops: 1 },
+    events: [
+      {
+        id: 1,
+        event_type: "returned_to_wmo",
+        event_at: "2026-08-12 16:30:00"
+      },
+      {
+        id: 2,
+        event_type: "dispatch_completed",
+        event_at: "2026-08-12 16:30:00"
+      }
+    ]
+  });
+
+  const report = await service.getReportDetails(92);
+  assert.equal(report.ticket.report_status, "completed");
+  assert.equal(report.ticket.ended_at, "2026-08-12 16:30:00");
+  assert.equal(report.ticket.returned_to_wmo_at, "2026-08-12 16:30:00");
+  assert.equal(report.metrics.dispatch_duration_seconds, 30600);
+  assert.equal(report.metrics.actual_distance_km, 24.7);
+  assert.equal(report.metrics.actual_gps_point_count, 2);
+  assert.equal(report.metrics.destination_count, 2);
+  assert.equal(report.metrics.completed_stops, 1);
+  assert.equal(report.metrics.skipped_stops, 1);
+  assert.equal(report.metrics.total_stop_duration_seconds, 1800);
+  assert.equal(report.metrics.returned_to_wmo_at, "2026-08-12 16:30:00");
+  assert.deepEqual(report.route_logs, routeLogs);
+  assert.equal(report.stops[0].actual_arrival_at, "2026-08-12 12:00:00");
+  assert.equal(report.stops[0].actual_departure_at, "2026-08-12 12:30:00");
+  assert.equal(report.stops[0].stop_duration_seconds, 1800);
+  assert.equal(report.stops[1].skip_reason, "Road blocked");
+  assert.equal(report.planned_route_snapshot, null);
 }
 
 async function testControllerUsesServerSessionActor() {
@@ -378,12 +479,14 @@ function testRouteSecurityAndFrontendLifecycle() {
   assert.doesNotMatch(frontend, /data-dispatch-action="keep-active"/);
   assert.match(frontend, /No dispatch reports found\./);
   assert.match(frontend, /Detailed trip events are not recorded for this dispatch\./);
-  assert.match(frontend, /No actual GPS trail recorded\./);
+  assert.match(frontend, /No GPS trail recorded\./);
+  assert.match(frontend, /Original assigned road route was not recorded for this dispatch\./);
   assert.match(frontend, /Dark green: actual GPS trail/);
-  assert.match(frontend, /Blue: assigned route/);
+  assert.match(frontend, /Blue: persisted assigned route/);
+  assert.doesNotMatch(frontend, /Assigned route between persisted dispatch waypoints/);
   assert.match(frontend, /status === "closed_early" \? "Closed At" : "Ended At"/);
-  assert.match(frontend, /Destination Progress/);
-  assert.match(frontend, /metrics\.returned_to_wmo_at \? `<div><span>Return to WMO/);
+  assert.match(frontend, /Total Stop Time/);
+  assert.match(frontend, /Returned to WMO/);
   assert.doesNotMatch(submitBlock, /force-stop|stopTracking|Stop Truck/);
   assert.doesNotMatch(submitBlock, /returned_to_wmo|dispatch_completed/);
 }
@@ -397,6 +500,7 @@ async function run() {
   await testReportListPreservesDateAndTruckFilters();
   await testReportListReturnsSuccessfulEmptyResult();
   await testReportDetailsUseOnlyPersistedTripData();
+  await testCompletedReportDetailsPreservePersistedOperationalHistory();
   await testControllerUsesServerSessionActor();
   await testControllerReturnsSuccessfulEmptyReportList();
   testRouteSecurityAndFrontendLifecycle();
