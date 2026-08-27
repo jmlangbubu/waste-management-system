@@ -26,6 +26,10 @@ const DISPATCH_ROUTING_TIMEOUT_MS = 15000;
 const DISPATCH_ROUTING_COST_TIE_METERS = 1;
 const DISPATCH_ROUTING_MAX_2OPT_PASSES = 5;
 const DISPATCH_ROUTING_MAX_WAYPOINTS = 90;
+const DISPATCH_PLANNED_ROUTE_VERSION = 1;
+const DISPATCH_PLANNED_ROUTE_MAX_POINTS = 10000;
+const DISPATCH_PLANNED_ROUTE_MAX_BYTES = 512 * 1024;
+const DISPATCH_PLANNED_ROUTE_MAX_DISTANCE_METERS = 2000000;
 const DISPATCH_CURRENT_ROUTE_PANE = "dispatchCurrentRoutePane";
 const DISPATCH_PLANNED_ROUTE_PANE = "dispatchPlannedRoutePane";
 const DISPATCH_COMPLETED_ROUTE_PANE = "dispatchCompletedRoutePane";
@@ -3951,6 +3955,133 @@ function requireDispatchAssignedRouteReady(readiness) {
   return true;
 }
 
+function dispatchPlannedRouteStopSignature(stops = []) {
+  if (!Array.isArray(stops) || stops.length === 0) return "";
+  const orderedStops = [...stops].sort(
+    (first, second) => Number(first?.stop_order) - Number(second?.stop_order)
+  );
+  if (orderedStops.some((stop, index) =>
+    !Number.isInteger(stop?.stop_order) ||
+    stop.stop_order !== index + 1 ||
+    typeof stop?.latitude !== "number" ||
+    !Number.isFinite(stop.latitude) ||
+    stop.latitude < -90 ||
+    stop.latitude > 90 ||
+    typeof stop?.longitude !== "number" ||
+    !Number.isFinite(stop.longitude) ||
+    stop.longitude < -180 ||
+    stop.longitude > 180
+  )) {
+    return "";
+  }
+  return `v1|${orderedStops.map((stop) =>
+    `${stop.stop_order}:${stop.latitude.toFixed(6)},${stop.longitude.toFixed(6)}`
+  ).join("|")}`;
+}
+
+function dispatchUtf8ByteLength(value) {
+  const serialized = JSON.stringify(value);
+  if (typeof TextEncoder !== "undefined") {
+    return new TextEncoder().encode(serialized).byteLength;
+  }
+  return unescape(encodeURIComponent(serialized)).length;
+}
+
+function buildDispatchIssuePlannedRouteSnapshot(options = {}) {
+  const readiness = options.readiness || {};
+  const routeState = options.routeState || null;
+  requireDispatchAssignedRouteReady(readiness);
+  if (
+    !routeState ||
+    !readiness.currentSignature ||
+    routeState.assignmentSignature !== readiness.currentSignature
+  ) {
+    throw new Error("The assigned route is stale. Recalculate it before dispatching.");
+  }
+
+  const truckId = String(options.truckId || "").trim();
+  const trackingSessionId = Number(options.trackingSessionId);
+  const routeContext = `${truckId}:${trackingSessionId}`;
+  if (
+    !truckId ||
+    !Number.isInteger(trackingSessionId) ||
+    trackingSessionId <= 0 ||
+    routeState.routeContext !== routeContext
+  ) {
+    throw new Error("The assigned route does not match the selected truck session.");
+  }
+
+  const stopSignature = dispatchPlannedRouteStopSignature(options.stops);
+  if (!stopSignature) {
+    throw new Error("The assigned route no longer matches the current stop order.");
+  }
+
+  const routeCoordinates = Array.isArray(options.routeCoordinates)
+    ? options.routeCoordinates
+    : [];
+  if (routeCoordinates.length < 2) {
+    throw new Error("The assigned route must contain at least two coordinates.");
+  }
+  if (routeCoordinates.length > DISPATCH_PLANNED_ROUTE_MAX_POINTS) {
+    throw new Error(
+      `The assigned route exceeds ${DISPATCH_PLANNED_ROUTE_MAX_POINTS} coordinates.`
+    );
+  }
+  const points = routeCoordinates.map((coordinate, index) => {
+    const latitude = coordinate?.lat ?? coordinate?.latitude;
+    const longitude = coordinate?.lng ?? coordinate?.lon ?? coordinate?.longitude;
+    if (
+      typeof latitude !== "number" ||
+      !Number.isFinite(latitude) ||
+      latitude < -90 ||
+      latitude > 90
+    ) {
+      throw new Error(`Assigned route latitude ${index + 1} is invalid.`);
+    }
+    if (
+      typeof longitude !== "number" ||
+      !Number.isFinite(longitude) ||
+      longitude < -180 ||
+      longitude > 180
+    ) {
+      throw new Error(`Assigned route longitude ${index + 1} is invalid.`);
+    }
+    return { lat: latitude, lng: longitude };
+  });
+
+  const suppliedDistance = options.distanceMeters;
+  const distanceMeters = typeof suppliedDistance === "number" &&
+    Number.isFinite(suppliedDistance)
+    ? suppliedDistance
+    : dispatchPolylineDistanceMeters(points);
+  if (
+    !Number.isFinite(distanceMeters) ||
+    distanceMeters < 0 ||
+    distanceMeters > DISPATCH_PLANNED_ROUTE_MAX_DISTANCE_METERS
+  ) {
+    throw new Error("The assigned route distance is invalid.");
+  }
+
+  const snapshot = {
+    version: DISPATCH_PLANNED_ROUTE_VERSION,
+    source: "osrm",
+    geometry: {
+      type: "LineString",
+      coordinates: points.map((point) => [point.lng, point.lat])
+    },
+    distance_meters: distanceMeters,
+    stop_signature: stopSignature,
+    truck_id: truckId,
+    tracking_session_id: trackingSessionId
+  };
+  if (dispatchUtf8ByteLength(snapshot) > DISPATCH_PLANNED_ROUTE_MAX_BYTES) {
+    throw new Error(
+      `The assigned route exceeds ${DISPATCH_PLANNED_ROUTE_MAX_BYTES} bytes.`
+    );
+  }
+  return snapshot;
+}
+
 function getDispatchCurrentAssignedRouteReadiness(selectedStops = getDispatchStopDrafts()) {
   const orderedStops = [...selectedStops].sort((first, second) =>
     Number(first.stop_order) - Number(second.stop_order)
@@ -4219,7 +4350,8 @@ function renderDispatchDraftOnLiveMap(options = {}) {
       dispatchLastSuccessfulRouteState = {
         journey,
         originSource: "wmo",
-        assignmentSignature: signature
+        assignmentSignature: signature,
+        routeContext: truckRouteKey
       };
       dispatchLastRouteDistanceMeters = Number.isFinite(Number(journey.total_cost_meters))
         ? Number(journey.total_cost_meters)
@@ -5383,6 +5515,23 @@ async function dispatchSelectedTruckNow() {
     return;
   }
 
+  let issuePlannedRouteSnapshot;
+  try {
+    const selectedStops = dispatchDraftsInAssignedOrder(getDispatchStopDrafts());
+    issuePlannedRouteSnapshot = buildDispatchIssuePlannedRouteSnapshot({
+      readiness: getDispatchCurrentAssignedRouteReadiness(selectedStops),
+      routeState: dispatchLastSuccessfulRouteState,
+      routeCoordinates: dispatchLastSuccessfulRouteCoordinates,
+      distanceMeters: dispatchLastRouteDistanceMeters,
+      stops: selectedStops,
+      truckId: selectedTruck.truck_id,
+      trackingSessionId: selectedSession
+    });
+  } catch (error) {
+    renderDispatchWorkflowResult(dispatchSafeTicketErrorMessage(error), "error");
+    return;
+  }
+
   dispatchPlannerOperationProcessing = true;
   updateDispatchPlannerActions();
   let details = selectedDispatchTicket;
@@ -5415,7 +5564,10 @@ async function dispatchSelectedTruckNow() {
         renderDispatchStepProgress(1, "progress", `${ticketNumber} prepared successfully.`);
         details = await dispatchRequest(`${getDispatchTicketApiUrl(ticketId)}/issue`, {
           method: "POST",
-          body: JSON.stringify(dispatchActorPayload())
+          body: JSON.stringify({
+            ...dispatchActorPayload(),
+            planned_route_snapshot: issuePlannedRouteSnapshot
+          })
         });
         selectedDispatchTicket = details;
       } catch (error) {
@@ -5711,7 +5863,13 @@ function dispatchReportActualPoints(logs = []) {
 }
 
 function dispatchReportPlannedPoints(snapshot = null) {
-  const points = Array.isArray(snapshot)
+  const points = snapshot?.geometry?.type === "LineString" &&
+    Array.isArray(snapshot.geometry.coordinates)
+    ? snapshot.geometry.coordinates.map((coordinate) => ({
+      latitude: coordinate?.[1],
+      longitude: coordinate?.[0]
+    }))
+    : Array.isArray(snapshot)
     ? snapshot
     : Array.isArray(snapshot?.points)
       ? snapshot.points
@@ -5719,7 +5877,11 @@ function dispatchReportPlannedPoints(snapshot = null) {
   return points.map((point) => dispatchPoint(
     point.latitude ?? point.lat,
     point.longitude ?? point.lng ?? point.lon
-  )).filter(Boolean);
+  )).filter((point) =>
+    point &&
+    point.lat >= -90 && point.lat <= 90 &&
+    point.lng >= -180 && point.lng <= 180
+  );
 }
 
 function dispatchReportSuggestedPoints(snapshot = null) {
@@ -6645,6 +6807,8 @@ if (typeof module !== "undefined" && module.exports) {
     dispatchCatalogDestinationIsSelected,
     dispatchAssignedRouteReadiness,
     dispatchAssignedRouteSignature,
+    dispatchPlannedRouteStopSignature,
+    buildDispatchIssuePlannedRouteSnapshot,
     dispatchActiveRouteMarkerStateSignature,
     dispatchActiveRouteStops,
     dispatchOrderActiveRouteStops,
