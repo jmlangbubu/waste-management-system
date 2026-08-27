@@ -10,6 +10,15 @@ const WMO_LOCATION = Object.freeze({
   radiusMeters: 100
 });
 
+function chronologyMs(value) {
+  if (value instanceof Date) return value.getTime();
+  if (typeof value !== "string" || !value.trim()) return Number.NaN;
+  const normalized = value.includes("T")
+    ? value
+    : `${value.trim().replace(" ", "T")}+08:00`;
+  return Date.parse(normalized);
+}
+
 class DispatchMonitorService {
   constructor(pool = db, service = dispatchService) {
     this.db = pool;
@@ -57,13 +66,25 @@ class DispatchMonitorService {
           SELECT
             dts.id,
             dts.tracking_session_id,
-            COALESCE(dts.last_processed_location_log_id, 0) AS cursor_id
+            COALESCE(dts.last_processed_location_log_id, 0) AS cursor_id,
+            dt.status AS dispatch_status
           FROM dispatch_tracking_sessions dts
           INNER JOIN dispatch_tickets dt
             ON dt.id = dts.dispatch_ticket_id
           WHERE dts.unlinked_at IS NULL
             AND dts.is_primary = 1
-            AND dt.status IN ('dispatched', 'in_progress', 'returning_to_wmo')
+            AND (
+              dt.status IN ('dispatched', 'in_progress', 'returning_to_wmo')
+              OR EXISTS (
+                SELECT 1
+                FROM truck_location_logs tll_new
+                WHERE tll_new.session_id = dts.tracking_session_id
+                  AND tll_new.id > COALESCE(
+                    dts.last_processed_location_log_id,
+                    0
+                  )
+              )
+            )
           ORDER BY dts.id ASC
         `
       );
@@ -90,33 +111,88 @@ class DispatchMonitorService {
   }
 
   async processRelation(relation) {
-    const [logs] = await this.db.query(
-      `
-        SELECT
-          id,
-          session_id,
-          latitude,
-          longitude,
-          accuracy,
-          recorded_at
-        FROM truck_location_logs
-        WHERE session_id = ?
-          AND id > ?
-        ORDER BY recorded_at ASC, id ASC
-        LIMIT ?
-      `,
-      [
-        relation.tracking_session_id,
-        Number(relation.cursor_id || 0),
-        LOCATION_BATCH_SIZE
-      ]
-    );
+    let cursorId = Number(relation.cursor_id || 0);
+    let latestProcessedRecordedAtMs = Number.NaN;
+    let priorChronologyLoaded = cursorId === 0;
 
-    for (const locationLog of logs) {
-      await this.dispatchService.processAutomaticLocationLog(
-        relation.id,
-        locationLog
+    while (true) {
+      const [logs] = await this.db.query(
+        `
+          SELECT
+            id,
+            session_id,
+            latitude,
+            longitude,
+            accuracy,
+            recorded_at
+          FROM truck_location_logs
+          WHERE session_id = ?
+            AND id > ?
+          ORDER BY id ASC
+          LIMIT ?
+        `,
+        [relation.tracking_session_id, cursorId, LOCATION_BATCH_SIZE]
       );
+
+      if (!logs.length) break;
+
+      if (!priorChronologyLoaded) {
+        const [chronologyRows] = await this.db.query(
+          `
+            SELECT
+              DATE_FORMAT(MAX(recorded_at), '%Y-%m-%d %H:%i:%s')
+                AS latest_processed_recorded_at
+            FROM truck_location_logs
+            WHERE session_id = ?
+              AND id <= ?
+          `,
+          [relation.tracking_session_id, cursorId]
+        );
+        latestProcessedRecordedAtMs = chronologyMs(
+          chronologyRows[0]?.latest_processed_recorded_at
+        );
+        priorChronologyLoaded = true;
+      }
+
+      let pagePreviousRecordedAtMs = latestProcessedRecordedAtMs;
+      let requiresReplay = ["completed", "cancelled"].includes(
+        relation.dispatch_status
+      );
+
+      for (const locationLog of logs) {
+        const recordedAtMs = chronologyMs(locationLog.recorded_at);
+        if (
+          !Number.isFinite(recordedAtMs) ||
+          (Number.isFinite(pagePreviousRecordedAtMs) &&
+            recordedAtMs < pagePreviousRecordedAtMs)
+        ) {
+          requiresReplay = true;
+          break;
+        }
+        pagePreviousRecordedAtMs = recordedAtMs;
+      }
+
+      if (requiresReplay) {
+        await this.dispatchService.reconcileAutomaticDispatchHistory(
+          relation.id
+        );
+        await this.dispatchService.reconcileEndedTrackingSession(
+          relation.id,
+          WMO_LOCATION
+        );
+        return;
+      }
+
+      for (const locationLog of logs) {
+        await this.dispatchService.processAutomaticLocationLog(
+          relation.id,
+          locationLog
+        );
+        cursorId = Number(locationLog.id);
+        latestProcessedRecordedAtMs = chronologyMs(locationLog.recorded_at);
+      }
+
+      if (logs.length < LOCATION_BATCH_SIZE) break;
     }
 
     await this.dispatchService.reconcileEndedTrackingSession(
@@ -132,4 +208,5 @@ module.exports = dispatchMonitorService;
 module.exports.DispatchMonitorService = DispatchMonitorService;
 module.exports.INITIAL_DELAY_MS = INITIAL_DELAY_MS;
 module.exports.MONITOR_DELAY_MS = MONITOR_DELAY_MS;
+module.exports.LOCATION_BATCH_SIZE = LOCATION_BATCH_SIZE;
 module.exports.WMO_LOCATION = WMO_LOCATION;

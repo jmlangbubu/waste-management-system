@@ -115,6 +115,24 @@ async function testQualifiedCompletionCases() {
     end_longitude: null
   });
   assert.equal(freshActualInside.completionUpdates, 1);
+
+  const delayedAfterStoppedSession = await reconcile({
+    ended_at: "2026-08-27 12:30:00",
+    end_latitude: null,
+    end_longitude: null
+  }, {
+    actualLogs: [{
+      latitude: WMO.latitude,
+      longitude: WMO.longitude,
+      accuracy: 10,
+      recorded_at: "2026-08-27 12:29:30"
+    }]
+  });
+  assert.equal(
+    delayedAfterStoppedSession.completionUpdates,
+    1,
+    "late uploaded evidence stays fresh relative to the tracking end time"
+  );
 }
 
 async function testUnqualifiedPositionsDoNotComplete() {

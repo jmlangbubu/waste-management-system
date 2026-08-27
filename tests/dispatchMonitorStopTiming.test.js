@@ -499,8 +499,17 @@ function testMonitorPreservesIncrementalChronologicalProcessing() {
   );
   assert.match(source, /WHERE session_id = \?/);
   assert.match(source, /AND id > \?/);
-  assert.match(source, /ORDER BY recorded_at ASC, id ASC/);
+  assert.match(source, /ORDER BY id ASC/);
   assert.match(source, /LIMIT \?/);
+  assert.match(source, /reconcileAutomaticDispatchHistory/);
+  assert.match(source, /OR EXISTS \(/);
+  assert.match(source, /dt\.status AS dispatch_status/);
+
+  const dispatchSource = fs.readFileSync(
+    path.join(__dirname, "../services/dispatchService.js"),
+    "utf8"
+  );
+  assert.match(dispatchSource, /ORDER BY recorded_at ASC, id ASC/);
 }
 
 async function run() {
