@@ -129,10 +129,39 @@ function testActualTrailAndPlannedRouteTruthfulness() {
     dispatchReportPlannedPoints({ points: [{ latitude: 6.1, longitude: 125.1 }] }),
     [{ lat: 6.1, lng: 125.1 }]
   );
+  assert.deepEqual(
+    dispatchReportPlannedPoints({
+      geometry: { type: "LineString", coordinates: [[125.2, 6.2], [125.3, 6.3]] }
+    }),
+    [{ lat: 6.2, lng: 125.2 }, { lat: 6.3, lng: 125.3 }]
+  );
 
   const report = buildDispatchReportViewModel(fixture);
   assert.equal(report.has_actual_trail, true);
   assert.equal(report.has_planned_route, false);
+}
+
+function testPersistedBlueAndActualGreenRemainIndependent() {
+  const fixture = completedReportFixture();
+  fixture.planned_route_snapshot = {
+    version: 1,
+    source: "osrm",
+    captured_at: "2026-08-27T00:00:00.000Z",
+    geometry: {
+      type: "LineString",
+      coordinates: [[125.1816406, 6.1060875], [125.2, 6.2]]
+    },
+    distance_meters: 15000,
+    stop_signature: "v1|1:6.110000,125.170000|2:6.120000,125.180000",
+    truck_id: "TRUCK-9",
+    tracking_session_id: 58
+  };
+  const firstOpen = buildDispatchReportViewModel(fixture);
+  const secondOpen = buildDispatchReportViewModel(fixture);
+  assert.equal(firstOpen.has_planned_route, true);
+  assert.equal(firstOpen.has_actual_trail, true);
+  assert.notDeepEqual(firstOpen.planned_points, firstOpen.actual_points);
+  assert.deepEqual(secondOpen.planned_points, firstOpen.planned_points);
 }
 
 function testTimelineChronologyAndLabels() {
@@ -180,7 +209,7 @@ function testReadOnlyApiAndFrontendLifecycleStructure() {
     service.indexOf("async reconcileAutomaticStopEvent")
   );
   assert.match(detailBlock, /ORDER BY recorded_at ASC, id ASC/);
-  assert.match(detailBlock, /planned_route_snapshot: null/);
+  assert.match(detailBlock, /planned_route_snapshot: plannedRouteSnapshot/);
   assert.match(detailBlock, /total_stop_duration_seconds: totalStopDurationSeconds/);
   assert.match(detailBlock, /ticket:/);
   assert.match(detailBlock, /stops,/);
@@ -231,6 +260,7 @@ function run() {
   testCompletedReportProjection();
   testOrderedStopRecordsAndPersistedTiming();
   testActualTrailAndPlannedRouteTruthfulness();
+  testPersistedBlueAndActualGreenRemainIndependent();
   testTimelineChronologyAndLabels();
   testClosedEarlyAndLegacyNullProjection();
   testReadOnlyApiAndFrontendLifecycleStructure();

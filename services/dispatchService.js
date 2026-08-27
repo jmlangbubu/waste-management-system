@@ -69,6 +69,12 @@ const DESTINATION_TYPES = new Set(["road_segment", "barangay_hall"]);
 const DEFAULT_DESTINATION_LIMIT = 20;
 const MAX_DESTINATION_LIMIT = 1000;
 const DISPATCH_HISTORY_REPLAY_PAGE_SIZE = 500;
+const DISPATCH_PLANNED_ROUTE_VERSION = 1;
+const DISPATCH_PLANNED_ROUTE_SOURCE = "osrm";
+const DISPATCH_PLANNED_ROUTE_MAX_POINTS = 10000;
+const DISPATCH_PLANNED_ROUTE_MAX_BYTES = 512 * 1024;
+const DISPATCH_PLANNED_ROUTE_MAX_DISTANCE_METERS = 2000000;
+const DISPATCH_PLANNED_ROUTE_MAX_STOP_SIGNATURE_LENGTH = 4096;
 
 function qualifyDispatchStopEvidence(locationLog = {}, options = {}) {
   const referenceTimeMs = Number.isFinite(Number(options.referenceTimeMs))
@@ -666,6 +672,193 @@ function parseEventDetails(value) {
     return parsed && typeof parsed === "object" ? parsed : {};
   } catch (error) {
     return {};
+  }
+}
+
+function dispatchPlannedRouteError(message) {
+  return new DispatchServiceError(
+    message,
+    400,
+    "DISPATCH_PLANNED_ROUTE_INVALID"
+  );
+}
+
+function dispatchPlannedRouteStopSignature(stops = []) {
+  if (!Array.isArray(stops) || stops.length === 0) return "";
+  const orderedStops = stops
+    .map((stop) => ({
+      stop_order: stop?.stop_order ?? stop?.stopOrder,
+      latitude: stop?.latitude,
+      longitude: stop?.longitude
+    }))
+    .map((stop) => ({
+      stop_order: stop.stop_order === null || stop.stop_order === ""
+        ? Number.NaN
+        : Number(stop.stop_order),
+      latitude: stop.latitude === null || stop.latitude === ""
+        ? Number.NaN
+        : Number(stop.latitude),
+      longitude: stop.longitude === null || stop.longitude === ""
+        ? Number.NaN
+        : Number(stop.longitude)
+    }))
+    .sort((first, second) => first.stop_order - second.stop_order);
+
+  if (orderedStops.some((stop, index) =>
+    !Number.isInteger(stop.stop_order) ||
+    stop.stop_order !== index + 1 ||
+    !Number.isFinite(stop.latitude) ||
+    stop.latitude < -90 ||
+    stop.latitude > 90 ||
+    !Number.isFinite(stop.longitude) ||
+    stop.longitude < -180 ||
+    stop.longitude > 180
+  )) {
+    return "";
+  }
+
+  return `v1|${orderedStops.map((stop) =>
+    `${stop.stop_order}:${stop.latitude.toFixed(6)},${stop.longitude.toFixed(6)}`
+  ).join("|")}`;
+}
+
+function normalizeDispatchPlannedRouteSnapshot(value, options = {}) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw dispatchPlannedRouteError("The assigned route snapshot must be an object");
+  }
+
+  let serialized;
+  try {
+    serialized = JSON.stringify(value);
+  } catch (error) {
+    throw dispatchPlannedRouteError("The assigned route snapshot is not serializable");
+  }
+  if (Buffer.byteLength(serialized, "utf8") > DISPATCH_PLANNED_ROUTE_MAX_BYTES) {
+    throw dispatchPlannedRouteError(
+      `The assigned route snapshot exceeds ${DISPATCH_PLANNED_ROUTE_MAX_BYTES} bytes`
+    );
+  }
+
+  if (value.version !== DISPATCH_PLANNED_ROUTE_VERSION) {
+    throw dispatchPlannedRouteError("The assigned route snapshot version is not supported");
+  }
+  if (value.source !== DISPATCH_PLANNED_ROUTE_SOURCE) {
+    throw dispatchPlannedRouteError("The assigned route snapshot source must be osrm");
+  }
+  if (
+    !value.geometry ||
+    typeof value.geometry !== "object" ||
+    Array.isArray(value.geometry) ||
+    value.geometry.type !== "LineString"
+  ) {
+    throw dispatchPlannedRouteError("The assigned route geometry must be a LineString");
+  }
+
+  const rawCoordinates = value.geometry.coordinates;
+  if (!Array.isArray(rawCoordinates) || rawCoordinates.length < 2) {
+    throw dispatchPlannedRouteError("The assigned route must contain at least two coordinates");
+  }
+  if (rawCoordinates.length > DISPATCH_PLANNED_ROUTE_MAX_POINTS) {
+    throw dispatchPlannedRouteError(
+      `The assigned route exceeds ${DISPATCH_PLANNED_ROUTE_MAX_POINTS} coordinates`
+    );
+  }
+
+  const coordinates = rawCoordinates.map((coordinate, index) => {
+    if (!Array.isArray(coordinate) || coordinate.length !== 2) {
+      throw dispatchPlannedRouteError(
+        `Assigned route coordinate ${index + 1} must contain longitude and latitude`
+      );
+    }
+    const [longitude, latitude] = coordinate;
+    if (
+      typeof longitude !== "number" ||
+      !Number.isFinite(longitude) ||
+      longitude < -180 ||
+      longitude > 180
+    ) {
+      throw dispatchPlannedRouteError(
+        `Assigned route longitude ${index + 1} must be between -180 and 180`
+      );
+    }
+    if (
+      typeof latitude !== "number" ||
+      !Number.isFinite(latitude) ||
+      latitude < -90 ||
+      latitude > 90
+    ) {
+      throw dispatchPlannedRouteError(
+        `Assigned route latitude ${index + 1} must be between -90 and 90`
+      );
+    }
+    return [longitude, latitude];
+  });
+
+  const distanceMeters = value.distance_meters;
+  if (
+    typeof distanceMeters !== "number" ||
+    !Number.isFinite(distanceMeters) ||
+    distanceMeters < 0 ||
+    distanceMeters > DISPATCH_PLANNED_ROUTE_MAX_DISTANCE_METERS
+  ) {
+    throw dispatchPlannedRouteError(
+      `The assigned route distance must be between 0 and ${DISPATCH_PLANNED_ROUTE_MAX_DISTANCE_METERS} meters`
+    );
+  }
+
+  const stopSignature = typeof value.stop_signature === "string"
+    ? value.stop_signature.trim()
+    : "";
+  if (
+    !stopSignature ||
+    stopSignature.length > DISPATCH_PLANNED_ROUTE_MAX_STOP_SIGNATURE_LENGTH
+  ) {
+    throw dispatchPlannedRouteError("The assigned route stop signature is invalid");
+  }
+
+  const truckId = typeof value.truck_id === "string" ? value.truck_id.trim() : "";
+  if (!truckId || truckId.length > 100) {
+    throw dispatchPlannedRouteError("The assigned route truck identity is invalid");
+  }
+  const trackingSessionId = Number(value.tracking_session_id);
+  if (!Number.isInteger(trackingSessionId) || trackingSessionId <= 0) {
+    throw dispatchPlannedRouteError("The assigned route tracking session is invalid");
+  }
+
+  const capturedAtValue = options.capturedAt ?? value.captured_at;
+  const capturedAt = new Date(capturedAtValue);
+  if (!capturedAtValue || Number.isNaN(capturedAt.getTime())) {
+    throw dispatchPlannedRouteError("The assigned route capture time is invalid");
+  }
+
+  const normalized = {
+    version: DISPATCH_PLANNED_ROUTE_VERSION,
+    source: DISPATCH_PLANNED_ROUTE_SOURCE,
+    captured_at: capturedAt.toISOString(),
+    geometry: {
+      type: "LineString",
+      coordinates
+    },
+    distance_meters: distanceMeters,
+    stop_signature: stopSignature,
+    truck_id: truckId,
+    tracking_session_id: trackingSessionId
+  };
+  if (Buffer.byteLength(JSON.stringify(normalized), "utf8") > DISPATCH_PLANNED_ROUTE_MAX_BYTES) {
+    throw dispatchPlannedRouteError(
+      `The assigned route snapshot exceeds ${DISPATCH_PLANNED_ROUTE_MAX_BYTES} bytes`
+    );
+  }
+  return normalized;
+}
+
+function storedDispatchPlannedRouteSnapshot(details) {
+  const plannedRoute = parseEventDetails(details).planned_route;
+  if (!plannedRoute) return null;
+  try {
+    return normalizeDispatchPlannedRouteSnapshot(plannedRoute);
+  } catch (error) {
+    return null;
   }
 }
 
@@ -1709,6 +1902,37 @@ class DispatchService {
         { excludeTicketId: ticket.id, lockAcquired: true }
       );
 
+      const snapshotInput = payload.planned_route_snapshot ?? payload.plannedRouteSnapshot;
+      let plannedRouteSnapshot = null;
+      if (snapshotInput !== null && snapshotInput !== undefined) {
+        plannedRouteSnapshot = normalizeDispatchPlannedRouteSnapshot(snapshotInput, {
+          capturedAt: this.now().toISOString()
+        });
+        const [routeStops] = await connection.query(
+          `
+            SELECT stop_order, latitude, longitude
+            FROM dispatch_route_stops
+            WHERE dispatch_ticket_id = ?
+            ORDER BY stop_order ASC
+          `,
+          [ticket.id]
+        );
+        const persistedStopSignature = dispatchPlannedRouteStopSignature(routeStops);
+        if (
+          !persistedStopSignature ||
+          plannedRouteSnapshot.stop_signature !== persistedStopSignature
+        ) {
+          throw dispatchPlannedRouteError(
+            "The assigned route no longer matches the prepared ticket stops"
+          );
+        }
+        if (plannedRouteSnapshot.truck_id !== String(ticket.truck_id || "").trim()) {
+          throw dispatchPlannedRouteError(
+            "The assigned route no longer matches the prepared ticket truck"
+          );
+        }
+      }
+
       await connection.query(
         `
           UPDATE dispatch_tickets
@@ -1725,6 +1949,9 @@ class DispatchService {
         event_type: "ticket_issued",
         event_source: "web",
         ...actor,
+        details: plannedRouteSnapshot
+          ? { planned_route: plannedRouteSnapshot }
+          : undefined,
         idempotency_key: `dispatch-issued:${ticket.id}`
       });
     });
@@ -2629,7 +2856,11 @@ class DispatchService {
     const returnedEvent = events.find(
       (event) => event.event_type === "returned_to_wmo"
     ) || null;
+    const issuedEvent = events.find(
+      (event) => event.event_type === "ticket_issued"
+    ) || null;
     const closureDetails = parseEventDetails(closureEvent?.details);
+    const plannedRouteSnapshot = storedDispatchPlannedRouteSnapshot(issuedEvent?.details);
     const endedAt = closureEvent
       ? ticket.actual_end_at || ticket.cancelled_at || closureEvent.event_at
       : ticket.actual_end_at || ticket.completed_at || null;
@@ -2662,7 +2893,7 @@ class DispatchService {
       stops,
       tracking_session: primarySession,
       route_logs: routeLogs,
-      planned_route_snapshot: null,
+      planned_route_snapshot: plannedRouteSnapshot,
       progress: details.progress,
       events,
       metrics: {
@@ -3686,6 +3917,12 @@ module.exports.NON_TERMINAL_TICKET_STATUSES = NON_TERMINAL_TICKET_STATUSES;
 module.exports.END_DISPATCH_REASONS = END_DISPATCH_REASONS;
 module.exports.normalizeEndDispatchReason = normalizeEndDispatchReason;
 module.exports.durationSecondsBetween = durationSecondsBetween;
+module.exports.dispatchPlannedRouteStopSignature = dispatchPlannedRouteStopSignature;
+module.exports.normalizeDispatchPlannedRouteSnapshot = normalizeDispatchPlannedRouteSnapshot;
+module.exports.storedDispatchPlannedRouteSnapshot = storedDispatchPlannedRouteSnapshot;
+module.exports.DISPATCH_PLANNED_ROUTE_VERSION = DISPATCH_PLANNED_ROUTE_VERSION;
+module.exports.DISPATCH_PLANNED_ROUTE_MAX_POINTS = DISPATCH_PLANNED_ROUTE_MAX_POINTS;
+module.exports.DISPATCH_PLANNED_ROUTE_MAX_BYTES = DISPATCH_PLANNED_ROUTE_MAX_BYTES;
 module.exports.qualifyDispatchStopEvidence = qualifyDispatchStopEvidence;
 module.exports.DISPATCH_STOP_TRANSITION_RULES =
   DISPATCH_STOP_TRANSITION_RULES;
