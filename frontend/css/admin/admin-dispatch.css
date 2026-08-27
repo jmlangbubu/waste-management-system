@@ -200,9 +200,17 @@
 }
 
 .dispatch-report-modal-content {
-  width: min(96vw, 1180px);
-  max-width: 1180px;
+  width: min(96vw, 1280px);
+  max-width: 1280px;
   max-height: 94vh;
+}
+
+body > #dispatchReportsModal {
+  z-index: 30000;
+}
+
+body > #dispatchReportModal {
+  z-index: 30010;
 }
 
 .dispatch-report-filters {
@@ -248,6 +256,72 @@
   gap: 16px;
 }
 
+.dispatch-report-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid #cfe0d6;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #f3faf6 0%, #ffffff 72%);
+}
+
+.dispatch-report-hero > div {
+  min-width: 0;
+}
+
+.dispatch-report-hero span:first-child {
+  color: #408a71;
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.dispatch-report-hero h4 {
+  margin: 4px 0 2px;
+  color: #13251f;
+  font-size: clamp(19px, 2vw, 25px);
+}
+
+.dispatch-report-hero p {
+  margin: 0;
+  color: #687a73;
+  font-size: 13px;
+}
+
+.dispatch-report-closure {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr 1fr;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid #efc7ba;
+  border-radius: 12px;
+  background: #fff8f5;
+}
+
+.dispatch-report-closure div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.dispatch-report-closure span,
+.dispatch-report-stop-facts span {
+  color: #7a6a63;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.dispatch-report-closure strong {
+  overflow-wrap: anywhere;
+  color: #713526;
+  font-size: 13px;
+}
+
 .dispatch-report-section {
   border: 1px solid #dce7e0;
   border-radius: 12px;
@@ -263,7 +337,7 @@
 
 .dispatch-report-summary-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -292,32 +366,96 @@
 .dispatch-report-stop-list,
 .dispatch-report-timeline {
   display: grid;
-  gap: 8px;
-}
-
-.dispatch-report-stop,
-.dispatch-report-event {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
   gap: 10px;
-  padding: 10px;
-  border: 1px solid #e0e8e3;
-  border-radius: 9px;
 }
 
-.dispatch-report-stop > span:first-child {
+.dispatch-report-stop {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  padding: 13px;
+  border: 1px solid #e0e8e3;
+  border-radius: 11px;
+  background: #fbfdfc;
+}
+
+.dispatch-report-stop-number {
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   background: #e7f3eb;
   color: #18683f;
   font-weight: 900;
 }
 
-.dispatch-report-stop div,
+.dispatch-report-stop-main {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.dispatch-report-stop-main > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dispatch-report-stop-main > header > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.dispatch-report-stop-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.dispatch-report-stop-facts > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 9px;
+  border-radius: 8px;
+  background: #f2f7f4;
+}
+
+.dispatch-report-stop-facts strong {
+  overflow-wrap: anywhere;
+  color: #203b2f;
+  font-size: 12px;
+}
+
+.dispatch-report-stop-facts .dispatch-report-stop-reason {
+  grid-column: 1 / -1;
+  background: #fff8f5;
+}
+
+.dispatch-report-event {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 11px;
+  padding: 10px 12px;
+  border-left: 2px solid #cfe0d6;
+}
+
+.dispatch-report-event i {
+  width: 10px;
+  height: 10px;
+  margin-top: 4px;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  background: #408a71;
+  box-shadow: 0 0 0 2px #a8d4c0;
+}
+
 .dispatch-report-event div {
   display: grid;
   gap: 3px;
@@ -328,6 +466,15 @@
 .dispatch-report-event small,
 .dispatch-report-empty {
   color: #718078;
+  font-size: 12px;
+}
+
+.dispatch-report-route-notice {
+  margin: 10px 0 0;
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: #f5f7f6;
+  color: #5f7068;
   font-size: 12px;
 }
 
@@ -363,13 +510,88 @@
 .dispatch-report-map-legend .actual { border-color: #176b3a; }
 .dispatch-report-map-legend .suggested {
   border-color: #246ee9;
-  border-top-style: dashed;
+}
+
+.dispatch-report-map-legend .endpoint { border-color: #d83a3a; }
+.dispatch-report-map-legend .wmo { border-color: #173d2b; }
+
+.dispatch-report-stop-marker-shell,
+.dispatch-report-wmo-marker-shell {
+  border: 0;
+  background: transparent;
+}
+
+.dispatch-report-stop-marker,
+.dispatch-report-wmo-marker {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  box-sizing: border-box;
+  border: 3px solid #246ee9;
+  border-radius: 50%;
+  background: #ffffff;
+  color: #174e91;
+  font-size: 12px;
+  font-weight: 900;
+  box-shadow: 0 5px 13px rgba(9, 20, 19, 0.2);
+}
+
+.dispatch-report-wmo-marker {
+  width: 32px;
+  height: 32px;
+  border-color: #173d2b;
+  background: #173d2b;
+  color: #ffffff;
+}
+
+.dispatch-report-map-popup {
+  display: grid;
+  gap: 6px;
+  min-width: 190px;
+}
+
+.dispatch-report-map-popup h5 {
+  margin: -3px 0 2px;
+  color: #173d2b;
+  font-size: 13px;
+}
+
+.dispatch-report-map-popup > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11px;
+}
+
+.dispatch-report-map-popup span { color: #718078; }
+.dispatch-report-map-popup strong {
+  color: #203b2f;
+  text-align: right;
+}
+
+@media (max-width: 980px) {
+  .dispatch-report-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dispatch-report-closure {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 @media (max-width: 720px) {
   .dispatch-report-filters,
-  .dispatch-report-summary-grid {
+  .dispatch-report-summary-grid,
+  .dispatch-report-closure,
+  .dispatch-report-stop-facts {
     grid-template-columns: 1fr;
+  }
+
+  .dispatch-report-hero,
+  .dispatch-report-stop-main > header {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .dispatch-reports-modal-content,
@@ -390,7 +612,7 @@
   }
 
   #dispatchReportMap {
-    height: 300px;
+    height: 320px;
   }
 }
 

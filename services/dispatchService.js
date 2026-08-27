@@ -2637,6 +2637,14 @@ class DispatchService {
       routeLogs.length > 0 && primarySession?.session_distance_km !== null
         ? Number(primarySession.session_distance_km)
         : null;
+    const recordedStopDurations = stops
+      .map((stop) => stop.stop_duration_seconds)
+      .filter((value) => value !== null && value !== undefined)
+      .map(Number)
+      .filter((value) => Number.isFinite(value) && value >= 0);
+    const totalStopDurationSeconds = recordedStopDurations.length
+      ? recordedStopDurations.reduce((total, duration) => total + duration, 0)
+      : null;
 
     return {
       ticket: {
@@ -2654,6 +2662,7 @@ class DispatchService {
       stops,
       tracking_session: primarySession,
       route_logs: routeLogs,
+      planned_route_snapshot: null,
       progress: details.progress,
       events,
       metrics: {
@@ -2664,6 +2673,14 @@ class DispatchService {
         actual_distance_km:
           Number.isFinite(measuredDistance) ? measuredDistance : null,
         actual_gps_point_count: routeLogs.length,
+        destination_count: stops.length,
+        completed_stops: stops.filter(
+          (stop) => stop.stop_status === "completed"
+        ).length,
+        skipped_stops: stops.filter(
+          (stop) => stop.stop_status === "skipped"
+        ).length,
+        total_stop_duration_seconds: totalStopDurationSeconds,
         returned_to_wmo_at: returnedEvent?.event_at || null
       }
     };

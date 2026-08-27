@@ -3625,7 +3625,11 @@ function renderDispatchTicketDetails(details, options = {}) {
   updateDispatchLiveRouteStatus(routeStatus);
 }
 
-const DISPATCH_PORTAL_MODAL_IDS = ["dispatchTicketDetailsModal"];
+const DISPATCH_PORTAL_MODAL_IDS = [
+  "dispatchTicketDetailsModal",
+  "dispatchReportsModal",
+  "dispatchReportModal"
+];
 const DISPATCH_TICKET_MODAL_SCROLL_LOCK_CLASS = "dispatch-ticket-modal-open";
 
 function mountDispatchModalsToBody() {
@@ -3642,23 +3646,27 @@ function setDispatchTicketModalScrollLock(isOpen) {
   document.body?.classList.toggle(DISPATCH_TICKET_MODAL_SCROLL_LOCK_CLASS, isOpen);
 }
 
+function syncDispatchModalScrollLock() {
+  const hasOpenPortalModal = DISPATCH_PORTAL_MODAL_IDS.some((modalId) => {
+    const modal = document.getElementById(modalId);
+    return modal && !modal.classList.contains("hidden");
+  });
+  setDispatchTicketModalScrollLock(hasOpenPortalModal);
+}
+
 function openDispatchModal(modalId) {
   if (DISPATCH_PORTAL_MODAL_IDS.includes(modalId)) mountDispatchModalsToBody();
   const modal = document.getElementById(modalId);
   modal?.classList.remove("hidden");
   modal?.setAttribute("aria-hidden", "false");
-  if (modalId === "dispatchTicketDetailsModal") {
-    setDispatchTicketModalScrollLock(Boolean(modal));
-  }
+  if (DISPATCH_PORTAL_MODAL_IDS.includes(modalId)) syncDispatchModalScrollLock();
 }
 
 function closeDispatchModal(modalId) {
   const modal = document.getElementById(modalId);
   modal?.classList.add("hidden");
   modal?.setAttribute("aria-hidden", "true");
-  if (modalId === "dispatchTicketDetailsModal") {
-    setDispatchTicketModalScrollLock(false);
-  }
+  if (DISPATCH_PORTAL_MODAL_IDS.includes(modalId)) syncDispatchModalScrollLock();
 }
 
 function dispatchSelectedRouteEmptyMarkup() {
@@ -5668,23 +5676,240 @@ function closeDispatchReportModal() {
 function dispatchReportStopStatus(stop = {}) {
   if (stop.stop_status === "completed") return "Completed";
   if (stop.stop_status === "skipped") return "Skipped";
-  return "Not completed";
+  if (stop.stop_status === "arrived") return "Arrived";
+  if (stop.stop_status === "on_the_way") return "On the way";
+  if (stop.stop_status === "pending") return "Pending";
+  return "Not recorded";
 }
 
 function dispatchReportActualPoints(logs = []) {
-  return logs.map((log) => dispatchPoint(log.latitude, log.longitude)).filter(Boolean);
+  return logs
+    .map((log, sourceIndex) => {
+      const point = dispatchPoint(log.latitude, log.longitude);
+      if (!point) return null;
+      return {
+        ...point,
+        id: log.id,
+        recorded_at: log.recorded_at || null,
+        accuracy: log.accuracy,
+        source_index: sourceIndex
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => {
+      const timeDifference =
+        dispatchTimestampMilliseconds(left.recorded_at) -
+        dispatchTimestampMilliseconds(right.recorded_at);
+      if (timeDifference) return timeDifference;
+      const leftId = Number(left.id);
+      const rightId = Number(right.id);
+      if (Number.isFinite(leftId) && Number.isFinite(rightId) && leftId !== rightId) {
+        return leftId - rightId;
+      }
+      return left.source_index - right.source_index;
+    });
 }
 
-function dispatchReportSuggestedPoints(stops = []) {
-  const wmo = dispatchPoint(DISPATCH_WMO_LOCATION.latitude, DISPATCH_WMO_LOCATION.longitude);
-  const stopPoints = [...stops]
-    .sort((a, b) => Number(a.stop_order) - Number(b.stop_order))
-    .map((stop) => dispatchPoint(stop.latitude, stop.longitude))
-    .filter(Boolean);
-  return wmo && stopPoints.length ? [wmo, ...stopPoints, wmo] : [];
+function dispatchReportPlannedPoints(snapshot = null) {
+  const points = Array.isArray(snapshot)
+    ? snapshot
+    : Array.isArray(snapshot?.points)
+      ? snapshot.points
+      : [];
+  return points.map((point) => dispatchPoint(
+    point.latitude ?? point.lat,
+    point.longitude ?? point.lng ?? point.lon
+  )).filter(Boolean);
 }
 
-function renderDispatchReportMap(stops = [], routeLogs = []) {
+function dispatchReportSuggestedPoints(snapshot = null) {
+  return dispatchReportPlannedPoints(snapshot);
+}
+
+function dispatchReportSortedStops(stops = []) {
+  return [...stops].sort((left, right) =>
+    Number(left.stop_order || 0) - Number(right.stop_order || 0) ||
+    Number(left.id || 0) - Number(right.id || 0)
+  );
+}
+
+function dispatchReportSortedEvents(events = []) {
+  return events
+    .map((event, sourceIndex) => ({ ...event, source_index: sourceIndex }))
+    .sort((left, right) => {
+      const timeDifference =
+        dispatchTimestampMilliseconds(left.event_at) -
+        dispatchTimestampMilliseconds(right.event_at);
+      if (timeDifference) return timeDifference;
+      const leftId = Number(left.id);
+      const rightId = Number(right.id);
+      if (Number.isFinite(leftId) && Number.isFinite(rightId) && leftId !== rightId) {
+        return leftId - rightId;
+      }
+      return left.source_index - right.source_index;
+    });
+}
+
+function dispatchReportTotalStopSeconds(stops = [], metrics = {}) {
+  const metricValue = metrics.total_stop_duration_seconds;
+  if (metricValue !== null && metricValue !== undefined) {
+    const metricSeconds = Number(metricValue);
+    if (Number.isFinite(metricSeconds) && metricSeconds >= 0) return metricSeconds;
+  }
+  const recordedDurations = stops
+    .map((stop) => stop.stop_duration_seconds)
+    .filter((value) => value !== null && value !== undefined)
+    .map(Number)
+    .filter((value) => Number.isFinite(value) && value >= 0);
+  return recordedDurations.length
+    ? recordedDurations.reduce((total, duration) => total + duration, 0)
+    : null;
+}
+
+function dispatchReportStopView(stop = {}) {
+  const duration = stop.stop_duration_seconds;
+  const durationSeconds = duration === null || duration === undefined
+    ? null
+    : Number(duration);
+  return {
+    ...stop,
+    status_label: dispatchReportStopStatus(stop),
+    arrival_at: stop.actual_arrival_at || null,
+    departure_at: stop.actual_departure_at || null,
+    dwell_seconds:
+      Number.isFinite(durationSeconds) && durationSeconds >= 0
+        ? durationSeconds
+        : null,
+    skip_reason: stop.stop_status === "skipped"
+      ? stop.skip_reason || null
+      : null
+  };
+}
+
+function dispatchReportEventLabel(event = {}, stopsById = new Map()) {
+  const stop = stopsById.get(String(event.dispatch_route_stop_id));
+  const location = stop?.location_name;
+  const contextualLabels = {
+    arrived_at_stop: location ? `Arrived at ${location}` : "Arrived at destination",
+    departed_stop: location ? `Departed ${location}` : "Departed destination",
+    stop_completed: location ? `Completed ${location}` : "Destination completed",
+    stop_skipped: location ? `Skipped ${location}` : "Destination skipped",
+    dispatch_closed_early: "Dispatch Closed Early"
+  };
+  return contextualLabels[event.event_type] || dispatchEventLabel(event.event_type);
+}
+
+function buildDispatchReportViewModel(data = {}) {
+  const ticket = data.ticket || {};
+  const trackingSession = data.tracking_session || {};
+  const metrics = data.metrics || {};
+  const progress = data.progress || {};
+  const stops = dispatchReportSortedStops(
+    Array.isArray(data.stops) ? data.stops : []
+  ).map(dispatchReportStopView);
+  const stopsById = new Map(stops.map((stop) => [String(stop.id), stop]));
+  const events = dispatchReportSortedEvents(
+    Array.isArray(data.events) ? data.events : []
+  ).map((event) => ({
+    ...event,
+    label: dispatchReportEventLabel(event, stopsById)
+  }));
+  const status = ticket.report_status || ticket.status;
+  const endedAt =
+    ticket.ended_at ||
+    ticket.actual_end_at ||
+    ticket.completed_at ||
+    ticket.cancelled_at ||
+    trackingSession.ended_at ||
+    null;
+  const returnedAt =
+    metrics.returned_to_wmo_at || ticket.returned_to_wmo_at || null;
+  const actualDistanceValue = metrics.actual_distance_km;
+  const actualDistanceKm = actualDistanceValue === null || actualDistanceValue === undefined
+    ? null
+    : Number(actualDistanceValue);
+  const durationValue = metrics.dispatch_duration_seconds;
+  const durationSeconds = durationValue === null || durationValue === undefined
+    ? null
+    : Number(durationValue);
+  const completedStops = Number(
+    metrics.completed_stops ?? progress.completed_stops ??
+    stops.filter((stop) => stop.stop_status === "completed").length
+  );
+  const skippedStops = Number(
+    metrics.skipped_stops ?? progress.skipped_stops ??
+    stops.filter((stop) => stop.stop_status === "skipped").length
+  );
+  const destinationCount = Number(
+    metrics.destination_count ?? progress.total_stops ?? stops.length
+  );
+  const routeLogs = Array.isArray(data.route_logs) ? data.route_logs : [];
+  const actualPoints = dispatchReportActualPoints(routeLogs);
+  const plannedPoints = dispatchReportPlannedPoints(data.planned_route_snapshot);
+
+  return {
+    ticket,
+    tracking_session: trackingSession,
+    metrics,
+    status,
+    status_label: dispatchStatusLabel(status),
+    ended_at: endedAt,
+    returned_at: returnedAt,
+    started_at: ticket.actual_start_at || trackingSession.started_at || null,
+    personnel: ticket.assigned_personnel_name || null,
+    created_by: ticket.created_by_name || null,
+    dispatch_date: ticket.dispatch_date || null,
+    duration_seconds:
+      Number.isFinite(durationSeconds) && durationSeconds >= 0
+        ? durationSeconds
+        : null,
+    actual_distance_km:
+      Number.isFinite(actualDistanceKm) && actualDistanceKm >= 0
+        ? actualDistanceKm
+        : null,
+    destination_count:
+      Number.isFinite(destinationCount) ? destinationCount : stops.length,
+    completed_stops:
+      Number.isFinite(completedStops) ? completedStops : 0,
+    skipped_stops:
+      Number.isFinite(skippedStops) ? skippedStops : 0,
+    total_stop_duration_seconds: dispatchReportTotalStopSeconds(stops, metrics),
+    closure_reason: ticket.closure_reason || ticket.cancellation_reason || null,
+    closed_by: ticket.closed_by_name || null,
+    closed_at: ticket.closed_at || null,
+    stops,
+    events,
+    route_logs: routeLogs,
+    actual_points: actualPoints,
+    planned_points: plannedPoints,
+    has_actual_trail: actualPoints.length >= 2,
+    has_planned_route: plannedPoints.length >= 2
+  };
+}
+
+function dispatchReportPopupRow(label, value) {
+  return `<div><span>${dispatchEscape(label)}</span><strong>${dispatchEscape(value)}</strong></div>`;
+}
+
+function dispatchReportStopPopup(stop = {}) {
+  const rows = [
+    dispatchReportPopupRow("Status", stop.status_label),
+    dispatchReportPopupRow("Arrival", dispatchRecordedDateTime(stop.arrival_at)),
+    dispatchReportPopupRow("Departure", dispatchRecordedDateTime(stop.departure_at)),
+    dispatchReportPopupRow(
+      "Dwell",
+      stop.dwell_seconds === null
+        ? "Not recorded"
+        : dispatchFormatDuration(stop.dwell_seconds)
+    )
+  ];
+  if (stop.skip_reason) {
+    rows.push(dispatchReportPopupRow("Reason", dispatchRecordedText(stop.skip_reason)));
+  }
+  return `<div class="dispatch-report-map-popup"><b>Stop ${dispatchEscape(stop.stop_order)}</b><h5>${dispatchEscape(dispatchRecordedText(stop.location_name))}</h5>${rows.join("")}</div>`;
+}
+
+function renderDispatchReportMap(report = {}) {
   const mapElement = document.getElementById("dispatchReportMap");
   if (!mapElement || typeof L === "undefined") return;
   if (dispatchReportMap) dispatchReportMap.remove();
@@ -5696,29 +5921,52 @@ function renderDispatchReportMap(stops = [], routeLogs = []) {
   dispatchReportActualLayerGroup = L.layerGroup().addTo(dispatchReportMap);
   dispatchReportSuggestedLayerGroup = L.layerGroup().addTo(dispatchReportMap);
 
-  const actual = dispatchReportActualPoints(routeLogs);
-  const suggested = dispatchReportSuggestedPoints(stops);
-  if (suggested.length >= 2) {
-    L.polyline(suggested.map((point) => [point.lat, point.lng]), {
+  const actual = report.actual_points || [];
+  const planned = report.planned_points || [];
+  const wmo = dispatchPoint(
+    DISPATCH_WMO_LOCATION.latitude,
+    DISPATCH_WMO_LOCATION.longitude
+  );
+  if (planned.length >= 2) {
+    L.polyline(planned.map((point) => [point.lat, point.lng]), {
       color: "#246ee9",
       weight: 4,
-      opacity: 0.8,
-      dashArray: "9 8"
-    }).bindTooltip("Assigned route between persisted dispatch waypoints")
+      opacity: 0.82
+    }).bindTooltip("Persisted assigned route")
       .addTo(dispatchReportSuggestedLayerGroup);
   }
-  [...stops].sort((a, b) => Number(a.stop_order) - Number(b.stop_order)).forEach((stop) => {
+  report.stops.forEach((stop) => {
     const point = dispatchPoint(stop.latitude, stop.longitude);
     if (!point) return;
-    L.circleMarker([point.lat, point.lng], {
-      radius: 7,
-      color: "#246ee9",
-      fillColor: "#fff",
-      fillOpacity: 1,
-      weight: 3
-    }).bindTooltip(`${stop.stop_order}. ${stop.location_name}`)
+    const marker = L.marker([point.lat, point.lng], {
+      icon: L.divIcon({
+        className: "dispatch-report-stop-marker-shell",
+        html: `<span class="dispatch-report-stop-marker">${dispatchEscape(stop.stop_order)}</span>`,
+        iconSize: [30, 30],
+        iconAnchor: [15, 15]
+      })
+    });
+    marker.bindTooltip(
+      `${dispatchEscape(stop.stop_order)}. ${dispatchEscape(dispatchRecordedText(stop.location_name))}`
+    )
+      .bindPopup(dispatchReportStopPopup(stop))
       .addTo(dispatchReportSuggestedLayerGroup);
   });
+  if (wmo) {
+    const wmoRows = [
+      dispatchReportPopupRow("Started", dispatchRecordedDateTime(report.started_at)),
+      dispatchReportPopupRow("Returned", dispatchRecordedDateTime(report.returned_at))
+    ];
+    L.marker([wmo.lat, wmo.lng], {
+      icon: L.divIcon({
+        className: "dispatch-report-wmo-marker-shell",
+        html: '<span class="dispatch-report-wmo-marker">W</span>',
+        iconSize: [32, 32],
+        iconAnchor: [16, 16]
+      })
+    }).bindPopup(`<div class="dispatch-report-map-popup"><b>WMO</b><h5>Trip Start / Return Point</h5>${wmoRows.join("")}</div>`)
+      .addTo(dispatchReportSuggestedLayerGroup);
+  }
   if (actual.length >= 2) {
     L.polyline(actual.map((point) => [point.lat, point.lng]), {
       color: "#176b3a",
@@ -5726,7 +5974,22 @@ function renderDispatchReportMap(stops = [], routeLogs = []) {
       opacity: 0.95
     }).bindTooltip("Actual GPS trail").addTo(dispatchReportActualLayerGroup);
   }
-  const bounds = [...actual, ...suggested].map((point) => [point.lat, point.lng]);
+  const endPoint = actual.at(-1);
+  if (endPoint) {
+    L.circleMarker([endPoint.lat, endPoint.lng], {
+      radius: 7,
+      color: "#a82020",
+      fillColor: "#d83a3a",
+      fillOpacity: 1,
+      weight: 3
+    }).bindPopup(`<div class="dispatch-report-map-popup"><b>Trip End</b>${dispatchReportPopupRow("Last recorded GPS", dispatchRecordedDateTime(endPoint.recorded_at))}</div>`)
+      .addTo(dispatchReportActualLayerGroup);
+  }
+  const stopPoints = report.stops
+    .map((stop) => dispatchPoint(stop.latitude, stop.longitude))
+    .filter(Boolean);
+  const bounds = [...actual, ...planned, ...stopPoints, ...(wmo ? [wmo] : [])]
+    .map((point) => [point.lat, point.lng]);
   if (bounds.length) dispatchReportMap.fitBounds(bounds, { padding: [24, 24], maxZoom: 16 });
   else dispatchReportMap.setView([DISPATCH_WMO_LOCATION.latitude, DISPATCH_WMO_LOCATION.longitude], 14);
   setTimeout(() => dispatchReportMap?.invalidateSize(), 50);
@@ -5735,54 +5998,72 @@ function renderDispatchReportMap(stops = [], routeLogs = []) {
 function renderDispatchReportDetails(data = {}) {
   const body = document.getElementById("dispatchReportBody");
   if (!body) return;
-  const ticket = data.ticket || {};
-  const stops = Array.isArray(data.stops) ? data.stops : [];
-  const logs = Array.isArray(data.route_logs) ? data.route_logs : [];
-  const events = Array.isArray(data.events) ? data.events : [];
-  const metrics = data.metrics || {};
-  const progress = data.progress || {};
-  const status = ticket.report_status || ticket.status;
+  const report = buildDispatchReportViewModel(data);
+  const ticket = report.ticket;
+  const status = report.status;
   const title = document.getElementById("dispatchReportTitle");
   if (title) title.textContent = `Dispatch Report · ${dispatchRecordedText(ticket.ticket_number)}`;
-  const person = ticket.assigned_personnel_name || ticket.created_by_name;
-  const endedAt = ticket.ended_at || ticket.actual_end_at || ticket.completed_at || ticket.cancelled_at;
   const endedAtLabel = status === "closed_early" ? "Closed At" : "Ended At";
-  const completedStops = Number(progress.completed_stops || 0);
-  const totalStops = Number(progress.total_stops || stops.length || 0);
-  const duration = metrics.dispatch_duration_seconds === null || metrics.dispatch_duration_seconds === undefined
+  const duration = report.duration_seconds === null
     ? "Not recorded"
-    : dispatchFormatDuration(metrics.dispatch_duration_seconds);
-  const distance = metrics.actual_distance_km === null || metrics.actual_distance_km === undefined
+    : dispatchFormatDuration(report.duration_seconds);
+  const distance = report.actual_distance_km === null
     ? "Not recorded"
-    : `${Number(metrics.actual_distance_km).toFixed(2)} km`;
-  const stopMarkup = stops.length ? [...stops]
-    .sort((a, b) => Number(a.stop_order) - Number(b.stop_order))
-    .map((stop) => `<div class="dispatch-report-stop"><span>${dispatchEscape(stop.stop_order)}</span><div><strong>${dispatchEscape(dispatchRecordedText(stop.location_name))}</strong><small>${dispatchEscape(dispatchRecordedText(stop.address_reference))}</small></div><span class="dispatch-stop-status ${dispatchStatusClass(stop.stop_status)}">${dispatchEscape(dispatchReportStopStatus(stop))}</span></div>`)
+    : `${report.actual_distance_km.toFixed(2)} km`;
+  const totalStopTime = report.total_stop_duration_seconds === null
+    ? "Not recorded"
+    : dispatchFormatDuration(report.total_stop_duration_seconds);
+  const stopMarkup = report.stops.length ? report.stops
+    .map((stop) => `<article class="dispatch-report-stop">
+      <span class="dispatch-report-stop-number">${dispatchEscape(stop.stop_order)}</span>
+      <div class="dispatch-report-stop-main">
+        <header><div><strong>${dispatchEscape(dispatchRecordedText(stop.location_name))}</strong><small>${dispatchEscape(dispatchRecordedText(stop.address_reference))}</small></div><span class="dispatch-stop-status ${dispatchStatusClass(stop.stop_status)}">${dispatchEscape(stop.status_label)}</span></header>
+        <div class="dispatch-report-stop-facts">
+          <div><span>Actual Arrival</span><strong>${dispatchEscape(dispatchRecordedDateTime(stop.arrival_at))}</strong></div>
+          <div><span>Actual Departure</span><strong>${dispatchEscape(dispatchRecordedDateTime(stop.departure_at))}</strong></div>
+          <div><span>Dwell</span><strong>${dispatchEscape(stop.dwell_seconds === null ? "Not recorded" : dispatchFormatDuration(stop.dwell_seconds))}</strong></div>
+          ${stop.skip_reason ? `<div class="dispatch-report-stop-reason"><span>Skip Reason</span><strong>${dispatchEscape(dispatchRecordedText(stop.skip_reason))}</strong></div>` : ""}
+        </div>
+      </div>
+    </article>`)
     .join("")
     : '<div class="dispatch-report-empty">No destination records found.</div>';
-  const timelineMarkup = events.length ? events.map((event) => `
-    <div class="dispatch-report-event"><i aria-hidden="true"></i><div><strong>${dispatchEscape(dispatchEventLabel(event.event_type))}</strong><small>${dispatchEscape(dispatchRecordedDateTime(event.event_at))}${event.actor_name ? ` · ${dispatchEscape(event.actor_name)}` : ""}</small></div></div>`).join("")
+  const timelineMarkup = report.events.length ? report.events.map((event) => `
+    <div class="dispatch-report-event"><i aria-hidden="true"></i><div><strong>${dispatchEscape(event.label)}</strong><small>${dispatchEscape(dispatchRecordedDateTime(event.event_at))}${event.actor_name ? ` · ${dispatchEscape(event.actor_name)}` : ""}</small></div></div>`).join("")
     : '<div class="dispatch-report-empty">Detailed trip events are not recorded for this dispatch.</div>';
+  const closureMarkup = status === "closed_early" ? `
+    <aside class="dispatch-report-closure">
+      <div><span>Closed Early</span><strong>${dispatchEscape(dispatchRecordedText(report.closure_reason))}</strong></div>
+      <div><span>Closed By</span><strong>${dispatchEscape(dispatchRecordedText(report.closed_by))}</strong></div>
+      <div><span>Closed At</span><strong>${dispatchEscape(dispatchRecordedDateTime(report.closed_at || report.ended_at))}</strong></div>
+    </aside>` : "";
   body.innerHTML = `
-    <section class="dispatch-report-section"><h4>Dispatch Information</h4><div class="dispatch-report-summary-grid">
+    <section class="dispatch-report-hero">
+      <div><span>Operational Trip Report</span><h4>${dispatchEscape(dispatchRecordedText(ticket.ticket_number))}</h4><p>${dispatchEscape(dispatchRecordedText(ticket.route_name))}</p></div>
+      <span class="dispatch-status-chip ${dispatchStatusClass(status)}">${dispatchEscape(report.status_label)}</span>
+    </section>
+    ${closureMarkup}
+    <section class="dispatch-report-section"><h4>Dispatch Summary</h4><div class="dispatch-report-summary-grid">
       <div><span>Ticket Number</span><strong>${dispatchEscape(dispatchRecordedText(ticket.ticket_number))}</strong></div>
       <div><span>Truck</span><strong>${dispatchEscape(dispatchRecordedText(ticket.truck_name_snapshot || ticket.truck_id))}</strong></div>
-      <div><span>Status</span><strong>${dispatchEscape(dispatchStatusLabel(status))}</strong></div>
-      <div><span>Personnel</span><strong>${dispatchEscape(dispatchRecordedText(person))}</strong></div>
-      <div><span>Started At</span><strong>${dispatchEscape(dispatchRecordedDateTime(ticket.actual_start_at))}</strong></div>
-      <div><span>${endedAtLabel}</span><strong>${dispatchEscape(dispatchRecordedDateTime(endedAt))}</strong></div>
-      <div><span>Destination Progress</span><strong>${completedStops}/${totalStops}</strong></div>
-    </div></section>
-    <section class="dispatch-report-section"><h4>Destination Summary</h4><div class="dispatch-report-stop-list">${stopMarkup}</div></section>
-    <section class="dispatch-report-section"><h4>Trip Summary</h4><div class="dispatch-report-summary-grid">
-      <div><span>Dispatch Duration</span><strong>${dispatchEscape(duration)}</strong></div>
+      <div><span>Status</span><strong>${dispatchEscape(report.status_label)}</strong></div>
+      <div><span>Dispatch Date</span><strong>${dispatchEscape(dispatchRecordedText(report.dispatch_date))}</strong></div>
+      <div><span>Personnel</span><strong>${dispatchEscape(dispatchRecordedText(report.personnel))}</strong></div>
+      <div><span>Created By</span><strong>${dispatchEscape(dispatchRecordedText(report.created_by))}</strong></div>
+      <div><span>Started At</span><strong>${dispatchEscape(dispatchRecordedDateTime(report.started_at))}</strong></div>
+      <div><span>${endedAtLabel}</span><strong>${dispatchEscape(dispatchRecordedDateTime(report.ended_at))}</strong></div>
+      <div><span>Total Trip Duration</span><strong>${dispatchEscape(duration)}</strong></div>
       <div><span>Actual Distance</span><strong>${dispatchEscape(distance)}</strong></div>
-      ${metrics.returned_to_wmo_at ? `<div><span>Return to WMO</span><strong>${dispatchEscape(dispatchRecordedDateTime(metrics.returned_to_wmo_at))}</strong></div>` : ""}
-      ${status === "closed_early" ? `<div><span>Closure Reason</span><strong>${dispatchEscape(dispatchRecordedText(ticket.closure_reason))}</strong></div><div><span>Closed By</span><strong>${dispatchEscape(dispatchRecordedText(ticket.closed_by_name))}</strong></div>` : ""}
+      <div><span>Destinations</span><strong>${dispatchEscape(report.destination_count)}</strong></div>
+      <div><span>Completed Stops</span><strong>${dispatchEscape(report.completed_stops)}</strong></div>
+      <div><span>Skipped Stops</span><strong>${dispatchEscape(report.skipped_stops)}</strong></div>
+      <div><span>Total Stop Time</span><strong>${dispatchEscape(totalStopTime)}</strong></div>
+      <div><span>Returned to WMO</span><strong>${dispatchEscape(dispatchRecordedDateTime(report.returned_at))}</strong></div>
     </div></section>
-    <section class="dispatch-report-section"><h4>Route Map</h4><div class="dispatch-report-map-wrap"><div id="dispatchReportMap"></div></div><div class="dispatch-report-map-legend"><span><i class="actual"></i>Dark green: actual GPS trail</span><span><i class="suggested"></i>Blue: assigned route</span></div>${logs.length < 2 ? '<p class="dispatch-report-empty">No actual GPS trail recorded.</p>' : ""}</section>
+    <section class="dispatch-report-section"><h4>Destination Records</h4><div class="dispatch-report-stop-list">${stopMarkup}</div></section>
+    <section class="dispatch-report-section"><h4>Route Map</h4><div class="dispatch-report-map-wrap"><div id="dispatchReportMap"></div></div><div class="dispatch-report-map-legend"><span><i class="actual"></i>Dark green: actual GPS trail</span>${report.has_planned_route ? '<span><i class="suggested"></i>Blue: persisted assigned route</span>' : ""}<span><i class="endpoint"></i>Red: historical end point</span><span><i class="wmo"></i>W: WMO</span></div>${report.has_actual_trail ? "" : '<p class="dispatch-report-empty">No GPS trail recorded.</p>'}${report.has_planned_route ? "" : '<p class="dispatch-report-route-notice">Original assigned road route was not recorded for this dispatch.</p>'}</section>
     <section class="dispatch-report-section"><h4>Activity Timeline</h4><div class="dispatch-report-timeline">${timelineMarkup}</div></section>`;
-  renderDispatchReportMap(stops, logs);
+  renderDispatchReportMap(report);
 }
 
 async function openDispatchReport(ticketId) {
@@ -6379,6 +6660,13 @@ if (typeof module !== "undefined" && module.exports) {
     dispatchReportStopStatus,
     dispatchReportActualPoints,
     dispatchReportSuggestedPoints,
+    dispatchReportPlannedPoints,
+    dispatchReportSortedStops,
+    dispatchReportSortedEvents,
+    dispatchReportTotalStopSeconds,
+    dispatchReportStopView,
+    dispatchReportEventLabel,
+    buildDispatchReportViewModel,
     dispatchDraftsInAssignedOrder,
     dispatchManilaOperatingDay,
     dispatchNormalizeTicketNumber,
