@@ -198,6 +198,21 @@ function getDispatchReportApiUrl(ticketId) {
   return `${getDispatchReportsApiUrl()}/${encodeURIComponent(ticketId)}`;
 }
 
+function getDispatchDailyReportsApiUrl(filters = {}) {
+  const parameters = new URLSearchParams();
+  if (filters.date) parameters.set("date", filters.date);
+  if (filters.truck) parameters.set("truck", filters.truck);
+  const query = parameters.toString();
+  return `${getDispatchReportsApiUrl()}/daily${query ? `?${query}` : ""}`;
+}
+
+function getDispatchDailyReportApiUrl(truckId, date) {
+  const parameters = new URLSearchParams();
+  if (date) parameters.set("date", date);
+  const query = parameters.toString();
+  return `${getDispatchReportsApiUrl()}/daily/${encodeURIComponent(truckId)}${query ? `?${query}` : ""}`;
+}
+
 function getDispatchDestinationsApiUrl(filters = {}) {
   const parameters = new URLSearchParams();
   if (filters.q) parameters.set("q", filters.q);

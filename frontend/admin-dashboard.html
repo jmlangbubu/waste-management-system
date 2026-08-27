@@ -2267,22 +2267,54 @@
     <div class="custom-modal-header">
       <div>
         <h3>Dispatch Reports</h3>
-        <p>Completed and closed dispatch tickets with persisted trip records.</p>
+        <p>Review ticket records or actual truck operations for a Manila calendar day.</p>
       </div>
       <button type="button" class="modal-close-btn" id="closeDispatchReportsModalBtn">&times;</button>
     </div>
     <div class="custom-modal-body">
-      <div class="dispatch-report-filters">
-        <label>Search<input type="search" id="dispatchReportSearch" placeholder="Ticket or truck"></label>
-        <label>Status<select id="dispatchReportStatusFilter"><option value="">All terminal statuses</option><option value="completed">Completed</option><option value="closed_early">Closed Early</option><option value="cancelled">Cancelled</option></select></label>
-        <label>Date<input type="date" id="dispatchReportDateFilter"></label>
+      <div class="dispatch-report-mode-tabs" role="tablist" aria-label="Dispatch report type">
+        <button type="button" class="active" role="tab" aria-selected="true" data-dispatch-report-mode="ticket">Ticket Reports</button>
+        <button type="button" role="tab" aria-selected="false" data-dispatch-report-mode="daily">Daily Operations</button>
       </div>
-      <div class="table-shell dispatch-report-table-shell">
-        <table class="dispatch-report-table">
-          <thead><tr><th>Ticket Number</th><th>Truck</th><th>Dispatch Status</th><th>Started At</th><th>Ended At</th><th>Destinations</th><th>Personnel / Created By</th><th>Action</th></tr></thead>
-          <tbody id="dispatchReportsTableBody"><tr><td colspan="8" class="loading-state">Loading dispatch reports...</td></tr></tbody>
-        </table>
-      </div>
+      <section id="dispatchTicketReportsPanel" class="dispatch-report-mode-panel" role="tabpanel">
+        <div class="dispatch-report-filters">
+          <label>Search<input type="search" id="dispatchReportSearch" placeholder="Ticket or truck"></label>
+          <label>Status<select id="dispatchReportStatusFilter"><option value="">All terminal statuses</option><option value="completed">Completed</option><option value="closed_early">Closed Early</option><option value="cancelled">Cancelled</option></select></label>
+          <label>Date<input type="date" id="dispatchReportDateFilter"></label>
+        </div>
+        <div class="table-shell dispatch-report-table-shell">
+          <table class="dispatch-report-table">
+            <thead><tr><th>Ticket Number</th><th>Truck</th><th>Dispatch Status</th><th>Started At</th><th>Ended At</th><th>Destinations</th><th>Personnel / Created By</th><th>Action</th></tr></thead>
+            <tbody id="dispatchReportsTableBody"><tr><td colspan="8" class="loading-state">Loading dispatch reports...</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+      <section id="dispatchDailyReportsPanel" class="dispatch-report-mode-panel hidden" role="tabpanel">
+        <div class="dispatch-report-filters dispatch-daily-report-filters">
+          <label>Date<input type="date" id="dispatchDailyReportDate"></label>
+          <label>Truck<input type="search" id="dispatchDailyReportTruck" placeholder="Truck ID or name"></label>
+          <button type="button" class="dispatch-report-view-button" id="dispatchDailyReportRefreshBtn">Load Daily Operations</button>
+        </div>
+        <div class="table-shell dispatch-report-table-shell">
+          <table class="dispatch-report-table dispatch-daily-report-table">
+            <thead><tr><th>Date</th><th>Truck</th><th>Personnel / Enforcer</th><th>Dispatches</th><th>Stops</th><th>Actual Distance</th><th>Tracking Time</th><th>Stop Time</th><th>Action</th></tr></thead>
+            <tbody id="dispatchDailyReportsTableBody"><tr><td colspan="9" class="loading-state">Choose a date to load daily operations.</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<div id="dispatchDailyReportModal" class="custom-modal dispatch-report-modal hidden">
+  <div class="custom-modal-overlay" id="dispatchDailyReportModalOverlay"></div>
+  <div class="custom-modal-content dispatch-report-modal-content">
+    <div class="custom-modal-header">
+      <div><h3 id="dispatchDailyReportTitle">Daily Operations</h3><p>Actual truck activity within one Asia/Manila calendar day</p></div>
+      <button type="button" id="closeDispatchDailyReportModalBtn" class="modal-close-btn">&times;</button>
+    </div>
+    <div class="custom-modal-body">
+      <div id="dispatchDailyReportBody" class="dispatch-report-body"><div class="loading-state">Loading daily operations...</div></div>
     </div>
   </div>
 </div>

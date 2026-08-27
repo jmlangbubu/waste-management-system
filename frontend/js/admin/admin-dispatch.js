@@ -73,6 +73,11 @@ let dispatchFocusedStopRow = null;
 let dispatchLocationLookupController = null;
 const dispatchLocationLabelCache = new Map();
 let dispatchLiveLastRequestStatus = "idle";
+let dispatchReportMode = "ticket";
+let dispatchDailyReportsCache = [];
+let dispatchDailyReportsLoadedKey = "";
+let dispatchDailyReportMap = null;
+let dispatchDailyReportLayerGroup = null;
 
 function dispatchPoint(latitude, longitude) {
   const lat = Number(latitude);
@@ -3632,7 +3637,8 @@ function renderDispatchTicketDetails(details, options = {}) {
 const DISPATCH_PORTAL_MODAL_IDS = [
   "dispatchTicketDetailsModal",
   "dispatchReportsModal",
-  "dispatchReportModal"
+  "dispatchReportModal",
+  "dispatchDailyReportModal"
 ];
 const DISPATCH_TICKET_MODAL_SCROLL_LOCK_CLASS = "dispatch-ticket-modal-open";
 
@@ -5808,11 +5814,112 @@ async function loadDispatchReports() {
 
 function openDispatchReportsModal() {
   openDispatchModal("dispatchReportsModal");
-  void loadDispatchReports();
+  setDispatchReportMode(dispatchReportMode, { load: false });
+  if (dispatchReportMode === "daily") void loadDispatchDailyReports();
+  else void loadDispatchReports();
 }
 
 function closeDispatchReportsModal() {
   closeDispatchModal("dispatchReportsModal");
+}
+
+function dispatchDailyReportDateLabel(value) {
+  const text = String(value || "");
+  const date = new Date(`${text}T00:00:00+08:00`);
+  if (Number.isNaN(date.getTime())) return dispatchRecordedText(value);
+  return date.toLocaleDateString("en-PH", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: "Asia/Manila"
+  });
+}
+
+function dispatchDailyDistance(value, pointCount) {
+  const distance = Number(value);
+  return Number(pointCount) > 0 && Number.isFinite(distance)
+    ? `${distance.toFixed(2)} km`
+    : "Not recorded";
+}
+
+function renderDispatchDailyReportsTable() {
+  const tbody = document.getElementById("dispatchDailyReportsTableBody");
+  if (!tbody) return;
+  if (!dispatchDailyReportsCache.length) {
+    tbody.innerHTML = '<tr><td colspan="9" class="empty-state">No truck operations were recorded for this date.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = dispatchDailyReportsCache.map((report) => `
+    <tr>
+      <td>${dispatchEscape(dispatchDailyReportDateLabel(report.date))}</td>
+      <td><strong>${dispatchEscape(dispatchRecordedText(report.truck_name || report.truck_id))}</strong><small class="dispatch-daily-truck-id">${dispatchEscape(dispatchRecordedText(report.truck_id))}</small></td>
+      <td>${dispatchEscape(dispatchRecordedText(report.personnel))}</td>
+      <td>${dispatchEscape(Number(report.dispatch_count || 0))}</td>
+      <td><span class="dispatch-daily-stop-summary"><strong>${dispatchEscape(Number(report.completed_stop_count || 0))}</strong> completed · <strong>${dispatchEscape(Number(report.skipped_stop_count || 0))}</strong> skipped</span></td>
+      <td>${dispatchEscape(dispatchDailyDistance(report.actual_distance_km, report.actual_gps_point_count))}</td>
+      <td>${dispatchEscape(dispatchFormatDuration(report.tracking_duration_seconds || 0))}</td>
+      <td>${dispatchEscape(dispatchFormatDuration(report.total_stop_duration_seconds || 0))}</td>
+      <td><button type="button" class="dispatch-report-view-button" data-dispatch-view-daily-report="${dispatchEscape(report.truck_id)}" data-dispatch-report-date="${dispatchEscape(report.date)}">View</button></td>
+    </tr>`).join("");
+}
+
+async function loadDispatchDailyReports() {
+  const tbody = document.getElementById("dispatchDailyReportsTableBody");
+  const dateInput = document.getElementById("dispatchDailyReportDate");
+  const truckInput = document.getElementById("dispatchDailyReportTruck");
+  if (!tbody || !dateInput) return;
+  if (!dateInput.value) dateInput.value = dispatchManilaOperatingDay();
+  const filters = {
+    date: dateInput.value,
+    truck: truckInput?.value.trim() || ""
+  };
+  const requestKey = `${filters.date}|${filters.truck}`;
+  tbody.innerHTML = '<tr><td colspan="9" class="loading-state">Loading daily operations...</td></tr>';
+  try {
+    const reports = await dispatchRequest(getDispatchDailyReportsApiUrl(filters));
+    dispatchDailyReportsCache = Array.isArray(reports) ? reports : [];
+    dispatchDailyReportsLoadedKey = requestKey;
+    renderDispatchDailyReportsTable();
+  } catch (error) {
+    dispatchDailyReportsCache = [];
+    dispatchDailyReportsLoadedKey = "";
+    tbody.innerHTML = `<tr><td colspan="9" class="empty-state">${dispatchEscape(error.message || "Failed to load daily operations.")}</td></tr>`;
+  }
+}
+
+function setDispatchReportMode(mode, options = {}) {
+  dispatchReportMode = mode === "daily" ? "daily" : "ticket";
+  document.querySelectorAll("[data-dispatch-report-mode]").forEach((button) => {
+    const active = button.dataset.dispatchReportMode === dispatchReportMode;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+  document.getElementById("dispatchTicketReportsPanel")?.classList.toggle(
+    "hidden",
+    dispatchReportMode !== "ticket"
+  );
+  document.getElementById("dispatchDailyReportsPanel")?.classList.toggle(
+    "hidden",
+    dispatchReportMode !== "daily"
+  );
+  if (options.load === false) return;
+  if (dispatchReportMode === "ticket") {
+    if (!dispatchReportsCache.length) void loadDispatchReports();
+    return;
+  }
+  const dateInput = document.getElementById("dispatchDailyReportDate");
+  if (dateInput && !dateInput.value) dateInput.value = dispatchManilaOperatingDay();
+  const requestKey = `${dateInput?.value || ""}|${document.getElementById("dispatchDailyReportTruck")?.value.trim() || ""}`;
+  if (dispatchDailyReportsLoadedKey !== requestKey) void loadDispatchDailyReports();
+}
+
+function closeDispatchDailyReportModal() {
+  closeDispatchModal("dispatchDailyReportModal");
+  if (dispatchDailyReportMap) {
+    dispatchDailyReportMap.remove();
+    dispatchDailyReportMap = null;
+    dispatchDailyReportLayerGroup = null;
+  }
 }
 
 function closeDispatchReportModal() {
@@ -6228,6 +6335,209 @@ function renderDispatchReportDetails(data = {}) {
   renderDispatchReportMap(report);
 }
 
+function dispatchDailyRouteGroups(routePoints = []) {
+  const groups = new Map();
+  routePoints.forEach((log, sourceIndex) => {
+    const point = dispatchPoint(log.latitude, log.longitude);
+    if (!point) return;
+    const sessionId = String(log.session_id ?? "unknown");
+    if (!groups.has(sessionId)) groups.set(sessionId, []);
+    groups.get(sessionId).push({
+      ...point,
+      id: log.id,
+      session_id: sessionId,
+      recorded_at: log.recorded_at || null,
+      source_index: sourceIndex
+    });
+  });
+  groups.forEach((points) => points.sort((left, right) => {
+    const timeDifference =
+      dispatchTimestampMilliseconds(left.recorded_at) -
+      dispatchTimestampMilliseconds(right.recorded_at);
+    if (timeDifference) return timeDifference;
+    return Number(left.id || 0) - Number(right.id || 0) ||
+      left.source_index - right.source_index;
+  }));
+  return groups;
+}
+
+function renderDispatchDailyReportMap(data = {}) {
+  const mapElement = document.getElementById("dispatchDailyReportMap");
+  if (!mapElement || typeof L === "undefined") return;
+  if (dispatchDailyReportMap) dispatchDailyReportMap.remove();
+  dispatchDailyReportMap = L.map(mapElement, { zoomControl: true });
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: "&copy; OpenStreetMap contributors"
+  }).addTo(dispatchDailyReportMap);
+  dispatchDailyReportLayerGroup = L.layerGroup().addTo(dispatchDailyReportMap);
+
+  const bounds = [];
+  const routeGroups = dispatchDailyRouteGroups(data.route_points || []);
+  routeGroups.forEach((points, sessionId) => {
+    if (points.length >= 2) {
+      L.polyline(points.map((point) => [point.lat, point.lng]), {
+        color: "#176b3a",
+        weight: 5,
+        opacity: 0.95
+      }).bindTooltip(`Actual GPS trail · Session ${dispatchEscape(sessionId)}`)
+        .addTo(dispatchDailyReportLayerGroup);
+    }
+    const start = points[0];
+    const end = points.at(-1);
+    if (start) {
+      L.circleMarker([start.lat, start.lng], {
+        radius: 5,
+        color: "#4e6258",
+        fillColor: "#ffffff",
+        fillOpacity: 1,
+        weight: 3
+      }).bindPopup(`<div class="dispatch-report-map-popup"><b>Session ${dispatchEscape(sessionId)} Start</b>${dispatchReportPopupRow("Recorded", dispatchRecordedDateTime(start.recorded_at))}</div>`)
+        .addTo(dispatchDailyReportLayerGroup);
+    }
+    if (end && end !== start) {
+      L.circleMarker([end.lat, end.lng], {
+        radius: 5,
+        color: "#4e6258",
+        fillColor: "#4e6258",
+        fillOpacity: 1,
+        weight: 3
+      }).bindPopup(`<div class="dispatch-report-map-popup"><b>Session ${dispatchEscape(sessionId)} End</b>${dispatchReportPopupRow("Recorded", dispatchRecordedDateTime(end.recorded_at))}</div>`)
+        .addTo(dispatchDailyReportLayerGroup);
+    }
+    points.forEach((point) => bounds.push([point.lat, point.lng]));
+  });
+
+  const dispatchesById = new Map(
+    (data.dispatches || []).map((dispatch) => [String(dispatch.id), dispatch])
+  );
+  (data.stops || []).forEach((stop, index) => {
+    const point = dispatchPoint(stop.latitude, stop.longitude);
+    if (!point) return;
+    const dispatch = dispatchesById.get(String(stop.dispatch_ticket_id));
+    const markerNumber = index + 1;
+    const statusLabel = dispatchReportStopStatus(stop);
+    const popup = `<div class="dispatch-report-map-popup"><b>Stop ${dispatchEscape(markerNumber)}</b><h5>${dispatchEscape(dispatchRecordedText(stop.location_name))}</h5>${dispatchReportPopupRow("Ticket", dispatchRecordedText(dispatch?.ticket_number))}${dispatchReportPopupRow("Status", statusLabel)}${dispatchReportPopupRow("Arrival", dispatchRecordedDateTime(stop.actual_arrival_at))}${dispatchReportPopupRow("Daily dwell", dispatchFormatDuration(stop.daily_stop_duration_seconds || 0))}</div>`;
+    L.marker([point.lat, point.lng], {
+      icon: L.divIcon({
+        className: "dispatch-report-stop-marker-shell",
+        html: `<span class="dispatch-report-stop-marker">${dispatchEscape(markerNumber)}</span>`,
+        iconSize: [30, 30],
+        iconAnchor: [15, 15]
+      })
+    }).bindPopup(popup).addTo(dispatchDailyReportLayerGroup);
+    bounds.push([point.lat, point.lng]);
+  });
+
+  const wmo = dispatchPoint(
+    DISPATCH_WMO_LOCATION.latitude,
+    DISPATCH_WMO_LOCATION.longitude
+  );
+  if (wmo) {
+    L.marker([wmo.lat, wmo.lng], {
+      icon: L.divIcon({
+        className: "dispatch-report-wmo-marker-shell",
+        html: '<span class="dispatch-report-wmo-marker">W</span>',
+        iconSize: [32, 32],
+        iconAnchor: [16, 16]
+      })
+    }).bindPopup('<div class="dispatch-report-map-popup"><b>WMO</b><h5>Waste Management Office</h5></div>')
+      .addTo(dispatchDailyReportLayerGroup);
+    bounds.push([wmo.lat, wmo.lng]);
+  }
+  if (bounds.length) {
+    dispatchDailyReportMap.fitBounds(bounds, { padding: [24, 24], maxZoom: 16 });
+  } else {
+    dispatchDailyReportMap.setView(
+      [DISPATCH_WMO_LOCATION.latitude, DISPATCH_WMO_LOCATION.longitude],
+      14
+    );
+  }
+  setTimeout(() => dispatchDailyReportMap?.invalidateSize(), 50);
+}
+
+function renderDispatchDailyReportDetails(data = {}) {
+  const body = document.getElementById("dispatchDailyReportBody");
+  if (!body) return;
+  const summary = data.summary || {};
+  const dispatches = Array.isArray(data.dispatches) ? data.dispatches : [];
+  const sessions = Array.isArray(data.tracking_sessions) ? data.tracking_sessions : [];
+  const stops = Array.isArray(data.stops) ? data.stops : [];
+  const events = dispatchReportSortedEvents(Array.isArray(data.events) ? data.events : []);
+  const title = document.getElementById("dispatchDailyReportTitle");
+  if (title) {
+    title.textContent = `${dispatchRecordedText(summary.truck_name || summary.truck_id)} · ${dispatchDailyReportDateLabel(summary.date)}`;
+  }
+  const distance = dispatchDailyDistance(
+    summary.actual_distance_km,
+    summary.actual_gps_point_count
+  );
+  const dispatchMarkup = dispatches.length ? dispatches.map((dispatch) => `
+    <article class="dispatch-daily-dispatch-card">
+      <div><small>${dispatchEscape(dispatchRecordedDateTime(dispatch.started_at))} – ${dispatchEscape(dispatchRecordedDateTime(dispatch.ended_at))}</small><strong>${dispatchEscape(dispatchRecordedText(dispatch.ticket_number))}</strong><span>${dispatchEscape(dispatchRecordedText(dispatch.route_name))}</span></div>
+      <span class="dispatch-status-chip ${dispatchStatusClass(dispatch.status)}">${dispatchEscape(dispatchStatusLabel(dispatch.status))}</span>
+      ${dispatch.ticket_report_available ? `<button type="button" class="dispatch-report-view-button" data-dispatch-view-report="${dispatchEscape(dispatch.id)}">View Ticket Report</button>` : '<small class="dispatch-report-empty">Ticket report available after closure.</small>'}
+    </article>`).join("")
+    : '<div class="dispatch-report-empty">No dispatch ticket intersected this day.</div>';
+  const sessionMarkup = sessions.length ? sessions.map((session) => `
+    <article class="dispatch-daily-session-card">
+      <strong>Session ${dispatchEscape(session.id)}</strong>
+      <span>${dispatchEscape(dispatchRecordedDateTime(session.started_at))} – ${dispatchEscape(dispatchRecordedDateTime(session.ended_at))}</span>
+      <small>${dispatchEscape(dispatchRecordedText(session.enforcer_name))} · ${dispatchEscape(dispatchStatusLabel(session.session_status))}</small>
+    </article>`).join("")
+    : '<div class="dispatch-report-empty">No tracking session intersected this day.</div>';
+  const dispatchById = new Map(dispatches.map((dispatch) => [String(dispatch.id), dispatch]));
+  const stopMarkup = stops.length ? stops.map((stop, index) => `
+    <article class="dispatch-report-stop">
+      <span class="dispatch-report-stop-number">${dispatchEscape(index + 1)}</span>
+      <div class="dispatch-report-stop-main">
+        <header><div><strong>${dispatchEscape(dispatchRecordedText(stop.location_name))}</strong><small>${dispatchEscape(dispatchRecordedText(dispatchById.get(String(stop.dispatch_ticket_id))?.ticket_number))} · Route stop ${dispatchEscape(stop.stop_order)}</small></div><span class="dispatch-stop-status ${dispatchStatusClass(stop.stop_status)}">${dispatchEscape(dispatchReportStopStatus(stop))}</span></header>
+        <div class="dispatch-report-stop-facts">
+          <div><span>Actual Arrival</span><strong>${dispatchEscape(dispatchRecordedDateTime(stop.actual_arrival_at))}</strong></div>
+          <div><span>Actual Departure</span><strong>${dispatchEscape(dispatchRecordedDateTime(stop.actual_departure_at))}</strong></div>
+          <div><span>Dwell This Day</span><strong>${dispatchEscape(dispatchFormatDuration(stop.daily_stop_duration_seconds || 0))}</strong></div>
+        </div>
+      </div>
+    </article>`).join("")
+    : '<div class="dispatch-report-empty">No completed, skipped, or cross-midnight stop history applies to this day.</div>';
+  const timelineMarkup = events.length ? events.map((event) => `
+    <div class="dispatch-report-event"><i aria-hidden="true"></i><div><strong>${dispatchEscape(dispatchEventLabel(event.event_type))}</strong><small>${dispatchEscape(dispatchRecordedDateTime(event.event_at))}${event.actor_name ? ` · ${dispatchEscape(event.actor_name)}` : ""}</small></div></div>`).join("")
+    : '<div class="dispatch-report-empty">No persisted dispatch events were recorded during this day.</div>';
+
+  body.innerHTML = `
+    <section class="dispatch-report-hero">
+      <div><span>Daily Operational Report</span><h4>${dispatchEscape(dispatchRecordedText(summary.truck_name || summary.truck_id))}</h4><p>${dispatchEscape(dispatchDailyReportDateLabel(summary.date))} · Asia/Manila</p></div>
+    </section>
+    <section class="dispatch-report-section"><h4>Daily Summary</h4><div class="dispatch-report-summary-grid">
+      <div><span>Dispatches</span><strong>${dispatchEscape(Number(summary.dispatch_count || 0))}</strong></div>
+      <div><span>Actual Distance</span><strong>${dispatchEscape(distance)}</strong></div>
+      <div><span>Tracking Time</span><strong>${dispatchEscape(dispatchFormatDuration(summary.tracking_duration_seconds || 0))}</strong></div>
+      <div><span>Completed Stops</span><strong>${dispatchEscape(Number(summary.completed_stop_count || 0))}</strong></div>
+      <div><span>Skipped Stops</span><strong>${dispatchEscape(Number(summary.skipped_stop_count || 0))}</strong></div>
+      <div><span>Total Stop Time</span><strong>${dispatchEscape(dispatchFormatDuration(summary.total_stop_duration_seconds || 0))}</strong></div>
+      <div><span>Personnel / Enforcer</span><strong>${dispatchEscape(dispatchRecordedText(summary.personnel))}</strong></div>
+      <div><span>GPS Points</span><strong>${dispatchEscape(Number(summary.actual_gps_point_count || 0))}</strong></div>
+    </div></section>
+    <section class="dispatch-report-section"><h4>Actual Daily Route</h4><div class="dispatch-report-map-wrap"><div id="dispatchDailyReportMap"></div></div><div class="dispatch-report-map-legend"><span><i class="actual"></i>Dark green: actual GPS trail per session</span><span><i class="historical"></i>Neutral: historical session start/end</span><span><i class="wmo"></i>W: WMO</span></div>${Number(summary.actual_gps_point_count || 0) ? "" : '<p class="dispatch-report-empty">No GPS trail recorded for this day.</p>'}</section>
+    <section class="dispatch-report-section"><h4>Dispatches</h4><div class="dispatch-daily-dispatch-list">${dispatchMarkup}</div></section>
+    <section class="dispatch-report-section"><h4>Tracking Sessions</h4><div class="dispatch-daily-session-list">${sessionMarkup}</div></section>
+    <section class="dispatch-report-section"><h4>Stop History</h4><div class="dispatch-report-stop-list">${stopMarkup}</div></section>
+    <section class="dispatch-report-section"><h4>Activity Timeline</h4><div class="dispatch-report-timeline">${timelineMarkup}</div></section>`;
+  renderDispatchDailyReportMap(data);
+}
+
+async function openDispatchDailyReport(truckId, date) {
+  const body = document.getElementById("dispatchDailyReportBody");
+  if (body) body.innerHTML = '<div class="loading-state">Loading daily operations...</div>';
+  openDispatchModal("dispatchDailyReportModal");
+  try {
+    const data = await dispatchRequest(getDispatchDailyReportApiUrl(truckId, date));
+    renderDispatchDailyReportDetails(data);
+  } catch (error) {
+    if (body) body.innerHTML = `<div class="dispatch-report-empty">${dispatchEscape(error.message || "Unable to load daily operations.")}</div>`;
+  }
+}
+
 async function openDispatchReport(ticketId) {
   const body = document.getElementById("dispatchReportBody");
   if (body) body.innerHTML = '<div class="loading-state">Loading dispatch report...</div>';
@@ -6459,6 +6769,9 @@ function setupDispatchModule() {
   ["dispatchReportModalOverlay", "closeDispatchReportModalBtn"].forEach((id) => {
     document.getElementById(id)?.addEventListener("click", closeDispatchReportModal);
   });
+  ["dispatchDailyReportModalOverlay", "closeDispatchDailyReportModalBtn"].forEach((id) => {
+    document.getElementById(id)?.addEventListener("click", closeDispatchDailyReportModal);
+  });
   ["dispatchEndModalOverlay", "closeDispatchEndModalBtn", "dispatchEndCancelBtn"].forEach((id) => {
     document.getElementById(id)?.addEventListener("click", closeDispatchEndModal);
   });
@@ -6476,6 +6789,27 @@ function setupDispatchModule() {
     document.getElementById(id)?.addEventListener("input", renderDispatchReportsTable);
     document.getElementById(id)?.addEventListener("change", renderDispatchReportsTable);
   });
+  document.querySelectorAll("[data-dispatch-report-mode]").forEach((button) => {
+    button.addEventListener("click", () => setDispatchReportMode(
+      button.dataset.dispatchReportMode
+    ));
+  });
+  document.getElementById("dispatchDailyReportRefreshBtn")?.addEventListener(
+    "click",
+    loadDispatchDailyReports
+  );
+  document.getElementById("dispatchDailyReportDate")?.addEventListener(
+    "change",
+    loadDispatchDailyReports
+  );
+  document.getElementById("dispatchDailyReportTruck")?.addEventListener(
+    "keydown",
+    (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      void loadDispatchDailyReports();
+    }
+  );
 
   workspace.querySelectorAll("[data-dispatch-workspace-action]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -6673,6 +7007,14 @@ function setupDispatchModule() {
       void openDispatchReport(reportButton.dataset.dispatchViewReport);
       return;
     }
+    const dailyReportButton = event.target.closest("[data-dispatch-view-daily-report]");
+    if (dailyReportButton) {
+      void openDispatchDailyReport(
+        dailyReportButton.dataset.dispatchViewDailyReport,
+        dailyReportButton.dataset.dispatchReportDate
+      );
+      return;
+    }
     if (event.target.closest("[data-dispatch-retry-dispatch]")) {
       void dispatchSelectedTruckNow();
       return;
@@ -6831,6 +7173,9 @@ if (typeof module !== "undefined" && module.exports) {
     dispatchReportStopView,
     dispatchReportEventLabel,
     buildDispatchReportViewModel,
+    dispatchDailyDistance,
+    dispatchDailyReportDateLabel,
+    dispatchDailyRouteGroups,
     dispatchDraftsInAssignedOrder,
     dispatchManilaOperatingDay,
     dispatchNormalizeTicketNumber,

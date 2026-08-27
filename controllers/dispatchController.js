@@ -281,6 +281,25 @@ exports.getReports = async (req, res) => {
   }
 };
 
+exports.getDailyReports = async (req, res) => {
+  try {
+    return sendData(res, await dispatchService.getDailyReports(req.query));
+  } catch (error) {
+    return sendDispatchError(res, error, "load daily operational reports");
+  }
+};
+
+exports.getDailyReport = async (req, res) => {
+  try {
+    return sendData(
+      res,
+      await dispatchService.getDailyReportDetails(req.params.truckId, req.query)
+    );
+  } catch (error) {
+    return sendDispatchError(res, error, "load daily operational report");
+  }
+};
+
 exports.getReport = async (req, res) => {
   try {
     return sendData(

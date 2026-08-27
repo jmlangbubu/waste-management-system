@@ -19,6 +19,8 @@ router.get("/tickets", dispatchController.listTickets);
 router.get("/live", dispatchController.getLiveDispatches);
 router.get("/tracking-sessions/:sessionId", dispatchController.getByTrackingSession);
 router.get("/reports", dispatchController.getReports);
+router.get("/reports/daily", dispatchController.getDailyReports);
+router.get("/reports/daily/:truckId", dispatchController.getDailyReport);
 router.get("/reports/:ticketId", dispatchController.getReport);
 router.get("/tickets/:id/events", dispatchController.getEvents);
 router.post(
