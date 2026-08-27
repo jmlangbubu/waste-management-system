@@ -1,6 +1,7 @@
 const db = require("../config/dbPromise");
 const {
     GpsValidationError,
+    MAX_RELIABLE_ACCURACY_METERS,
     parseManilaTimestamp,
     validateGpsPointForStorage,
     qualifyGpsPointForOperationalUse
@@ -21,9 +22,26 @@ class TrackingStartEligibilityError extends Error {
     }
 }
 
+class TrackingEndOperationsError extends Error {
+    constructor(message, code, statusCode = 400) {
+        super(message);
+        this.name = "TrackingEndOperationsError";
+        this.code = code;
+        this.statusCode = statusCode;
+    }
+}
+
 class TrackingService {
-    constructor() {
+    constructor(options = {}) {
         this.trackingStartOperations = new Map();
+        this.dispatchService = options.dispatchService || null;
+    }
+
+    getDispatchLifecycleService() {
+        if (!this.dispatchService) {
+            this.dispatchService = require("./dispatchService");
+        }
+        return this.dispatchService;
     }
 
     cleanText(value) {
@@ -163,6 +181,122 @@ class TrackingService {
 
         return {
             ...qualification.point,
+            distanceFromWmoMeters
+        };
+    }
+
+    normalizeMobileOperationIntent(value) {
+        const intent = this.cleanText(value).toLowerCase();
+        return ["end_operations", "forced_day_rollover"].includes(intent)
+            ? intent
+            : "";
+    }
+
+    validateMobileEndEvidence(data = {}, session = {}, referenceTimeMs = Date.now()) {
+        const operationIntent = this.normalizeMobileOperationIntent(data.operation_intent);
+        if (!operationIntent) return null;
+
+        const actionId = this.cleanText(data.action_id);
+        if (!actionId || actionId.length > 160) {
+            throw new TrackingEndOperationsError(
+                "A stable end-operation action ID is required.",
+                "TRACKING_END_ACTION_ID_REQUIRED"
+            );
+        }
+
+        const recordedAtMs = parseManilaTimestamp(data.recorded_at);
+        if (!recordedAtMs) {
+            throw new TrackingEndOperationsError(
+                "A valid end-operation evidence time is required.",
+                "TRACKING_END_TIMESTAMP_INVALID"
+            );
+        }
+        if (recordedAtMs > referenceTimeMs + (60 * 1000)) {
+            throw new TrackingEndOperationsError(
+                "The end-operation evidence time is too far in the future.",
+                "TRACKING_END_TIMESTAMP_FUTURE"
+            );
+        }
+
+        const startedAtMs = parseManilaTimestamp(session.started_at);
+        if (startedAtMs && recordedAtMs < startedAtMs) {
+            throw new TrackingEndOperationsError(
+                "The end-operation evidence cannot predate the tracking session.",
+                "TRACKING_END_BEFORE_SESSION_START"
+            );
+        }
+
+        const evidence = {
+            operation_intent: operationIntent,
+            action_id: actionId,
+            recorded_at: this.normalizeDateTimeText(data.recorded_at),
+            timestampMs: recordedAtMs,
+            latitude: null,
+            longitude: null,
+            accuracy: null,
+            distanceFromWmoMeters: null
+        };
+
+        if (operationIntent === "forced_day_rollover") {
+            if (!/^\d{4}-\d{2}-\d{2} 00:00:00$/.test(evidence.recorded_at)) {
+                throw new TrackingEndOperationsError(
+                    "Forced day rollover evidence must use the Asia/Manila midnight boundary.",
+                    "TRACKING_DAY_ROLLOVER_TIMESTAMP_INVALID"
+                );
+            }
+            return evidence;
+        }
+
+        let point;
+        try {
+            point = validateGpsPointForStorage({
+                latitude: data.end_latitude,
+                longitude: data.end_longitude,
+                accuracy: data.end_accuracy,
+                recorded_at: data.recorded_at
+            }, {
+                allowNumericString: true,
+                nowMs: referenceTimeMs,
+                timestampRequired: true
+            });
+        } catch (error) {
+            if (error instanceof GpsValidationError) {
+                throw new TrackingEndOperationsError(
+                    "Qualified WMO GPS evidence is required to end operations.",
+                    error.code || "TRACKING_END_GPS_INVALID"
+                );
+            }
+            throw error;
+        }
+
+        if (
+            point.accuracy === null ||
+            point.accuracy > MAX_RELIABLE_ACCURACY_METERS
+        ) {
+            throw new TrackingEndOperationsError(
+                "GPS accuracy must be 50 meters or better to end operations.",
+                "TRACKING_END_GPS_INACCURATE"
+            );
+        }
+
+        const distanceFromWmoMeters = this.calculateDistanceMeters(
+            point.latitude,
+            point.longitude,
+            WMO_GEOFENCE.latitude,
+            WMO_GEOFENCE.longitude
+        );
+        if (distanceFromWmoMeters > WMO_GEOFENCE.radiusMeters) {
+            throw new TrackingEndOperationsError(
+                "Return to the WMO area to end operations.",
+                "TRACKING_END_OUTSIDE_WMO"
+            );
+        }
+
+        return {
+            ...evidence,
+            latitude: point.latitude,
+            longitude: point.longitude,
+            accuracy: point.accuracy,
             distanceFromWmoMeters
         };
     }
@@ -1037,24 +1171,8 @@ class TrackingService {
             end_longitude,
             stop_type = "stopped"
         } = data;
-
-        const hasEndLatitude = end_latitude !== null && end_latitude !== undefined;
-        const hasEndLongitude = end_longitude !== null && end_longitude !== undefined;
-        if (hasEndLatitude || hasEndLongitude) {
-            const endPoint = validateGpsPointForStorage({
-                latitude: end_latitude,
-                longitude: end_longitude
-            });
-            end_latitude = endPoint.latitude;
-            end_longitude = endPoint.longitude;
-        } else {
-            end_latitude = null;
-            end_longitude = null;
-        }
-
-        const allowedStopType = this.normalizeStopType(stop_type);
-
-        const stoppedAt = this.getManilaNowDateTime();
+        const receivedAt = this.getManilaNowDateTime();
+        const referenceTimeMs = parseManilaTimestamp(receivedAt) || Date.now();
 
         const getSessionSql = `
             SELECT
@@ -1062,8 +1180,11 @@ class TrackingService {
                 tts.truck_id,
                 tts.enforcer_name,
                 tts.session_status,
-                tts.started_at,
-                tts.created_at,
+                DATE_FORMAT(tts.started_at, '%Y-%m-%d %H:%i:%s') AS started_at,
+                DATE_FORMAT(tts.created_at, '%Y-%m-%d %H:%i:%s') AS created_at,
+                DATE_FORMAT(tts.ended_at, '%Y-%m-%d %H:%i:%s') AS ended_at,
+                tts.end_latitude,
+                tts.end_longitude,
                 tts.shift_end_time,
                 tts.effective_shift_end_time,
                 tts.last_updated_at,
@@ -1085,8 +1206,42 @@ class TrackingService {
         }
 
         const session = rows[0];
+        const endEvidence = this.validateMobileEndEvidence(
+            data,
+            session,
+            referenceTimeMs
+        );
+        if (endEvidence) {
+            end_latitude = endEvidence.latitude;
+            end_longitude = endEvidence.longitude;
+            stop_type = endEvidence.operation_intent === "end_operations"
+                ? "manual_wmo_stop"
+                : "auto_stopped";
+        } else {
+            const hasEndLatitude = end_latitude !== null && end_latitude !== undefined;
+            const hasEndLongitude = end_longitude !== null && end_longitude !== undefined;
+            if (hasEndLatitude || hasEndLongitude) {
+                const endPoint = validateGpsPointForStorage({
+                    latitude: end_latitude,
+                    longitude: end_longitude
+                });
+                end_latitude = endPoint.latitude;
+                end_longitude = endPoint.longitude;
+            } else {
+                end_latitude = null;
+                end_longitude = null;
+            }
+        }
+
+        const allowedStopType = this.normalizeStopType(stop_type);
+        const stoppedAt = endEvidence ? endEvidence.recorded_at : receivedAt;
 
         if (session.session_status !== "active") {
+            const existingEndedAt = this.normalizeDateTimeText(session.ended_at);
+            if (endEvidence && existingEndedAt === endEvidence.recorded_at) {
+                await this.getDispatchLifecycleService()
+                    .finalizeMobileTrackingEnd(sessionId, endEvidence);
+            }
             const notification = await this.createTrackingCompletedNotification({
                 ...session,
                 session_id: sessionId,
@@ -1157,6 +1312,11 @@ class TrackingService {
         `;
 
         await db.query(updateLastLocationSql, [lastLocationStatus, this.getManilaNowDateTime(), sessionId]);
+
+        if (endEvidence) {
+            await this.getDispatchLifecycleService()
+                .finalizeMobileTrackingEnd(sessionId, endEvidence);
+        }
 
         const notification = await this.createTrackingCompletedNotification({
             truck_id: session.truck_id,
@@ -1365,6 +1525,7 @@ class TrackingService {
 
         const isHistoricalPointBeforeEnd =
             localPointId &&
+            !endedAtMs &&
             shiftEndMs &&
             pointTimeMs <= shiftEndMs;
 
@@ -2252,4 +2413,5 @@ const trackingService = new TrackingService();
 module.exports = trackingService;
 module.exports.TrackingService = TrackingService;
 module.exports.TrackingStartEligibilityError = TrackingStartEligibilityError;
+module.exports.TrackingEndOperationsError = TrackingEndOperationsError;
 module.exports.WMO_GEOFENCE = WMO_GEOFENCE;

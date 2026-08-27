@@ -103,6 +103,11 @@
   color: #6144a6;
 }
 
+.dispatch-status-chip.day-end-incomplete {
+  background: #fff0dc;
+  color: #8a4d00;
+}
+
 .dispatch-status-chip.completed,
 .dispatch-stop-status.completed {
   background: #e4f6e9;

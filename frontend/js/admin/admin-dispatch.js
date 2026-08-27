@@ -1086,8 +1086,12 @@ function dispatchEscape(value) {
 }
 
 function dispatchStatusLabel(status) {
-  if (String(status || "").toLowerCase() === "closed_early") {
+  const normalized = String(status || "").toLowerCase();
+  if (normalized === "closed_early") {
     return "Closed Early";
+  }
+  if (normalized === "day_end_incomplete") {
+    return "Day-End Incomplete";
   }
   return String(status || "unknown")
     .replace(/_/g, " ")
@@ -3291,6 +3295,8 @@ function dispatchEventLabel(eventType) {
     returned_to_wmo: "Returned to WMO",
     dispatch_completed: "Dispatch completed",
     dispatch_closed_early: "Closed early",
+    dispatch_day_end_incomplete: "Day-End Incomplete",
+    dispatch_forced_day_rollover: "Forced Day Rollover",
     ticket_cancelled: "Ticket cancelled"
   };
   return labels[eventType] || dispatchStatusLabel(eventType);
@@ -6063,7 +6069,9 @@ function dispatchReportEventLabel(event = {}, stopsById = new Map()) {
     departed_stop: location ? `Departed ${location}` : "Departed destination",
     stop_completed: location ? `Completed ${location}` : "Destination completed",
     stop_skipped: location ? `Skipped ${location}` : "Destination skipped",
-    dispatch_closed_early: "Dispatch Closed Early"
+    dispatch_closed_early: "Dispatch Closed Early",
+    dispatch_day_end_incomplete: "Day-End Incomplete",
+    dispatch_forced_day_rollover: "Forced Day Rollover"
   };
   return contextualLabels[event.event_type] || dispatchEventLabel(event.event_type);
 }
@@ -6300,11 +6308,12 @@ function renderDispatchReportDetails(data = {}) {
   const timelineMarkup = report.events.length ? report.events.map((event) => `
     <div class="dispatch-report-event"><i aria-hidden="true"></i><div><strong>${dispatchEscape(event.label)}</strong><small>${dispatchEscape(dispatchRecordedDateTime(event.event_at))}${event.actor_name ? ` · ${dispatchEscape(event.actor_name)}` : ""}</small></div></div>`).join("")
     : '<div class="dispatch-report-empty">Detailed trip events are not recorded for this dispatch.</div>';
-  const closureMarkup = status === "closed_early" ? `
+  const dayEndIncomplete = status === "day_end_incomplete";
+  const closureMarkup = status === "closed_early" || dayEndIncomplete ? `
     <aside class="dispatch-report-closure">
-      <div><span>Closed Early</span><strong>${dispatchEscape(dispatchRecordedText(report.closure_reason))}</strong></div>
-      <div><span>Closed By</span><strong>${dispatchEscape(dispatchRecordedText(report.closed_by))}</strong></div>
-      <div><span>Closed At</span><strong>${dispatchEscape(dispatchRecordedDateTime(report.closed_at || report.ended_at))}</strong></div>
+      <div><span>${dayEndIncomplete ? "Day-End Reason" : "Closed Early"}</span><strong>${dispatchEscape(dispatchRecordedText(report.closure_reason))}</strong></div>
+      <div><span>${dayEndIncomplete ? "Ended By" : "Closed By"}</span><strong>${dispatchEscape(dispatchRecordedText(report.closed_by))}</strong></div>
+      <div><span>${dayEndIncomplete ? "Ended At" : "Closed At"}</span><strong>${dispatchEscape(dispatchRecordedDateTime(report.closed_at || report.ended_at))}</strong></div>
     </aside>` : "";
   body.innerHTML = `
     <section class="dispatch-report-hero">
