@@ -75,6 +75,7 @@ const DISPATCH_PLANNED_ROUTE_MAX_POINTS = 10000;
 const DISPATCH_PLANNED_ROUTE_MAX_BYTES = 512 * 1024;
 const DISPATCH_PLANNED_ROUTE_MAX_DISTANCE_METERS = 2000000;
 const DISPATCH_PLANNED_ROUTE_MAX_STOP_SIGNATURE_LENGTH = 4096;
+const DAILY_DISTANCE_MAX_SEGMENT_KM = 10;
 
 function qualifyDispatchStopEvidence(locationLog = {}, options = {}) {
   const referenceTimeMs = Number.isFinite(Number(options.referenceTimeMs))
@@ -628,6 +629,252 @@ function currentManilaDate(now = new Date()) {
       .map((part) => [part.type, part.value])
   );
   return `${values.year}-${values.month}-${values.day}`;
+}
+
+function manilaDayWindow(value, now = new Date()) {
+  const date = value ? dateOnly(value, "date") : currentManilaDate(now);
+  const [year, month, day] = date.split("-").map(Number);
+  const nextDate = new Date(Date.UTC(year, month - 1, day + 1))
+    .toISOString()
+    .slice(0, 10);
+  const start = `${date} 00:00:00`;
+  const end = `${nextDate} 00:00:00`;
+  return {
+    date,
+    start,
+    end,
+    start_ms: parseManilaTimestamp(start),
+    end_ms: parseManilaTimestamp(end)
+  };
+}
+
+function dailyInterval(startValue, endValue, dayWindow, fallbackEndValue = null) {
+  const startMs = parseManilaTimestamp(startValue);
+  const endMs = parseManilaTimestamp(endValue || fallbackEndValue);
+  if (
+    startMs === null ||
+    endMs === null ||
+    endMs <= startMs ||
+    endMs <= dayWindow.start_ms ||
+    startMs >= dayWindow.end_ms
+  ) {
+    return null;
+  }
+  return {
+    start_ms: Math.max(startMs, dayWindow.start_ms),
+    end_ms: Math.min(endMs, dayWindow.end_ms)
+  };
+}
+
+function mergedIntervalSeconds(intervals = []) {
+  const ordered = intervals
+    .filter(Boolean)
+    .sort((left, right) => left.start_ms - right.start_ms || left.end_ms - right.end_ms);
+  if (!ordered.length) return 0;
+  let totalMs = 0;
+  let current = { ...ordered[0] };
+  for (const interval of ordered.slice(1)) {
+    if (interval.start_ms <= current.end_ms) {
+      current.end_ms = Math.max(current.end_ms, interval.end_ms);
+    } else {
+      totalMs += current.end_ms - current.start_ms;
+      current = { ...interval };
+    }
+  }
+  totalMs += current.end_ms - current.start_ms;
+  return Math.floor(totalMs / 1000);
+}
+
+function dailyRouteMetrics(routePoints = []) {
+  const sessions = new Map();
+  for (const [sourceIndex, point] of routePoints.entries()) {
+    const latitude = Number(point.latitude);
+    const longitude = Number(point.longitude);
+    const recordedAtMs = parseManilaTimestamp(point.recorded_at);
+    if (
+      !Number.isFinite(latitude) || latitude < -90 || latitude > 90 ||
+      !Number.isFinite(longitude) || longitude < -180 || longitude > 180 ||
+      recordedAtMs === null
+    ) {
+      continue;
+    }
+    const sessionId = String(point.session_id ?? "");
+    if (!sessions.has(sessionId)) sessions.set(sessionId, []);
+    sessions.get(sessionId).push({
+      ...point,
+      latitude,
+      longitude,
+      recorded_at_ms: recordedAtMs,
+      source_index: sourceIndex
+    });
+  }
+
+  let distanceKm = 0;
+  let pointCount = 0;
+  for (const points of sessions.values()) {
+    points.sort((left, right) =>
+      left.recorded_at_ms - right.recorded_at_ms ||
+      Number(left.id || 0) - Number(right.id || 0) ||
+      left.source_index - right.source_index
+    );
+    pointCount += points.length;
+    for (let index = 1; index < points.length; index += 1) {
+      const previous = points[index - 1];
+      const current = points[index];
+      const segmentKm = haversineMeters(
+        previous.latitude,
+        previous.longitude,
+        current.latitude,
+        current.longitude
+      ) / 1000;
+      if (
+        Number.isFinite(segmentKm) &&
+        segmentKm >= 0 &&
+        segmentKm <= DAILY_DISTANCE_MAX_SEGMENT_KM
+      ) {
+        distanceKm += segmentKm;
+      }
+    }
+  }
+  return {
+    actual_distance_km: pointCount ? Number(distanceKm.toFixed(4)) : null,
+    actual_gps_point_count: pointCount
+  };
+}
+
+function dailyStopOccurrenceMs(stop = {}) {
+  const value = stop.stop_status === "skipped"
+    ? stop.skipped_at || stop.completed_at || stop.actual_arrival_at
+    : stop.actual_arrival_at || stop.completed_at;
+  return parseManilaTimestamp(value);
+}
+
+function dailyStopMetrics(stops = [], dayWindow) {
+  let completedCount = 0;
+  let skippedCount = 0;
+  let totalStopDurationSeconds = 0;
+  const normalizedStops = stops.map((stop) => {
+    const occurrenceMs = dailyStopOccurrenceMs(stop);
+    const countedOnDate = occurrenceMs !== null &&
+      occurrenceMs >= dayWindow.start_ms && occurrenceMs < dayWindow.end_ms;
+    if (countedOnDate && stop.stop_status === "completed") completedCount += 1;
+    if (countedOnDate && stop.stop_status === "skipped") skippedCount += 1;
+
+    const dwellInterval = dailyInterval(
+      stop.actual_arrival_at,
+      stop.actual_departure_at,
+      dayWindow
+    );
+    let dailyDuration = dwellInterval
+      ? Math.floor((dwellInterval.end_ms - dwellInterval.start_ms) / 1000)
+      : 0;
+    if (!dwellInterval && countedOnDate) {
+      const storedDuration = Number(stop.stop_duration_seconds);
+      if (Number.isFinite(storedDuration) && storedDuration >= 0) {
+        dailyDuration = Math.floor(storedDuration);
+      }
+    }
+    totalStopDurationSeconds += dailyDuration;
+    return {
+      ...stop,
+      counted_on_date: countedOnDate,
+      daily_stop_duration_seconds: dailyDuration
+    };
+  });
+  return {
+    stops: normalizedStops,
+    completed_stop_count: completedCount,
+    skipped_stop_count: skippedCount,
+    total_stop_duration_seconds: totalStopDurationSeconds
+  };
+}
+
+function combineDailyOperationalRows(
+  sessionRows = [],
+  dispatchRows = [],
+  routeMetricRows = [],
+  dayWindow,
+  reportNow
+) {
+  const trucks = new Map();
+  const ensureTruck = (truckId) => {
+    const key = String(truckId ?? "").trim();
+    if (!key) return null;
+    if (!trucks.has(key)) {
+      trucks.set(key, {
+        date: dayWindow.date,
+        truck_id: key,
+        truck_name: key,
+        personnel_names: new Set(),
+        dispatch_ids: new Set(),
+        completed_stop_count: 0,
+        skipped_stop_count: 0,
+        total_stop_duration_seconds: 0,
+        tracking_intervals: [],
+        actual_distance_km: null,
+        actual_gps_point_count: 0
+      });
+    }
+    return trucks.get(key);
+  };
+
+  for (const session of sessionRows) {
+    const truck = ensureTruck(session.truck_id);
+    if (!truck) continue;
+    if (cleanText(session.enforcer_name, 255)) {
+      truck.personnel_names.add(cleanText(session.enforcer_name, 255));
+    }
+    const interval = dailyInterval(
+      session.started_at,
+      session.ended_at,
+      dayWindow,
+      reportNow
+    );
+    if (interval) truck.tracking_intervals.push(interval);
+  }
+
+  for (const dispatch of dispatchRows) {
+    const truck = ensureTruck(dispatch.truck_id);
+    if (!truck) continue;
+    truck.truck_name = cleanText(dispatch.truck_name_snapshot, 255) || truck.truck_name;
+    if (cleanText(dispatch.assigned_personnel_name, 255)) {
+      truck.personnel_names.add(cleanText(dispatch.assigned_personnel_name, 255));
+    }
+    truck.dispatch_ids.add(String(dispatch.id));
+    truck.completed_stop_count += Number(dispatch.completed_stop_count || 0);
+    truck.skipped_stop_count += Number(dispatch.skipped_stop_count || 0);
+    truck.total_stop_duration_seconds += Number(dispatch.total_stop_duration_seconds || 0);
+  }
+
+  for (const metrics of routeMetricRows) {
+    const truck = ensureTruck(metrics.truck_id);
+    if (!truck) continue;
+    const pointCount = Number(metrics.actual_gps_point_count || 0);
+    truck.actual_gps_point_count = pointCount;
+    const distance = Number(metrics.actual_distance_km);
+    truck.actual_distance_km = pointCount && Number.isFinite(distance)
+      ? Number(distance.toFixed(4))
+      : null;
+  }
+
+  return [...trucks.values()]
+    .map((truck) => ({
+      date: truck.date,
+      truck_id: truck.truck_id,
+      truck_name: truck.truck_name,
+      personnel: [...truck.personnel_names].join(", ") || null,
+      dispatch_count: truck.dispatch_ids.size,
+      completed_stop_count: truck.completed_stop_count,
+      skipped_stop_count: truck.skipped_stop_count,
+      actual_distance_km: truck.actual_distance_km,
+      actual_gps_point_count: truck.actual_gps_point_count,
+      tracking_duration_seconds: mergedIntervalSeconds(truck.tracking_intervals),
+      total_stop_duration_seconds: truck.total_stop_duration_seconds
+    }))
+    .sort((left, right) =>
+      left.truck_name.localeCompare(right.truck_name, undefined, { numeric: true }) ||
+      left.truck_id.localeCompare(right.truck_id, undefined, { numeric: true })
+    );
 }
 
 function normalizeEndDispatchReason(payload = {}) {
@@ -2682,6 +2929,394 @@ class DispatchService {
     return this.getTicketDetails(ticketId);
   }
 
+  async loadDailyOperationalProjection(filters = {}, options = {}) {
+    const now = this.now();
+    const dayWindow = manilaDayWindow(filters.date, now);
+    const reportNow = formatManilaDateTime(now.getTime());
+    const exactTruckId = cleanText(options.exactTruckId, 100);
+    const truckSearch = cleanText(filters.truck, 100);
+
+    const sessionClauses = [
+      "tts.started_at < ?",
+      "COALESCE(NULLIF(tts.ended_at, '0000-00-00 00:00:00'), ?) > ?"
+    ];
+    const sessionParameters = [dayWindow.end, reportNow, dayWindow.start];
+    if (exactTruckId) {
+      sessionClauses.push("tts.truck_id = ?");
+      sessionParameters.push(exactTruckId);
+    } else if (truckSearch) {
+      sessionClauses.push("(tts.truck_id LIKE ? OR tts.enforcer_name LIKE ?)");
+      sessionParameters.push(`%${truckSearch}%`, `%${truckSearch}%`);
+    }
+
+    const dispatchClauses = [
+      `(
+        (
+          COALESCE(dt.actual_start_at, dt.dispatched_at, dt.issued_at) IS NOT NULL
+          AND COALESCE(dt.actual_start_at, dt.dispatched_at, dt.issued_at) < ?
+          AND COALESCE(dt.actual_end_at, dt.completed_at, dt.cancelled_at, ?) > ?
+        )
+        OR EXISTS (
+          SELECT 1
+          FROM dispatch_tracking_sessions dts_overlap
+          INNER JOIN truck_tracking_sessions tts_overlap
+            ON tts_overlap.id = dts_overlap.tracking_session_id
+          WHERE dts_overlap.dispatch_ticket_id = dt.id
+            AND dts_overlap.unlinked_at IS NULL
+            AND tts_overlap.started_at < ?
+            AND COALESCE(
+              NULLIF(tts_overlap.ended_at, '0000-00-00 00:00:00'),
+              ?
+            ) > ?
+        )
+      )`
+    ];
+    const dispatchOverlapParameters = [
+      dayWindow.end,
+      reportNow,
+      dayWindow.start,
+      dayWindow.end,
+      reportNow,
+      dayWindow.start
+    ];
+    if (exactTruckId) {
+      dispatchClauses.push("dt.truck_id = ?");
+      dispatchOverlapParameters.push(exactTruckId);
+    } else if (truckSearch) {
+      dispatchClauses.push("(dt.truck_id LIKE ? OR dt.truck_name_snapshot LIKE ?)");
+      dispatchOverlapParameters.push(`%${truckSearch}%`, `%${truckSearch}%`);
+    }
+
+    const routeClauses = [
+      "tll.recorded_at >= ?",
+      "tll.recorded_at < ?",
+      "tll.latitude BETWEEN -90 AND 90",
+      "tll.longitude BETWEEN -180 AND 180"
+    ];
+    const routeParameters = [dayWindow.start, dayWindow.end];
+    if (exactTruckId) {
+      routeClauses.push("tll.truck_id = ?");
+      routeParameters.push(exactTruckId);
+    } else if (truckSearch) {
+      routeClauses.push("tll.truck_id LIKE ?");
+      routeParameters.push(`%${truckSearch}%`);
+    }
+
+    const stopSummaryParameters = [
+      dayWindow.start,
+      dayWindow.end,
+      dayWindow.start,
+      dayWindow.end,
+      dayWindow.end,
+      dayWindow.start,
+      dayWindow.start,
+      dayWindow.end,
+      dayWindow.start,
+      dayWindow.end
+    ];
+
+    const [[sessionRows], [dispatchRows], [routeMetricRows]] = await Promise.all([
+      this.query(
+        `
+          SELECT
+            tts.id,
+            tts.truck_id,
+            tts.enforcer_id,
+            tts.enforcer_name,
+            tts.session_status,
+            DATE_FORMAT(tts.started_at, '%Y-%m-%d %H:%i:%s') AS started_at,
+            DATE_FORMAT(
+              NULLIF(tts.ended_at, '0000-00-00 00:00:00'),
+              '%Y-%m-%d %H:%i:%s'
+            ) AS ended_at
+          FROM truck_tracking_sessions tts
+          WHERE ${sessionClauses.join(" AND ")}
+          ORDER BY tts.started_at ASC, tts.id ASC
+        `,
+        sessionParameters
+      ),
+      this.query(
+        `
+          SELECT
+            dt.id,
+            dt.ticket_number,
+            dt.truck_id,
+            dt.truck_name_snapshot,
+            dt.assigned_personnel_id,
+            dt.assigned_personnel_name,
+            dt.dispatch_date,
+            dt.route_name,
+            CASE
+              WHEN EXISTS (
+                SELECT 1
+                FROM dispatch_events de_close
+                WHERE de_close.dispatch_ticket_id = dt.id
+                  AND de_close.event_type = 'dispatch_closed_early'
+              ) THEN 'closed_early'
+              ELSE dt.status
+            END AS status,
+            DATE_FORMAT(
+              COALESCE(dt.actual_start_at, dt.dispatched_at, dt.issued_at),
+              '%Y-%m-%d %H:%i:%s'
+            ) AS started_at,
+            DATE_FORMAT(
+              COALESCE(dt.actual_end_at, dt.completed_at, dt.cancelled_at),
+              '%Y-%m-%d %H:%i:%s'
+            ) AS ended_at,
+            COALESCE(stop_summary.completed_stop_count, 0) AS completed_stop_count,
+            COALESCE(stop_summary.skipped_stop_count, 0) AS skipped_stop_count,
+            COALESCE(stop_summary.total_stop_duration_seconds, 0)
+              AS total_stop_duration_seconds
+          FROM dispatch_tickets dt
+          LEFT JOIN (
+            SELECT
+              dispatch_ticket_id,
+              SUM(
+                stop_status = 'completed'
+                AND COALESCE(actual_arrival_at, completed_at) >= ?
+                AND COALESCE(actual_arrival_at, completed_at) < ?
+              ) AS completed_stop_count,
+              SUM(
+                stop_status = 'skipped'
+                AND COALESCE(skipped_at, completed_at, actual_arrival_at) >= ?
+                AND COALESCE(skipped_at, completed_at, actual_arrival_at) < ?
+              ) AS skipped_stop_count,
+              SUM(
+                CASE
+                  WHEN actual_arrival_at IS NOT NULL
+                    AND actual_departure_at IS NOT NULL
+                    AND actual_arrival_at < ?
+                    AND actual_departure_at > ?
+                    THEN TIMESTAMPDIFF(
+                      SECOND,
+                      GREATEST(actual_arrival_at, ?),
+                      LEAST(actual_departure_at, ?)
+                    )
+                  WHEN stop_duration_seconds IS NOT NULL
+                    AND CASE
+                      WHEN stop_status = 'skipped'
+                        THEN COALESCE(skipped_at, completed_at, actual_arrival_at)
+                      ELSE COALESCE(actual_arrival_at, completed_at)
+                    END >= ?
+                    AND CASE
+                      WHEN stop_status = 'skipped'
+                        THEN COALESCE(skipped_at, completed_at, actual_arrival_at)
+                      ELSE COALESCE(actual_arrival_at, completed_at)
+                    END < ?
+                    THEN stop_duration_seconds
+                  ELSE 0
+                END
+              ) AS total_stop_duration_seconds
+            FROM dispatch_route_stops
+            GROUP BY dispatch_ticket_id
+          ) stop_summary
+            ON stop_summary.dispatch_ticket_id = dt.id
+          WHERE ${dispatchClauses.join(" AND ")}
+          ORDER BY started_at ASC, dt.id ASC
+        `,
+        [...stopSummaryParameters, ...dispatchOverlapParameters]
+      ),
+      this.query(
+        `
+          WITH daily_points AS (
+            SELECT
+              tll.id,
+              tll.session_id,
+              tll.truck_id,
+              tll.latitude,
+              tll.longitude,
+              LAG(tll.latitude) OVER (
+                PARTITION BY tll.session_id
+                ORDER BY tll.recorded_at ASC, tll.id ASC
+              ) AS previous_latitude,
+              LAG(tll.longitude) OVER (
+                PARTITION BY tll.session_id
+                ORDER BY tll.recorded_at ASC, tll.id ASC
+              ) AS previous_longitude
+            FROM truck_location_logs tll
+            WHERE ${routeClauses.join(" AND ")}
+          ),
+          daily_segments AS (
+            SELECT
+              truck_id,
+              CASE
+                WHEN previous_latitude IS NULL OR previous_longitude IS NULL THEN 0
+                ELSE 6371 * 2 * ASIN(SQRT(LEAST(1,
+                  POWER(SIN(RADIANS(latitude - previous_latitude) / 2), 2) +
+                  COS(RADIANS(previous_latitude)) * COS(RADIANS(latitude)) *
+                  POWER(SIN(RADIANS(longitude - previous_longitude) / 2), 2)
+                )))
+              END AS segment_km
+            FROM daily_points
+          )
+          SELECT
+            truck_id,
+            COUNT(*) AS actual_gps_point_count,
+            SUM(
+              CASE
+                WHEN segment_km >= 0 AND segment_km <= ${DAILY_DISTANCE_MAX_SEGMENT_KM}
+                  THEN segment_km
+                ELSE 0
+              END
+            ) AS actual_distance_km
+          FROM daily_segments
+          GROUP BY truck_id
+        `,
+        routeParameters
+      )
+    ]);
+
+    const summaries = combineDailyOperationalRows(
+      sessionRows,
+      dispatchRows,
+      routeMetricRows,
+      dayWindow,
+      reportNow
+    );
+    return { dayWindow, reportNow, summaries, sessionRows, dispatchRows };
+  }
+
+  async getDailyReports(filters = {}) {
+    const projection = await this.loadDailyOperationalProjection(filters);
+    return projection.summaries;
+  }
+
+  async getDailyReportDetails(truckId, filters = {}) {
+    const normalizedTruckId = cleanText(truckId, 100);
+    if (!normalizedTruckId) {
+      throw new DispatchServiceError("truck id is required");
+    }
+    const projection = await this.loadDailyOperationalProjection(filters, {
+      exactTruckId: normalizedTruckId
+    });
+    const summary = projection.summaries.find(
+      (row) => String(row.truck_id) === normalizedTruckId
+    );
+    if (!summary) {
+      throw new DispatchServiceError(
+        "Daily operational report not found",
+        404,
+        "DISPATCH_DAILY_REPORT_NOT_FOUND"
+      );
+    }
+
+    const [routePointsResult] = await this.query(
+      `
+        SELECT
+          session_id,
+          latitude,
+          longitude,
+          DATE_FORMAT(recorded_at, '%Y-%m-%d %H:%i:%s') AS recorded_at
+        FROM truck_location_logs
+        WHERE truck_id = ?
+          AND recorded_at >= ?
+          AND recorded_at < ?
+          AND latitude BETWEEN -90 AND 90
+          AND longitude BETWEEN -180 AND 180
+        ORDER BY recorded_at ASC, id ASC
+      `,
+      [normalizedTruckId, projection.dayWindow.start, projection.dayWindow.end]
+    );
+    const routePoints = routePointsResult || [];
+    const dispatchIds = projection.dispatchRows.map((dispatch) => Number(dispatch.id));
+    let stops = [];
+    let events = [];
+    if (dispatchIds.length) {
+      const placeholders = dispatchIds.map(() => "?").join(", ");
+      [[stops], [events]] = await Promise.all([
+        this.query(
+          `
+            SELECT
+              id,
+              dispatch_ticket_id,
+              stop_order,
+              location_name,
+              address_reference,
+              latitude,
+              longitude,
+              stop_status,
+              DATE_FORMAT(actual_arrival_at, '%Y-%m-%d %H:%i:%s') AS actual_arrival_at,
+              DATE_FORMAT(actual_departure_at, '%Y-%m-%d %H:%i:%s') AS actual_departure_at,
+              stop_duration_seconds,
+              DATE_FORMAT(completed_at, '%Y-%m-%d %H:%i:%s') AS completed_at,
+              DATE_FORMAT(skipped_at, '%Y-%m-%d %H:%i:%s') AS skipped_at,
+              skip_reason
+            FROM dispatch_route_stops
+            WHERE dispatch_ticket_id IN (${placeholders})
+              AND (
+                (
+                  CASE
+                    WHEN stop_status = 'skipped'
+                      THEN COALESCE(skipped_at, completed_at, actual_arrival_at)
+                    ELSE COALESCE(actual_arrival_at, completed_at)
+                  END >= ?
+                  AND CASE
+                    WHEN stop_status = 'skipped'
+                      THEN COALESCE(skipped_at, completed_at, actual_arrival_at)
+                    ELSE COALESCE(actual_arrival_at, completed_at)
+                  END < ?
+                )
+                OR (
+                  actual_arrival_at IS NOT NULL
+                  AND actual_departure_at IS NOT NULL
+                  AND actual_arrival_at < ?
+                  AND actual_departure_at > ?
+                )
+              )
+            ORDER BY dispatch_ticket_id ASC, stop_order ASC, id ASC
+          `,
+          [
+            ...dispatchIds,
+            projection.dayWindow.start,
+            projection.dayWindow.end,
+            projection.dayWindow.end,
+            projection.dayWindow.start
+          ]
+        ),
+        this.query(
+          `
+            SELECT
+              id,
+              dispatch_ticket_id,
+              dispatch_route_stop_id,
+              tracking_session_id,
+              event_type,
+              DATE_FORMAT(event_at, '%Y-%m-%d %H:%i:%s') AS event_at,
+              event_source,
+              actor_name
+            FROM dispatch_events
+            WHERE dispatch_ticket_id IN (${placeholders})
+              AND event_at >= ?
+              AND event_at < ?
+            ORDER BY event_at ASC, id ASC
+          `,
+          [...dispatchIds, projection.dayWindow.start, projection.dayWindow.end]
+        )
+      ]);
+    }
+
+    const stopMetrics = dailyStopMetrics(stops, projection.dayWindow);
+    const routeMetrics = dailyRouteMetrics(routePoints);
+    return {
+      summary: {
+        ...summary,
+        ...routeMetrics,
+        completed_stop_count: stopMetrics.completed_stop_count,
+        skipped_stop_count: stopMetrics.skipped_stop_count,
+        total_stop_duration_seconds: stopMetrics.total_stop_duration_seconds
+      },
+      tracking_sessions: projection.sessionRows,
+      dispatches: projection.dispatchRows.map((dispatch) => ({
+        ...dispatch,
+        ticket_report_available: ["completed", "closed_early", "cancelled"]
+          .includes(dispatch.status)
+      })),
+      stops: stopMetrics.stops,
+      route_points: routePoints,
+      events
+    };
+  }
+
   async getReports(filters = {}) {
     const clauses = ["dt.status IN ('completed', 'cancelled')"];
     const parameters = [];
@@ -3909,6 +4544,13 @@ module.exports.normalizeDispatchError = normalizeDispatchError;
 module.exports.normalizeDestinationSearchText = normalizeDestinationSearchText;
 module.exports.destinationLimit = destinationLimit;
 module.exports.currentManilaDate = currentManilaDate;
+module.exports.manilaDayWindow = manilaDayWindow;
+module.exports.dailyInterval = dailyInterval;
+module.exports.mergedIntervalSeconds = mergedIntervalSeconds;
+module.exports.dailyRouteMetrics = dailyRouteMetrics;
+module.exports.dailyStopMetrics = dailyStopMetrics;
+module.exports.combineDailyOperationalRows = combineDailyOperationalRows;
+module.exports.DAILY_DISTANCE_MAX_SEGMENT_KM = DAILY_DISTANCE_MAX_SEGMENT_KM;
 module.exports.DESTINATION_TYPES = DESTINATION_TYPES;
 module.exports.TICKET_STATUSES = TICKET_STATUSES;
 module.exports.STOP_STATUSES = STOP_STATUSES;
