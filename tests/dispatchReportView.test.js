@@ -202,6 +202,34 @@ function testClosedEarlyAndLegacyNullProjection() {
   assert.equal(legacy.has_planned_route, false);
 }
 
+function testDayEndIncompleteRemainsSeparateFromClosedEarly() {
+  const fixture = completedReportFixture();
+  fixture.ticket.status = "cancelled";
+  fixture.ticket.report_status = "day_end_incomplete";
+  fixture.ticket.closure_reason = "Operations remained open at the Asia/Manila day boundary.";
+  fixture.ticket.closed_by_name = "Enforcer One";
+  fixture.ticket.closed_at = "2026-08-28 00:00:00";
+  fixture.ticket.ended_at = "2026-08-28 00:00:00";
+  fixture.events.push({
+    id: 6,
+    event_type: "dispatch_forced_day_rollover",
+    event_at: "2026-08-28 00:00:00"
+  });
+
+  const dayEnd = buildDispatchReportViewModel(fixture);
+  assert.equal(dayEnd.status_label, "Day-End Incomplete");
+  assert.notEqual(dayEnd.status_label, "Closed Early");
+  assert.equal(
+    dayEnd.closure_reason,
+    "Operations remained open at the Asia/Manila day boundary."
+  );
+  assert.equal(dayEnd.events.at(-1).label, "Forced Day Rollover");
+  assert.equal(
+    dispatchReportEventLabel({ event_type: "dispatch_day_end_incomplete" }, new Map()),
+    "Day-End Incomplete"
+  );
+}
+
 function testReadOnlyApiAndFrontendLifecycleStructure() {
   const service = read("services/dispatchService.js");
   const detailBlock = service.slice(
@@ -263,6 +291,7 @@ function run() {
   testPersistedBlueAndActualGreenRemainIndependent();
   testTimelineChronologyAndLabels();
   testClosedEarlyAndLegacyNullProjection();
+  testDayEndIncompleteRemainsSeparateFromClosedEarly();
   testReadOnlyApiAndFrontendLifecycleStructure();
   console.log("Dispatch operational report view tests passed");
 }

@@ -306,6 +306,9 @@ function testReadOnlyContractAndNoDateTimezoneShortcuts() {
   assert.doesNotMatch(dailyBlock, /session_distance_km/);
   assert.match(dailyBlock, /DATE_FORMAT\(recorded_at/);
   assert.match(dailyBlock, /loadDailyOperationalProjection/);
+  assert.match(dailyBlock, /dispatch_day_end_incomplete/);
+  assert.match(dailyBlock, /dispatch_forced_day_rollover/);
+  assert.match(dailyBlock, /THEN 'day_end_incomplete'/);
 }
 
 function testFrontendKeepsSessionTrailsSeparateAndReusesTicketReport() {

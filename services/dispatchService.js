@@ -1661,6 +1661,23 @@ class DispatchService {
     return result.insertId;
   }
 
+  async insertEventIfMissing(connection, event = {}) {
+    const idempotencyKey = nullableText(event.idempotency_key, 255);
+    if (idempotencyKey) {
+      const [rows] = await connection.query(
+        `
+          SELECT id
+          FROM dispatch_events
+          WHERE idempotency_key = ?
+          LIMIT 1
+        `,
+        [idempotencyKey]
+      );
+      if (rows.length) return rows[0].id;
+    }
+    return this.insertEvent(connection, event);
+  }
+
   async getTicketForUpdate(connection, ticketId) {
     const [rows] = await connection.query(
       `
@@ -3049,6 +3066,15 @@ class DispatchService {
             CASE
               WHEN EXISTS (
                 SELECT 1
+                FROM dispatch_events de_day_end
+                WHERE de_day_end.dispatch_ticket_id = dt.id
+                  AND de_day_end.event_type IN (
+                    'dispatch_day_end_incomplete',
+                    'dispatch_forced_day_rollover'
+                  )
+              ) THEN 'day_end_incomplete'
+              WHEN EXISTS (
+                SELECT 1
                 FROM dispatch_events de_close
                 WHERE de_close.dispatch_ticket_id = dt.id
                   AND de_close.event_type = 'dispatch_closed_early'
@@ -3308,7 +3334,12 @@ class DispatchService {
       tracking_sessions: projection.sessionRows,
       dispatches: projection.dispatchRows.map((dispatch) => ({
         ...dispatch,
-        ticket_report_available: ["completed", "closed_early", "cancelled"]
+        ticket_report_available: [
+          "completed",
+          "closed_early",
+          "day_end_incomplete",
+          "cancelled"
+        ]
           .includes(dispatch.status)
       })),
       stops: stopMetrics.stops,
@@ -3322,13 +3353,22 @@ class DispatchService {
     const parameters = [];
     const status = cleanText(filters.status, 40).toLowerCase();
     if (status) {
-      if (!["completed", "closed_early", "cancelled"].includes(status)) {
+      if (![
+        "completed",
+        "closed_early",
+        "day_end_incomplete",
+        "cancelled"
+      ].includes(status)) {
         throw new DispatchServiceError("Invalid dispatch report status");
       }
       if (status === "closed_early") {
         clauses.push("closure_event.id IS NOT NULL");
+      } else if (status === "day_end_incomplete") {
+        clauses.push("day_end_event.id IS NOT NULL");
       } else if (status === "cancelled") {
-        clauses.push("dt.status = 'cancelled' AND closure_event.id IS NULL");
+        clauses.push(
+          "dt.status = 'cancelled' AND closure_event.id IS NULL AND day_end_event.id IS NULL"
+        );
       } else {
         clauses.push("dt.status = 'completed'");
       }
@@ -3361,6 +3401,7 @@ class DispatchService {
           dt.dispatch_date,
           dt.route_name,
           CASE
+            WHEN day_end_event.id IS NOT NULL THEN 'day_end_incomplete'
             WHEN closure_event.id IS NOT NULL THEN 'closed_early'
             ELSE dt.status
           END AS status,
@@ -3411,6 +3452,18 @@ class DispatchService {
             WHERE de_close.dispatch_ticket_id = dt.id
               AND de_close.event_type = 'dispatch_closed_early'
             ORDER BY de_close.event_at DESC, de_close.id DESC
+            LIMIT 1
+          )
+        LEFT JOIN dispatch_events day_end_event
+          ON day_end_event.id = (
+            SELECT de_day_end.id
+            FROM dispatch_events de_day_end
+            WHERE de_day_end.dispatch_ticket_id = dt.id
+              AND de_day_end.event_type IN (
+                'dispatch_day_end_incomplete',
+                'dispatch_forced_day_rollover'
+              )
+            ORDER BY de_day_end.event_at DESC, de_day_end.id DESC
             LIMIT 1
           )
         LEFT JOIN dispatch_events return_event
@@ -3488,16 +3541,23 @@ class DispatchService {
     const closureEvent = events.find(
       (event) => event.event_type === "dispatch_closed_early"
     ) || null;
+    const dayEndEvent = events.find(
+      (event) => [
+        "dispatch_day_end_incomplete",
+        "dispatch_forced_day_rollover"
+      ].includes(event.event_type)
+    ) || null;
     const returnedEvent = events.find(
       (event) => event.event_type === "returned_to_wmo"
     ) || null;
     const issuedEvent = events.find(
       (event) => event.event_type === "ticket_issued"
     ) || null;
-    const closureDetails = parseEventDetails(closureEvent?.details);
+    const terminalEvent = dayEndEvent || closureEvent;
+    const closureDetails = parseEventDetails(terminalEvent?.details);
     const plannedRouteSnapshot = storedDispatchPlannedRouteSnapshot(issuedEvent?.details);
-    const endedAt = closureEvent
-      ? ticket.actual_end_at || ticket.cancelled_at || closureEvent.event_at
+    const endedAt = terminalEvent
+      ? ticket.actual_end_at || ticket.cancelled_at || terminalEvent.event_at
       : ticket.actual_end_at || ticket.completed_at || null;
     const measuredDistance =
       routeLogs.length > 0 && primarySession?.session_distance_km !== null
@@ -3515,14 +3575,24 @@ class DispatchService {
     return {
       ticket: {
         ...ticket,
-        report_status: closureEvent ? "closed_early" : ticket.status,
+        report_status: dayEndEvent
+          ? "day_end_incomplete"
+          : closureEvent
+            ? "closed_early"
+            : ticket.status,
         ended_at: endedAt,
-        closure_reason: closureEvent
+        closure_reason: terminalEvent
           ? closureDetails.reason || ticket.cancellation_reason || null
           : null,
-        closed_by_user_id: closureEvent?.actor_id || null,
-        closed_by_name: closureEvent?.actor_name || null,
-        closed_at: closureEvent?.event_at || null,
+        closed_by_user_id: terminalEvent?.actor_id || null,
+        closed_by_name: terminalEvent?.actor_name || null,
+        closed_at: terminalEvent?.event_at || null,
+        day_end_reason: dayEndEvent
+          ? closureDetails.reason || ticket.cancellation_reason || null
+          : null,
+        day_end_actor_id: dayEndEvent?.actor_id || null,
+        day_end_actor_name: dayEndEvent?.actor_name || null,
+        day_end_at: dayEndEvent?.event_at || null,
         returned_to_wmo_at: returnedEvent?.event_at || null
       },
       stops,
@@ -4351,6 +4421,216 @@ class DispatchService {
       `,
       [candidateAt, candidateCount, stop.id]
     );
+  }
+
+  async finalizeMobileTrackingEnd(trackingSessionId, evidence = {}) {
+    const sessionId = requiredId(trackingSessionId, "tracking session id");
+    const operationIntent = cleanText(evidence.operation_intent, 80).toLowerCase();
+    if (!["end_operations", "forced_day_rollover"].includes(operationIntent)) {
+      return { outcome: "no_lifecycle_intent" };
+    }
+
+    const endedAt = normalizedHistoryTimestamp(evidence.recorded_at);
+    const actionId = cleanText(evidence.action_id, 160);
+    if (!endedAt || !actionId) {
+      throw new DispatchServiceError(
+        "Validated mobile end-operation evidence is required",
+        400,
+        "DISPATCH_END_EVIDENCE_REQUIRED"
+      );
+    }
+
+    return this.withTransaction(async (connection) => {
+      const [rows] = await connection.query(
+        `
+          SELECT
+            dts.id,
+            dts.dispatch_ticket_id,
+            dts.tracking_session_id,
+            dt.status AS dispatch_status,
+            tts.enforcer_id,
+            tts.enforcer_name
+          FROM dispatch_tracking_sessions dts
+          INNER JOIN dispatch_tickets dt
+            ON dt.id = dts.dispatch_ticket_id
+          INNER JOIN truck_tracking_sessions tts
+            ON tts.id = dts.tracking_session_id
+          WHERE dts.tracking_session_id = ?
+            AND dts.unlinked_at IS NULL
+          ORDER BY dts.is_primary DESC, dts.linked_at DESC, dts.id DESC
+          LIMIT 1
+          FOR UPDATE
+        `,
+        [sessionId]
+      );
+      if (!rows.length) return { outcome: "no_linked_dispatch" };
+
+      const relation = rows[0];
+      if (["completed", "cancelled"].includes(relation.dispatch_status)) {
+        return {
+          outcome: "already_terminal",
+          dispatch_ticket_id: relation.dispatch_ticket_id,
+          status: relation.dispatch_status
+        };
+      }
+      if (!ACTIVE_TICKET_STATUSES.has(relation.dispatch_status)) {
+        return {
+          outcome: "dispatch_not_active",
+          dispatch_ticket_id: relation.dispatch_ticket_id,
+          status: relation.dispatch_status
+        };
+      }
+
+      const [remainingStops] = await connection.query(
+        `
+          SELECT id, stop_order, stop_status
+          FROM dispatch_route_stops
+          WHERE dispatch_ticket_id = ?
+            AND stop_status NOT IN ('completed', 'skipped')
+          ORDER BY stop_order ASC, id ASC
+        `,
+        [relation.dispatch_ticket_id]
+      );
+      const actor = {
+        actor_type: "mobile_enforcer",
+        actor_id: relation.enforcer_id || null,
+        actor_name: nullableText(relation.enforcer_name, 255)
+      };
+
+      if (operationIntent === "end_operations" && remainingStops.length === 0) {
+        const returning = await this.moveTicketToReturningIfDone(
+          connection,
+          relation.dispatch_ticket_id,
+          "mobile",
+          actor,
+          sessionId,
+          endedAt
+        );
+        if (!returning) {
+          return {
+            outcome: "already_terminal",
+            dispatch_ticket_id: relation.dispatch_ticket_id
+          };
+        }
+
+        await connection.query(
+          `
+            UPDATE dispatch_tickets
+            SET status = 'completed',
+                actual_end_at = COALESCE(actual_end_at, ?),
+                completed_at = COALESCE(completed_at, ?),
+                updated_at = NOW()
+            WHERE id = ?
+              AND status = 'returning_to_wmo'
+          `,
+          [endedAt, endedAt, relation.dispatch_ticket_id]
+        );
+        await this.insertEventIfMissing(connection, {
+          dispatch_ticket_id: relation.dispatch_ticket_id,
+          tracking_session_id: sessionId,
+          event_type: "returned_to_wmo",
+          event_at: endedAt,
+          event_source: "mobile",
+          ...actor,
+          latitude: evidence.latitude,
+          longitude: evidence.longitude,
+          accuracy_meters: evidence.accuracy,
+          details: {
+            distance_meters: Math.round(Number(evidence.distanceFromWmoMeters) || 0),
+            operation_intent: operationIntent,
+            action_id: actionId
+          },
+          idempotency_key: `returned-to-wmo:${relation.dispatch_ticket_id}`
+        });
+        await this.insertEventIfMissing(connection, {
+          dispatch_ticket_id: relation.dispatch_ticket_id,
+          tracking_session_id: sessionId,
+          event_type: "dispatch_completed",
+          event_at: endedAt,
+          event_source: "mobile",
+          ...actor,
+          details: { operation_intent: operationIntent, action_id: actionId },
+          idempotency_key: `dispatch-completed:${relation.dispatch_ticket_id}`
+        });
+        return {
+          outcome: "completed",
+          dispatch_ticket_id: relation.dispatch_ticket_id
+        };
+      }
+
+      if (remainingStops.length === 0) {
+        return {
+          outcome: "awaiting_verified_final_return",
+          dispatch_ticket_id: relation.dispatch_ticket_id
+        };
+      }
+
+      const forcedRollover = operationIntent === "forced_day_rollover";
+      const eventType = forcedRollover
+        ? "dispatch_forced_day_rollover"
+        : "dispatch_day_end_incomplete";
+      const reason = forcedRollover
+        ? "Operations remained open at the Asia/Manila day boundary."
+        : "Operations ended at WMO with unfinished destinations.";
+
+      await connection.query(
+        `
+          UPDATE dispatch_tickets
+          SET status = 'cancelled',
+              actual_end_at = COALESCE(actual_end_at, ?),
+              cancelled_at = COALESCE(cancelled_at, ?),
+              cancellation_reason = COALESCE(cancellation_reason, ?),
+              updated_at = NOW()
+          WHERE id = ?
+            AND status IN ('dispatched', 'in_progress', 'returning_to_wmo')
+        `,
+        [endedAt, endedAt, reason, relation.dispatch_ticket_id]
+      );
+
+      if (!forcedRollover) {
+        await this.insertEventIfMissing(connection, {
+          dispatch_ticket_id: relation.dispatch_ticket_id,
+          tracking_session_id: sessionId,
+          event_type: "returned_to_wmo",
+          event_at: endedAt,
+          event_source: "mobile",
+          ...actor,
+          latitude: evidence.latitude,
+          longitude: evidence.longitude,
+          accuracy_meters: evidence.accuracy,
+          details: {
+            distance_meters: Math.round(Number(evidence.distanceFromWmoMeters) || 0),
+            operation_intent: operationIntent,
+            action_id: actionId
+          },
+          idempotency_key: `returned-to-wmo:${relation.dispatch_ticket_id}`
+        });
+      }
+      await this.insertEventIfMissing(connection, {
+        dispatch_ticket_id: relation.dispatch_ticket_id,
+        tracking_session_id: sessionId,
+        event_type: eventType,
+        event_at: endedAt,
+        event_source: "mobile",
+        ...actor,
+        latitude: forcedRollover ? null : evidence.latitude,
+        longitude: forcedRollover ? null : evidence.longitude,
+        accuracy_meters: forcedRollover ? null : evidence.accuracy,
+        details: {
+          reason,
+          operation_intent: operationIntent,
+          action_id: actionId,
+          unfinished_stop_count: remainingStops.length,
+          unfinished_stop_ids: remainingStops.map((stop) => stop.id)
+        },
+        idempotency_key: `${eventType}:${relation.dispatch_ticket_id}`
+      });
+      return {
+        outcome: "day_end_incomplete",
+        dispatch_ticket_id: relation.dispatch_ticket_id,
+        forced_day_rollover: forcedRollover
+      };
+    });
   }
 
   async reconcileEndedTrackingSession(relationId, wmoLocation) {

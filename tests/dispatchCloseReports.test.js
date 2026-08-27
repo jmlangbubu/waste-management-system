@@ -178,6 +178,8 @@ async function testReportListIsTicketCenteredAndExcludesActiveDispatches() {
   assert.match(reportSql, /dt\.status IN \('completed', 'cancelled'\)/);
   assert.doesNotMatch(reportSql, /dt\.status IN \('dispatched', 'in_progress'/);
   assert.match(reportSql, /dispatch_closed_early/);
+  assert.match(reportSql, /dispatch_day_end_incomplete/);
+  assert.match(reportSql, /dispatch_forced_day_rollover/);
   assert.match(reportSql, /primary_link\.tracking_session_id/);
   assert.match(
     reportSql,
@@ -222,6 +224,20 @@ async function testReportListPreservesTerminalStatusFilters() {
   assert.deepEqual(closedEarly.reportParameters, []);
   assert.deepEqual(closedEarly.result, [closedEarlyRow]);
 
+  const dayEndRow = {
+    id: 4,
+    status: "day_end_incomplete",
+    stored_status: "cancelled"
+  };
+  const dayEnd = await captureReportQuery(
+    { status: "day_end_incomplete" },
+    [dayEndRow]
+  );
+  assert.match(dayEnd.reportSql, /day_end_event\.id IS NOT NULL/);
+  assert.match(dayEnd.reportSql, /WHEN day_end_event\.id IS NOT NULL THEN 'day_end_incomplete'/);
+  assert.deepEqual(dayEnd.reportParameters, []);
+  assert.deepEqual(dayEnd.result, [dayEndRow]);
+
   const cancelledRow = { id: 3, status: "cancelled" };
   const cancelled = await captureReportQuery(
     { status: "cancelled" },
@@ -229,7 +245,7 @@ async function testReportListPreservesTerminalStatusFilters() {
   );
   assert.match(
     cancelled.reportSql,
-    /dt\.status = 'cancelled' AND closure_event\.id IS NULL/
+    /dt\.status = 'cancelled' AND closure_event\.id IS NULL AND day_end_event\.id IS NULL/
   );
   assert.deepEqual(cancelled.reportParameters, []);
   assert.deepEqual(cancelled.result, [cancelledRow]);
@@ -484,7 +500,9 @@ function testRouteSecurityAndFrontendLifecycle() {
   assert.match(frontend, /Dark green: actual GPS trail/);
   assert.match(frontend, /Blue: persisted assigned route/);
   assert.doesNotMatch(frontend, /Assigned route between persisted dispatch waypoints/);
-  assert.match(frontend, /status === "closed_early" \? "Closed At" : "Ended At"/);
+  assert.match(frontend, /const dayEndIncomplete = status === "day_end_incomplete"/);
+  assert.match(frontend, /dayEndIncomplete \? "Day-End Reason" : "Closed Early"/);
+  assert.match(frontend, /dispatch_forced_day_rollover: "Forced Day Rollover"/);
   assert.match(frontend, /Total Stop Time/);
   assert.match(frontend, /Returned to WMO/);
   assert.doesNotMatch(submitBlock, /force-stop|stopTracking|Stop Truck/);
