@@ -2,6 +2,8 @@ const db = require("../config/dbPromise");
 const {
   GpsValidationError,
   MAX_RELIABLE_ACCURACY_METERS,
+  formatManilaDateTime,
+  parseManilaTimestamp,
   validateGpsPointForStorage,
   qualifyGpsPointForOperationalUse
 } = require("../utils/gpsValidation");
@@ -66,6 +68,7 @@ const DESTINATION_CATALOG_TABLE_NAMES = new Set([
 const DESTINATION_TYPES = new Set(["road_segment", "barangay_hall"]);
 const DEFAULT_DESTINATION_LIMIT = 20;
 const MAX_DESTINATION_LIMIT = 1000;
+const DISPATCH_HISTORY_REPLAY_PAGE_SIZE = 500;
 
 function qualifyDispatchStopEvidence(locationLog = {}, options = {}) {
   const referenceTimeMs = Number.isFinite(Number(options.referenceTimeMs))
@@ -106,6 +109,333 @@ function qualifyDispatchStopEvidence(locationLog = {}, options = {}) {
     }
     throw error;
   }
+}
+
+function normalizedHistoryTimestamp(value) {
+  const timestampMs = parseManilaTimestamp(value);
+  return timestampMs === null ? null : formatManilaDateTime(timestampMs);
+}
+
+function automaticEventForStop(events, stopId, eventType) {
+  return events.find(
+    (event) =>
+      Number(event.dispatch_route_stop_id) === Number(stopId) &&
+      event.event_type === eventType &&
+      event.event_source === "automatic"
+  ) || null;
+}
+
+function manualEventTimestamp(events, stopId, eventTypes) {
+  const event = events.find(
+    (candidate) =>
+      Number(candidate.dispatch_route_stop_id) === Number(stopId) &&
+      eventTypes.includes(candidate.event_type) &&
+      candidate.event_source !== "automatic"
+  );
+  return normalizedHistoryTimestamp(event?.event_at);
+}
+
+function createDispatchHistoryReplayState(stops = [], events = [], options = {}) {
+  const ticketStatus = String(options.ticketStatus || "").toLowerCase();
+  const activeTicket = ACTIVE_TICKET_STATUSES.has(ticketStatus);
+  const completedTicket = ticketStatus === "completed";
+
+  const replayStops = stops.map((stop, index) => {
+    const arrivalEvent = automaticEventForStop(
+      events,
+      stop.id,
+      "arrived_at_stop"
+    );
+    const departureEvent = automaticEventForStop(
+      events,
+      stop.id,
+      "departed_stop"
+    );
+    const arrivalManual = stop.arrival_source === "manual";
+    const departureManual = stop.departure_source === "manual";
+    const skipped = stop.stop_status === "skipped";
+    const manualArrivalAt = arrivalManual
+      ? normalizedHistoryTimestamp(stop.actual_arrival_at) ||
+        manualEventTimestamp(events, stop.id, ["arrived_at_stop"])
+      : null;
+    const manualDepartureAt = departureManual
+      ? normalizedHistoryTimestamp(stop.actual_departure_at) ||
+        normalizedHistoryTimestamp(stop.completed_at) ||
+        manualEventTimestamp(events, stop.id, ["stop_completed"])
+      : null;
+    const skippedAt = skipped
+      ? normalizedHistoryTimestamp(stop.skipped_at) ||
+        manualEventTimestamp(events, stop.id, ["stop_skipped"])
+      : null;
+    const hasAutomaticHistory =
+      stop.arrival_source === "automatic" ||
+      stop.departure_source === "automatic" ||
+      Boolean(arrivalEvent) ||
+      Boolean(departureEvent);
+    const ambiguousManualState =
+      (arrivalManual && !manualArrivalAt) ||
+      (departureManual && !manualDepartureAt) ||
+      (skipped && !skippedAt);
+    const replayAllowed =
+      !skipped &&
+      !ambiguousManualState &&
+      (activeTicket || completedTicket || hasAutomaticHistory);
+
+    return {
+      ...stop,
+      replay_index: index,
+      replay_allowed: replayAllowed,
+      preserve_entirely: skipped || !replayAllowed,
+      manual_arrival: arrivalManual,
+      manual_departure: departureManual,
+      manual_arrival_at: manualArrivalAt,
+      manual_departure_at: manualDepartureAt,
+      manual_terminal_at: skippedAt || manualDepartureAt,
+      replay_arrival_at: manualArrivalAt,
+      replay_departure_at: manualDepartureAt,
+      replay_arrival_candidate_at: null,
+      replay_arrival_candidate_count: 0,
+      replay_departure_candidate_at: null,
+      replay_departure_candidate_count: 0,
+      replay_arrival_event: null,
+      replay_departure_event: null,
+      existing_auto_arrival_event: arrivalEvent,
+      existing_auto_departure_event: departureEvent
+    };
+  });
+
+  return {
+    ticket_status: ticketStatus,
+    stops: replayStops,
+    current_stop_index: 0,
+    previous_recorded_at_ms: null,
+    qualified_rows: 0,
+    ignored_rows: 0
+  };
+}
+
+function evaluateDispatchTransitionCandidate(
+  kind,
+  currentCandidateAt,
+  currentCandidateCount,
+  locationLog,
+  previousRecordedAtMs
+) {
+  const gapMs = kind === "arrival"
+    ? DISPATCH_STOP_TRANSITION_RULES.arrivalCandidateGapMs
+    : DISPATCH_STOP_TRANSITION_RULES.departureCandidateGapMs;
+  const confirmationSeconds = kind === "arrival"
+    ? DISPATCH_STOP_TRANSITION_RULES.arrivalConfirmationSeconds
+    : DISPATCH_STOP_TRANSITION_RULES.departureConfirmationSeconds;
+  const currentTimeMs = Number.isFinite(Number(locationLog.timestampMs))
+    ? Number(locationLog.timestampMs)
+    : parseManilaTimestamp(locationLog.recorded_at);
+  const hasLongGap =
+    Number.isFinite(previousRecordedAtMs) &&
+    currentTimeMs > previousRecordedAtMs &&
+    currentTimeMs - previousRecordedAtMs > gapMs;
+  const candidateAt = currentCandidateAt && !hasLongGap
+    ? currentCandidateAt
+    : locationLog.recorded_at;
+  const candidateCount = currentCandidateAt && !hasLongGap
+    ? Number(currentCandidateCount || 0) + 1
+    : 1;
+  const candidateTimeMs = parseManilaTimestamp(candidateAt);
+  const elapsedSeconds = Math.max(
+    0,
+    (currentTimeMs - candidateTimeMs) / 1000
+  );
+  return {
+    candidateAt,
+    candidateCount,
+    elapsedSeconds,
+    confirmed:
+      candidateCount >= DISPATCH_STOP_TRANSITION_RULES.confirmationSampleCount &&
+      elapsedSeconds >= confirmationSeconds
+  };
+}
+
+function nextReplayCandidate(stop, kind, locationLog, previousRecordedAtMs) {
+  const prefix = kind === "arrival" ? "replay_arrival" : "replay_departure";
+  const candidate = evaluateDispatchTransitionCandidate(
+    kind,
+    stop[`${prefix}_candidate_at`],
+    stop[`${prefix}_candidate_count`],
+    locationLog,
+    previousRecordedAtMs
+  );
+  stop[`${prefix}_candidate_at`] = candidate.candidateAt;
+  stop[`${prefix}_candidate_count`] = candidate.candidateCount;
+  return candidate;
+}
+
+function clearReplayCandidate(stop, kind) {
+  const prefix = kind === "arrival" ? "replay_arrival" : "replay_departure";
+  stop[`${prefix}_candidate_at`] = null;
+  stop[`${prefix}_candidate_count`] = 0;
+}
+
+function applyDispatchHistoryLocation(replayState, locationLog, options = {}) {
+  const evidence = qualifyDispatchStopEvidence(locationLog, options);
+  const rawRecordedAtMs = parseManilaTimestamp(locationLog.recorded_at);
+  const recordedAtMs = evidence.qualified
+    ? evidence.point.timestampMs
+    : rawRecordedAtMs;
+
+  if (!Number.isFinite(recordedAtMs)) {
+    replayState.ignored_rows += 1;
+    return;
+  }
+
+  const cutoffMs = Number(options.cutoffMs);
+  const startMs = Number(options.startMs);
+  if (Number.isFinite(startMs) && recordedAtMs < startMs) {
+    replayState.ignored_rows += 1;
+    replayState.previous_recorded_at_ms = recordedAtMs;
+    return;
+  }
+  if (Number.isFinite(cutoffMs) && recordedAtMs > cutoffMs) {
+    replayState.ignored_rows += 1;
+    replayState.previous_recorded_at_ms = recordedAtMs;
+    return;
+  }
+
+  while (replayState.current_stop_index < replayState.stops.length) {
+    const barrierStop = replayState.stops[replayState.current_stop_index];
+    const terminalAtMs = parseManilaTimestamp(barrierStop.manual_terminal_at);
+
+    if (barrierStop.preserve_entirely) {
+      if (
+        TERMINAL_STOP_STATUSES.has(barrierStop.stop_status) &&
+        Number.isFinite(terminalAtMs) &&
+        recordedAtMs >= terminalAtMs
+      ) {
+        replayState.current_stop_index += 1;
+        continue;
+      }
+      replayState.previous_recorded_at_ms = recordedAtMs;
+      replayState.ignored_rows += 1;
+      return;
+    }
+
+    if (
+      barrierStop.manual_departure &&
+      Number.isFinite(terminalAtMs) &&
+      recordedAtMs >= terminalAtMs
+    ) {
+      replayState.current_stop_index += 1;
+      continue;
+    }
+    break;
+  }
+
+  const stop = replayState.stops[replayState.current_stop_index];
+  if (!stop) {
+    replayState.previous_recorded_at_ms = recordedAtMs;
+    replayState.ignored_rows += 1;
+    return;
+  }
+
+  if (!evidence.qualified) {
+    clearReplayCandidate(
+      stop,
+      stop.replay_arrival_at ? "departure" : "arrival"
+    );
+    replayState.previous_recorded_at_ms = recordedAtMs;
+    replayState.ignored_rows += 1;
+    return;
+  }
+
+  const point = evidence.point;
+  const distance = haversineMeters(
+    point.latitude,
+    point.longitude,
+    Number(stop.latitude),
+    Number(stop.longitude)
+  );
+
+  if (
+    stop.manual_arrival &&
+    recordedAtMs < parseManilaTimestamp(stop.manual_arrival_at)
+  ) {
+    replayState.previous_recorded_at_ms = recordedAtMs;
+    replayState.ignored_rows += 1;
+    return;
+  }
+
+  if (!stop.replay_arrival_at) {
+    const qualifies = distance <= Number(stop.geofence_radius_meters);
+    if (!qualifies) {
+      clearReplayCandidate(stop, "arrival");
+    } else {
+      const candidate = nextReplayCandidate(
+        stop,
+        "arrival",
+        point,
+        replayState.previous_recorded_at_ms
+      );
+      if (candidate.confirmed) {
+        stop.replay_arrival_at = candidate.candidateAt;
+        stop.replay_arrival_event = {
+          event_type: "arrived_at_stop",
+          event_at: candidate.candidateAt,
+          latitude: point.latitude,
+          longitude: point.longitude,
+          accuracy_meters: point.accuracy,
+          details: {
+            distance_meters: Math.round(distance),
+            confirmed_at: point.recorded_at,
+            confirming_location_log_id: point.id,
+            candidate_sample_count: candidate.candidateCount,
+            reconciled_from_history: true
+          }
+        };
+        clearReplayCandidate(stop, "arrival");
+      }
+    }
+  } else if (!stop.manual_departure) {
+    const qualifies =
+      distance >
+      Number(stop.geofence_radius_meters) +
+        DISPATCH_STOP_TRANSITION_RULES.departureHysteresisMeters;
+    if (!qualifies) {
+      clearReplayCandidate(stop, "departure");
+    } else {
+      const candidate = nextReplayCandidate(
+        stop,
+        "departure",
+        point,
+        replayState.previous_recorded_at_ms
+      );
+      const arrivalTimeMs = parseManilaTimestamp(stop.replay_arrival_at);
+      if (
+        candidate.confirmed &&
+        Number.isFinite(arrivalTimeMs) &&
+        parseManilaTimestamp(candidate.candidateAt) >= arrivalTimeMs
+      ) {
+        stop.replay_departure_at = candidate.candidateAt;
+        stop.replay_departure_event = {
+          event_type: "departed_stop",
+          event_at: candidate.candidateAt,
+          latitude: point.latitude,
+          longitude: point.longitude,
+          accuracy_meters: point.accuracy,
+          details: {
+            distance_meters: Math.round(distance),
+            confirmed_at: point.recorded_at,
+            confirming_location_log_id: point.id,
+            candidate_sample_count: candidate.candidateCount,
+            reconciled_from_history: true
+          }
+        };
+        clearReplayCandidate(stop, "departure");
+        replayState.current_stop_index += 1;
+      }
+    }
+  }
+
+  replayState.previous_recorded_at_ms = recordedAtMs;
+  replayState.qualified_rows += 1;
 }
 
 class DispatchServiceError extends Error {
@@ -1892,7 +2222,8 @@ class DispatchService {
     ticketId,
     eventSource,
     actor,
-    trackingSessionId = null
+    trackingSessionId = null,
+    eventAt = null
   ) {
     const [remainingRows] = await connection.query(
       `
@@ -1919,17 +2250,18 @@ class DispatchService {
       `
         UPDATE dispatch_tickets
         SET status = 'returning_to_wmo',
-            returning_to_wmo_at = COALESCE(returning_to_wmo_at, NOW()),
+            returning_to_wmo_at = COALESCE(returning_to_wmo_at, ?, NOW()),
             updated_at = NOW()
         WHERE id = ?
       `,
-      [ticketId]
+      [eventAt, ticketId]
     );
     if (!alreadyReturning) {
       await this.insertEvent(connection, {
         dispatch_ticket_id: ticketId,
         tracking_session_id: trackingSessionId,
         event_type: "returning_to_wmo",
+        event_at: eventAt,
         event_source: eventSource,
         ...actor,
         idempotency_key: `returning-to-wmo:${ticketId}`
@@ -2337,6 +2669,445 @@ class DispatchService {
     };
   }
 
+  async reconcileAutomaticStopEvent(
+    connection,
+    relation,
+    stop,
+    event,
+    existingEvent,
+    idempotencyKey
+  ) {
+    if (!event) {
+      if (existingEvent?.id && existingEvent.event_source === "automatic") {
+        await connection.query(
+          `
+            DELETE FROM dispatch_events
+            WHERE id = ?
+              AND event_source = 'automatic'
+          `,
+          [existingEvent.id]
+        );
+      }
+      return;
+    }
+
+    const details = JSON.stringify(event.details || {});
+    if (existingEvent?.id) {
+      if (existingEvent.event_source !== "automatic") return;
+      await connection.query(
+        `
+          UPDATE dispatch_events
+          SET tracking_session_id = ?,
+              event_at = ?,
+              latitude = ?,
+              longitude = ?,
+              accuracy_meters = ?,
+              details = ?
+          WHERE id = ?
+            AND event_source = 'automatic'
+        `,
+        [
+          relation.tracking_session_id,
+          event.event_at,
+          event.latitude,
+          event.longitude,
+          event.accuracy_meters,
+          details,
+          existingEvent.id
+        ]
+      );
+      return;
+    }
+
+    await this.insertEvent(connection, {
+      dispatch_ticket_id: relation.dispatch_ticket_id,
+      dispatch_route_stop_id: stop.id,
+      tracking_session_id: relation.tracking_session_id,
+      event_type: event.event_type,
+      event_at: event.event_at,
+      event_source: "automatic",
+      actor_type: "system",
+      latitude: event.latitude,
+      longitude: event.longitude,
+      accuracy_meters: event.accuracy_meters,
+      details: event.details,
+      idempotency_key: idempotencyKey
+    });
+  }
+
+  async persistAutomaticHistoryStop(connection, replayState, stop) {
+    if (stop.preserve_entirely) return;
+
+    const arrivalAt = stop.manual_arrival
+      ? stop.manual_arrival_at
+      : stop.replay_arrival_at;
+    const departureAt = stop.manual_departure
+      ? stop.manual_departure_at
+      : stop.replay_departure_at;
+    const arrivalSource = stop.manual_arrival
+      ? "manual"
+      : (arrivalAt ? "automatic" : null);
+    const departureSource = stop.manual_departure
+      ? "manual"
+      : (departureAt ? "automatic" : null);
+    const durationSeconds = departureAt && arrivalAt
+      ? durationSecondsBetween(arrivalAt, departureAt)
+      : null;
+    const stopStatus = departureAt
+      ? "completed"
+      : (arrivalAt
+        ? "arrived"
+        : (stop.replay_index === replayState.current_stop_index
+          ? "on_the_way"
+          : "pending"));
+    const completedAt = stop.manual_departure
+      ? stop.completed_at || departureAt
+      : departureAt;
+
+    await connection.query(
+      `
+        UPDATE dispatch_route_stops
+        SET stop_status = ?,
+            actual_arrival_at = ?,
+            arrival_source = ?,
+            arrival_candidate_at = ?,
+            arrival_candidate_count = ?,
+            actual_departure_at = ?,
+            departure_source = ?,
+            departure_candidate_at = ?,
+            departure_candidate_count = ?,
+            stop_duration_seconds = ?,
+            completed_at = ?,
+            updated_at = NOW()
+        WHERE id = ?
+      `,
+      [
+        stopStatus,
+        arrivalAt,
+        arrivalSource,
+        stop.replay_arrival_candidate_at,
+        stop.replay_arrival_candidate_count,
+        departureAt,
+        departureSource,
+        stop.replay_departure_candidate_at,
+        stop.replay_departure_candidate_count,
+        durationSeconds,
+        completedAt,
+        stop.id
+      ]
+    );
+  }
+
+  async reconcileAutomaticDispatchHistory(relationId) {
+    const relationKey = requiredId(relationId, "dispatch tracking relation id");
+    return this.withTransaction(async (connection) => {
+      const [relationRows] = await connection.query(
+        `
+          SELECT
+            dts.*,
+            dt.status AS dispatch_status,
+            dt.actual_end_at,
+            dt.cancelled_at,
+            dt.completed_at AS dispatch_completed_at,
+            tts.session_status,
+            tts.started_at AS tracking_started_at,
+            tts.ended_at AS tracking_ended_at
+          FROM dispatch_tracking_sessions dts
+          INNER JOIN dispatch_tickets dt
+            ON dt.id = dts.dispatch_ticket_id
+          INNER JOIN truck_tracking_sessions tts
+            ON tts.id = dts.tracking_session_id
+          WHERE dts.id = ?
+            AND dts.unlinked_at IS NULL
+          FOR UPDATE
+        `,
+        [relationKey]
+      );
+      if (!relationRows.length) {
+        return { replayed: false, reason: "relation_not_found" };
+      }
+
+      const relation = relationRows[0];
+      const [stopRows] = await connection.query(
+        `
+          SELECT *
+          FROM dispatch_route_stops
+          WHERE dispatch_ticket_id = ?
+          ORDER BY stop_order ASC, id ASC
+          FOR UPDATE
+        `,
+        [relation.dispatch_ticket_id]
+      );
+      const [eventRows] = await connection.query(
+        `
+          SELECT *
+          FROM dispatch_events
+          WHERE dispatch_ticket_id = ?
+            AND event_type IN (
+              'arrived_at_stop',
+              'departed_stop',
+              'stop_completed',
+              'stop_skipped',
+              'returning_to_wmo'
+            )
+          ORDER BY event_at ASC, id ASC
+          FOR UPDATE
+        `,
+        [relation.dispatch_ticket_id]
+      );
+      const [boundaryRows] = await connection.query(
+        `
+          SELECT COALESCE(MAX(id), 0) AS max_location_log_id
+          FROM truck_location_logs
+          WHERE session_id = ?
+        `,
+        [relation.tracking_session_id]
+      );
+      const maxLocationLogId = Number(
+        boundaryRows[0]?.max_location_log_id || 0
+      );
+      const replayState = createDispatchHistoryReplayState(
+        stopRows,
+        eventRows,
+        { ticketStatus: relation.dispatch_status }
+      );
+      const cutoffAt = [
+        relation.actual_end_at,
+        relation.cancelled_at,
+        relation.dispatch_completed_at,
+        relation.session_status === "active" ? null : relation.tracking_ended_at
+      ]
+        .map((value) => parseManilaTimestamp(value))
+        .filter(Number.isFinite)
+        .sort((left, right) => left - right)[0];
+      const referenceTimeMs = this.now().getTime();
+      const trackingStartedAtMs = parseManilaTimestamp(
+        relation.tracking_started_at
+      );
+      let afterRecordedAt = null;
+      let afterId = 0;
+      let pagesProcessed = 0;
+      let rowsProcessed = 0;
+
+      while (maxLocationLogId > 0) {
+        const parameters = [
+          relation.tracking_session_id,
+          maxLocationLogId
+        ];
+        const afterClause = afterRecordedAt
+          ? `
+              AND (
+                recorded_at > ?
+                OR (recorded_at = ? AND id > ?)
+              )
+            `
+          : "";
+        if (afterRecordedAt) {
+          parameters.push(afterRecordedAt, afterRecordedAt, afterId);
+        }
+        parameters.push(DISPATCH_HISTORY_REPLAY_PAGE_SIZE);
+
+        const [locationRows] = await connection.query(
+          `
+            SELECT
+              id,
+              session_id,
+              latitude,
+              longitude,
+              accuracy,
+              DATE_FORMAT(recorded_at, '%Y-%m-%d %H:%i:%s') AS recorded_at
+            FROM truck_location_logs
+            WHERE session_id = ?
+              AND id <= ?
+              ${afterClause}
+            ORDER BY recorded_at ASC, id ASC
+            LIMIT ?
+          `,
+          parameters
+        );
+        if (!locationRows.length) break;
+
+        pagesProcessed += 1;
+        rowsProcessed += locationRows.length;
+        for (const locationLog of locationRows) {
+          applyDispatchHistoryLocation(replayState, locationLog, {
+            referenceTimeMs,
+            startMs: trackingStartedAtMs,
+            cutoffMs: cutoffAt
+          });
+        }
+
+        const lastLocation = locationRows[locationRows.length - 1];
+        const nextAfterRecordedAt = normalizedHistoryTimestamp(
+          lastLocation.recorded_at
+        );
+        const nextAfterId = Number(lastLocation.id);
+        if (
+          !nextAfterRecordedAt ||
+          (nextAfterRecordedAt === afterRecordedAt && nextAfterId <= afterId)
+        ) {
+          throw new DispatchServiceError(
+            "Dispatch history replay made no paging progress",
+            500,
+            "DISPATCH_HISTORY_REPLAY_STALLED"
+          );
+        }
+        afterRecordedAt = nextAfterRecordedAt;
+        afterId = nextAfterId;
+
+        if (locationRows.length < DISPATCH_HISTORY_REPLAY_PAGE_SIZE) break;
+      }
+
+      for (const stop of replayState.stops) {
+        await this.persistAutomaticHistoryStop(connection, replayState, stop);
+        if (stop.preserve_entirely) continue;
+        await this.reconcileAutomaticStopEvent(
+          connection,
+          relation,
+          stop,
+          stop.manual_arrival ? null : stop.replay_arrival_event,
+          stop.existing_auto_arrival_event,
+          `auto-arrive:${relation.dispatch_ticket_id}:${stop.id}`
+        );
+        await this.reconcileAutomaticStopEvent(
+          connection,
+          relation,
+          stop,
+          stop.manual_departure ? null : stop.replay_departure_event,
+          stop.existing_auto_departure_event,
+          `auto-depart:${relation.dispatch_ticket_id}:${stop.id}`
+        );
+      }
+
+      if (
+        relation.dispatch_status === "dispatched" &&
+        replayState.stops.some((stop) => Boolean(stop.replay_arrival_at))
+      ) {
+        await connection.query(
+          `
+            UPDATE dispatch_tickets
+            SET status = 'in_progress',
+                updated_at = NOW()
+            WHERE id = ?
+              AND status = 'dispatched'
+          `,
+          [relation.dispatch_ticket_id]
+        );
+      }
+
+      const allStopsTerminal = replayState.stops.length > 0 &&
+        replayState.stops.every((stop) => {
+          if (stop.preserve_entirely) {
+            return TERMINAL_STOP_STATUSES.has(stop.stop_status);
+          }
+          return Boolean(stop.replay_departure_at || stop.manual_departure_at);
+        });
+      const returningEvent = eventRows.find(
+        (event) => event.event_type === "returning_to_wmo"
+      );
+      if (allStopsTerminal) {
+        const finalTransitionAt = replayState.stops
+          .map((stop) => stop.replay_departure_at || stop.manual_terminal_at)
+          .filter(Boolean)
+          .sort()
+          .at(-1) || null;
+        if (
+          finalTransitionAt &&
+          returningEvent?.event_source === "automatic"
+        ) {
+          await connection.query(
+            `
+              UPDATE dispatch_tickets
+              SET returning_to_wmo_at = ?,
+                  updated_at = NOW()
+              WHERE id = ?
+            `,
+            [finalTransitionAt, relation.dispatch_ticket_id]
+          );
+          await connection.query(
+            `
+              UPDATE dispatch_events
+              SET tracking_session_id = ?,
+                  event_at = ?
+              WHERE id = ?
+                AND event_source = 'automatic'
+            `,
+            [
+              relation.tracking_session_id,
+              finalTransitionAt,
+              returningEvent.id
+            ]
+          );
+        } else if (
+          finalTransitionAt &&
+          ["dispatched", "in_progress", "returning_to_wmo"].includes(
+            relation.dispatch_status
+          )
+        ) {
+          await this.moveTicketToReturningIfDone(
+            connection,
+            relation.dispatch_ticket_id,
+            "automatic",
+            { actor_type: "system", actor_id: null, actor_name: null },
+            relation.tracking_session_id,
+            finalTransitionAt
+          );
+        }
+      } else if (
+        !allStopsTerminal &&
+        relation.dispatch_status === "returning_to_wmo" &&
+        returningEvent?.event_source === "automatic"
+      ) {
+        const hasArrival = replayState.stops.some(
+          (stop) => Boolean(stop.replay_arrival_at || stop.manual_arrival_at)
+        );
+        await connection.query(
+          `
+            UPDATE dispatch_tickets
+            SET status = ?,
+                returning_to_wmo_at = NULL,
+                updated_at = NOW()
+            WHERE id = ?
+              AND status = 'returning_to_wmo'
+          `,
+          [
+            hasArrival ? "in_progress" : "dispatched",
+            relation.dispatch_ticket_id
+          ]
+        );
+        await connection.query(
+          `
+            DELETE FROM dispatch_events
+            WHERE id = ?
+              AND event_source = 'automatic'
+          `,
+          [returningEvent.id]
+        );
+      }
+
+      await connection.query(
+        `
+          UPDATE dispatch_tracking_sessions
+          SET last_processed_location_log_id = GREATEST(
+            COALESCE(last_processed_location_log_id, 0),
+            ?
+          )
+          WHERE id = ?
+        `,
+        [maxLocationLogId, relationKey]
+      );
+
+      return {
+        replayed: true,
+        max_location_log_id: maxLocationLogId,
+        pages_processed: pagesProcessed,
+        rows_processed: rowsProcessed,
+        qualified_rows: replayState.qualified_rows,
+        ignored_rows: replayState.ignored_rows
+      };
+    });
+  }
+
   async processAutomaticLocationLog(relationId, locationLog) {
     const relationKey = requiredId(relationId, "dispatch tracking relation id");
     const logId = requiredId(locationLog.id, "location log id");
@@ -2499,30 +3270,16 @@ class DispatchService {
     }
 
     const previousLog = await this.getPreviousLocationLog(connection, locationLog);
-    const previousTime = previousLog ? new Date(previousLog.recorded_at).getTime() : 0;
-    const currentTime = new Date(locationLog.recorded_at).getTime();
-    const hasLongGap =
-      previousTime > 0 &&
-      currentTime > previousTime &&
-      currentTime - previousTime >
-        DISPATCH_STOP_TRANSITION_RULES.arrivalCandidateGapMs;
-    const candidateAt =
-      stop.arrival_candidate_at && !hasLongGap
-        ? stop.arrival_candidate_at
-        : locationLog.recorded_at;
-    const candidateCount =
-      stop.arrival_candidate_at && !hasLongGap
-        ? Number(stop.arrival_candidate_count || 0) + 1
-        : 1;
-    const elapsedSeconds = Math.max(
-      0,
-      (currentTime - new Date(candidateAt).getTime()) / 1000
+    const candidate = evaluateDispatchTransitionCandidate(
+      "arrival",
+      stop.arrival_candidate_at,
+      stop.arrival_candidate_count,
+      locationLog,
+      previousLog ? parseManilaTimestamp(previousLog.recorded_at) : null
     );
+    const { candidateAt, candidateCount } = candidate;
 
-    if (
-      candidateCount >= DISPATCH_STOP_TRANSITION_RULES.confirmationSampleCount &&
-      elapsedSeconds >= DISPATCH_STOP_TRANSITION_RULES.arrivalConfirmationSeconds
-    ) {
+    if (candidate.confirmed) {
       const [arrivalResult] = await connection.query(
         `
           UPDATE dispatch_route_stops
@@ -2609,32 +3366,18 @@ class DispatchService {
     }
 
     const previousLog = await this.getPreviousLocationLog(connection, locationLog);
-    const previousTime = previousLog ? new Date(previousLog.recorded_at).getTime() : 0;
-    const currentTime = new Date(locationLog.recorded_at).getTime();
-    const hasLongGap =
-      previousTime > 0 &&
-      currentTime > previousTime &&
-      currentTime - previousTime >
-        DISPATCH_STOP_TRANSITION_RULES.departureCandidateGapMs;
-    const candidateAt =
-      stop.departure_candidate_at && !hasLongGap
-        ? stop.departure_candidate_at
-        : locationLog.recorded_at;
-    const candidateCount =
-      stop.departure_candidate_at && !hasLongGap
-        ? Number(stop.departure_candidate_count || 0) + 1
-        : 1;
-    const elapsedSeconds = Math.max(
-      0,
-      (currentTime - new Date(candidateAt).getTime()) / 1000
+    const candidate = evaluateDispatchTransitionCandidate(
+      "departure",
+      stop.departure_candidate_at,
+      stop.departure_candidate_count,
+      locationLog,
+      previousLog ? parseManilaTimestamp(previousLog.recorded_at) : null
     );
+    const { candidateAt, candidateCount } = candidate;
 
-    if (
-      candidateCount >= DISPATCH_STOP_TRANSITION_RULES.confirmationSampleCount &&
-      elapsedSeconds >= DISPATCH_STOP_TRANSITION_RULES.departureConfirmationSeconds
-    ) {
-      const arrivalTime = new Date(stop.actual_arrival_at).getTime();
-      const departureTime = new Date(candidateAt).getTime();
+    if (candidate.confirmed) {
+      const arrivalTime = parseManilaTimestamp(stop.actual_arrival_at);
+      const departureTime = parseManilaTimestamp(candidateAt);
       if (
         !Number.isFinite(arrivalTime) ||
         !Number.isFinite(departureTime) ||
@@ -2709,7 +3452,8 @@ class DispatchService {
         relation.dispatch_ticket_id,
         "automatic",
         { actor_type: "system", actor_id: null, actor_name: null },
-        relation.tracking_session_id
+        relation.tracking_session_id,
+        candidateAt
       );
       return;
     }
@@ -2752,6 +3496,7 @@ class DispatchService {
             dt.status AS dispatch_status,
             tts.session_status,
             tts.truck_id,
+            tts.started_at,
             tts.ended_at,
             tts.end_latitude,
             tts.end_longitude,
@@ -2798,9 +3543,20 @@ class DispatchService {
         [relation.tracking_session_id, relation.truck_id]
       );
       let actualQualification = null;
+      const startedAtMs = parseManilaTimestamp(relation.started_at);
+      const endedAtMs = parseManilaTimestamp(relation.ended_at);
       for (const locationRow of locationRows || []) {
-        const qualification = qualifyGpsPointForOperationalUse(locationRow);
-        if (qualification.reliable) {
+        const qualification = qualifyGpsPointForOperationalUse(locationRow, {
+          referenceTimeMs: Number.isFinite(endedAtMs)
+            ? endedAtMs
+            : this.now().getTime()
+        });
+        const pointTimeMs = qualification.point?.timestampMs;
+        const withinTrackingPeriod =
+          qualification.reliable &&
+          (!Number.isFinite(startedAtMs) || pointTimeMs >= startedAtMs) &&
+          (!Number.isFinite(endedAtMs) || pointTimeMs <= endedAtMs);
+        if (withinTrackingPeriod) {
           actualQualification = qualification;
           break;
         }
@@ -2916,3 +3672,8 @@ module.exports.durationSecondsBetween = durationSecondsBetween;
 module.exports.qualifyDispatchStopEvidence = qualifyDispatchStopEvidence;
 module.exports.DISPATCH_STOP_TRANSITION_RULES =
   DISPATCH_STOP_TRANSITION_RULES;
+module.exports.DISPATCH_HISTORY_REPLAY_PAGE_SIZE =
+  DISPATCH_HISTORY_REPLAY_PAGE_SIZE;
+module.exports.createDispatchHistoryReplayState =
+  createDispatchHistoryReplayState;
+module.exports.applyDispatchHistoryLocation = applyDispatchHistoryLocation;
