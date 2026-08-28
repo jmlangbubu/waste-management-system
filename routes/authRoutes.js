@@ -6,6 +6,8 @@ const crypto = require("crypto");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+const mobileSessionService = require("../services/mobileSessionService");
+const mobileAuthRoutes = require("./mobileAuthRoutes");
 
 let nodemailer = null;
 let ResendSDK = null;
@@ -1457,24 +1459,14 @@ router.post("/resend-verification", (req, res) => {
   Pending signups are not in users table, so they cannot login yet.
 */
 router.post("/login", (req, res) => {
-  console.log("==== LOGIN REQUEST START ====");
-  console.log("headers content-type:", req.headers["content-type"]);
-  console.log("req.body:", req.body);
-
   const username = cleanText(req.body ? req.body.username : null);
   const password = cleanText(req.body ? req.body.password : null);
-
-  console.log("username:", username);
-  console.log("password exists:", !!password);
+  const deviceId = cleanText(req.body ? req.body.device_id : null);
 
   if (!username || !password) {
     return res.status(400).json({
       success: false,
-      message: "Username and password are required",
-      debug: {
-        receivedUsername: username || null,
-        receivedPassword: !!password
-      }
+      message: "Username and password are required"
     });
   }
 
@@ -1483,8 +1475,7 @@ router.post("/login", (req, res) => {
       return res.status(500).json({
         success: false,
         message: "Failed to prepare login fields.",
-        error: ensureErr.message,
-        code: ensureErr.code
+        code: "MOBILE_AUTH_LOGIN_PREPARATION_FAILED"
       });
     }
 
@@ -1510,10 +1501,15 @@ router.post("/login", (req, res) => {
 
     db.query(sql, [username], async (err, results) => {
       if (err) {
-        return res.status(500).json({
+        const statusCode = db.shouldReturnServiceUnavailable(err) ? 503 : 500;
+        return res.status(statusCode).json({
           success: false,
-          message: "Database error",
-          error: err.message
+          message: statusCode === 503
+            ? "Database service is temporarily unavailable. Please try again."
+            : "Server error during mobile login.",
+          code: statusCode === 503
+            ? "MOBILE_AUTH_DATABASE_UNAVAILABLE"
+            : "MOBILE_AUTH_DATABASE_LOOKUP_FAILED"
         });
       }
 
@@ -1525,7 +1521,6 @@ router.post("/login", (req, res) => {
       }
 
       const user = results[0];
-      console.log("LOGIN DB USER:", user);
 
       const resolvedRole = (user.role || user.mobile_role || "").toString().trim();
       const resolvedBarangay = (user.barangay || user.assigned_source_name || "").toString().trim();
@@ -1588,22 +1583,48 @@ router.post("/login", (req, res) => {
           profile_avatar_key: user.profile_avatar_key || ""
         };
 
-        console.log("LOGIN RESPONSE USER:", responseUser);
+        let mobileSession;
+        try {
+          mobileSession = await mobileSessionService.createMobileSession(
+            user.id,
+            deviceId || null
+          );
+        } catch (sessionError) {
+          console.warn(
+            "[MobileAuth] Login session creation unavailable:",
+            sessionError.cause?.code || sessionError.code || "UNKNOWN_SESSION_ERROR"
+          );
+          return res.status(503).json({
+            success: false,
+            message: "Mobile authentication is temporarily unavailable.",
+            code: "MOBILE_SESSION_STORE_UNAVAILABLE"
+          });
+        }
 
         return res.status(200).json({
           success: true,
           message: "Login successful",
-          user: responseUser
+          user: responseUser,
+          mobile_session: {
+            token: mobileSession.token,
+            expires_at: mobileSession.expiresAt.toISOString()
+          }
         });
       } catch (compareErr) {
+        console.warn(
+          "[MobileAuth] Password verification failed:",
+          compareErr.code || compareErr.name || "PASSWORD_COMPARE_ERROR"
+        );
         return res.status(500).json({
           success: false,
           message: "Password verification failed",
-          error: compareErr.message
+          code: "MOBILE_AUTH_PASSWORD_VERIFY_FAILED"
         });
       }
     });
   });
 });
+
+router.use("/mobile", mobileAuthRoutes);
 
 module.exports = router;
