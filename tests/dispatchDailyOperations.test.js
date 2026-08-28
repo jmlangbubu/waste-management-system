@@ -169,6 +169,87 @@ function testDailyGroupingCombinesSameTruckOnly() {
   assert.equal(rows.find((row) => row.truck_id === "TRUCK-11").actual_distance_km, null);
 }
 
+function testFleetRowsSeedZeroActivityAndPreserveHistoricalIdentifiers() {
+  const window = manilaDayWindow("2026-08-27");
+  const rows = combineDailyOperationalRows(
+    [
+      {
+        id: 1,
+        truck_id: "TRUCK-001",
+        enforcer_name: "Ana",
+        started_at: "2026-08-27 08:00:00",
+        ended_at: "2026-08-27 09:00:00"
+      }
+    ],
+    [
+      {
+        id: 50,
+        truck_id: "TRUCK-1",
+        truck_name_snapshot: "Historical Truck 1",
+        status: "completed",
+        completed_stop_count: 1,
+        skipped_stop_count: 0,
+        total_stop_duration_seconds: 120
+      },
+      {
+        id: 51,
+        truck_id: "TRUCK-04",
+        truck_name_snapshot: "Old Snapshot Name",
+        status: "completed",
+        completed_stop_count: 2,
+        skipped_stop_count: 0,
+        total_stop_duration_seconds: 300
+      }
+    ],
+    [{ truck_id: "TRUCK-04", actual_gps_point_count: 3, actual_distance_km: 1.25 }],
+    window,
+    "2026-08-27 15:00:00",
+    [
+      {
+        id: 4,
+        truck_code: "TRUCK-04",
+        truck_name: "WMO Truck 04",
+        fleet_condition: "for_maintenance",
+        condition_reason: "Inspection"
+      },
+      {
+        id: 5,
+        truck_code: "TRUCK-05",
+        truck_name: "WMO Truck 05",
+        fleet_condition: "available",
+        condition_reason: null
+      }
+    ]
+  );
+
+  assert.equal(rows.length, 4);
+  const zeroActivity = rows.find((row) => row.truck_id === "TRUCK-05");
+  assert.equal(zeroActivity.registered_fleet_truck, true);
+  assert.equal(zeroActivity.fleet_condition, "available");
+  assert.equal(zeroActivity.dispatch_count, 0);
+  assert.equal(zeroActivity.actual_distance_km, 0);
+  assert.equal(zeroActivity.actual_gps_point_count, 0);
+  assert.equal(zeroActivity.tracking_duration_seconds, 0);
+  assert.equal(zeroActivity.completed_stop_count, 0);
+  assert.equal(zeroActivity.skipped_stop_count, 0);
+  assert.equal(zeroActivity.result, "No Operation");
+
+  const registeredActivity = rows.find((row) => row.truck_id === "TRUCK-04");
+  assert.equal(registeredActivity.registered_fleet_truck, true);
+  assert.equal(registeredActivity.truck_name, "WMO Truck 04");
+  assert.equal(registeredActivity.fleet_condition, "for_maintenance");
+  assert.equal(registeredActivity.dispatch_count, 1);
+  assert.equal(registeredActivity.result, null);
+
+  const historicalPadded = rows.find((row) => row.truck_id === "TRUCK-001");
+  const historicalShort = rows.find((row) => row.truck_id === "TRUCK-1");
+  assert.equal(historicalPadded.registered_fleet_truck, false);
+  assert.equal(historicalShort.registered_fleet_truck, false);
+  assert.equal(historicalPadded.fleet_condition, null);
+  assert.equal(historicalShort.fleet_condition, null);
+  assert.notEqual(historicalPadded.truck_id, historicalShort.truck_id);
+}
+
 function projectionPool(overrides = {}) {
   const calls = [];
   const pool = {
@@ -183,6 +264,9 @@ function projectionPool(overrides = {}) {
       }
       if (sql.includes("WITH daily_points AS")) {
         return [overrides.metrics || []];
+      }
+      if (sql.includes("FROM fleet_trucks ft")) {
+        return [overrides.fleet || []];
       }
       if (sql.includes("FROM truck_location_logs") && sql.includes("DATE_FORMAT(recorded_at")) {
         return [overrides.points || []];
@@ -207,7 +291,7 @@ async function testListUsesSummaryQueriesAndExactBoundaries() {
   const rows = await service.getDailyReports({ date: "2026-08-27" });
   assert.equal(rows.length, 1);
   assert.equal(rows[0].tracking_duration_seconds, 3600);
-  assert.equal(pool.calls.length, 3);
+  assert.equal(pool.calls.length, 4);
   pool.calls.forEach((call) => assert.equal(
     (call.sql.match(/\?/g) || []).length,
     call.parameters.length,
@@ -229,6 +313,37 @@ async function testListUsesSummaryQueriesAndExactBoundaries() {
   const allSql = pool.calls.map((call) => call.sql).join("\n");
   assert.match(allSql, /actual_start_at[\s\S]*dispatched_at[\s\S]*issued_at/);
   assert.match(allSql, /tts_overlap\.started_at < \?/);
+}
+
+async function testZeroActivityFleetDetailIsReadOnlyAndEmpty() {
+  const pool = projectionPool({
+    fleet: [{
+      id: 4,
+      truck_code: "TRUCK-04",
+      truck_name: "WMO Truck 04",
+      fleet_condition: "available",
+      condition_reason: null
+    }]
+  });
+  const service = new DispatchService(pool, {
+    now: () => new Date("2026-08-27T04:00:00Z")
+  });
+  const detail = await service.getDailyReportDetails("TRUCK-04", {
+    date: "2026-08-27"
+  });
+  assert.equal(detail.summary.result, "No Operation");
+  assert.equal(detail.summary.dispatch_count, 0);
+  assert.equal(detail.summary.actual_distance_km, 0);
+  assert.deepEqual(detail.tracking_sessions, []);
+  assert.deepEqual(detail.dispatches, []);
+  assert.deepEqual(detail.stops, []);
+  assert.deepEqual(detail.route_points, []);
+  assert.deepEqual(detail.events, []);
+  assert.equal(
+    pool.calls.some((call) => /\b(?:INSERT|UPDATE|DELETE|ALTER|CREATE|DROP|TRUNCATE)\b/i.test(call.sql)),
+    false,
+    "zero-activity projection must not fabricate persisted activity"
+  );
 }
 
 async function testDetailReturnsCompactChronologicalEvidence() {
@@ -350,7 +465,9 @@ async function run() {
   testDistanceScalesAndNeverBridgesSessions();
   testStopOccurrenceAndMidnightDwellSplit();
   testDailyGroupingCombinesSameTruckOnly();
+  testFleetRowsSeedZeroActivityAndPreserveHistoricalIdentifiers();
   await testListUsesSummaryQueriesAndExactBoundaries();
+  await testZeroActivityFleetDetailIsReadOnlyAndEmpty();
   await testDetailReturnsCompactChronologicalEvidence();
   await testControllerAndLiteralRouteOrder();
   testReadOnlyContractAndNoDateTimezoneShortcuts();
