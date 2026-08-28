@@ -794,29 +794,39 @@ function combineDailyOperationalRows(
   dispatchRows = [],
   routeMetricRows = [],
   dayWindow,
-  reportNow
+  reportNow,
+  fleetRows = []
 ) {
   const trucks = new Map();
-  const ensureTruck = (truckId) => {
+  const ensureTruck = (truckId, fleetTruck = null) => {
     const key = String(truckId ?? "").trim();
     if (!key) return null;
     if (!trucks.has(key)) {
       trucks.set(key, {
         date: dayWindow.date,
         truck_id: key,
-        truck_name: key,
+        truck_name: cleanText(fleetTruck?.truck_name, 255) || key,
+        registered_fleet_truck: Boolean(fleetTruck),
+        fleet_truck_id: fleetTruck ? Number(fleetTruck.id) : null,
+        fleet_condition: fleetTruck?.fleet_condition || null,
+        condition_reason: fleetTruck?.condition_reason || null,
+        condition_updated_at: fleetTruck?.condition_updated_at || null,
         personnel_names: new Set(),
         dispatch_ids: new Set(),
         completed_stop_count: 0,
         skipped_stop_count: 0,
         total_stop_duration_seconds: 0,
         tracking_intervals: [],
-        actual_distance_km: null,
+        actual_distance_km: fleetTruck ? 0 : null,
         actual_gps_point_count: 0
       });
     }
     return trucks.get(key);
   };
+
+  for (const fleetTruck of fleetRows) {
+    ensureTruck(fleetTruck.truck_code, fleetTruck);
+  }
 
   for (const session of sessionRows) {
     const truck = ensureTruck(session.truck_id);
@@ -836,7 +846,9 @@ function combineDailyOperationalRows(
   for (const dispatch of dispatchRows) {
     const truck = ensureTruck(dispatch.truck_id);
     if (!truck) continue;
-    truck.truck_name = cleanText(dispatch.truck_name_snapshot, 255) || truck.truck_name;
+    if (!truck.registered_fleet_truck) {
+      truck.truck_name = cleanText(dispatch.truck_name_snapshot, 255) || truck.truck_name;
+    }
     if (cleanText(dispatch.assigned_personnel_name, 255)) {
       truck.personnel_names.add(cleanText(dispatch.assigned_personnel_name, 255));
     }
@@ -862,6 +874,11 @@ function combineDailyOperationalRows(
       date: truck.date,
       truck_id: truck.truck_id,
       truck_name: truck.truck_name,
+      registered_fleet_truck: truck.registered_fleet_truck,
+      fleet_truck_id: truck.fleet_truck_id,
+      fleet_condition: truck.fleet_condition,
+      condition_reason: truck.condition_reason,
+      condition_updated_at: truck.condition_updated_at,
       personnel: [...truck.personnel_names].join(", ") || null,
       dispatch_count: truck.dispatch_ids.size,
       completed_stop_count: truck.completed_stop_count,
@@ -869,7 +886,14 @@ function combineDailyOperationalRows(
       actual_distance_km: truck.actual_distance_km,
       actual_gps_point_count: truck.actual_gps_point_count,
       tracking_duration_seconds: mergedIntervalSeconds(truck.tracking_intervals),
-      total_stop_duration_seconds: truck.total_stop_duration_seconds
+      total_stop_duration_seconds: truck.total_stop_duration_seconds,
+      result:
+        truck.registered_fleet_truck &&
+        truck.dispatch_ids.size === 0 &&
+        truck.tracking_intervals.length === 0 &&
+        truck.actual_gps_point_count === 0
+          ? "No Operation"
+          : null
     }))
     .sort((left, right) =>
       left.truck_name.localeCompare(right.truck_name, undefined, { numeric: true }) ||
@@ -3019,6 +3043,22 @@ class DispatchService {
       routeParameters.push(`%${truckSearch}%`);
     }
 
+    const fleetClauses = [];
+    const fleetParameters = [];
+    if (exactTruckId) {
+      fleetClauses.push("ft.truck_code = ?");
+      fleetParameters.push(exactTruckId);
+    } else if (truckSearch) {
+      fleetClauses.push(
+        "(ft.truck_code LIKE ? OR ft.truck_name LIKE ? OR ft.plate_number LIKE ?)"
+      );
+      fleetParameters.push(
+        `%${truckSearch}%`,
+        `%${truckSearch}%`,
+        `%${truckSearch}%`
+      );
+    }
+
     const stopSummaryParameters = [
       dayWindow.start,
       dayWindow.end,
@@ -3032,7 +3072,7 @@ class DispatchService {
       dayWindow.end
     ];
 
-    const [[sessionRows], [dispatchRows], [routeMetricRows]] = await Promise.all([
+    const [[sessionRows], [dispatchRows], [routeMetricRows], [fleetRows]] = await Promise.all([
       this.query(
         `
           SELECT
@@ -3189,6 +3229,22 @@ class DispatchService {
           GROUP BY truck_id
         `,
         routeParameters
+      ),
+      this.query(
+        `
+          SELECT
+            ft.id,
+            ft.truck_code,
+            ft.truck_name,
+            ft.fleet_condition,
+            ft.condition_reason,
+            DATE_FORMAT(ft.condition_updated_at, '%Y-%m-%d %H:%i:%s')
+              AS condition_updated_at
+          FROM fleet_trucks ft
+          ${fleetClauses.length ? `WHERE ${fleetClauses.join(" AND ")}` : ""}
+          ORDER BY ft.truck_name ASC, ft.truck_code ASC, ft.id ASC
+        `,
+        fleetParameters
       )
     ]);
 
@@ -3197,9 +3253,17 @@ class DispatchService {
       dispatchRows,
       routeMetricRows,
       dayWindow,
-      reportNow
+      reportNow,
+      fleetRows
     );
-    return { dayWindow, reportNow, summaries, sessionRows, dispatchRows };
+    return {
+      dayWindow,
+      reportNow,
+      summaries,
+      sessionRows,
+      dispatchRows,
+      fleetRows
+    };
   }
 
   async getDailyReports(filters = {}) {
@@ -3323,10 +3387,15 @@ class DispatchService {
 
     const stopMetrics = dailyStopMetrics(stops, projection.dayWindow);
     const routeMetrics = dailyRouteMetrics(routePoints);
+    const detailDistanceKm =
+      summary.registered_fleet_truck && routeMetrics.actual_gps_point_count === 0
+        ? 0
+        : routeMetrics.actual_distance_km;
     return {
       summary: {
         ...summary,
         ...routeMetrics,
+        actual_distance_km: detailDistanceKm,
         completed_stop_count: stopMetrics.completed_stop_count,
         skipped_stop_count: stopMetrics.skipped_stop_count,
         total_stop_duration_seconds: stopMetrics.total_stop_duration_seconds
