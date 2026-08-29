@@ -5841,11 +5841,15 @@ function dispatchDailyReportDateLabel(value) {
   });
 }
 
-function dispatchDailyDistance(value, pointCount) {
+function dispatchDailyDistance(value, pointCount, result = "") {
   const distance = Number(value);
-  return Number(pointCount) > 0 && Number.isFinite(distance)
-    ? `${distance.toFixed(2)} km`
-    : "Not recorded";
+  if (Number(pointCount) > 0 && Number.isFinite(distance)) {
+    return `${distance.toFixed(2)} km`;
+  }
+  if (String(result || "").trim() === "No Operation" && Number.isFinite(distance)) {
+    return `${distance.toFixed(2)} km`;
+  }
+  return "Not recorded";
 }
 
 function renderDispatchDailyReportsTable() {
@@ -5858,11 +5862,11 @@ function renderDispatchDailyReportsTable() {
   tbody.innerHTML = dispatchDailyReportsCache.map((report) => `
     <tr>
       <td>${dispatchEscape(dispatchDailyReportDateLabel(report.date))}</td>
-      <td><strong>${dispatchEscape(dispatchRecordedText(report.truck_name || report.truck_id))}</strong><small class="dispatch-daily-truck-id">${dispatchEscape(dispatchRecordedText(report.truck_id))}</small></td>
+      <td><strong>${dispatchEscape(dispatchRecordedText(report.truck_name || report.truck_id))}</strong><small class="dispatch-daily-truck-id">${dispatchEscape(dispatchRecordedText(report.truck_id))}${report.result ? ` · ${dispatchEscape(report.result)}` : ""}</small></td>
       <td>${dispatchEscape(dispatchRecordedText(report.personnel))}</td>
       <td>${dispatchEscape(Number(report.dispatch_count || 0))}</td>
       <td><span class="dispatch-daily-stop-summary"><strong>${dispatchEscape(Number(report.completed_stop_count || 0))}</strong> completed · <strong>${dispatchEscape(Number(report.skipped_stop_count || 0))}</strong> skipped</span></td>
-      <td>${dispatchEscape(dispatchDailyDistance(report.actual_distance_km, report.actual_gps_point_count))}</td>
+      <td>${dispatchEscape(dispatchDailyDistance(report.actual_distance_km, report.actual_gps_point_count, report.result))}</td>
       <td>${dispatchEscape(dispatchFormatDuration(report.tracking_duration_seconds || 0))}</td>
       <td>${dispatchEscape(dispatchFormatDuration(report.total_stop_duration_seconds || 0))}</td>
       <td><button type="button" class="dispatch-report-view-button" data-dispatch-view-daily-report="${dispatchEscape(report.truck_id)}" data-dispatch-report-date="${dispatchEscape(report.date)}">View</button></td>
@@ -6479,7 +6483,8 @@ function renderDispatchDailyReportDetails(data = {}) {
   }
   const distance = dispatchDailyDistance(
     summary.actual_distance_km,
-    summary.actual_gps_point_count
+    summary.actual_gps_point_count,
+    summary.result
   );
   const dispatchMarkup = dispatches.length ? dispatches.map((dispatch) => `
     <article class="dispatch-daily-dispatch-card">
@@ -6515,7 +6520,7 @@ function renderDispatchDailyReportDetails(data = {}) {
 
   body.innerHTML = `
     <section class="dispatch-report-hero">
-      <div><span>Daily Operational Report</span><h4>${dispatchEscape(dispatchRecordedText(summary.truck_name || summary.truck_id))}</h4><p>${dispatchEscape(dispatchDailyReportDateLabel(summary.date))} · Asia/Manila</p></div>
+      <div><span>Daily Operational Report</span><h4>${dispatchEscape(dispatchRecordedText(summary.truck_name || summary.truck_id))}</h4><p>${dispatchEscape(dispatchDailyReportDateLabel(summary.date))} · Asia/Manila${summary.result ? ` · ${dispatchEscape(summary.result)}` : ""}</p></div>
     </section>
     <section class="dispatch-report-section"><h4>Daily Summary</h4><div class="dispatch-report-summary-grid">
       <div><span>Dispatches</span><strong>${dispatchEscape(Number(summary.dispatch_count || 0))}</strong></div>

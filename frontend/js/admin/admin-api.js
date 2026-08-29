@@ -163,6 +163,22 @@ function getTrackingReportDetailsApiUrl(sessionId) {
 }
 
 // =========================
+// FLEET
+// =========================
+
+function getFleetTrucksApiUrl() {
+  return `${getAppApiBase()}/fleet/trucks`;
+}
+
+function getFleetSummaryApiUrl() {
+  return `${getAppApiBase()}/fleet/summary`;
+}
+
+function getFleetTruckConditionApiUrl(truckId) {
+  return `${getFleetTrucksApiUrl()}/${encodeURIComponent(truckId)}/condition`;
+}
+
+// =========================
 // DISPATCH
 // =========================
 
@@ -239,6 +255,9 @@ window.clearCachedWebUser = clearCachedWebUser;
 window.webAdminFetch = webAdminFetch;
 window.getWebAuthSessionApiUrl = getWebAuthSessionApiUrl;
 window.getWebAuthLogoutApiUrl = getWebAuthLogoutApiUrl;
+window.getFleetTrucksApiUrl = getFleetTrucksApiUrl;
+window.getFleetSummaryApiUrl = getFleetSummaryApiUrl;
+window.getFleetTruckConditionApiUrl = getFleetTruckConditionApiUrl;
 
 // =========================
 // COMPLAINTS

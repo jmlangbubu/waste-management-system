@@ -35,6 +35,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     setupCategoryRangeFilters?.();
 
     // Tracking module
+    safeRun(initializeFleetMonitoring, "initializeFleetMonitoring");
     safeRun(initializeTruckMap, "initializeTruckMap");
     safeRun(setupDispatchModule, "setupDispatchModule");
     safeRun(startTrackingAutoRefresh, "startTrackingAutoRefresh");

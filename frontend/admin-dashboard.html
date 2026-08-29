@@ -25,6 +25,7 @@
 <link rel="stylesheet" href="css/admin/admin-responsive.css">
 <link rel="stylesheet" href="css/admin/admin-overrides.css">
 <link rel="stylesheet" href="css/admin/admin-dashboard.css">
+<link rel="stylesheet" href="css/admin/admin-fleet.css">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
 
@@ -902,6 +903,76 @@
 
 <!-- TRACKING -->
 <section id="trackingSection" class="content-section">
+  <div class="page-card fleet-overview-card" aria-labelledby="fleetOverviewTitle">
+    <div class="fleet-overview-header">
+      <div>
+        <span class="fleet-overview-eyebrow">Registered WMO fleet</span>
+        <h2 id="fleetOverviewTitle">Fleet Overview</h2>
+        <p>Fleet condition and current operational activity are reported separately.</p>
+      </div>
+      <div class="fleet-overview-actions">
+        <button type="button" class="fleet-button secondary" id="fleetRefreshBtn" aria-label="Refresh fleet overview">
+          Refresh
+        </button>
+        <button type="button" class="fleet-button primary" id="fleetAddTruckBtn">
+          Add Truck
+        </button>
+      </div>
+    </div>
+
+    <div class="fleet-summary-grid" aria-label="Fleet summary">
+      <article class="fleet-summary-card total">
+        <span>Total Trucks</span>
+        <strong id="fleetSummaryTotal">0</strong>
+        <small>Registered fleet</small>
+      </article>
+      <article class="fleet-summary-card available">
+        <span>Available</span>
+        <strong id="fleetSummaryAvailable">0</strong>
+        <small>Fleet condition</small>
+      </article>
+      <article class="fleet-summary-card active">
+        <span>Active</span>
+        <strong id="fleetSummaryActive">0</strong>
+        <small>Operational state</small>
+      </article>
+      <article class="fleet-summary-card maintenance">
+        <span>For Maintenance</span>
+        <strong id="fleetSummaryMaintenance">0</strong>
+        <small>Fleet condition</small>
+      </article>
+      <article class="fleet-summary-card unavailable">
+        <span>Out of Service</span>
+        <strong id="fleetSummaryOutOfService">0</strong>
+        <small>Fleet condition</small>
+      </article>
+    </div>
+
+    <p class="fleet-summary-note">
+      Active is an operational count. Condition totals may overlap with active operations.
+    </p>
+
+    <div id="fleetStatusMessage" class="fleet-status-message hidden" role="status" aria-live="polite"></div>
+    <div class="fleet-table-shell">
+      <table class="fleet-table">
+        <thead>
+          <tr>
+            <th>Truck</th>
+            <th>Plate Number</th>
+            <th>Fleet Condition</th>
+            <th>Operational State</th>
+            <th>GPS</th>
+            <th>Assignable</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="fleetTableBody">
+          <tr><td colspan="7" class="fleet-table-state">Loading registered fleet...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
   <div class="page-card live-tracking-card">
     <div class="tracking-module-toolbar">
       <span class="tracking-eyebrow">WMO operations workspace</span>
@@ -1292,6 +1363,86 @@
     </div>
   </div>
 </section>
+
+<div id="fleetAddTruckModal" class="custom-modal fleet-modal hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="fleetAddTruckTitle">
+  <div class="custom-modal-overlay" id="fleetAddTruckOverlay"></div>
+  <div class="custom-modal-content fleet-modal-content">
+    <div class="custom-modal-header">
+      <div>
+        <h3 id="fleetAddTruckTitle">Add Fleet Truck</h3>
+        <p>Register a verified truck in the official WMO fleet roster.</p>
+      </div>
+      <button type="button" class="modal-close-btn" id="fleetAddTruckCloseBtn" aria-label="Close add truck dialog">&times;</button>
+    </div>
+    <div class="custom-modal-body">
+      <form id="fleetAddTruckForm" class="fleet-form" novalidate>
+        <div class="fleet-form-grid">
+          <div class="fleet-form-field">
+            <label for="fleetTruckCode">Truck Code <span aria-hidden="true">*</span></label>
+            <input type="text" id="fleetTruckCode" name="truck_code" maxlength="100" autocomplete="off" required>
+          </div>
+          <div class="fleet-form-field">
+            <label for="fleetTruckName">Truck Name <span aria-hidden="true">*</span></label>
+            <input type="text" id="fleetTruckName" name="truck_name" maxlength="150" autocomplete="off" required>
+          </div>
+          <div class="fleet-form-field">
+            <label for="fleetPlateNumber">Plate Number</label>
+            <input type="text" id="fleetPlateNumber" name="plate_number" maxlength="50" autocomplete="off">
+          </div>
+          <div class="fleet-form-field">
+            <label for="fleetInitialCondition">Fleet Condition</label>
+            <select id="fleetInitialCondition" name="fleet_condition">
+              <option value="available" selected>Available</option>
+              <option value="for_maintenance">For Maintenance</option>
+              <option value="out_of_service">Out of Service</option>
+            </select>
+          </div>
+        </div>
+        <div id="fleetInitialReasonField" class="fleet-form-field hidden">
+          <label for="fleetInitialReason">Condition Reason <span aria-hidden="true">*</span></label>
+          <textarea id="fleetInitialReason" name="condition_reason" maxlength="500" rows="3"></textarea>
+        </div>
+        <div id="fleetAddTruckFeedback" class="fleet-form-feedback hidden" role="alert"></div>
+        <div class="fleet-form-actions">
+          <button type="submit" class="fleet-button primary" id="fleetAddTruckSubmitBtn">Add Truck</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div id="fleetConditionModal" class="custom-modal fleet-modal hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="fleetConditionTitle">
+  <div class="custom-modal-overlay" id="fleetConditionOverlay"></div>
+  <div class="custom-modal-content fleet-modal-content">
+    <div class="custom-modal-header">
+      <div>
+        <h3 id="fleetConditionTitle">Change Fleet Condition</h3>
+        <p id="fleetConditionTruckLabel">Select the truck's roster condition.</p>
+      </div>
+      <button type="button" class="modal-close-btn" id="fleetConditionCloseBtn" aria-label="Close condition dialog">&times;</button>
+    </div>
+    <div class="custom-modal-body">
+      <form id="fleetConditionForm" class="fleet-form" novalidate>
+        <div class="fleet-form-field">
+          <label for="fleetConditionValue">Fleet Condition</label>
+          <select id="fleetConditionValue" name="fleet_condition">
+            <option value="available">Available</option>
+            <option value="for_maintenance">For Maintenance</option>
+            <option value="out_of_service">Out of Service</option>
+          </select>
+        </div>
+        <div id="fleetConditionReasonField" class="fleet-form-field hidden">
+          <label for="fleetConditionReason">Condition Reason <span aria-hidden="true">*</span></label>
+          <textarea id="fleetConditionReason" name="condition_reason" maxlength="500" rows="3"></textarea>
+        </div>
+        <div id="fleetConditionFeedback" class="fleet-form-feedback hidden" role="alert"></div>
+        <div class="fleet-form-actions">
+          <button type="submit" class="fleet-button primary" id="fleetConditionSubmitBtn">Save Condition</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
 
 
 
@@ -2865,6 +3016,7 @@
 <script src="js/admin/admin-orientation.js"></script>
 <script src="js/admin/admin-dispatch.js"></script>
 <script src="js/admin/admin-tracking.js"></script>
+<script src="js/admin/admin-fleet.js"></script>
 <script src="js/admin/admin-users.js"></script>
 <script src="js/admin/admin-invoices.js"></script>
 <script src="js/admin/admin-other.js"></script>
