@@ -22,6 +22,7 @@
 <link rel="stylesheet" href="css/admin/admin-complaints.css">
 <link rel="stylesheet" href="css/admin/admin-profile.css">
 <link rel="stylesheet" href="css/admin/admin-dispatch.css">
+<link rel="stylesheet" href="css/admin/admin-dispatch-plans.css">
 <link rel="stylesheet" href="css/admin/admin-responsive.css">
 <link rel="stylesheet" href="css/admin/admin-overrides.css">
 <link rel="stylesheet" href="css/admin/admin-dashboard.css">
@@ -973,6 +974,57 @@
     </div>
   </div>
 
+  <div id="dispatchPlansWorkspace" class="page-card dispatch-plans-card" aria-labelledby="dispatchPlansTitle" hidden>
+    <div class="dispatch-plans-header">
+      <div>
+        <span class="dispatch-plans-eyebrow">Pre-operation planning</span>
+        <h2 id="dispatchPlansTitle">Dispatch Planning</h2>
+        <p>Prepare manual truck, enforcer, and ordered destination assignments for an operational date.</p>
+      </div>
+      <div class="dispatch-plans-header-actions">
+        <button type="button" class="dispatch-plans-button secondary" id="dispatchPlansRefreshBtn">Refresh</button>
+        <button type="button" class="dispatch-plans-button primary" id="dispatchPlanCreateBtn">Create Plan</button>
+      </div>
+    </div>
+
+    <div class="dispatch-plans-filters" aria-label="Dispatch plan filters">
+      <label class="dispatch-plan-field">
+        <span>Operational Date</span>
+        <input type="date" id="dispatchPlansDateFilter">
+      </label>
+      <label class="dispatch-plan-field">
+        <span>Status</span>
+        <select id="dispatchPlansStatusFilter">
+          <option value="">All statuses</option>
+          <option value="planned">Planned</option>
+          <option value="activated">Activated</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+      </label>
+    </div>
+
+    <div id="dispatchPlansStatusMessage" class="dispatch-plans-status hidden" role="status" aria-live="polite"></div>
+    <div class="dispatch-plans-table-shell">
+      <table class="dispatch-plans-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Truck</th>
+            <th>Enforcer</th>
+            <th>Route</th>
+            <th>Stops</th>
+            <th>Schedule</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="dispatchPlansTableBody">
+          <tr><td colspan="8" class="dispatch-plans-table-state">Loading planned dispatches...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
   <div class="page-card live-tracking-card">
     <div class="tracking-module-toolbar">
       <span class="tracking-eyebrow">WMO operations workspace</span>
@@ -1363,6 +1415,140 @@
     </div>
   </div>
 </section>
+
+<div id="dispatchPlanFormModal" class="custom-modal dispatch-plan-modal hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="dispatchPlanFormTitle">
+  <div class="custom-modal-overlay" id="dispatchPlanFormOverlay"></div>
+  <div class="custom-modal-content dispatch-plan-modal-content">
+    <div class="custom-modal-header">
+      <div>
+        <span class="dispatch-plans-eyebrow">Manual WMO assignment</span>
+        <h3 id="dispatchPlanFormTitle">Create Dispatch Plan</h3>
+        <p id="dispatchPlanFormSubtitle">Select the operational date, assigned team, and ordered destinations.</p>
+      </div>
+      <button type="button" class="modal-close-btn" id="dispatchPlanFormCloseBtn" aria-label="Close dispatch plan form">&times;</button>
+    </div>
+    <div class="custom-modal-body dispatch-plan-modal-body">
+      <form id="dispatchPlanForm" class="dispatch-plan-form" novalidate>
+        <input type="hidden" id="dispatchPlanEditingId">
+
+        <section class="dispatch-plan-form-section" aria-labelledby="dispatchPlanAssignmentHeading">
+          <div class="dispatch-plan-section-heading">
+            <span>1</span>
+            <div><h4 id="dispatchPlanAssignmentHeading">Assignment</h4><p>Choose the date, eligible fleet truck, and active mobile enforcer.</p></div>
+          </div>
+          <div class="dispatch-plan-form-grid">
+            <label class="dispatch-plan-field">
+              <span>Operational Date <b aria-hidden="true">*</b></span>
+              <input type="date" id="dispatchPlanOperationalDate" required>
+            </label>
+            <label class="dispatch-plan-field">
+              <span>Fleet Truck <b aria-hidden="true">*</b></span>
+              <select id="dispatchPlanFleetTruck" required><option value="">Choose an eligible truck</option></select>
+            </label>
+            <p id="dispatchPlanTruckGuidance" class="dispatch-plan-field-guidance hidden"></p>
+            <label class="dispatch-plan-field">
+              <span>Enforcer <b aria-hidden="true">*</b></span>
+              <select id="dispatchPlanEnforcer" required><option value="">Choose an eligible enforcer</option></select>
+            </label>
+            <p id="dispatchPlanEnforcerGuidance" class="dispatch-plan-field-guidance hidden"></p>
+          </div>
+        </section>
+
+        <section class="dispatch-plan-form-section" aria-labelledby="dispatchPlanDestinationsHeading">
+          <div class="dispatch-plan-section-heading">
+            <span>2</span>
+            <div><h4 id="dispatchPlanDestinationsHeading">Ordered Destinations</h4><p>Add verified destinations, then set their exact visit order manually.</p></div>
+          </div>
+          <div class="dispatch-plan-destination-picker">
+            <label class="dispatch-plan-field">
+              <span>Verified Destination</span>
+              <select id="dispatchPlanDestinationSelect"><option value="">Choose a destination</option></select>
+            </label>
+            <button type="button" class="dispatch-plans-button secondary" id="dispatchPlanAddDestinationBtn">Add Stop</button>
+          </div>
+          <p id="dispatchPlanDestinationGuidance" class="dispatch-plan-field-guidance hidden"></p>
+          <div id="dispatchPlanStops" class="dispatch-plan-stops" aria-live="polite"></div>
+        </section>
+
+        <section class="dispatch-plan-form-section" aria-labelledby="dispatchPlanScheduleHeading">
+          <div class="dispatch-plan-section-heading">
+            <span>3</span>
+            <div><h4 id="dispatchPlanScheduleHeading">Schedule and Route Information</h4><p>Optional planning notes only; no route optimization is performed.</p></div>
+          </div>
+          <div class="dispatch-plan-form-grid">
+            <label class="dispatch-plan-field dispatch-plan-field-wide">
+              <span>Route Name</span>
+              <input type="text" id="dispatchPlanRouteName" maxlength="180" placeholder="Planned Route">
+            </label>
+            <label class="dispatch-plan-field dispatch-plan-field-wide">
+              <span>Description</span>
+              <textarea id="dispatchPlanDescription" maxlength="5000" rows="3"></textarea>
+            </label>
+            <label class="dispatch-plan-field">
+              <span>Scheduled Start</span>
+              <input type="datetime-local" id="dispatchPlanScheduledStart">
+            </label>
+            <label class="dispatch-plan-field">
+              <span>Expected Return</span>
+              <input type="datetime-local" id="dispatchPlanExpectedReturn">
+            </label>
+            <label class="dispatch-plan-field dispatch-plan-field-wide">
+              <span>Notes</span>
+              <textarea id="dispatchPlanNotes" maxlength="5000" rows="3"></textarea>
+            </label>
+          </div>
+        </section>
+
+        <section class="dispatch-plan-review" aria-labelledby="dispatchPlanReviewHeading">
+          <div><span>4</span><strong id="dispatchPlanReviewHeading">Review</strong></div>
+          <p id="dispatchPlanReviewSummary">Choose an eligible truck, enforcer, and at least one ordered destination.</p>
+          <small id="dispatchPlanFormRevision" class="hidden"></small>
+        </section>
+
+        <div id="dispatchPlanFormFeedback" class="dispatch-plan-feedback hidden" role="alert"></div>
+        <div class="dispatch-plan-form-actions">
+          <button type="button" class="dispatch-plans-button secondary" id="dispatchPlanFormCancelBtn">Cancel</button>
+          <button type="submit" class="dispatch-plans-button primary" id="dispatchPlanSaveBtn">Save Plan</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div id="dispatchPlanDetailModal" class="custom-modal dispatch-plan-modal hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="dispatchPlanDetailTitle">
+  <div class="custom-modal-overlay" id="dispatchPlanDetailOverlay"></div>
+  <div class="custom-modal-content dispatch-plan-modal-content dispatch-plan-detail-content">
+    <div class="custom-modal-header">
+      <div><span class="dispatch-plans-eyebrow">Planned dispatch</span><h3 id="dispatchPlanDetailTitle">Dispatch Plan Details</h3></div>
+      <button type="button" class="modal-close-btn" id="dispatchPlanDetailCloseBtn" aria-label="Close dispatch plan details">&times;</button>
+    </div>
+    <div id="dispatchPlanDetailBody" class="custom-modal-body dispatch-plan-detail-body"></div>
+  </div>
+</div>
+
+<div id="dispatchPlanCancelModal" class="custom-modal dispatch-plan-modal hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="dispatchPlanCancelTitle">
+  <div class="custom-modal-overlay" id="dispatchPlanCancelOverlay"></div>
+  <div class="custom-modal-content dispatch-plan-modal-content dispatch-plan-cancel-content">
+    <div class="custom-modal-header">
+      <div><span class="dispatch-plans-eyebrow">Preserve plan history</span><h3 id="dispatchPlanCancelTitle">Cancel Dispatch Plan</h3><p>The plan remains available as a read-only historical record.</p></div>
+      <button type="button" class="modal-close-btn" id="dispatchPlanCancelCloseBtn" aria-label="Close cancel dispatch plan dialog">&times;</button>
+    </div>
+    <div class="custom-modal-body">
+      <form id="dispatchPlanCancelForm" class="dispatch-plan-form" novalidate>
+        <input type="hidden" id="dispatchPlanCancelId">
+        <label class="dispatch-plan-field">
+          <span>Cancellation Reason <b aria-hidden="true">*</b></span>
+          <textarea id="dispatchPlanCancellationReason" maxlength="1000" rows="4" required></textarea>
+        </label>
+        <div id="dispatchPlanCancelFeedback" class="dispatch-plan-feedback hidden" role="alert"></div>
+        <div class="dispatch-plan-form-actions">
+          <button type="button" class="dispatch-plans-button secondary" id="dispatchPlanCancelBackBtn">Keep Plan</button>
+          <button type="submit" class="dispatch-plans-button danger" id="dispatchPlanCancelConfirmBtn">Cancel Plan</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
 
 <div id="fleetAddTruckModal" class="custom-modal fleet-modal hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="fleetAddTruckTitle">
   <div class="custom-modal-overlay" id="fleetAddTruckOverlay"></div>
@@ -3015,6 +3201,7 @@
 <script src="js/admin/admin-appointments.js"></script>
 <script src="js/admin/admin-orientation.js"></script>
 <script src="js/admin/admin-dispatch.js"></script>
+<script src="js/admin/admin-dispatch-plans.js"></script>
 <script src="js/admin/admin-tracking.js"></script>
 <script src="js/admin/admin-fleet.js"></script>
 <script src="js/admin/admin-users.js"></script>

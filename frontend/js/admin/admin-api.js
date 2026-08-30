@@ -242,6 +242,31 @@ function getDispatchDestinationApiUrl(destinationId) {
   return `${getAppApiBase()}/dispatch/destinations/${encodeURIComponent(destinationId)}`;
 }
 
+function getDispatchPlansApiUrl(filters = {}) {
+  const parameters = new URLSearchParams();
+  if (filters.operational_date) {
+    parameters.set("operational_date", filters.operational_date);
+  }
+  if (filters.status) parameters.set("status", filters.status);
+  const query = parameters.toString();
+  return `${getAppApiBase()}/dispatch/plans${query ? `?${query}` : ""}`;
+}
+
+function getDispatchPlanApiUrl(planId) {
+  return `${getAppApiBase()}/dispatch/plans/${encodeURIComponent(planId)}`;
+}
+
+function getDispatchPlanOptionsApiUrl(operationalDate) {
+  const parameters = new URLSearchParams({
+    operational_date: String(operationalDate || "")
+  });
+  return `${getAppApiBase()}/dispatch/plans/options?${parameters}`;
+}
+
+function getDispatchPlanCancelApiUrl(planId) {
+  return `${getDispatchPlanApiUrl(planId)}/cancel`;
+}
+
 function getDispatchLocationLabelApiUrl(latitude, longitude) {
   const parameters = new URLSearchParams({
     latitude: String(latitude),
