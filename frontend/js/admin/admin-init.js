@@ -38,6 +38,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     safeRun(initializeFleetMonitoring, "initializeFleetMonitoring");
     safeRun(initializeTruckMap, "initializeTruckMap");
     safeRun(setupDispatchModule, "setupDispatchModule");
+    safeRun(setupDispatchPlansModule, "setupDispatchPlansModule");
     safeRun(startTrackingAutoRefresh, "startTrackingAutoRefresh");
     await safeRun(loadTrackingReports, "loadTrackingReports");
 
