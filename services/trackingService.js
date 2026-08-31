@@ -1091,49 +1091,16 @@ class TrackingService {
         }
 
         const startLocation = this.validateNewTrackingStartLocation(data, Date.now());
-
-        const insertSql = `
-            INSERT INTO truck_tracking_sessions (
-                truck_id,
-                enforcer_id,
-                enforcer_name,
-                device_id,
-                session_status,
-                started_at,
-                shift_end_time,
-                effective_shift_end_time,
-                start_latitude,
-                start_longitude,
-                last_latitude,
-                last_longitude,
-                last_updated_at,
-                last_device_status,
-                last_device_status_at,
-                created_at,
-                updated_at
-            )
-            VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)
-        `;
-
-        const [result] = await db.query(insertSql, [
+        const session = await this.createTrackingSessionWithConnection(db, {
             truck_id,
             enforcer_id,
             enforcer_name,
             device_id,
-            startedAt,
-            compatibilityShiftEnd,
-            compatibilityShiftEnd,
-            startLocation.latitude,
-            startLocation.longitude,
-            startLocation.latitude,
-            startLocation.longitude,
-            startLocation.recorded_at,
-            startedAt,
-            startedAt,
-            startedAt
-        ]);
-
-        const sessionId = result.insertId;
+            started_at: startedAt,
+            shift_end_time: compatibilityShiftEnd,
+            start_location: startLocation
+        });
+        const sessionId = session.id;
 
         await this.upsertLastLocation({
             truck_id,
@@ -1159,6 +1126,76 @@ class TrackingService {
             alreadyActive: false,
             sessionId,
             notification
+        };
+    }
+
+    async createTrackingSessionWithConnection(connection, data = {}) {
+        const truckId = this.cleanText(data.truck_id);
+        if (!truckId) {
+            throw new TrackingStartEligibilityError(
+                "truck_id is required",
+                "TRACKING_START_TRUCK_REQUIRED"
+            );
+        }
+
+        const startedAt = this.normalizeDateTimeText(data.started_at)
+            || this.getManilaNowDateTime();
+        const shiftEndTime = this.normalizeDateTimeText(data.shift_end_time)
+            || startedAt;
+        const startLocation = data.start_location
+            || this.validateNewTrackingStartLocation(data, Date.now());
+
+        const [result] = await connection.query(
+            `
+            INSERT INTO truck_tracking_sessions (
+                truck_id,
+                enforcer_id,
+                enforcer_name,
+                device_id,
+                session_status,
+                started_at,
+                shift_end_time,
+                effective_shift_end_time,
+                start_latitude,
+                start_longitude,
+                last_latitude,
+                last_longitude,
+                last_updated_at,
+                last_device_status,
+                last_device_status_at,
+                created_at,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)
+            `,
+            [
+                truckId,
+                data.enforcer_id ?? null,
+                data.enforcer_name ?? null,
+                data.device_id ?? null,
+                startedAt,
+                shiftEndTime,
+                shiftEndTime,
+                startLocation.latitude,
+                startLocation.longitude,
+                startLocation.latitude,
+                startLocation.longitude,
+                startLocation.recorded_at,
+                startedAt,
+                startedAt,
+                startedAt
+            ]
+        );
+
+        return {
+            id: result.insertId,
+            truck_id: truckId,
+            enforcer_id: data.enforcer_id ?? null,
+            enforcer_name: data.enforcer_name ?? null,
+            device_id: data.device_id ?? null,
+            session_status: "active",
+            started_at: startedAt,
+            start_location: startLocation
         };
     }
 
@@ -1752,7 +1789,7 @@ class TrackingService {
     }
 
 
-    async upsertLastLocation(data) {
+    async upsertLastLocationWithConnection(connection, data) {
         const {
             truck_id,
             session_id,
@@ -1797,7 +1834,7 @@ class TrackingService {
                 updated_at = VALUES(updated_at)
         `;
 
-        await db.query(sql, [
+        await connection.query(sql, [
             truck_id,
             session_id,
             latitude,
@@ -1810,6 +1847,10 @@ class TrackingService {
             status,
             manilaNow
         ]);
+    }
+
+    async upsertLastLocation(data) {
+        return this.upsertLastLocationWithConnection(db, data);
     }
 
     normalizeTrackingDeviceStatus(value) {

@@ -1632,6 +1632,105 @@ class DispatchService {
     }
   }
 
+  async insertPreparedTicketInTransaction(connection, ticketData, options = {}) {
+    let ticketResult;
+    try {
+      [ticketResult] = await connection.query(
+        `
+          INSERT INTO dispatch_tickets (
+            ticket_number,
+            truck_id,
+            truck_name_snapshot,
+            assigned_personnel_id,
+            assigned_personnel_name,
+            dispatch_date,
+            scheduled_start_at,
+            expected_return_at,
+            route_name,
+            route_description,
+            status,
+            notes,
+            created_by_user_id,
+            created_by_name,
+            created_at,
+            updated_at
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'prepared', ?, ?, ?, NOW(), NOW())
+        `,
+        [
+          ticketData.ticket_number,
+          ticketData.truck_id,
+          ticketData.truck_name_snapshot,
+          ticketData.assigned_personnel_id,
+          ticketData.assigned_personnel_name,
+          ticketData.dispatch_date,
+          ticketData.scheduled_start_at,
+          ticketData.expected_return_at,
+          ticketData.route_name,
+          ticketData.route_description,
+          ticketData.notes,
+          ticketData.created_by_user_id,
+          ticketData.created_by_name
+        ]
+      );
+    } catch (error) {
+      if (error?.code === "ER_DUP_ENTRY") {
+        throw duplicateDispatchTicketNumberError(error);
+      }
+      throw error;
+    }
+
+    const ticketId = ticketResult.insertId;
+    if (typeof options.afterTicketInsert === "function") {
+      await options.afterTicketInsert(ticketId);
+    }
+    await this.insertStops(connection, ticketId, ticketData.stops);
+    if (typeof options.afterStopsInsert === "function") {
+      await options.afterStopsInsert(ticketId);
+    }
+    await this.insertEvent(connection, {
+      dispatch_ticket_id: ticketId,
+      event_type: "dispatch_prepared",
+      event_at: options.eventAt || null,
+      event_source: options.eventSource || "web",
+      actor_type: options.actorType || "web_user",
+      actor_id: options.actorId ?? ticketData.created_by_user_id,
+      actor_name: options.actorName ?? ticketData.created_by_name,
+      details: options.details,
+      idempotency_key: `dispatch-prepared:${ticketId}`
+    });
+    if (typeof options.afterPreparedEvent === "function") {
+      await options.afterPreparedEvent(ticketId);
+    }
+
+    return ticketId;
+  }
+
+  async issueTicketInTransaction(connection, ticket, options = {}) {
+    await connection.query(
+      `
+        UPDATE dispatch_tickets
+        SET status = 'dispatched',
+            issued_at = COALESCE(issued_at, ?, NOW()),
+            dispatched_at = COALESCE(dispatched_at, ?, NOW()),
+            updated_at = NOW()
+        WHERE id = ?
+      `,
+      [options.eventAt || null, options.eventAt || null, ticket.id]
+    );
+    await this.insertEvent(connection, {
+      dispatch_ticket_id: ticket.id,
+      event_type: "ticket_issued",
+      event_at: options.eventAt || null,
+      event_source: options.eventSource || "web",
+      ...(options.actor || {}),
+      details: options.plannedRouteSnapshot
+        ? { planned_route: options.plannedRouteSnapshot }
+        : undefined,
+      idempotency_key: `dispatch-issued:${ticket.id}`
+    });
+  }
+
   async insertEvent(connection, event = {}) {
     const eventType = cleanText(event.event_type || event.eventType, 80);
     if (!eventType) {
@@ -1888,65 +1987,7 @@ class DispatchService {
         Number(ticketData.dispatch_date.slice(0, 4))
       );
 
-      let ticketResult;
-      try {
-        [ticketResult] = await connection.query(
-          `
-            INSERT INTO dispatch_tickets (
-              ticket_number,
-              truck_id,
-              truck_name_snapshot,
-              assigned_personnel_id,
-              assigned_personnel_name,
-              dispatch_date,
-              scheduled_start_at,
-              expected_return_at,
-              route_name,
-              route_description,
-              status,
-              notes,
-              created_by_user_id,
-              created_by_name,
-              created_at,
-              updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'prepared', ?, ?, ?, NOW(), NOW())
-          `,
-          [
-            ticketData.ticket_number,
-            ticketData.truck_id,
-            ticketData.truck_name_snapshot,
-            ticketData.assigned_personnel_id,
-            ticketData.assigned_personnel_name,
-            ticketData.dispatch_date,
-            ticketData.scheduled_start_at,
-            ticketData.expected_return_at,
-            ticketData.route_name,
-            ticketData.route_description,
-            ticketData.notes,
-            ticketData.created_by_user_id,
-            ticketData.created_by_name
-          ]
-        );
-      } catch (error) {
-        if (error?.code === "ER_DUP_ENTRY") {
-          throw duplicateDispatchTicketNumberError(error);
-        }
-        throw error;
-      }
-
-      await this.insertStops(connection, ticketResult.insertId, ticketData.stops);
-      await this.insertEvent(connection, {
-        dispatch_ticket_id: ticketResult.insertId,
-        event_type: "dispatch_prepared",
-        event_source: "web",
-        actor_type: "web_user",
-        actor_id: ticketData.created_by_user_id,
-        actor_name: ticketData.created_by_name,
-        idempotency_key: `dispatch-prepared:${ticketResult.insertId}`
-      });
-
-      return ticketResult.insertId;
+      return this.insertPreparedTicketInTransaction(connection, ticketData);
     });
 
     return this.getTicketDetails(ticketId);
@@ -2221,26 +2262,9 @@ class DispatchService {
         }
       }
 
-      await connection.query(
-        `
-          UPDATE dispatch_tickets
-          SET status = 'dispatched',
-              issued_at = COALESCE(issued_at, NOW()),
-              dispatched_at = COALESCE(dispatched_at, NOW()),
-              updated_at = NOW()
-          WHERE id = ?
-        `,
-        [ticket.id]
-      );
-      await this.insertEvent(connection, {
-        dispatch_ticket_id: ticket.id,
-        event_type: "ticket_issued",
-        event_source: "web",
-        ...actor,
-        details: plannedRouteSnapshot
-          ? { planned_route: plannedRouteSnapshot }
-          : undefined,
-        idempotency_key: `dispatch-issued:${ticket.id}`
+      await this.issueTicketInTransaction(connection, ticket, {
+        actor,
+        plannedRouteSnapshot
       });
     });
     return this.getTicketDetails(ticketId);
@@ -2371,7 +2395,8 @@ class DispatchService {
     trackingSessionId,
     linkSource,
     actor,
-    lockedTicket = null
+    lockedTicket = null,
+    options = {}
   ) {
     const ticket = lockedTicket || await this.getTicketAfterTruckDispatchLock(
       connection,
@@ -2450,6 +2475,36 @@ class DispatchService {
       { excludeTicketId: ticket.id, lockAcquired: true }
     );
 
+    await this.linkTrackingSessionRecordInTransaction(
+      connection,
+      ticket.id,
+      sessionId,
+      linkSource
+    );
+    await this.startLinkedDispatchInTransaction(
+      connection,
+      ticket,
+      session,
+      linkSource,
+      actor,
+      options
+    );
+
+    return { ticket, session, alreadyLinked: false };
+  }
+
+  async linkTrackingSessionRecordInTransaction(
+    connection,
+    ticketId,
+    trackingSessionId,
+    linkSource
+  ) {
+    const normalizedTicketId = requiredId(ticketId, "dispatch_ticket_id");
+    const normalizedSessionId = requiredId(
+      trackingSessionId,
+      "tracking_session_id"
+    );
+
     await connection.query(
       `
         UPDATE dispatch_tracking_sessions
@@ -2457,7 +2512,7 @@ class DispatchService {
         WHERE dispatch_ticket_id = ?
           AND unlinked_at IS NULL
       `,
-      [ticket.id]
+      [normalizedTicketId]
     );
     await connection.query(
       `
@@ -2471,8 +2526,18 @@ class DispatchService {
         )
         VALUES (?, ?, 1, ?, NOW(), NOW())
       `,
-      [ticket.id, sessionId, cleanText(linkSource, 40)]
+      [normalizedTicketId, normalizedSessionId, cleanText(linkSource, 40)]
     );
+  }
+
+  async startLinkedDispatchInTransaction(
+    connection,
+    ticket,
+    session,
+    linkSource,
+    actor,
+    options = {}
+  ) {
     await connection.query(
       `
         UPDATE dispatch_tickets
@@ -2497,16 +2562,14 @@ class DispatchService {
     );
     await this.insertEvent(connection, {
       dispatch_ticket_id: ticket.id,
-      tracking_session_id: sessionId,
+      tracking_session_id: session.id,
       event_type: "tracking_started",
       event_at: session.started_at,
-      event_source: "web",
+      event_source: options.eventSource || "web",
       ...actor,
       details: { link_source: linkSource },
-      idempotency_key: `tracking-linked:${ticket.id}:${sessionId}`
+      idempotency_key: `tracking-linked:${ticket.id}:${session.id}`
     });
-
-    return { ticket, session, alreadyLinked: false };
   }
 
   async linkSession(ticketId, payload = {}) {
