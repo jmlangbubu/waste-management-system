@@ -267,12 +267,18 @@ function testBackendRaceGuardRemainsFinalAuthority() {
     "async createTicket(payload = {})",
     "async listTickets(filters = {})"
   );
+  const insert = functionBlock(
+    dispatchService,
+    "async insertPreparedTicketInTransaction",
+    "async issueTicketInTransaction"
+  );
   const guardIndex = create.indexOf("assertTruckHasNoOtherNonTerminalDispatch");
-  const insertIndex = create.indexOf("INSERT INTO dispatch_tickets");
+  const insertHelperIndex = create.indexOf("insertPreparedTicketInTransaction");
 
   assert.match(guard, /NON_TERMINAL_TICKET_STATUSES/);
   assert.match(guard, /FOR UPDATE/);
-  assert.ok(guardIndex >= 0 && guardIndex < insertIndex);
+  assert.ok(guardIndex >= 0 && guardIndex < insertHelperIndex);
+  assert.match(insert, /INSERT INTO dispatch_tickets/);
   assert.match(create, /this\.withTransaction/);
 }
 
