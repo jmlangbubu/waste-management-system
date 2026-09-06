@@ -9,8 +9,29 @@ const read = (relativePath) => fs.readFileSync(path.join(ROOT, relativePath), "u
 const planningSource = read("frontend/js/admin/admin-dispatch-plans.js");
 const apiSource = read("frontend/js/admin/admin-api.js");
 const initSource = read("frontend/js/admin/admin-init.js");
+const navigationSource = read("frontend/js/admin/admin-navigation.js");
 const dashboardHtml = read("frontend/admin-dashboard.html");
 const planningCss = read("frontend/css/admin/admin-dispatch-plans.css");
+
+function countId(id) {
+  return (dashboardHtml.match(new RegExp(`\\bid="${id}"`, "g")) || []).length;
+}
+
+function elementMarkupById(id) {
+  const opening = new RegExp(`<([a-z][\\w-]*)\\b[^>]*\\bid="${id}"[^>]*>`, "i").exec(dashboardHtml);
+  assert.ok(opening, `Expected #${id} to exist`);
+  const tagName = opening[1];
+  const tags = new RegExp(`</?${tagName}\\b[^>]*>`, "gi");
+  tags.lastIndex = opening.index;
+  let depth = 0;
+  let match;
+  while ((match = tags.exec(dashboardHtml))) {
+    if (match[0].startsWith("</")) depth -= 1;
+    else if (!match[0].endsWith("/>")) depth += 1;
+    if (depth === 0) return dashboardHtml.slice(opening.index, tags.lastIndex);
+  }
+  assert.fail(`Expected #${id} to have a closing tag`);
+}
 
 function destination(id, label, barangay = "Lagao") {
   return {
@@ -371,9 +392,52 @@ scenario("Z", "authorization, same-origin helpers, imports, and initialization s
   assert.ok(dashboardHtml.indexOf("admin-api.js") < dashboardHtml.indexOf("admin-dispatch-plans.js"));
   assert.ok(dashboardHtml.indexOf("admin-dispatch-plans.js") < dashboardHtml.indexOf("admin-init.js"));
   assert.equal((initSource.match(/safeRun\(setupDispatchPlansModule/g) || []).length, 1);
-  assert.match(dashboardHtml, /id="trackingSection"[\s\S]*id="dispatchPlansWorkspace"[\s\S]*class="page-card live-tracking-card"/);
+  assert.equal(countId("openDispatchPlanningBtn"), 1);
+  assert.equal(countId("dispatchPlanningModal"), 1);
+  assert.equal(countId("dispatchPlansWorkspace"), 1);
+  const parentMarkup = elementMarkupById("dispatchPlanningModal");
+  assert.match(parentMarkup, /id="dispatchPlansWorkspace"/);
+  assert.match(parentMarkup, /id="dispatchPlansTitle"/);
+  assert.match(parentMarkup, /id="dispatchPlansRefreshBtn"/);
+  assert.match(parentMarkup, /id="dispatchPlanCreateBtn"/);
+  assert.match(parentMarkup, /id="dispatchPlansDateFilter"/);
+  assert.match(parentMarkup, /id="dispatchPlansStatusFilter"/);
+  assert.match(parentMarkup, /id="dispatchPlansTableBody"/);
+  assert.doesNotMatch(parentMarkup, /id="dispatchPlan(?:Form|Detail|Cancel)Modal"/);
+  [
+    "dispatchPlansWorkspace",
+    "dispatchPlansTitle",
+    "dispatchPlansRefreshBtn",
+    "dispatchPlanCreateBtn",
+    "dispatchPlansDateFilter",
+    "dispatchPlansStatusFilter",
+    "dispatchPlansTableBody",
+    "dispatchPlanFormModal",
+    "dispatchPlanDetailModal",
+    "dispatchPlanCancelModal"
+  ].forEach((id) => assert.equal(countId(id), 1, `Expected one #${id}`));
   assert.match(planningCss, /body > \.dispatch-plan-modal\.custom-modal[\s\S]*z-index: var\(--wmo-z-modal\)/);
   assert.match(planningCss, /@media \(max-width: 560px\)[\s\S]*flex-direction: column/);
+  assert.match(planningCss, /#dispatchPlanningModal > \.dispatch-planning-parent-content[\s\S]*width: min\(1280px/);
+  assert.match(planningCss, /body > \.dispatch-plan-modal\.custom-modal:not\(\.hidden\)[\s\S]*z-index: calc\(var\(--wmo-z-modal\) \+ 40\)/);
+  assert.match(planningCss, /html\.dispatch-plan-modal-open,\s*body\.dispatch-plan-modal-open\s*\{[\s\S]*overflow: hidden !important/);
+  assert.match(planningCss, /html\.dispatch-plan-modal-open body #adminLayout #dashboardSidebar[\s\S]*z-index: calc\(var\(--wmo-z-modal\) \+ 80\)[\s\S]*pointer-events: none/);
+  assert.match(planningCss, /html\.dispatch-plan-modal-open body #dashboardSidebar \.nav-btn,[\s\S]*#sidebarLogoToggleBtn[\s\S]*pointer-events: auto/);
+  assert.match(planningCss, /html\.dispatch-plan-modal-open body #adminLayout #mobileSidebarToggleBtn[\s\S]*z-index: calc\(var\(--wmo-z-modal\) \+ 90\)/);
+  assert.match(planningCss, /html\.dispatch-plan-modal-open body #adminLayout #sidebarBackdrop:not\(\.hidden\)[\s\S]*z-index: calc\(var\(--wmo-z-modal\) \+ 70\)/);
+  assert.match(planningSource, /DISPATCH_PLAN_CHILD_MODAL_IDS = Object\.freeze\(\[[\s\S]*dispatchPlanFormModal[\s\S]*dispatchPlanDetailModal[\s\S]*dispatchPlanCancelModal/);
+  assert.match(planningSource, /function dispatchPlanMountModals[\s\S]*document\.body\.appendChild\(modal\)/);
+  assert.match(planningSource, /function openDispatchPlanningParentModal[\s\S]*void loadDispatchPlans\(\)/);
+  assert.match(planningSource, /function dispatchPlanSyncModalScrollLock[\s\S]*dispatchPlanningModal[\s\S]*dispatchPlanHasOpenChildModal[\s\S]*document\.documentElement\.classList\.toggle\("dispatch-plan-modal-open", shouldLock\)[\s\S]*document\.body\.classList\.toggle\("dispatch-plan-modal-open", shouldLock\)/);
+  assert.match(planningSource, /returnFocus: null,[\s\S]*parentReturnFocus: null/);
+  assert.match(planningSource, /function dispatchPlanSetTriggerAccess[\s\S]*openDispatchPlanningBtn/);
+  const escapeBlock = planningSource.match(/document\.addEventListener\("keydown"[\s\S]*?\n    \}\);/)?.[0] || "";
+  assert.ok(escapeBlock.indexOf("dispatch-plan-modal:not(.hidden)") < escapeBlock.indexOf("dispatchPlanningModal"));
+  assert.match(navigationSource, /closeDispatchPlanningModalsForNavigation/);
+  assert.match(navigationSource, /closeAllAdminModalsOnNavigation\(\);\s*showSection\(sectionId\);/);
+  assert.match(navigationSource, /document\.documentElement\.classList\.remove\("dispatch-plan-modal-open"\)/);
+  assert.match(planningSource, /dispatchPlanCreateBtn[\s\S]*openCreateDispatchPlan/);
+  assert.match(planningSource, /data-dispatch-plan-action[\s\S]*action === "view"[\s\S]*action === "edit"[\s\S]*action === "cancel"/);
 
   const ids = [...dashboardHtml.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]);
   const duplicates = ids.filter((id, index) => ids.indexOf(id) !== index);

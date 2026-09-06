@@ -2266,3 +2266,438 @@
     max-width: 100% !important;
   }
 }
+
+/* =========================================================
+   PHASE UI-4: OPERATIONS SNAPSHOT
+   Compact Fleet, Dispatch, latest-operation, and guidance UI.
+========================================================= */
+
+#dashboardSection.dashboard-executive .dashboard-support-grid {
+  height: 328px !important;
+  align-items: stretch !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-category-card,
+#dashboardSection.dashboard-executive .operations-snapshot-card {
+  height: 328px !important;
+  min-height: 328px !important;
+}
+
+#dashboardSection.dashboard-executive .operations-snapshot-card {
+  grid-template-rows: 34px minmax(0, 1fr) !important;
+  gap: 8px !important;
+  padding: 10px 12px 12px !important;
+}
+
+#dashboardSection.dashboard-executive .operations-snapshot-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  grid-template-rows: minmax(0, 1.12fr) minmax(0, .88fr) !important;
+  gap: 8px !important;
+}
+
+#dashboardSection.dashboard-executive .operations-panel,
+#dashboardSection.dashboard-executive .compact-recommendation-card.operations-panel {
+  min-width: 0 !important;
+  min-height: 0 !important;
+  padding: 9px !important;
+  gap: 7px !important;
+  overflow: hidden !important;
+  border: 1px solid #e2ebe6 !important;
+  border-radius: 10px !important;
+  background: #fbfdfc !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-fleet-status-panel {
+  background: linear-gradient(145deg, #fbfefc 0%, #f3faf6 100%) !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-dispatch-summary-panel {
+  background: linear-gradient(145deg, #fcfefd 0%, #f3f8f5 100%) !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-latest-operation-panel,
+#dashboardSection.dashboard-executive .dashboard-recommendations-panel {
+  background: #fff !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-recommendations-panel {
+  padding-right: 9px !important;
+  border-right: 1px solid #e2ebe6 !important;
+}
+
+#dashboardSection.dashboard-executive .operations-panel-heading {
+  min-width: 0 !important;
+  min-height: 30px !important;
+  display: grid !important;
+  grid-template-columns: 30px minmax(0, 1fr) !important;
+  align-items: center !important;
+  gap: 7px !important;
+}
+
+#dashboardSection.dashboard-executive .operations-panel-heading .dashboard-card-icon {
+  width: 30px !important;
+  min-width: 30px !important;
+  height: 30px !important;
+  border-radius: 8px !important;
+}
+
+#dashboardSection.dashboard-executive .operations-panel-heading .dashboard-card-icon svg {
+  width: 16px !important;
+  height: 16px !important;
+}
+
+#dashboardSection.dashboard-executive .operations-panel-heading h3 {
+  margin: 0 !important;
+  color: var(--dashboard-ink) !important;
+  font-size: 12.75px !important;
+  line-height: 1.1 !important;
+  font-weight: 760 !important;
+  letter-spacing: -.015em !important;
+}
+
+#dashboardSection.dashboard-executive .operations-panel-heading p {
+  margin: 2px 0 0 !important;
+  overflow: hidden !important;
+  color: var(--dashboard-muted) !important;
+  font-size: 9.75px !important;
+  line-height: 1.15 !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-card-icon.dashboard-icon--dispatch {
+  color: #2f6d54 !important;
+  background: #e9f5ed !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-card-icon.dashboard-icon--latest-operation {
+  color: #476f7a !important;
+  background: #edf6f7 !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-operation-metrics {
+  min-width: 0 !important;
+  min-height: 0 !important;
+  display: grid !important;
+  grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+  align-content: stretch !important;
+  gap: 5px !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-operation-metric {
+  min-width: 0 !important;
+  grid-column: span 2 !important;
+  padding: 5px 6px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  justify-content: center !important;
+  gap: 2px !important;
+  border: 1px solid #e5ede8 !important;
+  border-radius: 7px !important;
+  background: rgba(255, 255, 255, .86) !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-fleet-metrics .dashboard-operation-metric:nth-child(n+4) {
+  grid-column: span 3 !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-operation-metric span,
+#dashboardSection.dashboard-executive .dashboard-next-schedule > span {
+  width: 100% !important;
+  overflow: hidden !important;
+  color: #687c71 !important;
+  font-size: 8.75px !important;
+  line-height: 1.05 !important;
+  font-weight: 680 !important;
+  letter-spacing: .015em !important;
+  text-overflow: ellipsis !important;
+  text-transform: uppercase !important;
+  white-space: nowrap !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-operation-metric strong {
+  color: #29473a !important;
+  font-size: 17px !important;
+  line-height: 1 !important;
+  font-weight: 820 !important;
+  letter-spacing: -.035em !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-operation-metric.metric-positive strong {
+  color: #237343 !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-operation-metric.metric-active strong {
+  color: #2f6f55 !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-operation-metric.metric-warning strong {
+  color: #a66019 !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-operation-metric.metric-danger strong {
+  color: #a84444 !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-next-schedule {
+  min-width: 0 !important;
+  grid-column: 1 / -1 !important;
+  padding: 5px 7px !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  grid-template-areas: "label label" "truck meta" !important;
+  align-items: center !important;
+  column-gap: 8px !important;
+  row-gap: 2px !important;
+  border: 1px solid #dce9e2 !important;
+  border-radius: 7px !important;
+  background: #fff !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-next-schedule > span {
+  grid-area: label !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-next-schedule strong {
+  min-width: 0 !important;
+  grid-area: truck !important;
+  overflow: hidden !important;
+  color: #28493a !important;
+  font-size: 11.5px !important;
+  line-height: 1.1 !important;
+  font-weight: 740 !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-next-schedule small {
+  min-width: 0 !important;
+  grid-area: meta !important;
+  overflow: hidden !important;
+  color: #688075 !important;
+  font-size: 9.5px !important;
+  line-height: 1.1 !important;
+  font-weight: 600 !important;
+  text-align: right !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-latest-operation {
+  min-width: 0 !important;
+  min-height: 0 !important;
+  flex: 1 1 auto !important;
+  padding: 7px 8px !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  align-items: center !important;
+  gap: 8px !important;
+  border: 1px solid #e5ede8 !important;
+  border-radius: 8px !important;
+  background: #f9fcfa !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-latest-operation-copy,
+#dashboardSection.dashboard-executive .dashboard-latest-operation-result {
+  min-width: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 3px !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-latest-operation-copy strong,
+#dashboardSection.dashboard-executive .dashboard-latest-operation-copy span,
+#dashboardSection.dashboard-executive .dashboard-latest-operation-result time {
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-latest-operation-copy strong {
+  color: #264537 !important;
+  font-size: 12px !important;
+  line-height: 1.1 !important;
+  font-weight: 760 !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-latest-operation-copy span,
+#dashboardSection.dashboard-executive .dashboard-latest-operation-result time {
+  color: #6b7e74 !important;
+  font-size: 9.75px !important;
+  line-height: 1.15 !important;
+  font-weight: 590 !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-latest-operation-result {
+  align-items: flex-end !important;
+  text-align: right !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-operation-status {
+  max-width: 145px !important;
+  padding: 4px 7px !important;
+  overflow: hidden !important;
+  border-radius: 999px !important;
+  color: #426052 !important;
+  background: #eaf2ed !important;
+  font-size: 9px !important;
+  line-height: 1 !important;
+  font-weight: 730 !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-operation-status[data-state="completed"] {
+  color: #247044 !important;
+  background: #e5f3e9 !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-operation-status[data-state="warning"] {
+  color: #9a5a19 !important;
+  background: #fff0dc !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-operation-status[data-state="cancelled"] {
+  color: #9b4444 !important;
+  background: #fae9e9 !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-recommendations-panel .summary-list {
+  min-height: 0 !important;
+  flex: 1 1 auto !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow-y: auto !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-recommendations-panel .summary-item {
+  height: auto !important;
+  min-height: 32px !important;
+  max-height: none !important;
+  padding: 5px 4px !important;
+  font-size: 10.25px !important;
+  line-height: 1.2 !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-legacy-monitoring-hooks {
+  display: none !important;
+}
+
+@media (max-width: 1100px) {
+  #dashboardSection.dashboard-executive .dashboard-support-grid {
+    height: auto !important;
+  }
+
+  #dashboardSection.dashboard-executive .dashboard-category-card {
+    height: 220px !important;
+    min-height: 220px !important;
+  }
+
+  #dashboardSection.dashboard-executive .operations-snapshot-card {
+    height: 328px !important;
+    min-height: 328px !important;
+  }
+}
+
+@media (max-width: 720px) {
+  #dashboardSection.dashboard-executive .operations-snapshot-card {
+    height: auto !important;
+    min-height: 0 !important;
+    grid-template-rows: 34px auto !important;
+  }
+
+  #dashboardSection.dashboard-executive .operations-snapshot-grid {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: auto !important;
+    gap: 8px !important;
+  }
+
+  #dashboardSection.dashboard-executive .operations-panel,
+  #dashboardSection.dashboard-executive .compact-recommendation-card.operations-panel {
+    min-height: 128px !important;
+    padding: 10px !important;
+  }
+
+  #dashboardSection.dashboard-executive .dashboard-recommendations-panel {
+    border: 1px solid #e2ebe6 !important;
+  }
+
+  #dashboardSection.dashboard-executive .dashboard-recommendations-panel .summary-item:nth-child(n+3) {
+    display: grid !important;
+  }
+}
+
+@media (max-width: 460px) {
+  #dashboardSection.dashboard-executive .dashboard-category-card {
+    height: 260px !important;
+    min-height: 260px !important;
+  }
+
+  #dashboardSection.dashboard-executive .dashboard-operation-metric {
+    padding-inline: 5px !important;
+  }
+
+  #dashboardSection.dashboard-executive .dashboard-operation-metric span,
+  #dashboardSection.dashboard-executive .dashboard-next-schedule > span {
+    font-size: 8.25px !important;
+  }
+
+  #dashboardSection.dashboard-executive .dashboard-next-schedule {
+    grid-template-columns: 1fr !important;
+    grid-template-areas: "label" "truck" "meta" !important;
+  }
+
+  #dashboardSection.dashboard-executive .dashboard-next-schedule small {
+    text-align: left !important;
+  }
+
+  #dashboardSection.dashboard-executive .dashboard-latest-operation {
+    grid-template-columns: 1fr !important;
+  }
+
+  #dashboardSection.dashboard-executive .dashboard-latest-operation-result {
+    align-items: flex-start !important;
+    text-align: left !important;
+  }
+}
+
+/* Dispatch-only metric treatment keeps standard labels readable in the compact panel. */
+#dashboardSection.dashboard-executive .dashboard-dispatch-metrics {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-dispatch-metrics > .dashboard-operation-metric {
+  grid-column: auto !important;
+  padding-block: 3px !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-dispatch-metrics > .dashboard-operation-metric:nth-child(3),
+#dashboardSection.dashboard-executive .dashboard-dispatch-metrics > .dashboard-next-schedule {
+  grid-column: 1 / -1 !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-dispatch-metrics > .dashboard-next-schedule {
+  padding-block: 3px !important;
+}
+
+#dashboardSection.dashboard-executive .dashboard-dispatch-metrics > .dashboard-operation-metric span,
+#dashboardSection.dashboard-executive .dashboard-dispatch-metrics > .dashboard-next-schedule > span {
+  overflow: visible !important;
+  font-size: 10.25px !important;
+  line-height: 1.12 !important;
+  text-overflow: clip !important;
+  white-space: normal !important;
+}
+
+@media (min-width: 721px) {
+  #dashboardSection.dashboard-executive .dashboard-dispatch-metrics {
+    grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+  }
+
+  #dashboardSection.dashboard-executive .dashboard-dispatch-metrics > .dashboard-operation-metric,
+  #dashboardSection.dashboard-executive .dashboard-dispatch-metrics > .dashboard-operation-metric:nth-child(3) {
+    grid-column: span 2 !important;
+    padding-block: 2px !important;
+  }
+}

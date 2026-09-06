@@ -84,6 +84,20 @@ function closeAllAdminModalsOnNavigation() {
     modal.setAttribute("aria-hidden", "true");
   });
 
+  if (typeof window.closeFleetModalsForNavigation === "function") {
+    window.closeFleetModalsForNavigation();
+  } else {
+    document.documentElement.classList.remove("fleet-modal-open");
+    document.body.classList.remove("fleet-modal-open");
+  }
+
+  if (typeof window.closeDispatchPlanningModalsForNavigation === "function") {
+    window.closeDispatchPlanningModalsForNavigation();
+  } else {
+    document.documentElement.classList.remove("dispatch-plan-modal-open");
+    document.body.classList.remove("dispatch-plan-modal-open");
+  }
+
   /*
     Remove temporary image preview modal if open.
   */

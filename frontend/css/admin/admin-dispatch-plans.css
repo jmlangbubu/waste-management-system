@@ -297,8 +297,35 @@
   font-size: 15px;
 }
 
+html.dispatch-plan-modal-open,
 body.dispatch-plan-modal-open {
-  overflow: hidden;
+  overflow: hidden !important;
+}
+
+html.dispatch-plan-modal-open body #adminLayout #dashboardSidebar {
+  z-index: calc(var(--wmo-z-modal) + 80) !important;
+  pointer-events: none;
+}
+
+html.dispatch-plan-modal-open body #dashboardSidebar .nav-btn,
+html.dispatch-plan-modal-open body #dashboardSidebar #sidebarLogoToggleBtn {
+  pointer-events: auto;
+}
+
+@media (max-width: 992px) {
+  html.dispatch-plan-modal-open body #adminLayout #mobileSidebarToggleBtn {
+    position: relative !important;
+    z-index: calc(var(--wmo-z-modal) + 90) !important;
+    pointer-events: auto;
+  }
+
+  html.dispatch-plan-modal-open body #adminLayout #dashboardSidebar.open {
+    z-index: calc(var(--wmo-z-modal) + 80) !important;
+  }
+
+  html.dispatch-plan-modal-open body #adminLayout #sidebarBackdrop:not(.hidden) {
+    z-index: calc(var(--wmo-z-modal) + 70) !important;
+  }
 }
 
 body > .dispatch-plan-modal.custom-modal {
@@ -728,5 +755,118 @@ body > .dispatch-plan-modal .dispatch-plan-cancel-content {
 
   .dispatch-plan-stop-controls {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* Dispatch Planning workspace parent modal. Existing action dialogs stay portaled to body. */
+#dispatchPlanningModal.custom-modal {
+  z-index: var(--wmo-z-modal);
+}
+
+#dispatchPlanningModal > .dispatch-planning-parent-content {
+  position: relative !important;
+  top: auto !important;
+  left: auto !important;
+  display: flex;
+  width: min(1280px, calc(100vw - 40px)) !important;
+  max-width: 1280px !important;
+  max-height: calc(100dvh - 40px) !important;
+  flex-direction: column;
+  margin: 0 auto !important;
+  overflow: hidden !important;
+  transform: none !important;
+}
+
+#dispatchPlanningModal .dispatch-planning-parent-header {
+  flex: 0 0 auto;
+}
+
+#dispatchPlanningModal .dispatch-planning-parent-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none !important;
+  padding: 0;
+  overflow-x: hidden;
+  overflow-y: auto !important;
+}
+
+#dispatchPlanningModal .dispatch-plans-card {
+  width: 100%;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+#dispatchPlanningModal .dispatch-plans-table-shell {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
+@media (max-width: 1200px) {
+  #dispatchPlanningModal .dispatch-plans-table {
+    width: max(100%, 1040px) !important;
+    min-width: 1040px !important;
+  }
+}
+
+body > .dispatch-plan-modal.custom-modal:not(.hidden) {
+  z-index: calc(var(--wmo-z-modal) + 40) !important;
+}
+
+@media (max-width: 768px) {
+  #dispatchPlanningModal > .dispatch-planning-parent-content {
+    width: calc(100vw - 24px) !important;
+    max-width: calc(100vw - 24px) !important;
+    max-height: calc(100dvh - 24px) !important;
+  }
+
+  #dispatchPlanningModal .dispatch-planning-parent-header {
+    padding: 16px 18px;
+  }
+}
+
+/* Keep planning dialogs clear of the intentionally interactive desktop sidebar. */
+@media (min-width: 993px) {
+  body.dispatch-plan-modal-open {
+    --dispatch-plan-modal-sidebar-offset: var(--wmo-sidebar-expanded);
+  }
+
+  body.dispatch-plan-modal-open:has(#adminLayout.sidebar-collapsed) {
+    --dispatch-plan-modal-sidebar-offset: var(--wmo-sidebar-collapsed);
+  }
+
+  #dispatchPlanningModal.custom-modal,
+  body > .dispatch-plan-modal.custom-modal {
+    padding-right: 20px !important;
+    padding-left: calc(var(--dispatch-plan-modal-sidebar-offset) + 20px) !important;
+  }
+
+  #dispatchPlanningModal > .dispatch-planning-parent-content {
+    width: min(1280px, calc(100vw - var(--dispatch-plan-modal-sidebar-offset) - 40px)) !important;
+    max-width: calc(100vw - var(--dispatch-plan-modal-sidebar-offset) - 40px) !important;
+  }
+
+  body > .dispatch-plan-modal.custom-modal > .dispatch-plan-modal-content,
+  body > .dispatch-plan-modal.custom-modal > .dispatch-plan-detail-content,
+  body > .dispatch-plan-modal.custom-modal > .dispatch-plan-cancel-content {
+    width: min(940px, calc(100vw - var(--dispatch-plan-modal-sidebar-offset) - 40px)) !important;
+    max-width: calc(100vw - var(--dispatch-plan-modal-sidebar-offset) - 40px) !important;
+  }
+
+  body > .dispatch-plan-modal.custom-modal > .dispatch-plan-detail-content {
+    width: min(780px, calc(100vw - var(--dispatch-plan-modal-sidebar-offset) - 40px)) !important;
+  }
+
+  body > .dispatch-plan-modal.custom-modal > .dispatch-plan-cancel-content {
+    width: min(570px, calc(100vw - var(--dispatch-plan-modal-sidebar-offset) - 40px)) !important;
+  }
+}
+
+@media (max-width: 992px) {
+  html.dispatch-plan-modal-open body #dispatchPlanningModal:not(.hidden) .dispatch-planning-parent-header,
+  html.dispatch-plan-modal-open body > .dispatch-plan-modal.custom-modal:not(.hidden) .custom-modal-header {
+    padding-left: 70px !important;
   }
 }

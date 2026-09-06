@@ -35,7 +35,13 @@ let fleetSummaryCache = { ...FLEET_EMPTY_SUMMARY };
 let fleetHasLoadedTrucks = false;
 let fleetSelectedConditionTruck = null;
 let fleetLastModalTrigger = null;
+let fleetParentModalTrigger = null;
 let fleetRefreshInProgress = false;
+
+const FLEET_CHILD_MODAL_IDS = Object.freeze([
+  "fleetAddTruckModal",
+  "fleetConditionModal"
+]);
 
 function fleetEscape(value) {
   return String(value ?? "")
@@ -299,10 +305,25 @@ function fleetToggleReasonField(conditionId, fieldId, textareaId) {
 }
 
 function fleetMountModalsToBody() {
-  ["fleetAddTruckModal", "fleetConditionModal"].forEach((id) => {
+  FLEET_CHILD_MODAL_IDS.forEach((id) => {
     const modal = document.getElementById(id);
     if (modal && modal.parentElement !== document.body) document.body.appendChild(modal);
   });
+}
+
+function fleetModalIsOpen(id) {
+  const modal = document.getElementById(id);
+  return Boolean(modal && !modal.classList.contains("hidden"));
+}
+
+function fleetHasOpenChildModal() {
+  return FLEET_CHILD_MODAL_IDS.some(fleetModalIsOpen);
+}
+
+function fleetSyncModalScrollLock() {
+  const shouldLock = fleetModalIsOpen("fleetOverviewModal") || fleetHasOpenChildModal();
+  document.documentElement.classList.toggle("fleet-modal-open", shouldLock);
+  document.body.classList.toggle("fleet-modal-open", shouldLock);
 }
 
 function fleetOpenModal(id, focusId, trigger = null) {
@@ -311,8 +332,9 @@ function fleetOpenModal(id, focusId, trigger = null) {
   if (!modal) return;
   fleetLastModalTrigger = trigger || document.activeElement;
   modal.classList.remove("hidden");
+  modal.hidden = false;
   modal.setAttribute("aria-hidden", "false");
-  document.body.classList.add("fleet-modal-open");
+  fleetSyncModalScrollLock();
   setTimeout(() => document.getElementById(focusId)?.focus(), 0);
 }
 
@@ -320,14 +342,59 @@ function fleetCloseModal(id) {
   const modal = document.getElementById(id);
   if (!modal) return;
   modal.classList.add("hidden");
+  modal.hidden = true;
   modal.setAttribute("aria-hidden", "true");
-  const hasOpenFleetModal = ["fleetAddTruckModal", "fleetConditionModal"].some((modalId) => {
-    const current = document.getElementById(modalId);
-    return current && !current.classList.contains("hidden");
-  });
-  document.body.classList.toggle("fleet-modal-open", hasOpenFleetModal);
+  fleetSyncModalScrollLock();
   fleetLastModalTrigger?.focus?.();
   fleetLastModalTrigger = null;
+}
+
+function openFleetOverviewParentModal(triggerOrEvent = null) {
+  const modal = document.getElementById("fleetOverviewModal");
+  if (!modal) return false;
+  const trigger = triggerOrEvent?.currentTarget || triggerOrEvent;
+  fleetParentModalTrigger = trigger?.focus ? trigger : document.activeElement;
+  modal.classList.remove("hidden");
+  modal.hidden = false;
+  modal.setAttribute("aria-hidden", "false");
+  fleetSyncModalScrollLock();
+  setTimeout(() => document.getElementById("fleetOverviewParentCloseBtn")?.focus(), 0);
+  void refreshFleetMonitoring();
+  return true;
+}
+
+function closeFleetOverviewParentModal() {
+  if (fleetHasOpenChildModal()) return false;
+  const modal = document.getElementById("fleetOverviewModal");
+  if (!modal) return false;
+  modal.classList.add("hidden");
+  modal.hidden = true;
+  modal.setAttribute("aria-hidden", "true");
+  fleetSyncModalScrollLock();
+  fleetParentModalTrigger?.focus?.();
+  fleetParentModalTrigger = null;
+  return true;
+}
+
+function closeFleetModalsForNavigation() {
+  ["fleetOverviewModal", ...FLEET_CHILD_MODAL_IDS].forEach((id) => {
+    const modal = document.getElementById(id);
+    if (!modal) return;
+    modal.classList.add("hidden");
+    modal.hidden = true;
+    modal.setAttribute("aria-hidden", "true");
+  });
+  fleetLastModalTrigger = null;
+  fleetParentModalTrigger = null;
+  fleetSyncModalScrollLock();
+}
+
+function fleetSetTriggerAccess(hasAccess) {
+  const trigger = document.getElementById("openFleetOverviewBtn");
+  if (!trigger) return;
+  trigger.hidden = !hasAccess;
+  trigger.disabled = !hasAccess;
+  trigger.setAttribute("aria-hidden", String(!hasAccess));
 }
 
 function openAddTruckModal(trigger = null) {
@@ -449,6 +516,10 @@ function bindFleetMonitoringActions() {
   if (!card || card.dataset.fleetBound === "true") return;
   card.dataset.fleetBound = "true";
 
+  document.getElementById("openFleetOverviewBtn")?.addEventListener("click", openFleetOverviewParentModal);
+  ["fleetOverviewParentOverlay", "fleetOverviewParentCloseBtn"].forEach((id) => {
+    document.getElementById(id)?.addEventListener("click", closeFleetOverviewParentModal);
+  });
   document.getElementById("fleetRefreshBtn")?.addEventListener("click", () => {
     void refreshFleetMonitoring();
   });
@@ -485,6 +556,8 @@ function bindFleetMonitoringActions() {
       fleetCloseModal("fleetConditionModal");
     } else if (!document.getElementById("fleetAddTruckModal")?.classList.contains("hidden")) {
       fleetCloseModal("fleetAddTruckModal");
+    } else if (fleetModalIsOpen("fleetOverviewModal")) {
+      closeFleetOverviewParentModal();
     }
   });
 }
@@ -493,7 +566,9 @@ async function initializeFleetMonitoring() {
   const card = document.querySelector(".fleet-overview-card");
   if (!card) return;
   const user = typeof currentUser !== "undefined" ? currentUser : null;
-  if (!fleetUserHasAccess(user)) {
+  const hasAccess = fleetUserHasAccess(user);
+  fleetSetTriggerAccess(hasAccess);
+  if (!hasAccess) {
     card.hidden = true;
     return;
   }
@@ -513,6 +588,9 @@ if (typeof window !== "undefined") {
   window.submitFleetTruck = submitFleetTruck;
   window.openFleetConditionModal = openFleetConditionModal;
   window.updateFleetCondition = updateFleetCondition;
+  window.openFleetOverviewParentModal = openFleetOverviewParentModal;
+  window.closeFleetOverviewParentModal = closeFleetOverviewParentModal;
+  window.closeFleetModalsForNavigation = closeFleetModalsForNavigation;
 }
 
 if (typeof module !== "undefined" && module.exports) {
