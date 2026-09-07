@@ -21,9 +21,30 @@ const read = (file) => fs.readFileSync(path.join(ROOT, file), "utf8");
 const fleetSource = read("frontend/js/admin/admin-fleet.js");
 const apiSource = read("frontend/js/admin/admin-api.js");
 const initSource = read("frontend/js/admin/admin-init.js");
+const navigationSource = read("frontend/js/admin/admin-navigation.js");
 const dispatchSource = read("frontend/js/admin/admin-dispatch.js");
 const dashboardHtml = read("frontend/admin-dashboard.html");
 const fleetCss = read("frontend/css/admin/admin-fleet.css");
+
+function countId(id) {
+  return (dashboardHtml.match(new RegExp(`\\bid="${id}"`, "g")) || []).length;
+}
+
+function elementMarkupById(id) {
+  const opening = new RegExp(`<([a-z][\\w-]*)\\b[^>]*\\bid="${id}"[^>]*>`, "i").exec(dashboardHtml);
+  assert.ok(opening, `Expected #${id} to exist`);
+  const tagName = opening[1];
+  const tags = new RegExp(`</?${tagName}\\b[^>]*>`, "gi");
+  tags.lastIndex = opening.index;
+  let depth = 0;
+  let match;
+  while ((match = tags.exec(dashboardHtml))) {
+    if (match[0].startsWith("</")) depth -= 1;
+    else if (!match[0].endsWith("/>")) depth += 1;
+    if (depth === 0) return dashboardHtml.slice(opening.index, tags.lastIndex);
+  }
+  assert.fail(`Expected #${id} to have a closing tag`);
+}
 
 function testEmptyFleetAndZeroSummary() {
   const empty = fleetTableRowsHtml([]);
@@ -151,10 +172,48 @@ function testMarkupScriptOrderAndModalSafety() {
   assert.ok(dashboardHtml.indexOf("admin-fleet.js") < dashboardHtml.indexOf("admin-init.js"));
   assert.match(initSource, /safeRun\(initializeFleetMonitoring, "initializeFleetMonitoring"\)/);
   assert.doesNotMatch(initSource, /await safeRun\(initializeFleetMonitoring/);
-  assert.match(dashboardHtml, /id="trackingSection"[\s\S]*id="fleetOverviewTitle"[\s\S]*class="page-card live-tracking-card"/);
+  assert.equal(countId("openFleetOverviewBtn"), 1);
+  assert.equal(countId("fleetOverviewModal"), 1);
+  assert.equal((dashboardHtml.match(/class="page-card fleet-overview-card"/g) || []).length, 1);
+  assert.equal(countId("fleetTableBody"), 1);
+  const parentMarkup = elementMarkupById("fleetOverviewModal");
+  assert.match(parentMarkup, /class="page-card fleet-overview-card"/);
+  assert.match(parentMarkup, /id="fleetOverviewTitle"/);
+  assert.match(parentMarkup, /id="fleetRefreshBtn"/);
+  assert.match(parentMarkup, /id="fleetAddTruckBtn"/);
+  assert.match(parentMarkup, /id="fleetTableBody"/);
+  assert.doesNotMatch(parentMarkup, /id="fleet(?:AddTruck|Condition)Modal"/);
+  [
+    "fleetOverviewTitle",
+    "fleetRefreshBtn",
+    "fleetAddTruckBtn",
+    "fleetTableBody",
+    "fleetAddTruckModal",
+    "fleetConditionModal"
+  ].forEach((id) => assert.equal(countId(id), 1, `Expected one #${id}`));
   assert.match(dashboardHtml, /<th>Fleet Condition<\/th>[\s\S]*<th>Operational State<\/th>[\s\S]*<th>GPS<\/th>[\s\S]*<th>Assignable<\/th>/);
   assert.match(fleetCss, /body > \.fleet-modal\.custom-modal[\s\S]*z-index: var\(--wmo-z-modal\)/);
+  assert.match(fleetCss, /#fleetOverviewModal > \.fleet-overview-parent-content[\s\S]*width: min\(1280px/);
+  assert.match(fleetCss, /body > \.fleet-modal\.custom-modal:not\(\.hidden\)[\s\S]*z-index: calc\(var\(--wmo-z-modal\) \+ 40\)/);
+  assert.match(fleetCss, /html\.fleet-modal-open,\s*body\.fleet-modal-open\s*\{[\s\S]*overflow: hidden !important/);
+  assert.match(fleetCss, /html\.fleet-modal-open body #adminLayout #dashboardSidebar[\s\S]*z-index: calc\(var\(--wmo-z-modal\) \+ 80\)[\s\S]*pointer-events: none/);
+  assert.match(fleetCss, /html\.fleet-modal-open body #dashboardSidebar \.nav-btn,[\s\S]*#sidebarLogoToggleBtn[\s\S]*pointer-events: auto/);
+  assert.match(fleetCss, /html\.fleet-modal-open body #adminLayout #mobileSidebarToggleBtn[\s\S]*z-index: calc\(var\(--wmo-z-modal\) \+ 90\)/);
+  assert.match(fleetCss, /html\.fleet-modal-open body #adminLayout #sidebarBackdrop:not\(\.hidden\)[\s\S]*z-index: calc\(var\(--wmo-z-modal\) \+ 70\)/);
   assert.match(fleetSource, /document\.body\.appendChild\(modal\)/);
+  assert.match(fleetSource, /FLEET_CHILD_MODAL_IDS = Object\.freeze\(\[[\s\S]*fleetAddTruckModal[\s\S]*fleetConditionModal/);
+  assert.match(fleetSource, /function openFleetOverviewParentModal[\s\S]*void refreshFleetMonitoring\(\)/);
+  assert.match(fleetSource, /function fleetSyncModalScrollLock[\s\S]*fleetOverviewModal[\s\S]*fleetHasOpenChildModal[\s\S]*document\.documentElement\.classList\.toggle\("fleet-modal-open", shouldLock\)[\s\S]*document\.body\.classList\.toggle\("fleet-modal-open", shouldLock\)/);
+  assert.match(fleetSource, /function fleetSetTriggerAccess[\s\S]*openFleetOverviewBtn/);
+  const escapeBlock = fleetSource.match(/document\.addEventListener\("keydown"[\s\S]*?\n  \}\);/)?.[0] || "";
+  assert.ok(escapeBlock.indexOf("fleetConditionModal") < escapeBlock.indexOf("fleetAddTruckModal"));
+  assert.ok(escapeBlock.indexOf("fleetAddTruckModal") < escapeBlock.indexOf("fleetOverviewModal"));
+  assert.match(navigationSource, /closeFleetModalsForNavigation/);
+  assert.match(navigationSource, /closeAllAdminModalsOnNavigation\(\);\s*showSection\(sectionId\);/);
+  assert.match(navigationSource, /document\.documentElement\.classList\.remove\("fleet-modal-open"\)/);
+  assert.match(fleetSource, /getElementById\("fleetRefreshBtn"\)[\s\S]*refreshFleetMonitoring/);
+  assert.match(fleetSource, /getElementById\("fleetAddTruckBtn"\)[\s\S]*openAddTruckModal/);
+  assert.match(fleetSource, /getElementById\("fleetTableBody"\)[\s\S]*data-fleet-change-condition/);
 }
 
 testEmptyFleetAndZeroSummary();

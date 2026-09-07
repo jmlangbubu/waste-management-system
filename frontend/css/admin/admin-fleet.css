@@ -329,8 +329,35 @@
   margin-top: 12px;
 }
 
+html.fleet-modal-open,
 body.fleet-modal-open {
-  overflow: hidden;
+  overflow: hidden !important;
+}
+
+html.fleet-modal-open body #adminLayout #dashboardSidebar {
+  z-index: calc(var(--wmo-z-modal) + 80) !important;
+  pointer-events: none;
+}
+
+html.fleet-modal-open body #dashboardSidebar .nav-btn,
+html.fleet-modal-open body #dashboardSidebar #sidebarLogoToggleBtn {
+  pointer-events: auto;
+}
+
+@media (max-width: 992px) {
+  html.fleet-modal-open body #adminLayout #mobileSidebarToggleBtn {
+    position: relative !important;
+    z-index: calc(var(--wmo-z-modal) + 90) !important;
+    pointer-events: auto;
+  }
+
+  html.fleet-modal-open body #adminLayout #dashboardSidebar.open {
+    z-index: calc(var(--wmo-z-modal) + 80) !important;
+  }
+
+  html.fleet-modal-open body #adminLayout #sidebarBackdrop:not(.hidden) {
+    z-index: calc(var(--wmo-z-modal) + 70) !important;
+  }
 }
 
 body > .fleet-modal.custom-modal {
@@ -376,6 +403,18 @@ body > .fleet-modal .fleet-modal-content {
 body > .fleet-modal .custom-modal-body {
   max-height: calc(100dvh - 135px);
   overflow-y: auto;
+}
+
+@media (max-width: 1200px) {
+  body > .fleet-modal.custom-modal > .fleet-modal-content {
+    top: auto !important;
+    right: auto !important;
+    left: auto !important;
+    width: min(680px, calc(100vw - 32px)) !important;
+    max-width: calc(100vw - 32px) !important;
+    margin: 0 auto !important;
+    transform: none !important;
+  }
 }
 
 .fleet-form,
@@ -490,5 +529,108 @@ body > .fleet-modal .custom-modal-body {
 
   .fleet-form-actions .fleet-button {
     width: 100%;
+  }
+}
+
+/* Fleet workspace parent modal. Child action dialogs remain body-level portals. */
+#fleetOverviewModal.custom-modal {
+  z-index: var(--wmo-z-modal);
+}
+
+#fleetOverviewModal > .fleet-overview-parent-content {
+  position: relative !important;
+  top: auto !important;
+  left: auto !important;
+  display: flex;
+  width: min(1280px, calc(100vw - 40px)) !important;
+  max-width: 1280px !important;
+  max-height: calc(100dvh - 40px) !important;
+  flex-direction: column;
+  margin: 0 auto !important;
+  overflow: hidden !important;
+  transform: none !important;
+}
+
+#fleetOverviewModal .fleet-overview-parent-header {
+  flex: 0 0 auto;
+}
+
+#fleetOverviewModal .fleet-overview-parent-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none !important;
+  padding: 0;
+  overflow-x: hidden;
+  overflow-y: auto !important;
+}
+
+#fleetOverviewModal .fleet-overview-card {
+  width: 100%;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+#fleetOverviewModal .fleet-table-shell {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
+@media (max-width: 1200px) {
+  #fleetOverviewModal .fleet-table {
+    width: max(100%, 980px) !important;
+    min-width: 980px !important;
+  }
+}
+
+body > .fleet-modal.custom-modal:not(.hidden) {
+  z-index: calc(var(--wmo-z-modal) + 40) !important;
+}
+
+@media (max-width: 768px) {
+  #fleetOverviewModal > .fleet-overview-parent-content {
+    width: calc(100vw - 24px) !important;
+    max-width: calc(100vw - 24px) !important;
+    max-height: calc(100dvh - 24px) !important;
+  }
+
+  #fleetOverviewModal .fleet-overview-parent-header {
+    padding: 16px 18px;
+  }
+}
+
+/* Keep Fleet dialogs clear of the intentionally interactive desktop sidebar. */
+@media (min-width: 993px) {
+  body.fleet-modal-open {
+    --fleet-modal-sidebar-offset: var(--wmo-sidebar-expanded);
+  }
+
+  body.fleet-modal-open:has(#adminLayout.sidebar-collapsed) {
+    --fleet-modal-sidebar-offset: var(--wmo-sidebar-collapsed);
+  }
+
+  #fleetOverviewModal.custom-modal,
+  body > .fleet-modal.custom-modal {
+    padding-right: 20px !important;
+    padding-left: calc(var(--fleet-modal-sidebar-offset) + 20px) !important;
+  }
+
+  #fleetOverviewModal > .fleet-overview-parent-content {
+    width: min(1280px, calc(100vw - var(--fleet-modal-sidebar-offset) - 40px)) !important;
+    max-width: calc(100vw - var(--fleet-modal-sidebar-offset) - 40px) !important;
+  }
+
+  body > .fleet-modal.custom-modal > .fleet-modal-content {
+    width: min(680px, calc(100vw - var(--fleet-modal-sidebar-offset) - 40px)) !important;
+    max-width: calc(100vw - var(--fleet-modal-sidebar-offset) - 40px) !important;
+  }
+}
+
+@media (max-width: 992px) {
+  html.fleet-modal-open body #fleetOverviewModal:not(.hidden) .fleet-overview-parent-header,
+  html.fleet-modal-open body > .fleet-modal.custom-modal:not(.hidden) .custom-modal-header {
+    padding-left: 70px !important;
   }
 }

@@ -20,8 +20,15 @@
     submitting: false,
     optionsGeneration: 0,
     destinationPromise: null,
-    returnFocus: null
+    returnFocus: null,
+    parentReturnFocus: null
   };
+
+  const DISPATCH_PLAN_CHILD_MODAL_IDS = Object.freeze([
+    "dispatchPlanFormModal",
+    "dispatchPlanDetailModal",
+    "dispatchPlanCancelModal"
+  ]);
 
   function dispatchPlanElement(id) {
     if (typeof document === "undefined") return null;
@@ -781,7 +788,7 @@
     modal.classList.remove("hidden");
     modal.hidden = false;
     modal.setAttribute("aria-hidden", "false");
-    document.body.classList.add("dispatch-plan-modal-open");
+    dispatchPlanSyncModalScrollLock();
     modal.querySelector("button, input, select, textarea")?.focus();
   }
 
@@ -792,11 +799,74 @@
     modal.hidden = true;
     modal.setAttribute("aria-hidden", "true");
     const anotherOpen = document.querySelector(".dispatch-plan-modal:not(.hidden)");
-    document.body.classList.toggle("dispatch-plan-modal-open", Boolean(anotherOpen));
+    dispatchPlanSyncModalScrollLock();
     if (!anotherOpen && dispatchPlanState.returnFocus?.focus) {
       dispatchPlanState.returnFocus.focus();
       dispatchPlanState.returnFocus = null;
     }
+  }
+
+  function dispatchPlanModalIsOpen(id) {
+    const modal = dispatchPlanElement(id);
+    return Boolean(modal && !modal.classList.contains("hidden"));
+  }
+
+  function dispatchPlanHasOpenChildModal() {
+    return DISPATCH_PLAN_CHILD_MODAL_IDS.some(dispatchPlanModalIsOpen);
+  }
+
+  function dispatchPlanSyncModalScrollLock() {
+    const shouldLock = dispatchPlanModalIsOpen("dispatchPlanningModal") || dispatchPlanHasOpenChildModal();
+    document.documentElement.classList.toggle("dispatch-plan-modal-open", shouldLock);
+    document.body.classList.toggle("dispatch-plan-modal-open", shouldLock);
+  }
+
+  function openDispatchPlanningParentModal(triggerOrEvent = null) {
+    const modal = dispatchPlanElement("dispatchPlanningModal");
+    if (!modal) return false;
+    const trigger = triggerOrEvent?.currentTarget || triggerOrEvent;
+    dispatchPlanState.parentReturnFocus = trigger?.focus ? trigger : document.activeElement;
+    modal.classList.remove("hidden");
+    modal.hidden = false;
+    modal.setAttribute("aria-hidden", "false");
+    dispatchPlanSyncModalScrollLock();
+    dispatchPlanElement("dispatchPlanningParentCloseBtn")?.focus();
+    void loadDispatchPlans();
+    return true;
+  }
+
+  function closeDispatchPlanningParentModal() {
+    if (dispatchPlanHasOpenChildModal()) return false;
+    const modal = dispatchPlanElement("dispatchPlanningModal");
+    if (!modal) return false;
+    modal.classList.add("hidden");
+    modal.hidden = true;
+    modal.setAttribute("aria-hidden", "true");
+    dispatchPlanSyncModalScrollLock();
+    dispatchPlanState.parentReturnFocus?.focus?.();
+    dispatchPlanState.parentReturnFocus = null;
+    return true;
+  }
+
+  function closeDispatchPlanningModalsForNavigation() {
+    ["dispatchPlanningModal", ...DISPATCH_PLAN_CHILD_MODAL_IDS].forEach((id) => {
+      const modal = dispatchPlanElement(id);
+      if (!modal) return;
+      modal.classList.add("hidden");
+      modal.hidden = true;
+      modal.setAttribute("aria-hidden", "true");
+    });
+    dispatchPlanState.returnFocus = null;
+    dispatchPlanState.parentReturnFocus = null;
+    dispatchPlanSyncModalScrollLock();
+  }
+
+  function dispatchPlanSetTriggerAccess(hasAccess) {
+    const trigger = dispatchPlanElement("openDispatchPlanningBtn");
+    if (!trigger) return;
+    trigger.hidden = !hasAccess;
+    trigger.disabled = !hasAccess;
+    trigger.setAttribute("aria-hidden", String(!hasAccess));
   }
 
   function dispatchPlanResetForm() {
@@ -1101,14 +1171,17 @@
   }
 
   function dispatchPlanMountModals() {
-    ["dispatchPlanFormModal", "dispatchPlanDetailModal", "dispatchPlanCancelModal"]
-      .forEach((id) => {
+    DISPATCH_PLAN_CHILD_MODAL_IDS.forEach((id) => {
         const modal = dispatchPlanElement(id);
         if (modal && modal.parentElement !== document.body) document.body.appendChild(modal);
       });
   }
 
   function dispatchPlanBindActions(workspace) {
+    dispatchPlanElement("openDispatchPlanningBtn")?.addEventListener("click", openDispatchPlanningParentModal);
+    ["dispatchPlanningParentOverlay", "dispatchPlanningParentCloseBtn"].forEach((id) => {
+      dispatchPlanElement(id)?.addEventListener("click", closeDispatchPlanningParentModal);
+    });
     dispatchPlanElement("dispatchPlanCreateBtn")?.addEventListener("click", openCreateDispatchPlan);
     dispatchPlanElement("dispatchPlansRefreshBtn")?.addEventListener("click", loadDispatchPlans);
     dispatchPlanElement("dispatchPlansDateFilter")?.addEventListener("change", loadDispatchPlans);
@@ -1152,14 +1225,20 @@
     document.addEventListener("keydown", (event) => {
       if (event.key !== "Escape") return;
       const openModal = document.querySelector(".dispatch-plan-modal:not(.hidden)");
-      if (openModal) dispatchPlanCloseModal(openModal.id);
+      if (openModal) {
+        dispatchPlanCloseModal(openModal.id);
+      } else if (dispatchPlanModalIsOpen("dispatchPlanningModal")) {
+        closeDispatchPlanningParentModal();
+      }
     });
   }
 
   async function setupDispatchPlansModule() {
     const workspace = dispatchPlanElement("dispatchPlansWorkspace");
     if (!workspace || workspace.dataset.bound === "true") return;
-    if (!dispatchPlanUserHasAccess(dispatchPlanCurrentUser())) {
+    const hasAccess = dispatchPlanUserHasAccess(dispatchPlanCurrentUser());
+    dispatchPlanSetTriggerAccess(hasAccess);
+    if (!hasAccess) {
       workspace.hidden = true;
       workspace.setAttribute("aria-hidden", "true");
       return;
@@ -1210,7 +1289,10 @@
     removePlanStop,
     movePlanStop,
     renderPlanStops,
-    setupDispatchPlansModule
+    setupDispatchPlansModule,
+    openDispatchPlanningParentModal,
+    closeDispatchPlanningParentModal,
+    closeDispatchPlanningModalsForNavigation
   };
 
   Object.assign(globalScope, exported);

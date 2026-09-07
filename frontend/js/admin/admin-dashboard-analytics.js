@@ -1670,7 +1670,7 @@ function renderCategoryAnalytics(records = validatedWasteRecords) {
   });
 }
 
-function initializeDashboardData() {
+async function initializeDashboardData() {
   setupDashboardAdvancedPeriodFilters();
   setupDashboardRangeFilters();
   setupCategoryRangeFilters();
@@ -1718,6 +1718,7 @@ function initializeDashboardData() {
   }
 
   syncDashboardPeriodSelects();
+  await loadDashboardOperationsSnapshot();
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -1939,3 +1940,414 @@ if (typeof syncDashboardPeriodSelects === "function" && !window.__dashboardCusto
 window.setupDashboardCustomPeriodDropdowns = setupDashboardCustomPeriodDropdowns;
 window.syncDashboardCustomDropdown = syncDashboardCustomDropdown;
 window.closeAllDashboardCustomDropdowns = closeAllDashboardCustomDropdowns;
+
+/* =========================================================
+   DASHBOARD OPERATIONS SNAPSHOT
+   Read-only aggregation of existing Fleet, Dispatch, and
+   Tracking endpoints. No polling or management actions live here.
+========================================================= */
+
+const DASHBOARD_OPERATIONS_TIME_ZONE = "Asia/Manila";
+
+function dashboardOperationsElement(id) {
+  return document.getElementById(id);
+}
+
+function dashboardOperationsSetText(id, value) {
+  const element = dashboardOperationsElement(id);
+  if (element) element.textContent = String(value ?? "—");
+}
+
+function dashboardOperationsSetStatus(id, label, state = "neutral") {
+  const element = dashboardOperationsElement(id);
+  if (!element) return;
+  element.textContent = String(label || "Unavailable");
+  element.dataset.state = state;
+}
+
+function dashboardOperationsCount(value) {
+  const count = Number(value);
+  return Number.isFinite(count) && count >= 0 ? Math.floor(count) : 0;
+}
+
+function dashboardOperationsList(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function dashboardOperationsCalendarDate(now = new Date(), offsetDays = 0) {
+  if (typeof dispatchPlanCalendarDate === "function") {
+    return dispatchPlanCalendarDate(now, offsetDays);
+  }
+
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: DASHBOARD_OPERATIONS_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(now);
+  const values = Object.fromEntries(
+    parts
+      .filter((part) => ["year", "month", "day"].includes(part.type))
+      .map((part) => [part.type, part.value])
+  );
+  const calendar = new Date(Date.UTC(
+    Number(values.year),
+    Number(values.month) - 1,
+    Number(values.day) + Number(offsetDays || 0)
+  ));
+  return [
+    calendar.getUTCFullYear(),
+    String(calendar.getUTCMonth() + 1).padStart(2, "0"),
+    String(calendar.getUTCDate()).padStart(2, "0")
+  ].join("-");
+}
+
+function dashboardOperationsPlanStatus(plan = {}) {
+  return String(plan.status || "").trim().toLowerCase();
+}
+
+function dashboardOperationsPlannedForDate(plans = [], operationalDate = "") {
+  return dashboardOperationsList(plans).filter((plan) =>
+    String(plan.operational_date || "").slice(0, 10) === operationalDate &&
+    dashboardOperationsPlanStatus(plan) === "planned"
+  );
+}
+
+function dashboardOperationsTimeLabel(value) {
+  const text = String(value || "").trim();
+  const match = text.match(/(?:T|\s)(\d{2}):(\d{2})/);
+  if (!match) return "Not set";
+  const hour = Number(match[1]);
+  const minute = match[2];
+  if (!Number.isInteger(hour) || hour < 0 || hour > 23) return "Not set";
+  return `${hour % 12 || 12}:${minute} ${hour >= 12 ? "PM" : "AM"}`;
+}
+
+function dashboardOperationsNextSchedule(plans = [], today = "", tomorrow = "") {
+  const candidates = dashboardOperationsList(plans)
+    .filter((plan) => {
+      const operationalDate = String(plan.operational_date || "").slice(0, 10);
+      return dashboardOperationsPlanStatus(plan) === "planned" &&
+        operationalDate >= today;
+    })
+    .sort((first, second) => {
+      const firstDate = String(first.operational_date || "").slice(0, 10);
+      const secondDate = String(second.operational_date || "").slice(0, 10);
+      if (firstDate !== secondDate) return firstDate.localeCompare(secondDate);
+      const firstTime = String(first.scheduled_start || "99:99");
+      const secondTime = String(second.scheduled_start || "99:99");
+      return firstTime.localeCompare(secondTime) || Number(first.id || 0) - Number(second.id || 0);
+    });
+
+  const plan = candidates[0];
+  if (!plan) return null;
+  const operationalDate = String(plan.operational_date || "").slice(0, 10);
+  const dateLabel = operationalDate === today
+    ? "Today"
+    : operationalDate === tomorrow
+      ? "Tomorrow"
+      : operationalDate || "Date not set";
+  const timeLabel = dashboardOperationsTimeLabel(plan.scheduled_start);
+  const enforcer = String(plan.assigned_enforcer_name_snapshot || "").trim();
+  return {
+    truck: String(
+      plan.truck_name_snapshot || plan.truck_code_snapshot || "Truck not recorded"
+    ),
+    meta: `${dateLabel} • ${timeLabel}${enforcer ? ` • ${enforcer}` : ""}`
+  };
+}
+
+function dashboardOperationsParseDate(value) {
+  const text = String(value || "").trim();
+  if (!text) return null;
+  const normalized = /^\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}/.test(text)
+    ? `${text.replace(" ", "T")}+08:00`
+    : text;
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function dashboardOperationsDateTime(value) {
+  const date = dashboardOperationsParseDate(value);
+  if (!date) return "Time not recorded";
+  return date.toLocaleString("en-PH", {
+    timeZone: DASHBOARD_OPERATIONS_TIME_ZONE,
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
+}
+
+function dashboardOperationsStatus(status, fallbackLabel = "") {
+  const key = String(status || "").trim().toLowerCase();
+  const statusMap = {
+    completed: { label: "Completed", state: "completed" },
+    auto_stopped: { label: "Shift Completed", state: "completed" },
+    stopped: { label: "Manually Stopped", state: "warning" },
+    manual_stopped: { label: "Manually Stopped", state: "warning" },
+    closed_early: { label: "Closed Early", state: "warning" },
+    day_end_incomplete: { label: "Day-End Incomplete", state: "warning" },
+    dispatch_day_end_incomplete: { label: "Day-End Incomplete", state: "warning" },
+    dispatch_forced_day_rollover: { label: "Forced Day Rollover", state: "warning" },
+    cancelled: { label: "Cancelled", state: "cancelled" }
+  };
+  if (statusMap[key]) return statusMap[key];
+  return {
+    label: String(fallbackLabel || key.replace(/_/g, " ") || "Status unavailable"),
+    state: "neutral"
+  };
+}
+
+function dashboardOperationsDispatchModel(report = {}) {
+  const status = dashboardOperationsStatus(report.status || report.stored_status);
+  return {
+    source: "Dispatch Report",
+    truck: String(report.truck_name_snapshot || report.truck_id || "Truck not recorded"),
+    enforcer: String(
+      report.assigned_personnel_name || report.created_by_name || "Enforcer not recorded"
+    ),
+    statusLabel: status.label,
+    statusState: status.state,
+    endedAt: report.closed_at || report.actual_end_at || report.completed_at ||
+      report.cancelled_at || report.dispatch_date || null
+  };
+}
+
+function dashboardOperationsTrackingModel(reports = []) {
+  const terminal = dashboardOperationsList(reports)
+    .filter((report) =>
+      String(report.session_status || "").trim().toLowerCase() !== "active" &&
+      dashboardOperationsParseDate(report.ended_at)
+    )
+    .sort((first, second) =>
+      dashboardOperationsParseDate(second.ended_at) - dashboardOperationsParseDate(first.ended_at)
+    )[0];
+  if (!terminal) return null;
+  const status = dashboardOperationsStatus(
+    terminal.session_status,
+    terminal.report_status_label
+  );
+  return {
+    source: "Tracking Report",
+    truck: String(terminal.truck_name || terminal.truck_id || "Truck not recorded"),
+    enforcer: String(terminal.enforcer_name || "Enforcer not recorded"),
+    statusLabel: String(terminal.report_status_label || status.label),
+    statusState: status.state,
+    endedAt: terminal.ended_at
+  };
+}
+
+function renderDashboardFleetSummary(summary = null) {
+  if (!summary || typeof summary !== "object" || Array.isArray(summary)) {
+    [
+      "dashboardFleetTotal",
+      "dashboardFleetAvailable",
+      "dashboardFleetActive",
+      "dashboardFleetMaintenance",
+      "dashboardFleetOutOfService"
+    ].forEach((id) => dashboardOperationsSetText(id, "—"));
+    return;
+  }
+  const values = {
+    dashboardFleetTotal: dashboardOperationsCount(summary.total),
+    dashboardFleetAvailable: dashboardOperationsCount(summary.available),
+    dashboardFleetActive: dashboardOperationsCount(summary.active),
+    dashboardFleetMaintenance: dashboardOperationsCount(summary.for_maintenance),
+    dashboardFleetOutOfService: dashboardOperationsCount(summary.out_of_service)
+  };
+  Object.entries(values).forEach(([id, value]) => dashboardOperationsSetText(id, value));
+
+  // These hidden compatibility values are still consumed by the existing
+  // recommendation renderer and unchanged tracking preview code.
+  dashboardOperationsSetText("monitoringActiveTruckCount", values.dashboardFleetActive);
+  dashboardOperationsSetText("monitoringMaintenanceCount", values.dashboardFleetMaintenance);
+}
+
+function renderDashboardDispatchSummary({
+  todayPlans,
+  tomorrowPlans,
+  liveDispatches,
+  today,
+  tomorrow,
+  todayAvailable = true,
+  tomorrowAvailable = true,
+  liveAvailable = true
+} = {}) {
+  const plannedToday = dashboardOperationsPlannedForDate(todayPlans, today);
+  const plannedTomorrow = dashboardOperationsPlannedForDate(tomorrowPlans, tomorrow);
+  dashboardOperationsSetText(
+    "dashboardDispatchToday",
+    todayAvailable ? plannedToday.length : "—"
+  );
+  dashboardOperationsSetText(
+    "dashboardDispatchTomorrow",
+    tomorrowAvailable ? plannedTomorrow.length : "—"
+  );
+  dashboardOperationsSetText(
+    "dashboardDispatchActive",
+    liveAvailable && liveDispatches && typeof liveDispatches === "object"
+      ? Object.values(liveDispatches).filter(Boolean).length
+      : "—"
+  );
+
+  if (!todayAvailable || !tomorrowAvailable) {
+    dashboardOperationsSetText("dashboardDispatchNext", "Unavailable");
+    dashboardOperationsSetText("dashboardDispatchNextMeta", "Schedule data could not be loaded");
+    return;
+  }
+  const next = dashboardOperationsNextSchedule(
+    [...plannedToday, ...plannedTomorrow],
+    today,
+    tomorrow
+  );
+  dashboardOperationsSetText("dashboardDispatchNext", next?.truck || "No upcoming plan");
+  dashboardOperationsSetText(
+    "dashboardDispatchNextMeta",
+    next?.meta || "No planned dispatch found"
+  );
+}
+
+function renderDashboardLatestOperation(model = null, state = "empty") {
+  if (!model) {
+    const unavailable = state === "unavailable";
+    dashboardOperationsSetText(
+      "dashboardLatestSource",
+      unavailable ? "Recent reports are temporarily unavailable." : "Most recent completed field activity."
+    );
+    dashboardOperationsSetText(
+      "dashboardLatestTruck",
+      unavailable ? "Unavailable" : "No completed operations yet"
+    );
+    dashboardOperationsSetText(
+      "dashboardLatestEnforcer",
+      unavailable ? "Try again on the next Dashboard refresh" : "Dispatch and Tracking reports are empty"
+    );
+    dashboardOperationsSetStatus(
+      "dashboardLatestStatus",
+      unavailable ? "Unavailable" : "No activity",
+      "neutral"
+    );
+    dashboardOperationsSetText("dashboardLatestTime", "—");
+    return;
+  }
+
+  dashboardOperationsSetText("dashboardLatestSource", model.source);
+  dashboardOperationsSetText("dashboardLatestTruck", model.truck);
+  dashboardOperationsSetText("dashboardLatestEnforcer", model.enforcer);
+  dashboardOperationsSetStatus(
+    "dashboardLatestStatus",
+    model.statusLabel,
+    model.statusState
+  );
+  dashboardOperationsSetText(
+    "dashboardLatestTime",
+    dashboardOperationsDateTime(model.endedAt)
+  );
+}
+
+async function dashboardOperationsRequest(url) {
+  const response = await webAdminFetch(url, {
+    headers: { Accept: "application/json" }
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload.success === false) {
+    throw new Error("Dashboard operations data is temporarily unavailable.");
+  }
+  return Array.isArray(payload) ? payload : payload.data;
+}
+
+async function loadDashboardFleetSummary() {
+  try {
+    const summary = await dashboardOperationsRequest(getFleetSummaryApiUrl());
+    renderDashboardFleetSummary(summary);
+    return summary;
+  } catch (error) {
+    renderDashboardFleetSummary(null);
+    throw error;
+  }
+}
+
+async function loadDashboardDispatchSummary(now = new Date()) {
+  const today = dashboardOperationsCalendarDate(now, 0);
+  const tomorrow = dashboardOperationsCalendarDate(now, 1);
+  const [todayResult, tomorrowResult, liveResult] = await Promise.allSettled([
+    dashboardOperationsRequest(getDispatchPlansApiUrl({ operational_date: today })),
+    dashboardOperationsRequest(getDispatchPlansApiUrl({ operational_date: tomorrow })),
+    dashboardOperationsRequest(getDispatchLiveApiUrl())
+  ]);
+  renderDashboardDispatchSummary({
+    todayPlans: todayResult.status === "fulfilled" ? todayResult.value : [],
+    tomorrowPlans: tomorrowResult.status === "fulfilled" ? tomorrowResult.value : [],
+    liveDispatches: liveResult.status === "fulfilled" ? liveResult.value : null,
+    today,
+    tomorrow,
+    todayAvailable: todayResult.status === "fulfilled",
+    tomorrowAvailable: tomorrowResult.status === "fulfilled",
+    liveAvailable: liveResult.status === "fulfilled"
+  });
+  return { todayResult, tomorrowResult, liveResult };
+}
+
+async function loadDashboardLatestOperation() {
+  let dispatchFailed = false;
+  try {
+    const dispatchReports = dashboardOperationsList(
+      await dashboardOperationsRequest(getDispatchReportsApiUrl())
+    );
+    if (dispatchReports.length) {
+      const model = dashboardOperationsDispatchModel(dispatchReports[0]);
+      renderDashboardLatestOperation(model, "ready");
+      return model;
+    }
+  } catch (error) {
+    dispatchFailed = true;
+  }
+
+  try {
+    const trackingModel = dashboardOperationsTrackingModel(
+      await dashboardOperationsRequest(getTrackingReportsApiUrl())
+    );
+    renderDashboardLatestOperation(trackingModel, trackingModel ? "ready" : "empty");
+    return trackingModel;
+  } catch (error) {
+    renderDashboardLatestOperation(null, "unavailable");
+    if (dispatchFailed) throw error;
+    return null;
+  }
+}
+
+async function loadDashboardOperationsSnapshot() {
+  const results = await Promise.allSettled([
+    loadDashboardFleetSummary(),
+    loadDashboardDispatchSummary(),
+    loadDashboardLatestOperation()
+  ]);
+
+  try {
+    renderSystemRecommendations(validatedWasteRecords);
+  } catch (error) {
+    console.error("renderSystemRecommendations error:", error);
+  }
+  return results;
+}
+
+window.loadDashboardOperationsSnapshot = loadDashboardOperationsSnapshot;
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = {
+    dashboardOperationsCalendarDate,
+    dashboardOperationsPlannedForDate,
+    dashboardOperationsNextSchedule,
+    dashboardOperationsStatus,
+    dashboardOperationsDispatchModel,
+    dashboardOperationsTrackingModel,
+    renderDashboardFleetSummary,
+    renderDashboardDispatchSummary,
+    renderDashboardLatestOperation,
+    loadDashboardDispatchSummary,
+    loadDashboardLatestOperation,
+    loadDashboardOperationsSnapshot
+  };
+}

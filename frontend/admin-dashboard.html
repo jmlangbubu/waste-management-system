@@ -444,62 +444,135 @@
       </div>
 
       <div class="operations-snapshot-grid">
-        <div class="compact-recommendation-card operations-panel" role="region" aria-label="System Recommendations">
-          <div class="page-card-header">
-            <div class="dashboard-title-with-icon">
-              <div class="dashboard-card-icon dashboard-icon--recommendation" aria-hidden="true">
-                <svg viewBox="0 0 24 24" role="img" focusable="false">
-                  <path d="M12 2a7 7 0 0 0-4 12.74V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.26A7 7 0 0 0 12 2Z" />
-                  <path d="M10 22h4" />
-                  <path d="M9.5 9.5a2.5 2.5 0 0 1 5 0" />
-                </svg>
-              </div>
-              <div>
-                <h2>System Recommendations</h2>
-                <p>Operational guidance preview.</p>
-              </div>
+        <section class="operations-panel dashboard-fleet-status-panel" aria-labelledby="dashboardFleetStatusTitle">
+          <div class="operations-panel-heading">
+            <div class="dashboard-card-icon dashboard-icon--truck" aria-hidden="true">
+              <svg viewBox="0 0 24 24" role="img" focusable="false">
+                <path d="M3 7h11v8H3z" />
+                <path d="M14 10h3l3 3v2h-6z" />
+                <path d="M6.5 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z" />
+                <path d="M17.5 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z" />
+              </svg>
+            </div>
+            <div>
+              <h3 id="dashboardFleetStatusTitle">Fleet Status</h3>
+              <p>Registered condition and live operations.</p>
+            </div>
+          </div>
+
+          <div class="dashboard-operation-metrics dashboard-fleet-metrics" aria-live="polite">
+            <div class="dashboard-operation-metric metric-neutral">
+              <span>Registered</span>
+              <strong id="dashboardFleetTotal">—</strong>
+            </div>
+            <div class="dashboard-operation-metric metric-positive">
+              <span>Available</span>
+              <strong id="dashboardFleetAvailable">—</strong>
+            </div>
+            <div class="dashboard-operation-metric metric-active">
+              <span>Active</span>
+              <strong id="dashboardFleetActive">—</strong>
+            </div>
+            <div class="dashboard-operation-metric metric-warning">
+              <span>Maintenance</span>
+              <strong id="dashboardFleetMaintenance">—</strong>
+            </div>
+            <div class="dashboard-operation-metric metric-danger">
+              <span>Out of Service</span>
+              <strong id="dashboardFleetOutOfService">—</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="operations-panel dashboard-dispatch-summary-panel" aria-labelledby="dashboardDispatchSummaryTitle">
+          <div class="operations-panel-heading">
+            <div class="dashboard-card-icon dashboard-icon--dispatch" aria-hidden="true">
+              <svg viewBox="0 0 24 24" role="img" focusable="false">
+                <path d="M5 3v3M19 3v3M4 8h16" />
+                <rect x="3" y="5" width="18" height="16" rx="3" />
+                <path d="M8 12h3M8 16h8" />
+              </svg>
+            </div>
+            <div>
+              <h3 id="dashboardDispatchSummaryTitle">Dispatch Planning</h3>
+              <p>Today, tomorrow, and active field work.</p>
+            </div>
+          </div>
+
+          <div class="dashboard-operation-metrics dashboard-dispatch-metrics" aria-live="polite">
+            <div class="dashboard-operation-metric metric-neutral">
+              <span>Planned Today</span>
+              <strong id="dashboardDispatchToday">—</strong>
+            </div>
+            <div class="dashboard-operation-metric metric-neutral">
+              <span>Planned Tomorrow</span>
+              <strong id="dashboardDispatchTomorrow">—</strong>
+            </div>
+            <div class="dashboard-operation-metric metric-active">
+              <span>Active Dispatches</span>
+              <strong id="dashboardDispatchActive">—</strong>
+            </div>
+            <div class="dashboard-next-schedule">
+              <span>Next Schedule</span>
+              <strong id="dashboardDispatchNext">Loading schedule…</strong>
+              <small id="dashboardDispatchNextMeta">Checking planned dispatches</small>
+            </div>
+          </div>
+        </section>
+
+        <section class="operations-panel dashboard-latest-operation-panel" aria-labelledby="dashboardLatestOperationTitle">
+          <div class="operations-panel-heading">
+            <div class="dashboard-card-icon dashboard-icon--latest-operation" aria-hidden="true">
+              <svg viewBox="0 0 24 24" role="img" focusable="false">
+                <path d="M12 7v5l3 2" />
+                <circle cx="12" cy="12" r="9" />
+                <path d="m8 18 2 2 4-4" />
+              </svg>
+            </div>
+            <div>
+              <h3 id="dashboardLatestOperationTitle">Latest Operations</h3>
+              <p id="dashboardLatestSource">Most recent completed field activity.</p>
+            </div>
+          </div>
+
+          <div class="dashboard-latest-operation" id="dashboardLatestOperation" aria-live="polite">
+            <div class="dashboard-latest-operation-copy">
+              <strong id="dashboardLatestTruck">Loading operations…</strong>
+              <span id="dashboardLatestEnforcer">Checking recent reports</span>
+            </div>
+            <div class="dashboard-latest-operation-result">
+              <span class="dashboard-operation-status" id="dashboardLatestStatus">Loading</span>
+              <time id="dashboardLatestTime">—</time>
+            </div>
+          </div>
+        </section>
+
+        <section class="compact-recommendation-card operations-panel dashboard-recommendations-panel" aria-labelledby="dashboardRecommendationsTitle">
+          <div class="operations-panel-heading">
+            <div class="dashboard-card-icon dashboard-icon--recommendation" aria-hidden="true">
+              <svg viewBox="0 0 24 24" role="img" focusable="false">
+                <path d="M12 2a7 7 0 0 0-4 12.74V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.26A7 7 0 0 0 12 2Z" />
+                <path d="M10 22h4" />
+                <path d="M9.5 9.5a2.5 2.5 0 0 1 5 0" />
+              </svg>
+            </div>
+            <div>
+              <h3 id="dashboardRecommendationsTitle">System Recommendations</h3>
+              <p>Compact operational guidance.</p>
             </div>
           </div>
 
           <div class="summary-list" id="recommendationList">
             <div class="summary-item"><span>No recommendations available yet.</span></div>
           </div>
-        </div>
+        </section>
+      </div>
 
-        <div class="monitoring-alert-card operations-panel" role="region" aria-label="Truck Monitoring">
-          <div class="page-card-header compact-header">
-            <div class="dashboard-title-with-icon">
-              <div class="dashboard-card-icon dashboard-icon--truck" aria-hidden="true">
-                <svg viewBox="0 0 24 24" role="img" focusable="false">
-                  <path d="M3 7h11v8H3z" />
-                  <path d="M14 10h3l3 3v2h-6z" />
-                  <path d="M6.5 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z" />
-                  <path d="M17.5 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z" />
-                </svg>
-              </div>
-              <div>
-                <h2>Truck Monitoring</h2>
-                <p>Fleet status and recent tracking events.</p>
-              </div>
-            </div>
-            <button type="button" class="view-all-btn small" id="viewAllTruckAnalyticsBtn">View All</button>
-          </div>
-
-          <div class="monitoring-summary-row">
-            <div class="monitoring-mini-box">
-              <span>Active</span>
-              <strong id="monitoringActiveTruckCount">0</strong>
-            </div>
-            <div class="monitoring-mini-box warning">
-              <span>Maintenance</span>
-              <strong id="monitoringMaintenanceCount">0</strong>
-            </div>
-          </div>
-
-          <div class="summary-list monitoring-alert-list" id="monitoringAlertList">
-            <div class="summary-item"><span>No truck monitoring alerts yet.</span></div>
-          </div>
-        </div>
+      <div class="dashboard-legacy-monitoring-hooks" hidden aria-hidden="true">
+        <button type="button" id="viewAllTruckAnalyticsBtn" tabindex="-1">View All</button>
+        <span id="monitoringActiveTruckCount">0</span>
+        <span id="monitoringMaintenanceCount">0</span>
+        <div id="monitoringAlertList"></div>
       </div>
     </div>
   </div>
@@ -904,134 +977,18 @@
 
 <!-- TRACKING -->
 <section id="trackingSection" class="content-section">
-  <div class="page-card fleet-overview-card" aria-labelledby="fleetOverviewTitle">
-    <div class="fleet-overview-header">
-      <div>
-        <span class="fleet-overview-eyebrow">Registered WMO fleet</span>
-        <h2 id="fleetOverviewTitle">Fleet Overview</h2>
-        <p>Fleet condition and current operational activity are reported separately.</p>
-      </div>
-      <div class="fleet-overview-actions">
-        <button type="button" class="fleet-button secondary" id="fleetRefreshBtn" aria-label="Refresh fleet overview">
-          Refresh
-        </button>
-        <button type="button" class="fleet-button primary" id="fleetAddTruckBtn">
-          Add Truck
-        </button>
-      </div>
-    </div>
-
-    <div class="fleet-summary-grid" aria-label="Fleet summary">
-      <article class="fleet-summary-card total">
-        <span>Total Trucks</span>
-        <strong id="fleetSummaryTotal">0</strong>
-        <small>Registered fleet</small>
-      </article>
-      <article class="fleet-summary-card available">
-        <span>Available</span>
-        <strong id="fleetSummaryAvailable">0</strong>
-        <small>Fleet condition</small>
-      </article>
-      <article class="fleet-summary-card active">
-        <span>Active</span>
-        <strong id="fleetSummaryActive">0</strong>
-        <small>Operational state</small>
-      </article>
-      <article class="fleet-summary-card maintenance">
-        <span>For Maintenance</span>
-        <strong id="fleetSummaryMaintenance">0</strong>
-        <small>Fleet condition</small>
-      </article>
-      <article class="fleet-summary-card unavailable">
-        <span>Out of Service</span>
-        <strong id="fleetSummaryOutOfService">0</strong>
-        <small>Fleet condition</small>
-      </article>
-    </div>
-
-    <p class="fleet-summary-note">
-      Active is an operational count. Condition totals may overlap with active operations.
-    </p>
-
-    <div id="fleetStatusMessage" class="fleet-status-message hidden" role="status" aria-live="polite"></div>
-    <div class="fleet-table-shell">
-      <table class="fleet-table">
-        <thead>
-          <tr>
-            <th>Truck</th>
-            <th>Plate Number</th>
-            <th>Fleet Condition</th>
-            <th>Operational State</th>
-            <th>GPS</th>
-            <th>Assignable</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody id="fleetTableBody">
-          <tr><td colspan="7" class="fleet-table-state">Loading registered fleet...</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <div id="dispatchPlansWorkspace" class="page-card dispatch-plans-card" aria-labelledby="dispatchPlansTitle" hidden>
-    <div class="dispatch-plans-header">
-      <div>
-        <span class="dispatch-plans-eyebrow">Pre-operation planning</span>
-        <h2 id="dispatchPlansTitle">Dispatch Planning</h2>
-        <p>Prepare manual truck, enforcer, and ordered destination assignments for an operational date.</p>
-      </div>
-      <div class="dispatch-plans-header-actions">
-        <button type="button" class="dispatch-plans-button secondary" id="dispatchPlansRefreshBtn">Refresh</button>
-        <button type="button" class="dispatch-plans-button primary" id="dispatchPlanCreateBtn">Create Plan</button>
-      </div>
-    </div>
-
-    <div class="dispatch-plans-filters" aria-label="Dispatch plan filters">
-      <label class="dispatch-plan-field">
-        <span>Operational Date</span>
-        <input type="date" id="dispatchPlansDateFilter">
-      </label>
-      <label class="dispatch-plan-field">
-        <span>Status</span>
-        <select id="dispatchPlansStatusFilter">
-          <option value="">All statuses</option>
-          <option value="planned">Planned</option>
-          <option value="activated">Activated</option>
-          <option value="cancelled">Cancelled</option>
-        </select>
-      </label>
-    </div>
-
-    <div id="dispatchPlansStatusMessage" class="dispatch-plans-status hidden" role="status" aria-live="polite"></div>
-    <div class="dispatch-plans-table-shell">
-      <table class="dispatch-plans-table">
-        <thead>
-          <tr>
-            <th>Date</th>
-            <th>Truck</th>
-            <th>Enforcer</th>
-            <th>Route</th>
-            <th>Stops</th>
-            <th>Schedule</th>
-            <th>Status</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody id="dispatchPlansTableBody">
-          <tr><td colspan="8" class="dispatch-plans-table-state">Loading planned dispatches...</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-
   <div class="page-card live-tracking-card">
     <div class="tracking-module-toolbar">
       <span class="tracking-eyebrow">WMO operations workspace</span>
-      <button type="button" class="tracking-compact-link" id="openTrackingReportsBtn">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></svg>
-        Dispatch Reports
-      </button>
+      <div class="tracking-module-actions" aria-label="WMO operations actions">
+        <button type="button" class="tracking-compact-link" id="openFleetOverviewBtn" hidden>Fleet Overview</button>
+        <button type="button" class="tracking-compact-link" id="openDispatchPlanningBtn" hidden>Dispatch Planning</button>
+        <button type="button" class="tracking-compact-link tracking-panel-tickets-button" id="dispatchOpenTicketsBtn">Tickets</button>
+        <button type="button" class="tracking-compact-link" id="openTrackingReportsBtn">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></svg>
+          Dispatch Reports
+        </button>
+      </div>
     </div>
 
     <div class="tracking-status-ribbon" aria-label="Live tracking status">
@@ -1099,7 +1056,6 @@
               <p>Select a truck, choose stops, then dispatch.</p>
             </div>
           </div>
-          <button type="button" class="tracking-panel-tickets-button" id="dispatchOpenTicketsBtn">Tickets</button>
         </div>
 
         <div class="tracking-workspace-scroll dispatch-monitor-scroll">
@@ -1415,6 +1371,155 @@
     </div>
   </div>
 </section>
+
+<div id="fleetOverviewModal" class="custom-modal fleet-overview-parent-modal hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="fleetOverviewTitle">
+  <div class="custom-modal-overlay" id="fleetOverviewParentOverlay"></div>
+  <div class="custom-modal-content fleet-overview-parent-content">
+    <div class="custom-modal-header fleet-overview-parent-header">
+      <div>
+        <span class="fleet-overview-eyebrow">WMO fleet management</span>
+        <p>Review the registered fleet, operational state, and current GPS availability.</p>
+      </div>
+      <button type="button" class="modal-close-btn" id="fleetOverviewParentCloseBtn" aria-label="Close Fleet Overview">&times;</button>
+    </div>
+    <div class="custom-modal-body fleet-overview-parent-body">
+      <div class="page-card fleet-overview-card" aria-labelledby="fleetOverviewTitle">
+        <div class="fleet-overview-header">
+          <div>
+            <span class="fleet-overview-eyebrow">Registered WMO fleet</span>
+            <h2 id="fleetOverviewTitle">Fleet Overview</h2>
+            <p>Fleet condition and current operational activity are reported separately.</p>
+          </div>
+          <div class="fleet-overview-actions">
+            <button type="button" class="fleet-button secondary" id="fleetRefreshBtn" aria-label="Refresh fleet overview">
+              Refresh
+            </button>
+            <button type="button" class="fleet-button primary" id="fleetAddTruckBtn">
+              Add Truck
+            </button>
+          </div>
+        </div>
+
+        <div class="fleet-summary-grid" aria-label="Fleet summary">
+          <article class="fleet-summary-card total">
+            <span>Total Trucks</span>
+            <strong id="fleetSummaryTotal">0</strong>
+            <small>Registered fleet</small>
+          </article>
+          <article class="fleet-summary-card available">
+            <span>Available</span>
+            <strong id="fleetSummaryAvailable">0</strong>
+            <small>Fleet condition</small>
+          </article>
+          <article class="fleet-summary-card active">
+            <span>Active</span>
+            <strong id="fleetSummaryActive">0</strong>
+            <small>Operational state</small>
+          </article>
+          <article class="fleet-summary-card maintenance">
+            <span>For Maintenance</span>
+            <strong id="fleetSummaryMaintenance">0</strong>
+            <small>Fleet condition</small>
+          </article>
+          <article class="fleet-summary-card unavailable">
+            <span>Out of Service</span>
+            <strong id="fleetSummaryOutOfService">0</strong>
+            <small>Fleet condition</small>
+          </article>
+        </div>
+
+        <p class="fleet-summary-note">
+          Active is an operational count. Condition totals may overlap with active operations.
+        </p>
+
+        <div id="fleetStatusMessage" class="fleet-status-message hidden" role="status" aria-live="polite"></div>
+        <div class="fleet-table-shell">
+          <table class="fleet-table">
+            <thead>
+              <tr>
+                <th>Truck</th>
+                <th>Plate Number</th>
+                <th>Fleet Condition</th>
+                <th>Operational State</th>
+                <th>GPS</th>
+                <th>Assignable</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="fleetTableBody">
+              <tr><td colspan="7" class="fleet-table-state">Loading registered fleet...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="dispatchPlanningModal" class="custom-modal dispatch-planning-parent-modal hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="dispatchPlansTitle">
+  <div class="custom-modal-overlay" id="dispatchPlanningParentOverlay"></div>
+  <div class="custom-modal-content dispatch-planning-parent-content">
+    <div class="custom-modal-header dispatch-planning-parent-header">
+      <div>
+        <span class="dispatch-plans-eyebrow">WMO dispatch preparation</span>
+        <p>Review and prepare dated truck, enforcer, and destination assignments.</p>
+      </div>
+      <button type="button" class="modal-close-btn" id="dispatchPlanningParentCloseBtn" aria-label="Close Dispatch Planning">&times;</button>
+    </div>
+    <div class="custom-modal-body dispatch-planning-parent-body">
+      <div id="dispatchPlansWorkspace" class="page-card dispatch-plans-card" aria-labelledby="dispatchPlansTitle" hidden>
+        <div class="dispatch-plans-header">
+          <div>
+            <span class="dispatch-plans-eyebrow">Pre-operation planning</span>
+            <h2 id="dispatchPlansTitle">Dispatch Planning</h2>
+            <p>Prepare manual truck, enforcer, and ordered destination assignments for an operational date.</p>
+          </div>
+          <div class="dispatch-plans-header-actions">
+            <button type="button" class="dispatch-plans-button secondary" id="dispatchPlansRefreshBtn">Refresh</button>
+            <button type="button" class="dispatch-plans-button primary" id="dispatchPlanCreateBtn">Create Plan</button>
+          </div>
+        </div>
+
+        <div class="dispatch-plans-filters" aria-label="Dispatch plan filters">
+          <label class="dispatch-plan-field">
+            <span>Operational Date</span>
+            <input type="date" id="dispatchPlansDateFilter">
+          </label>
+          <label class="dispatch-plan-field">
+            <span>Status</span>
+            <select id="dispatchPlansStatusFilter">
+              <option value="">All statuses</option>
+              <option value="planned">Planned</option>
+              <option value="activated">Activated</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </label>
+        </div>
+
+        <div id="dispatchPlansStatusMessage" class="dispatch-plans-status hidden" role="status" aria-live="polite"></div>
+        <div class="dispatch-plans-table-shell">
+          <table class="dispatch-plans-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Truck</th>
+                <th>Enforcer</th>
+                <th>Route</th>
+                <th>Stops</th>
+                <th>Schedule</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="dispatchPlansTableBody">
+              <tr><td colspan="8" class="dispatch-plans-table-state">Loading planned dispatches...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <div id="dispatchPlanFormModal" class="custom-modal dispatch-plan-modal hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="dispatchPlanFormTitle">
   <div class="custom-modal-overlay" id="dispatchPlanFormOverlay"></div>

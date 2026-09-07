@@ -222,6 +222,20 @@ body > #dispatchDailyReportModal {
   z-index: 30010;
 }
 
+@media (max-width: 1200px) {
+  body > #dispatchReportsModal.custom-modal > .dispatch-reports-modal-content,
+  body > #dispatchReportModal.custom-modal > .dispatch-report-modal-content,
+  body > #dispatchDailyReportModal.custom-modal > .dispatch-report-modal-content {
+    top: auto !important;
+    right: auto !important;
+    left: auto !important;
+    width: min(1240px, calc(100vw - 32px)) !important;
+    max-width: calc(100vw - 32px) !important;
+    margin: 0 auto !important;
+    transform: none !important;
+  }
+}
+
 .dispatch-report-mode-tabs {
   display: inline-flex;
   gap: 4px;
@@ -2034,6 +2048,22 @@ body > #dispatchDailyReportModal {
   margin-bottom: 8px;
 }
 
+#trackingSection .tracking-module-actions {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+#trackingSection .tracking-module-actions .tracking-compact-link {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 #trackingSection .tracking-eyebrow {
   color: #77867e;
   font-size: 10px;
@@ -2804,6 +2834,16 @@ body > #dispatchDailyReportModal {
 }
 
 @media (max-width: 992px) {
+  #trackingSection .tracking-module-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  #trackingSection .tracking-module-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
   #trackingSection .tracking-status-ribbon {
     align-items: flex-start;
     flex-direction: column;
@@ -2818,6 +2858,20 @@ body > #dispatchDailyReportModal {
   #trackingSection .tracking-ribbon-actions {
     width: 100%;
     justify-content: flex-end;
+  }
+}
+
+@media (max-width: 560px) {
+  #trackingSection .tracking-module-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #trackingSection .tracking-module-actions .tracking-compact-link {
+    width: 100%;
+    min-width: 0;
+    justify-content: center;
+    white-space: normal;
   }
 }
 
