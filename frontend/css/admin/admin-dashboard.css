@@ -1339,7 +1339,7 @@
 }
 
 #dashboardSection.dashboard-executive .dashboard-side-stack {
-  grid-template-rows: minmax(128px, .7fr) minmax(142px, 1.3fr) !important;
+  grid-template-rows: minmax(154px, .7fr) minmax(116px, 1.3fr) !important;
   gap: 10px !important;
 }
 
@@ -2037,7 +2037,7 @@
 }
 
 #dashboardSection.dashboard-executive .latest-summary-card .session-row {
-  padding: 3px 10px !important;
+  padding: 2px 10px !important;
   border-color: #edf2ef !important;
 }
 
