@@ -216,21 +216,26 @@ function testBlockerUiShowsOnePriorityStateAndExistingDispatchAction() {
   assert.match(dispatchCss, /\.dispatch-eligibility-actions[\s\S]*flex-wrap:\s*wrap/);
 }
 
-function testReliableStartMarkerIsGoneButRouteOriginAndCurrentMarkerRemain() {
-  assert.doesNotMatch(tracking, /Reliable route start|selectedStartMarker|custom-start-marker/);
-  assert.doesNotMatch(state, /selectedStartMarker/);
+function testActualDispatchStartMarkerAndExistingRouteMarkersRemainIndependent() {
+  assert.doesNotMatch(state, /selectedDispatchStartMarker/);
   assert.doesNotMatch(dispatchCss, /tracking-route-endpoint\.start/);
-  assert.doesNotMatch(trackingCss, /custom-start-marker/);
+  assert.match(trackingCss, /#trackingSection \.tracking-route-endpoint\.start/);
 
   const route = functionBlock(
     tracking,
     "async function loadTruckRoute",
     "async function hydrateSelectedTruckWorkspace"
   );
+  const actualRoute = functionBlock(
+    tracking,
+    "function renderTrackingActualRoute",
+    "function clearTrackingRoadMatchRequest"
+  );
   assert.match(route, /const startPoint = latlngs\[0\]/);
+  assert.match(route, /ensureTrackingDispatchStartMarker\(sessionId, routeResult\.startPoint \|\| routePoints\[0\]\)/);
   assert.match(route, /selectedReliableRoutePoint = currentReliablePoint/);
   assert.match(route, /selectedCurrentMarker = L\.marker/);
-  assert.match(route, /trackingActualRoutePane/);
+  assert.match(actualRoute, /trackingActualRoutePane/);
   assert.match(dispatch, /const DISPATCH_PLANNED_ROUTE_STYLE[\s\S]*color: "#2d73c7"/);
   assert.match(dispatch, /createDispatchWmoMarkerLayer[\s\S]*dispatchMarkerIcon\("W", "wmo"\)/);
 }
@@ -290,7 +295,7 @@ function run() {
   testSelectionChecksTicketBeforeGpsAndDoesNotEnterStepTwo();
   testInvalidNewDispatchNeverRequestsOsrmOrShowsTransactionFailure();
   testBlockerUiShowsOnePriorityStateAndExistingDispatchAction();
-  testReliableStartMarkerIsGoneButRouteOriginAndCurrentMarkerRemain();
+  testActualDispatchStartMarkerAndExistingRouteMarkersRemainIndependent();
   testExistingActiveRouteLifecycleRemainsIndependent();
   testBackendRaceGuardRemainsFinalAuthority();
   console.log("dispatchPlannerEligibilityPriority.test.js: all assertions passed");
