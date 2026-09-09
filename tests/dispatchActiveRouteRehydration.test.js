@@ -140,10 +140,10 @@ function testPollingRouteSignatureRetainsUnchangedActualTrail() {
     "async function hydrateSelectedTruckWorkspace"
   );
   const emptyRouteIndex = loader.indexOf("if (!routePoints.length)");
-  const removeRouteIndex = loader.indexOf("truckMap.removeLayer(selectedRoutePolyline)");
-  assert.ok(emptyRouteIndex >= 0 && emptyRouteIndex < removeRouteIndex);
+  const renderRouteIndex = loader.indexOf("renderTrackingActualRoute(routePoints)");
+  assert.ok(emptyRouteIndex >= 0 && emptyRouteIndex < renderRouteIndex);
   assert.match(loader, /const routeChanged = nextRouteSignature !== selectedRouteSignature \|\| !selectedRoutePolyline/);
-  assert.match(loader, /if \(routeChanged\) \{[\s\S]*clearTrackingGapPolylines/);
+  assert.match(loader, /if \(routeChanged\) \{[\s\S]*renderTrackingActualRoute\(routePoints\)/);
   assert.match(loader, /if \(!keepView && routeChanged\)/);
 }
 
@@ -266,10 +266,30 @@ function testOnlyEndDispatchPerformsTheIntendedActiveClear() {
   assert.match(endDispatch, /delete dispatchLiveBySession/);
 }
 
-function testReliableRouteStartMarkerRemainsAbsent() {
-  assert.doesNotMatch(dispatchSource, /Reliable route start/);
-  assert.doesNotMatch(trackingSource, /Reliable route start|selectedStartMarker|custom-start-marker/);
-  assert.doesNotMatch(stateSource, /selectedStartMarker/);
+function testDispatchStartMarkerIsSessionScopedToActualTrackingEvidence() {
+  const loader = functionBlock(
+    trackingSource,
+    "async function loadTruckRoute",
+    "async function hydrateSelectedTruckWorkspace"
+  );
+  const reset = functionBlock(
+    trackingSource,
+    "function resetTrackingView",
+    "function renderMonitoringAlerts"
+  );
+  const selection = functionBlock(
+    trackingSource,
+    "function selectTruck",
+    "function bindActiveTruckSelection"
+  );
+
+  assert.match(loader, /ensureTrackingDispatchStartMarker\(sessionId, routeResult\.startPoint \|\| routePoints\[0\]\)/);
+  assert.match(trackingSource, /<strong>Dispatch Start<\/strong>/);
+  assert.match(trackingSource, /tracking-route-endpoint start/);
+  assert.match(reset, /clearTrackingDispatchStartMarker\(\)/);
+  assert.match(selection, /if \(isDifferentSession\)[\s\S]*clearTrackingDispatchStartMarker\(\)/);
+  assert.doesNotMatch(dispatchSource, /ensureTrackingDispatchStartMarker|selectedDispatchStartMarker/);
+  assert.doesNotMatch(stateSource, /selectedDispatchStartMarker/);
 }
 
 function run() {
@@ -281,7 +301,7 @@ function run() {
   testGpsLossOsrmFailureAndPollingPreserveWorkingLayers();
   testPlannerCleanupCannotEraseMatchingActiveDispatch();
   testOnlyEndDispatchPerformsTheIntendedActiveClear();
-  testReliableRouteStartMarkerRemainsAbsent();
+  testDispatchStartMarkerIsSessionScopedToActualTrackingEvidence();
   console.log("dispatchActiveRouteRehydration.test.js: all assertions passed");
 }
 

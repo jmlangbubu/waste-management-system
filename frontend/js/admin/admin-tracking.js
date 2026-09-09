@@ -45,6 +45,20 @@ const TRACKING_MAX_DISPLAY_SPEED_METERS_PER_SECOND = 35;
 const TRACKING_MIN_JUMP_DISTANCE_METERS = 200;
 const TRACKING_FALLBACK_RECENT_POINT_LIMIT = 12;
 const TRACKING_ACTUAL_ROUTE_COLOR = "#285a48";
+const TRACKING_MATCH_SERVICE_ORIGIN = "https://router.project-osrm.org";
+const TRACKING_MATCH_TIMEOUT_MS = 12 * 1000;
+const TRACKING_MATCH_MAX_COORDINATES = 10;
+const TRACKING_MATCH_MIN_CONFIDENCE = 0.35;
+const TRACKING_MATCH_CACHE_LIMIT = 24;
+const TRACKING_MATCH_CHUNK_CACHE_LIMIT = 256;
+
+let selectedDispatchStartMarker = null;
+let selectedDispatchStartSessionId = "";
+let trackingRoadMatchAbortController = null;
+let trackingRoadMatchRequestId = 0;
+let trackingRouteLoadRequestId = 0;
+const trackingRoadMatchCache = new Map();
+const trackingRoadMatchChunkCache = new Map();
 
 function parseTrackingDate(value) {
   if (!value) return null;
@@ -305,6 +319,337 @@ function trackingRouteSignature(routePoints = []) {
     .join("|");
 }
 
+function isValidTrackingLatLngPair(point) {
+  return Array.isArray(point) &&
+    point.length >= 2 &&
+    Number.isFinite(Number(point[0])) &&
+    Number.isFinite(Number(point[1])) &&
+    Number(point[0]) >= -90 &&
+    Number(point[0]) <= 90 &&
+    Number(point[1]) >= -180 &&
+    Number(point[1]) <= 180;
+}
+
+function trackingPointToLatLng(point) {
+  const pair = [Number(point?.lat), Number(point?.lng)];
+  return isValidTrackingLatLngPair(pair) ? pair : null;
+}
+
+function splitTrackingDisplaySegments(displayedPoints = [], gapMs = TRACKING_ROUTE_GAP_MS) {
+  const segments = [];
+
+  (Array.isArray(displayedPoints) ? displayedPoints : []).forEach((point) => {
+    if (!trackingPointToLatLng(point)) return;
+    const currentSegment = segments[segments.length - 1];
+    const previous = currentSegment?.[currentSegment.length - 1];
+    const hasConfirmedGap = Boolean(
+      previous?.timestamp &&
+      point?.timestamp &&
+      point.timestamp - previous.timestamp > gapMs
+    );
+
+    if (!currentSegment || hasConfirmedGap) {
+      segments.push([point]);
+    } else {
+      currentSegment.push(point);
+    }
+  });
+
+  return segments;
+}
+
+function chunkTrackingMatchSegment(segment = [], maxCoordinates = TRACKING_MATCH_MAX_COORDINATES) {
+  const points = Array.isArray(segment) ? segment : [];
+  const safeLimit = Math.max(2, Math.floor(Number(maxCoordinates) || TRACKING_MATCH_MAX_COORDINATES));
+  if (points.length <= safeLimit) return points.length ? [points.slice()] : [];
+
+  const chunks = [];
+  let startIndex = 0;
+  while (startIndex < points.length - 1) {
+    const endIndex = Math.min(points.length, startIndex + safeLimit);
+    chunks.push(points.slice(startIndex, endIndex));
+    if (endIndex >= points.length) break;
+    startIndex = endIndex - 1;
+  }
+  return chunks;
+}
+
+function dedupeTrackingGeometryPoints(points = []) {
+  const deduped = [];
+  let previousKey = "";
+  (Array.isArray(points) ? points : []).forEach((point) => {
+    if (!isValidTrackingLatLngPair(point)) return;
+    const normalized = [Number(point[0]), Number(point[1])];
+    const key = `${normalized[0].toFixed(6)}:${normalized[1].toFixed(6)}`;
+    if (key === previousKey) return;
+    deduped.push(normalized);
+    previousKey = key;
+  });
+  return deduped;
+}
+
+function joinTrackingMatchedChunkGeometry(chunkGeometries = []) {
+  return dedupeTrackingGeometryPoints(
+    (Array.isArray(chunkGeometries) ? chunkGeometries : []).flatMap(
+      (geometry) => Array.isArray(geometry) ? geometry : []
+    )
+  );
+}
+
+function buildTrackingMatchUrl(points = []) {
+  const usablePoints = (Array.isArray(points) ? points : [])
+    .filter((point) => trackingPointToLatLng(point));
+  if (usablePoints.length < 2) return "";
+
+  const coordinates = usablePoints.map(
+    (point) => `${Number(point.lng).toFixed(6)},${Number(point.lat).toFixed(6)}`
+  ).join(";");
+  const query = new URLSearchParams({
+    geometries: "geojson",
+    overview: "full",
+    steps: "false",
+    tidy: "true",
+    gaps: "ignore"
+  });
+  const timestamps = usablePoints.map((point) => Math.floor(Number(point.timestamp) / 1000));
+  const hasUsableTimestamps = timestamps.every(
+    (timestamp, index) => Number.isFinite(timestamp) &&
+      timestamp > 0 &&
+      (!index || timestamp > timestamps[index - 1])
+  );
+  if (hasUsableTimestamps) query.set("timestamps", timestamps.join(";"));
+
+  return `${TRACKING_MATCH_SERVICE_ORIGIN}/match/v1/driving/${coordinates}?${query.toString()}`;
+}
+
+function parseTrackingMatchResponse(payload, minimumConfidence = TRACKING_MATCH_MIN_CONFIDENCE) {
+  const matchings = Array.isArray(payload?.matchings) ? payload.matchings : [];
+  if (payload?.code !== "Ok" || matchings.length !== 1) return null;
+
+  const matching = matchings[0];
+  const confidence = Number(matching?.confidence);
+  if (!Number.isFinite(confidence) || confidence < minimumConfidence) return null;
+
+  const coordinates = matching?.geometry?.coordinates;
+  if (!Array.isArray(coordinates) || coordinates.length < 2) return null;
+  const geometry = coordinates.map((coordinate) => [
+    Number(coordinate?.[1]),
+    Number(coordinate?.[0])
+  ]);
+  if (geometry.some((point) => !isValidTrackingLatLngPair(point))) return null;
+
+  return { geometry, confidence };
+}
+
+function createTrackingMatchAbortError(message = "Tracking road match was cancelled.") {
+  const error = new Error(message);
+  error.name = "AbortError";
+  return error;
+}
+
+async function requestTrackingMatchChunk(points = [], options = {}) {
+  const url = buildTrackingMatchUrl(points);
+  if (!url) throw new Error("At least two valid tracking points are required for road matching.");
+
+  const fetchImpl = options.fetchImpl || (typeof fetch === "function" ? fetch : null);
+  if (!fetchImpl) throw new Error("Road matching is unavailable in this browser.");
+
+  const timeoutMs = Math.max(1, Number(options.timeoutMs) || TRACKING_MATCH_TIMEOUT_MS);
+  const externalSignal = options.signal || null;
+  if (externalSignal?.aborted) throw createTrackingMatchAbortError();
+
+  const requestController = typeof AbortController === "function"
+    ? new AbortController()
+    : null;
+  let timeoutId = null;
+  let abortListener = null;
+
+  const timeoutPromise = new Promise((resolve, reject) => {
+    timeoutId = setTimeout(() => {
+      requestController?.abort();
+      reject(createTrackingMatchAbortError("Tracking road match timed out."));
+    }, timeoutMs);
+  });
+  const abortPromise = externalSignal
+    ? new Promise((resolve, reject) => {
+        abortListener = () => {
+          requestController?.abort();
+          reject(createTrackingMatchAbortError());
+        };
+        externalSignal.addEventListener("abort", abortListener, { once: true });
+      })
+    : null;
+
+  try {
+    const payload = await Promise.race([
+      Promise.resolve(fetchImpl(url, {
+        method: "GET",
+        headers: { Accept: "application/json" },
+        signal: requestController?.signal
+      })).then(async (response) => {
+        if (!response?.ok) {
+          throw new Error(`Tracking road match returned HTTP ${response?.status || "error"}.`);
+        }
+        return response.json();
+      }),
+      timeoutPromise,
+      ...(abortPromise ? [abortPromise] : [])
+    ]);
+    return parseTrackingMatchResponse(payload, options.minimumConfidence);
+  } finally {
+    if (timeoutId !== null) clearTimeout(timeoutId);
+    if (abortListener) externalSignal.removeEventListener("abort", abortListener);
+  }
+}
+
+function trackingMatchChunkCacheKey(namespace, points = []) {
+  return `${String(namespace || "")}|${trackingRouteSignature(points)}`;
+}
+
+async function getCachedTrackingMatchChunk(points = [], options = {}) {
+  const cache = options.chunkCache instanceof Map ? options.chunkCache : null;
+  if (!cache) return requestTrackingMatchChunk(points, options);
+
+  const key = trackingMatchChunkCacheKey(options.chunkCacheNamespace, points);
+  if (cache.has(key)) return cache.get(key);
+
+  const matched = await requestTrackingMatchChunk(points, options);
+  if (!matched || options.signal?.aborted) return matched;
+
+  cache.set(key, matched);
+  const maxEntries = Math.max(
+    1,
+    Number(options.chunkCacheLimit) || TRACKING_MATCH_CHUNK_CACHE_LIMIT
+  );
+  while (cache.size > maxEntries) {
+    cache.delete(cache.keys().next().value);
+  }
+  return matched;
+}
+
+function rawTrackingSegmentResult(segment = [], fallbackReason = "") {
+  return {
+    rawPoints: Array.isArray(segment) ? segment : [],
+    geometry: (Array.isArray(segment) ? segment : [])
+      .map(trackingPointToLatLng)
+      .filter(Boolean),
+    matched: false,
+    confidence: null,
+    fallbackReason
+  };
+}
+
+async function matchTrackingDisplaySegments(displayedPoints = [], options = {}) {
+  const rawSegments = splitTrackingDisplaySegments(displayedPoints, options.gapMs);
+  const segments = [];
+  let matchedSegmentCount = 0;
+  let eligibleSegmentCount = 0;
+  let aborted = false;
+
+  for (const segment of rawSegments) {
+    if (segment.length < 2) {
+      segments.push(rawTrackingSegmentResult(segment, "single_point"));
+      continue;
+    }
+    eligibleSegmentCount++;
+
+    if (aborted || options.signal?.aborted) {
+      aborted = true;
+      segments.push(rawTrackingSegmentResult(segment, "aborted"));
+      continue;
+    }
+
+    try {
+      const matchedChunks = [];
+      const confidenceValues = [];
+      const chunks = chunkTrackingMatchSegment(segment, options.maxCoordinates);
+      for (const chunk of chunks) {
+        const matched = await getCachedTrackingMatchChunk(chunk, options);
+        if (!matched?.geometry?.length) throw new Error("Road matcher returned no usable geometry.");
+        matchedChunks.push(matched.geometry);
+        confidenceValues.push(matched.confidence);
+      }
+
+      const geometry = joinTrackingMatchedChunkGeometry(matchedChunks);
+      if (geometry.length < 2) throw new Error("Road matcher returned insufficient geometry.");
+      matchedSegmentCount++;
+      segments.push({
+        rawPoints: segment,
+        geometry,
+        matched: true,
+        confidence: Math.min(...confidenceValues),
+        fallbackReason: ""
+      });
+    } catch (error) {
+      if (error?.name === "AbortError") aborted = true;
+      segments.push(rawTrackingSegmentResult(segment, error?.name === "AbortError" ? "aborted" : "unavailable"));
+    }
+  }
+
+  return {
+    segments,
+    matchedSegmentCount,
+    eligibleSegmentCount,
+    displayMode: matchedSegmentCount === eligibleSegmentCount && eligibleSegmentCount > 0
+      ? "road_matched"
+      : matchedSegmentCount > 0
+        ? "mixed_fallback"
+        : "raw_fallback",
+    aborted
+  };
+}
+
+function trackingMatchCacheKey(sessionId, routeSignature) {
+  return `${String(sessionId || "")}|${String(routeSignature || "")}`;
+}
+
+function getCachedTrackingMatch(displayedPoints, sessionId, routeSignature, options = {}) {
+  const cache = options.cache instanceof Map ? options.cache : trackingRoadMatchCache;
+  const key = trackingMatchCacheKey(sessionId, routeSignature);
+  if (cache.has(key)) return cache.get(key);
+
+  const pending = matchTrackingDisplaySegments(displayedPoints, {
+    ...options,
+    chunkCache: options.chunkCache instanceof Map
+      ? options.chunkCache
+      : trackingRoadMatchChunkCache,
+    chunkCacheNamespace: options.chunkCacheNamespace ?? String(sessionId || "")
+  }).then((result) => {
+    if (result.aborted && cache.get(key) === pending) cache.delete(key);
+    return result;
+  });
+  cache.set(key, pending);
+
+  const maxEntries = Math.max(1, Number(options.cacheLimit) || TRACKING_MATCH_CACHE_LIMIT);
+  while (cache.size > maxEntries) {
+    cache.delete(cache.keys().next().value);
+  }
+  return pending;
+}
+
+function isTrackingMatchResponseCurrent(sessionId, routeSignature, requestId, state = {}) {
+  const currentSessionId = Object.prototype.hasOwnProperty.call(state, "sessionId")
+    ? state.sessionId
+    : (typeof selectedSessionId === "undefined" ? null : selectedSessionId);
+  const currentRouteSignature = Object.prototype.hasOwnProperty.call(state, "routeSignature")
+    ? state.routeSignature
+    : (typeof selectedRouteSignature === "undefined" ? "" : selectedRouteSignature);
+  const currentRequestId = Object.prototype.hasOwnProperty.call(state, "requestId")
+    ? state.requestId
+    : trackingRoadMatchRequestId;
+  return String(currentSessionId || "") === String(sessionId || "") &&
+    String(currentRouteSignature || "") === String(routeSignature || "") &&
+    Number(currentRequestId) === Number(requestId);
+}
+
+function resolveTrackingStartMarkerAction(existingSessionId, nextSessionId, firstPoint) {
+  const position = trackingPointToLatLng(firstPoint);
+  if (!position) return { action: "none", position: null };
+  return String(existingSessionId || "") === String(nextSessionId || "")
+    ? { action: "keep", position }
+    : { action: "replace", position };
+}
+
 let trackingOperationalTrucks = [];
 
 function formatTrackingRelativeUpdate(value, now = Date.now()) {
@@ -456,6 +801,8 @@ function buildTrackingDisplayRoute(routeLogs = []) {
       : recentPoints.slice(-2);
   }
 
+  const startPoint = candidates[0] ? { ...candidates[0] } : null;
+
   const displayedPoints = [];
   let collapsedCount = 0;
   let rejectedJumpCount = 0;
@@ -508,6 +855,7 @@ function buildTrackingDisplayRoute(routeLogs = []) {
     validCount: normalizedPoints.length,
     reliableCount: reliablePoints.length,
     displayedPoints,
+    startPoint,
     markerPoint:
       [...displayedPoints].reverse().find(isTrackingPointReliable) || null,
     fallbackUsed,
@@ -573,6 +921,135 @@ function clearTrackingGapPolylines() {
   });
 
   window.trackingGapPolylines = [];
+}
+
+function renderTrackingActualRoute(routePoints = [], matchedResult = null) {
+  if (!truckMap) return null;
+  if (selectedRoutePolyline) truckMap.removeLayer(selectedRoutePolyline);
+  clearTrackingGapPolylines();
+  selectedRoutePolyline = L.featureGroup().addTo(truckMap);
+
+  const rawSegments = splitTrackingDisplaySegments(routePoints);
+  rawSegments.forEach((segment, index) => {
+    const rawGeometry = segment.map(trackingPointToLatLng).filter(Boolean);
+    const candidateGeometry = matchedResult?.segments?.[index]?.geometry;
+    const geometry = Array.isArray(candidateGeometry) &&
+      candidateGeometry.length >= 2 &&
+      candidateGeometry.every(isValidTrackingLatLngPair)
+      ? candidateGeometry
+      : rawGeometry;
+    if (geometry.length < 2) return;
+
+    L.polyline(geometry, {
+      color: TRACKING_ACTUAL_ROUTE_COLOR,
+      weight: 5,
+      opacity: 0.9,
+      pane: "trackingActualRoutePane",
+      lineCap: "round",
+      lineJoin: "round"
+    }).addTo(selectedRoutePolyline);
+  });
+
+  for (let index = 1; index < rawSegments.length; index++) {
+    const previous = rawSegments[index - 1][rawSegments[index - 1].length - 1];
+    const current = rawSegments[index][0];
+    const previousPosition = trackingPointToLatLng(previous);
+    const currentPosition = trackingPointToLatLng(current);
+    if (!previousPosition || !currentPosition) continue;
+
+    const gapLine = L.polyline([previousPosition, currentPosition], {
+      color: TRACKING_ACTUAL_ROUTE_COLOR,
+      weight: 4,
+      opacity: 0.7,
+      pane: "trackingActualRoutePane",
+      dashArray: "8, 10"
+    }).addTo(truckMap);
+    gapLine.bindPopup("Connected display segment after a confirmed synchronization gap.");
+    window.trackingGapPolylines.push(gapLine);
+  }
+
+  return selectedRoutePolyline;
+}
+
+function clearTrackingRoadMatchRequest() {
+  trackingRoadMatchRequestId++;
+  trackingRoadMatchAbortController?.abort();
+  trackingRoadMatchAbortController = null;
+}
+
+function clearTrackingDispatchStartMarker() {
+  if (selectedDispatchStartMarker && truckMap) {
+    truckMap.removeLayer(selectedDispatchStartMarker);
+  }
+  selectedDispatchStartMarker = null;
+  selectedDispatchStartSessionId = "";
+}
+
+function ensureTrackingDispatchStartMarker(sessionId, firstPoint) {
+  const action = resolveTrackingStartMarkerAction(
+    selectedDispatchStartSessionId,
+    sessionId,
+    firstPoint
+  );
+  if (action.action === "none") return null;
+  if (action.action === "keep" && selectedDispatchStartMarker) {
+    return selectedDispatchStartMarker;
+  }
+  if (action.action === "replace") clearTrackingDispatchStartMarker();
+
+  const startIcon = L.divIcon({
+    className: "custom-dispatch-start-marker",
+    html: '<span class="tracking-route-endpoint start">S</span>',
+    iconSize: [22, 22],
+    iconAnchor: [11, 11]
+  });
+  selectedDispatchStartMarker = L.marker(action.position, {
+    icon: startIcon,
+    pane: "dispatchMarkerPane",
+    zIndexOffset: -100
+  }).addTo(truckMap).bindPopup(`
+    <strong>Dispatch Start</strong><br>
+    Started: ${escapeHtml(formatTrackingTimeSafe(
+      firstPoint.recorded_at || firstPoint.created_at || firstPoint.createdAt
+    ))}
+  `);
+  selectedDispatchStartSessionId = String(sessionId || "");
+  return selectedDispatchStartMarker;
+}
+
+async function renderTrackingRoadMatchedRoute(sessionId, routeSignature, routePoints, options = {}) {
+  trackingRoadMatchAbortController?.abort();
+  const controller = typeof AbortController === "function" ? new AbortController() : null;
+  trackingRoadMatchAbortController = controller;
+  const requestId = ++trackingRoadMatchRequestId;
+
+  try {
+    const matchedResult = await getCachedTrackingMatch(
+      routePoints,
+      sessionId,
+      routeSignature,
+      { signal: controller?.signal }
+    );
+    if (
+      matchedResult.aborted ||
+      matchedResult.matchedSegmentCount < 1 ||
+      !isTrackingMatchResponseCurrent(sessionId, routeSignature, requestId)
+    ) {
+      return { applied: false, result: matchedResult };
+    }
+
+    renderTrackingActualRoute(routePoints, matchedResult);
+    if (!options.keepView && selectedRoutePolyline?.getLayers().length) {
+      truckMap.fitBounds(selectedRoutePolyline.getBounds(), { padding: [20, 20] });
+    }
+    return { applied: true, result: matchedResult };
+  } catch (error) {
+    return { applied: false, error };
+  } finally {
+    if (trackingRoadMatchAbortController === controller) {
+      trackingRoadMatchAbortController = null;
+    }
+  }
 }
 
 function getRoutePointTimestamp(point) {
@@ -987,12 +1464,16 @@ async function loadTruckRoute(sessionId, options = {}) {
   if (!truckMap) return;
 
   const { keepView = false } = options;
+  const routeLoadRequestId = ++trackingRouteLoadRequestId;
 
   try {
     const res = await webAdminFetch(getTrackingRouteApiUrl(sessionId));
     const data = await res.json();
 
-    if (String(selectedSessionId || "") !== String(sessionId || "")) return;
+    if (
+      routeLoadRequestId !== trackingRouteLoadRequestId ||
+      String(selectedSessionId || "") !== String(sessionId || "")
+    ) return;
 
     const routeLogs = Array.isArray(data?.data?.route_logs)
       ? data.data.route_logs
@@ -1012,57 +1493,12 @@ async function loadTruckRoute(sessionId, options = {}) {
     const nextRouteSignature = trackingRouteSignature(routePoints);
     const routeChanged = nextRouteSignature !== selectedRouteSignature || !selectedRoutePolyline;
     if (routeChanged) {
-      if (selectedRoutePolyline) truckMap.removeLayer(selectedRoutePolyline);
-      clearTrackingGapPolylines();
-      selectedRoutePolyline = L.featureGroup().addTo(truckMap);
-      let solidSegment = [latlngs[0]];
-      const addSolidSegment = (segment) => {
-        if (segment.length < 2) return;
-        L.polyline(segment, {
-          color: TRACKING_ACTUAL_ROUTE_COLOR,
-          weight: 5,
-          opacity: 0.9,
-          pane: "trackingActualRoutePane",
-          lineCap: "round",
-          lineJoin: "round"
-        }).addTo(selectedRoutePolyline);
-      };
-
-      for (let index = 1; index < routePoints.length; index++) {
-        const previous = routePoints[index - 1];
-        const current = routePoints[index];
-        const hasConfirmedGap =
-          previous.timestamp &&
-          current.timestamp &&
-          current.timestamp - previous.timestamp > TRACKING_ROUTE_GAP_MS;
-
-        if (hasConfirmedGap) {
-          addSolidSegment(solidSegment);
-          const gapLine = L.polyline(
-            [
-              [previous.lat, previous.lng],
-              [current.lat, current.lng]
-            ],
-            {
-              color: TRACKING_ACTUAL_ROUTE_COLOR,
-              weight: 4,
-              opacity: 0.7,
-              pane: "trackingActualRoutePane",
-              dashArray: "8, 10"
-            }
-          ).addTo(truckMap);
-          gapLine.bindPopup("Connected display segment after a confirmed synchronization gap.");
-          window.trackingGapPolylines.push(gapLine);
-          solidSegment = [[current.lat, current.lng]];
-        } else {
-          solidSegment.push([current.lat, current.lng]);
-        }
-      }
-      addSolidSegment(solidSegment);
+      renderTrackingActualRoute(routePoints);
       selectedRouteSignature = nextRouteSignature;
     }
 
     const startPoint = latlngs[0];
+    ensureTrackingDispatchStartMarker(sessionId, routeResult.startPoint || routePoints[0]);
     const currentReliablePoint = routeResult.markerPoint;
 
     if (currentReliablePoint) {
@@ -1075,7 +1511,11 @@ async function loadTruckRoute(sessionId, options = {}) {
           iconSize: [20, 20],
           iconAnchor: [10, 10]
         });
-        selectedCurrentMarker = L.marker(currentPoint, { icon: currentIcon, pane: "dispatchMarkerPane" })
+        selectedCurrentMarker = L.marker(currentPoint, {
+          icon: currentIcon,
+          pane: "dispatchMarkerPane",
+          zIndexOffset: 100
+        })
           .addTo(trackingCurrentTruckLayerGroup || truckMap)
           .bindPopup("");
       } else {
@@ -1102,6 +1542,15 @@ async function loadTruckRoute(sessionId, options = {}) {
       }
     }
 
+    if (routeChanged) {
+      void renderTrackingRoadMatchedRoute(
+        sessionId,
+        nextRouteSignature,
+        routePoints,
+        { keepView }
+      );
+    }
+
     const lastUpdated = document.getElementById("trackingLastUpdated");
     if (lastUpdated) {
       const lastPoint = currentReliablePoint || routePoints[routePoints.length - 1];
@@ -1125,12 +1574,15 @@ async function hydrateSelectedTruckWorkspace(sessionId, options = {}) {
 }
 
 function resetTrackingView(options = {}) {
+  trackingRouteLoadRequestId++;
+  clearTrackingRoadMatchRequest();
   if (selectedRoutePolyline && truckMap) {
     truckMap.removeLayer(selectedRoutePolyline);
     selectedRoutePolyline = null;
   }
 
   clearTrackingGapPolylines();
+  clearTrackingDispatchStartMarker();
 
   if (selectedCurrentMarker && truckMap) {
     (trackingCurrentTruckLayerGroup || truckMap).removeLayer(selectedCurrentMarker);
@@ -1496,10 +1948,13 @@ function selectTruck(sessionId, truckId, options = {}) {
   }
   const isDifferentSession = String(selectedSessionId || "") !== String(sessionId);
   if (isDifferentSession) {
+    trackingRouteLoadRequestId++;
+    clearTrackingRoadMatchRequest();
     if (selectedRoutePolyline && truckMap) truckMap.removeLayer(selectedRoutePolyline);
     selectedRoutePolyline = null;
     selectedRouteSignature = "";
     clearTrackingGapPolylines();
+    clearTrackingDispatchStartMarker();
     if (selectedCurrentMarker && truckMap) (trackingCurrentTruckLayerGroup || truckMap).removeLayer(selectedCurrentMarker);
     selectedCurrentMarker = null;
     selectedReliableRoutePoint = null;
@@ -2618,17 +3073,33 @@ if (typeof window !== "undefined") {
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     TRACKING_GPS_AVAILABILITY_WINDOW_MS,
+    TRACKING_MATCH_MAX_COORDINATES,
+    TRACKING_ROUTE_GAP_MS,
+    buildTrackingDisplayRoute,
+    buildTrackingMatchUrl,
     buildTrackingAvailabilitySnapshot,
+    chunkTrackingMatchSegment,
+    clearTrackingDispatchStartMarker,
+    dedupeTrackingGeometryPoints,
+    ensureTrackingDispatchStartMarker,
     filterAvailableTrackingTrucks,
     formatTrackingRelativeUpdate,
     formatTrackingTimeSafe,
+    getCachedTrackingMatch,
     getTrackingAvailabilityMeta,
     getTrackingTruckDispatchState,
     getTrackingTruckExistingTicket,
+    isTrackingMatchResponseCurrent,
     isTrackingTruckAvailable,
+    joinTrackingMatchedChunkGeometry,
+    matchTrackingDisplaySegments,
     parseTrackingDate,
+    parseTrackingMatchResponse,
+    renderTrackingActualRoute,
     renderActiveTruckList,
+    resolveTrackingStartMarkerAction,
     resolveTrackingMonitoredDispatch,
+    splitTrackingDisplaySegments,
     trackingRouteSignature
   };
 }
