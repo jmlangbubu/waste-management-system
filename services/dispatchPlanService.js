@@ -432,6 +432,10 @@ function normalizePlanRow(row = {}) {
     scheduled_start: row.scheduled_start ?? row.scheduled_start_at ?? null,
     expected_return: row.expected_return ?? row.expected_return_at ?? null,
     notes: row.notes || null,
+    activated_dispatch_ticket_id: row.activated_dispatch_ticket_id === null ||
+      row.activated_dispatch_ticket_id === undefined
+      ? null
+      : Number(row.activated_dispatch_ticket_id),
     stop_count: Number(row.stop_count || 0),
     revision: Number(row.revision || 1),
     created_at: row.created_at || null,
@@ -846,6 +850,7 @@ class DispatchPlanService {
             DATE_FORMAT(dp.scheduled_start_at, '%Y-%m-%d %H:%i:%s') AS scheduled_start,
             DATE_FORMAT(dp.expected_return_at, '%Y-%m-%d %H:%i:%s') AS expected_return,
             dp.notes,
+            dp.activated_dispatch_ticket_id,
             dp.revision,
             DATE_FORMAT(dp.created_at, '%Y-%m-%d %H:%i:%s') AS created_at,
             DATE_FORMAT(dp.updated_at, '%Y-%m-%d %H:%i:%s') AS updated_at,

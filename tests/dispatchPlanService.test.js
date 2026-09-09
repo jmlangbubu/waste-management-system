@@ -176,6 +176,7 @@ function planFixture(overrides = {}) {
     expected_return_at: "2026-08-30 17:00:00",
     status: "planned",
     notes: null,
+    activated_dispatch_ticket_id: null,
     revision: 1,
     created_by_web_user_id: 7,
     updated_by_web_user_id: null,
@@ -596,6 +597,22 @@ test("uses a schema-safe default label when optional route_name is omitted", asy
   assert.equal(result.route_name, "Planned Route");
 });
 
+test("creates a plan from the minimal assignment payload without fabricated metadata", async () => {
+  const pool = createMockDatabase();
+  const result = await serviceFor(pool).createPlan({
+    operational_date: "2026-08-30",
+    fleet_truck_id: 1,
+    assigned_enforcer_user_id: 11,
+    stops: [{ destination_id: 101, stop_order: 1 }]
+  }, { id: 7 });
+  assert.equal(result.route_name, "Planned Route");
+  assert.equal(result.description, null);
+  assert.equal(result.scheduled_start, null);
+  assert.equal(result.expected_return, null);
+  assert.equal(result.notes, null);
+  assert.equal(result.stops[0].expected_arrival, null);
+});
+
 test("rejects an empty stop list before opening a transaction", async () => {
   const pool = createMockDatabase();
   await assert.rejects(
@@ -755,7 +772,7 @@ test("lists plans by operational date and status using strict-grouping-safe SQL"
 
 test("detail returns strictly ordered snapshots without private auth fields", async () => {
   const pool = createMockDatabase({
-    plans: [planFixture()],
+    plans: [planFixture({ activated_dispatch_ticket_id: 88 })],
     stops: [
       stopFixture({ id: 2, stop_order: 2, destination_id: 102 }),
       stopFixture({ id: 1, stop_order: 1, destination_id: 101 })
@@ -763,6 +780,7 @@ test("detail returns strictly ordered snapshots without private auth fields", as
   });
   const detail = await serviceFor(pool).getPlan(1);
   assert.deepEqual(detail.stops.map((stop) => stop.stop_order), [1, 2]);
+  assert.equal(detail.activated_dispatch_ticket_id, 88);
   const serialized = JSON.stringify(detail);
   assert.doesNotMatch(serialized, /password|session_token|csrf|username/i);
 });
@@ -798,6 +816,35 @@ test("updates a planned plan, increments revision, and replaces stops transactio
   assert.equal(pool.state.plans[0].planned_route_snapshot, null);
   assert.equal(pool.transaction.committed, 1);
   assert.ok(pool.calls.some((call) => call.sql.startsWith("DELETE FROM dispatch_plan_stops")));
+});
+
+test("minimal edit preserves legacy plan metadata and carried stop arrival", async () => {
+  const pool = createMockDatabase({
+    plans: [planFixture({
+      route_name: "Legacy Custom Route",
+      route_description: "Legacy description",
+      scheduled_start_at: "2026-08-30 07:30:00",
+      expected_return_at: "2026-08-30 17:30:00",
+      notes: "Legacy notes"
+    })],
+    stops: [stopFixture({ expected_arrival_at: "2026-08-30 09:15:00" })]
+  });
+  const result = await serviceFor(pool).updatePlan(1, {
+    operational_date: "2026-08-30",
+    fleet_truck_id: 1,
+    assigned_enforcer_user_id: 11,
+    stops: [{
+      destination_id: 101,
+      stop_order: 1,
+      expected_arrival: "2026-08-30 09:15:00"
+    }]
+  }, { id: 8 });
+  assert.equal(result.route_name, "Legacy Custom Route");
+  assert.equal(result.description, "Legacy description");
+  assert.equal(result.scheduled_start, "2026-08-30 07:30:00");
+  assert.equal(result.expected_return, "2026-08-30 17:30:00");
+  assert.equal(result.notes, "Legacy notes");
+  assert.equal(result.stops[0].expected_arrival, "2026-08-30 09:15:00.000");
 });
 
 test("a failed stop replacement rolls the entire planned update back", async () => {

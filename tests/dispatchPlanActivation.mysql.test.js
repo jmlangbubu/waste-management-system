@@ -550,7 +550,7 @@ async function testOperationalConflicts(pool) {
   );
 }
 
-async function testStopsAndSchedule(pool) {
+async function testStopsSignatureAndSchedulelessActivation(pool) {
   let fixture = await seedFixture(pool, { stops: [] });
   await expectCode(
     createService(pool).activatePlan(fixture.planId, VALID_GPS, fixture.user, {}),
@@ -564,10 +564,16 @@ async function testStopsAndSchedule(pool) {
   );
 
   fixture = await seedFixture(pool, { scheduled_start_at: null });
-  await expectCode(
-    createService(pool).activatePlan(fixture.planId, VALID_GPS, fixture.user, {}),
-    "DISPATCH_PLAN_SCHEDULE_REQUIRED"
+  const activated = await createService(pool).activatePlan(
+    fixture.planId,
+    VALID_GPS,
+    fixture.user,
+    {}
   );
+  assert.equal(activated.data.already_activated, false);
+  assert.equal(activated.data.plan.status, "activated");
+  assert.equal(activated.data.dispatch_ticket.status, "in_progress");
+  assert.equal(activated.data.tracking_session.session_status, "active");
 }
 
 async function testGpsGate(pool) {
@@ -706,7 +712,7 @@ async function run() {
     ["authorization and operational dates", testAuthorizationAndDates],
     ["truck and current-user eligibility", testTruckAndUserEligibility],
     ["operational conflicts", testOperationalConflicts],
-    ["stops, signature, and schedule", testStopsAndSchedule],
+    ["stops, signature, and schedule-less activation", testStopsSignatureAndSchedulelessActivation],
     ["GPS gate", testGpsGate],
     ["cross-plan action collision", testCrossPlanActionCollision],
     ["concurrent same action", testConcurrentSameAction],

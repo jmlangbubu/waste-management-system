@@ -2013,17 +2013,7 @@ function dashboardOperationsPlannedForDate(plans = [], operationalDate = "") {
   );
 }
 
-function dashboardOperationsTimeLabel(value) {
-  const text = String(value || "").trim();
-  const match = text.match(/(?:T|\s)(\d{2}):(\d{2})/);
-  if (!match) return "Not set";
-  const hour = Number(match[1]);
-  const minute = match[2];
-  if (!Number.isInteger(hour) || hour < 0 || hour > 23) return "Not set";
-  return `${hour % 12 || 12}:${minute} ${hour >= 12 ? "PM" : "AM"}`;
-}
-
-function dashboardOperationsNextSchedule(plans = [], today = "", tomorrow = "") {
+function dashboardOperationsNextDispatch(plans = [], today = "", tomorrow = "") {
   const candidates = dashboardOperationsList(plans)
     .filter((plan) => {
       const operationalDate = String(plan.operational_date || "").slice(0, 10);
@@ -2034,9 +2024,7 @@ function dashboardOperationsNextSchedule(plans = [], today = "", tomorrow = "") 
       const firstDate = String(first.operational_date || "").slice(0, 10);
       const secondDate = String(second.operational_date || "").slice(0, 10);
       if (firstDate !== secondDate) return firstDate.localeCompare(secondDate);
-      const firstTime = String(first.scheduled_start || "99:99");
-      const secondTime = String(second.scheduled_start || "99:99");
-      return firstTime.localeCompare(secondTime) || Number(first.id || 0) - Number(second.id || 0);
+      return Number(first.id || 0) - Number(second.id || 0);
     });
 
   const plan = candidates[0];
@@ -2047,13 +2035,13 @@ function dashboardOperationsNextSchedule(plans = [], today = "", tomorrow = "") 
     : operationalDate === tomorrow
       ? "Tomorrow"
       : operationalDate || "Date not set";
-  const timeLabel = dashboardOperationsTimeLabel(plan.scheduled_start);
+  const truck = String(
+    plan.truck_name_snapshot || plan.truck_code_snapshot || "Truck not recorded"
+  );
   const enforcer = String(plan.assigned_enforcer_name_snapshot || "").trim();
   return {
-    truck: String(
-      plan.truck_name_snapshot || plan.truck_code_snapshot || "Truck not recorded"
-    ),
-    meta: `${dateLabel} • ${timeLabel}${enforcer ? ` • ${enforcer}` : ""}`
+    date: dateLabel,
+    meta: `${truck}${enforcer ? ` · ${enforcer}` : ""}`
   };
 }
 
@@ -2194,15 +2182,15 @@ function renderDashboardDispatchSummary({
 
   if (!todayAvailable || !tomorrowAvailable) {
     dashboardOperationsSetText("dashboardDispatchNext", "Unavailable");
-    dashboardOperationsSetText("dashboardDispatchNextMeta", "Schedule data could not be loaded");
+    dashboardOperationsSetText("dashboardDispatchNextMeta", "Dispatch plan data could not be loaded");
     return;
   }
-  const next = dashboardOperationsNextSchedule(
+  const next = dashboardOperationsNextDispatch(
     [...plannedToday, ...plannedTomorrow],
     today,
     tomorrow
   );
-  dashboardOperationsSetText("dashboardDispatchNext", next?.truck || "No upcoming plan");
+  dashboardOperationsSetText("dashboardDispatchNext", next?.date || "No upcoming plan");
   dashboardOperationsSetText(
     "dashboardDispatchNextMeta",
     next?.meta || "No planned dispatch found"
@@ -2339,7 +2327,7 @@ if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     dashboardOperationsCalendarDate,
     dashboardOperationsPlannedForDate,
-    dashboardOperationsNextSchedule,
+    dashboardOperationsNextDispatch,
     dashboardOperationsStatus,
     dashboardOperationsDispatchModel,
     dashboardOperationsTrackingModel,

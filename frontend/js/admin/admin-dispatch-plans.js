@@ -20,6 +20,8 @@
     submitting: false,
     optionsGeneration: 0,
     destinationPromise: null,
+    detailRequestGeneration: 0,
+    detailRequestedPlanId: null,
     returnFocus: null,
     parentReturnFocus: null
   };
@@ -230,8 +232,7 @@
           destination_id: destinationId,
           destination_type: destination.destination_type || null,
           display_label: dispatchPlanDestinationLabel(destination),
-          barangay: destination.barangay || destination.address_reference_snapshot || null,
-          expected_arrival: ""
+          barangay: destination.barangay || destination.address_reference_snapshot || null
         }
       ]),
       error: ""
@@ -263,16 +264,17 @@
       operational_date: String(values.operational_date || "").trim(),
       fleet_truck_id: dispatchPlanPositiveId(values.fleet_truck_id),
       assigned_enforcer_user_id: dispatchPlanPositiveId(values.assigned_enforcer_user_id),
-      route_name: String(values.route_name || "").trim(),
-      description: String(values.description || "").trim() || null,
-      scheduled_start: String(values.scheduled_start || "").trim() || null,
-      expected_return: String(values.expected_return || "").trim() || null,
-      notes: String(values.notes || "").trim() || null,
-      stops: dispatchPlanRenumberStops(stops).map((stop) => ({
-        destination_id: dispatchPlanPositiveId(stop.destination_id),
-        stop_order: Number(stop.stop_order),
-        expected_arrival: String(stop.expected_arrival || "").trim() || null
-      }))
+      stops: dispatchPlanRenumberStops(stops).map((stop) => {
+        const payloadStop = {
+          destination_id: dispatchPlanPositiveId(stop.destination_id),
+          stop_order: Number(stop.stop_order)
+        };
+        const legacyExpectedArrival = String(stop.expected_arrival || "").trim();
+        if (legacyExpectedArrival) {
+          payloadStop.expected_arrival = legacyExpectedArrival;
+        }
+        return payloadStop;
+      })
     };
   }
 
@@ -344,29 +346,36 @@
     }
   }
 
-  function dispatchPlanDateTimeDisplay(value) {
+  function dispatchPlanActualArrivalDisplay(value) {
     const text = String(value || "").trim();
-    if (!text) return "Not set";
-    return text.replace("T", " ").replace(/\.\d{1,3}$/, "").slice(0, 16);
-  }
-
-  function dispatchPlanToInputDateTime(value) {
-    const text = String(value || "").trim();
-    if (!text) return "";
-    return text.replace(" ", "T").slice(0, 16);
+    if (!text) return "Waiting for tracking";
+    const timestamp = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?$/.test(text)
+      ? Date.parse(`${text.replace(" ", "T")}+08:00`)
+      : Date.parse(text);
+    if (!Number.isFinite(timestamp)) return "Tracking status unavailable";
+    const parts = Object.fromEntries(
+      new Intl.DateTimeFormat("en-US", {
+        timeZone: MANILA_TIME_ZONE,
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true
+      }).formatToParts(new Date(timestamp))
+        .filter((part) => part.type !== "literal")
+        .map((part) => [part.type, part.value])
+    );
+    return `${parts.month} ${parts.day}, ${parts.year} · ${parts.hour}:${parts.minute} ${parts.dayPeriod}`;
   }
 
   function dispatchPlanRowsHtml(plans = []) {
     if (!plans.length) {
-      return '<tr><td colspan="8" class="dispatch-plans-table-state"><strong>No planned dispatches found.</strong><span>Adjust the filters or create a plan for this operational date.</span></td></tr>';
+      return '<tr><td colspan="6" class="dispatch-plans-table-state"><strong>No planned dispatches found.</strong><span>Adjust the filters or create a plan for this operational date.</span></td></tr>';
     }
     return plans.map((plan) => {
       const status = String(plan.status || "").toLowerCase();
       const permissions = dispatchPlanViewPermissions(status);
-      const schedule = [
-        dispatchPlanDateTimeDisplay(plan.scheduled_start),
-        dispatchPlanDateTimeDisplay(plan.expected_return)
-      ];
       const actions = [
         `<button type="button" class="dispatch-plan-row-action" data-dispatch-plan-action="view" data-plan-id="${Number(plan.id)}">View</button>`,
         permissions.canEdit
@@ -381,28 +390,63 @@
           <td><span class="dispatch-plan-cell-primary">${dispatchPlanEscape(plan.operational_date)}</span></td>
           <td><span class="dispatch-plan-cell-primary">${dispatchPlanEscape(plan.truck_name_snapshot || plan.truck_code_snapshot || "Truck")}</span><span class="dispatch-plan-cell-secondary">${dispatchPlanEscape(plan.truck_code_snapshot || "")}</span></td>
           <td>${dispatchPlanEscape(plan.assigned_enforcer_name_snapshot || "Not recorded")}</td>
-          <td><span class="dispatch-plan-cell-primary">${dispatchPlanEscape(plan.route_name || "Planned Route")}</span><span class="dispatch-plan-cell-secondary">Revision ${Number(plan.revision || 1)}</span></td>
           <td>${Number(plan.stop_count || 0)}</td>
-          <td><span class="dispatch-plan-cell-primary">${dispatchPlanEscape(schedule[0])}</span><span class="dispatch-plan-cell-secondary">Return: ${dispatchPlanEscape(schedule[1])}</span></td>
           <td><span class="dispatch-plan-status-badge ${dispatchPlanEscape(status)}">${dispatchPlanEscape(dispatchPlanStatusLabel(status))}</span></td>
           <td><div class="dispatch-plan-row-actions">${actions}</div></td>
         </tr>`;
     }).join("");
   }
 
-  function dispatchPlanDetailHtml(plan = {}) {
+  function dispatchPlanOperationalStopStatusLabel(status) {
+    const normalized = String(status || "").trim().toLowerCase();
+    return {
+      pending: "Pending",
+      on_the_way: "On the way",
+      arrived: "Arrived",
+      completed: "Completed",
+      skipped: "Skipped"
+    }[normalized] || "Tracking status unavailable";
+  }
+
+  function dispatchPlanDetailHtml(plan = {}, ticketDetails = null, options = {}) {
     const stops = [...(plan.stops || [])].sort(
       (left, right) => Number(left.stop_order) - Number(right.stop_order)
     );
+    const linkedTicketId = dispatchPlanPositiveId(plan.activated_dispatch_ticket_id);
+    const ticketStops = new Map(
+      (ticketDetails?.stops || []).map((stop) => [Number(stop.stop_order), stop])
+    );
     const stopMarkup = stops.length
-      ? stops.map((stop, index) => `
+      ? stops.map((stop, index) => {
+          const operationalStop = ticketStops.get(Number(stop.stop_order));
+          const statusLabel = !linkedTicketId
+            ? "Waiting for tracking"
+            : options.ticketUnavailable
+              ? "Tracking status temporarily unavailable"
+              : operationalStop
+                ? dispatchPlanOperationalStopStatusLabel(operationalStop.stop_status)
+                : "Tracking status unavailable";
+          const actualArrival = !linkedTicketId
+            ? "—"
+            : options.ticketUnavailable || !operationalStop
+              ? "Tracking status temporarily unavailable"
+              : dispatchPlanActualArrivalDisplay(operationalStop.actual_arrival_at);
+          return `
           <div class="dispatch-plan-detail-stop">
             <span class="dispatch-plan-stop-number">${index + 1}</span>
-            <div class="dispatch-plan-stop-copy">
-              <strong>${dispatchPlanEscape(stop.location_name_snapshot || "Destination")}</strong>
-              <span>${dispatchPlanEscape(stop.address_reference_snapshot || "Address not recorded")}${stop.expected_arrival ? ` · Expected ${dispatchPlanEscape(dispatchPlanDateTimeDisplay(stop.expected_arrival))}` : ""}</span>
+            <div class="dispatch-plan-detail-stop-main">
+              <div class="dispatch-plan-detail-stop-heading">
+                <strong>${dispatchPlanEscape(stop.location_name_snapshot || "Destination")}</strong>
+                <span class="dispatch-plan-status-badge">${dispatchPlanEscape(statusLabel)}</span>
+              </div>
+              <span class="dispatch-plan-detail-stop-address">${dispatchPlanEscape(stop.address_reference_snapshot || "Address not recorded")}</span>
+              <div class="dispatch-plan-detail-arrival">
+                <span>Actual Arrival</span>
+                <strong>${dispatchPlanEscape(actualArrival)}</strong>
+              </div>
             </div>
-          </div>`).join("")
+          </div>`;
+        }).join("")
       : '<p>No ordered destinations were recorded.</p>';
     return `
       <div class="dispatch-plan-detail-grid">
@@ -410,12 +454,7 @@
         <div class="dispatch-plan-detail-item"><span>Operational Date</span><strong>${dispatchPlanEscape(plan.operational_date || "Not recorded")}</strong></div>
         <div class="dispatch-plan-detail-item"><span>Truck</span><strong>${dispatchPlanEscape(plan.truck_name_snapshot || "Not recorded")} · ${dispatchPlanEscape(plan.truck_code_snapshot || "No code")}</strong></div>
         <div class="dispatch-plan-detail-item"><span>Enforcer</span><strong>${dispatchPlanEscape(plan.assigned_enforcer_name_snapshot || "Not recorded")}</strong></div>
-        <div class="dispatch-plan-detail-item"><span>Route Name</span><strong>${dispatchPlanEscape(plan.route_name || "Planned Route")}</strong></div>
         <div class="dispatch-plan-detail-item"><span>Revision</span><strong>${Number(plan.revision || 1)}</strong></div>
-        <div class="dispatch-plan-detail-item"><span>Scheduled Start</span><strong>${dispatchPlanEscape(dispatchPlanDateTimeDisplay(plan.scheduled_start))}</strong></div>
-        <div class="dispatch-plan-detail-item"><span>Expected Return</span><strong>${dispatchPlanEscape(dispatchPlanDateTimeDisplay(plan.expected_return))}</strong></div>
-        <section class="dispatch-plan-detail-section"><h4>Description</h4><p>${dispatchPlanEscape(plan.description || "Not provided")}</p></section>
-        <section class="dispatch-plan-detail-section"><h4>Notes</h4><p>${dispatchPlanEscape(plan.notes || "Not provided")}</p></section>
         <section class="dispatch-plan-detail-section"><h4>Ordered Stops</h4><div class="dispatch-plan-detail-stops">${stopMarkup}</div></section>
         ${plan.cancellation_reason ? `<section class="dispatch-plan-detail-section"><h4>Cancellation Reason</h4><p>${dispatchPlanEscape(plan.cancellation_reason)}</p></section>` : ""}
       </div>`;
@@ -473,7 +512,7 @@
   async function loadDispatchPlans() {
     const body = dispatchPlanElement("dispatchPlansTableBody");
     if (body) {
-      body.innerHTML = '<tr><td colspan="8" class="dispatch-plans-table-state">Loading planned dispatches...</td></tr>';
+      body.innerHTML = '<tr><td colspan="6" class="dispatch-plans-table-state">Loading planned dispatches...</td></tr>';
     }
     dispatchPlanSetFeedback("dispatchPlansStatusMessage");
     try {
@@ -485,7 +524,7 @@
     } catch (error) {
       dispatchPlanState.plans = [];
       if (body) {
-        body.innerHTML = '<tr><td colspan="8" class="dispatch-plans-table-state"><strong>Dispatch plans could not be loaded.</strong><span>Use Refresh to try again.</span></td></tr>';
+        body.innerHTML = '<tr><td colspan="6" class="dispatch-plans-table-state"><strong>Dispatch plans could not be loaded.</strong><span>Use Refresh to try again.</span></td></tr>';
       }
       dispatchPlanSetFeedback(
         "dispatchPlansStatusMessage",
@@ -687,10 +726,10 @@
           <strong>${dispatchPlanEscape(stop.display_label || stop.location_name_snapshot || "Destination")}</strong>
           <span>${dispatchPlanEscape(stop.barangay || stop.address_reference_snapshot || "Verified destination")}</span>
         </div>
-        <label class="dispatch-plan-field dispatch-plan-stop-arrival">
-          <span>Expected Arrival</span>
-          <input type="datetime-local" data-plan-stop-arrival value="${dispatchPlanEscape(dispatchPlanToInputDateTime(stop.expected_arrival))}">
-        </label>
+        <div class="dispatch-plan-stop-arrival-note">
+          <span>Arrival</span>
+          <strong>Recorded automatically during tracking</strong>
+        </div>
         <div class="dispatch-plan-stop-controls" aria-label="Stop ${index + 1} ordering controls">
           <button type="button" class="dispatch-plan-stop-action" data-plan-stop-move="up" aria-label="Move ${dispatchPlanEscape(stop.display_label || "destination")} up"${index === 0 ? " disabled" : ""}>&uarr;</button>
           <button type="button" class="dispatch-plan-stop-action" data-plan-stop-move="down" aria-label="Move ${dispatchPlanEscape(stop.display_label || "destination")} down"${index === stops.length - 1 ? " disabled" : ""}>&darr;</button>
@@ -748,12 +787,7 @@
     return {
       operational_date: dispatchPlanElement("dispatchPlanOperationalDate")?.value,
       fleet_truck_id: dispatchPlanElement("dispatchPlanFleetTruck")?.value,
-      assigned_enforcer_user_id: dispatchPlanElement("dispatchPlanEnforcer")?.value,
-      route_name: dispatchPlanElement("dispatchPlanRouteName")?.value,
-      description: dispatchPlanElement("dispatchPlanDescription")?.value,
-      scheduled_start: dispatchPlanElement("dispatchPlanScheduledStart")?.value,
-      expected_return: dispatchPlanElement("dispatchPlanExpectedReturn")?.value,
-      notes: dispatchPlanElement("dispatchPlanNotes")?.value
+      assigned_enforcer_user_id: dispatchPlanElement("dispatchPlanEnforcer")?.value
     };
   }
 
@@ -793,6 +827,9 @@
   }
 
   function dispatchPlanCloseModal(id) {
+    if (id === "dispatchPlanDetailModal") {
+      dispatchPlanInvalidateDetailRequest();
+    }
     const modal = dispatchPlanElement(id);
     if (!modal) return;
     modal.classList.add("hidden");
@@ -809,6 +846,17 @@
   function dispatchPlanModalIsOpen(id) {
     const modal = dispatchPlanElement(id);
     return Boolean(modal && !modal.classList.contains("hidden"));
+  }
+
+  function dispatchPlanInvalidateDetailRequest() {
+    dispatchPlanState.detailRequestGeneration += 1;
+    dispatchPlanState.detailRequestedPlanId = null;
+  }
+
+  function dispatchPlanDetailRequestIsCurrent(generation, requestedPlanId) {
+    return generation === dispatchPlanState.detailRequestGeneration &&
+      requestedPlanId === dispatchPlanState.detailRequestedPlanId &&
+      dispatchPlanModalIsOpen("dispatchPlanDetailModal");
   }
 
   function dispatchPlanHasOpenChildModal() {
@@ -849,6 +897,7 @@
   }
 
   function closeDispatchPlanningModalsForNavigation() {
+    dispatchPlanInvalidateDetailRequest();
     ["dispatchPlanningModal", ...DISPATCH_PLAN_CHILD_MODAL_IDS].forEach((id) => {
       const modal = dispatchPlanElement(id);
       if (!modal) return;
@@ -915,18 +964,66 @@
   }
 
   async function openDispatchPlanDetail(planId, returnFocus = null) {
+    const requestedPlanId = dispatchPlanPositiveId(planId);
+    if (!requestedPlanId) return null;
+    const generation = ++dispatchPlanState.detailRequestGeneration;
+    dispatchPlanState.detailRequestedPlanId = requestedPlanId;
+    const requestIsCurrent = () => dispatchPlanDetailRequestIsCurrent(
+      generation,
+      requestedPlanId
+    );
     const body = dispatchPlanElement("dispatchPlanDetailBody");
     if (body) body.innerHTML = '<div class="dispatch-plans-table-state">Loading dispatch plan...</div>';
     dispatchPlanOpenModal("dispatchPlanDetailModal", returnFocus);
     try {
-      const plan = await dispatchPlanRequest(globalScope.getDispatchPlanApiUrl(planId));
-      if (body) body.innerHTML = dispatchPlanDetailHtml(plan);
-      return plan;
+      const detail = await dispatchPlanLoadDetail(requestedPlanId, {
+        isCurrent: requestIsCurrent
+      });
+      if (!requestIsCurrent() || detail.stale) return null;
+      if (body) {
+        body.innerHTML = dispatchPlanDetailHtml(
+          detail.plan,
+          detail.ticketDetails,
+          { ticketUnavailable: detail.ticketUnavailable }
+        );
+      }
+      return detail.plan;
     } catch (error) {
+      if (!requestIsCurrent()) return null;
       if (body) {
         body.innerHTML = `<div class="dispatch-plan-feedback error">${dispatchPlanEscape(dispatchPlanErrorMessage(error))}</div>`;
       }
       return null;
+    }
+  }
+
+  async function dispatchPlanLoadDetail(planId, options = {}) {
+    const request = options.request || dispatchPlanRequest;
+    const getPlanUrl = options.getPlanUrl || globalScope.getDispatchPlanApiUrl;
+    const getTicketUrl = options.getTicketUrl || globalScope.getDispatchTicketApiUrl;
+    const isCurrent = typeof options.isCurrent === "function"
+      ? options.isCurrent
+      : () => true;
+    const staleResult = () => ({
+      plan: null,
+      ticketDetails: null,
+      ticketUnavailable: false,
+      stale: true
+    });
+    const requestedPlanId = dispatchPlanPositiveId(planId);
+    const plan = await request(getPlanUrl(requestedPlanId));
+    if (!isCurrent()) return staleResult();
+    const linkedTicketId = dispatchPlanPositiveId(plan.activated_dispatch_ticket_id);
+    if (!linkedTicketId) {
+      return { plan, ticketDetails: null, ticketUnavailable: false, stale: false };
+    }
+    try {
+      const ticketDetails = await request(getTicketUrl(linkedTicketId));
+      if (!isCurrent()) return staleResult();
+      return { plan, ticketDetails, ticketUnavailable: false, stale: false };
+    } catch (error) {
+      if (!isCurrent()) return staleResult();
+      return { plan, ticketDetails: null, ticketUnavailable: true, stale: false };
     }
   }
 
@@ -948,18 +1045,13 @@
             destination_id: stop.destination_id,
             display_label: stop.location_name_snapshot,
             barangay: stop.address_reference_snapshot,
-            expected_arrival: dispatchPlanToInputDateTime(stop.expected_arrival)
+            expected_arrival: stop.expected_arrival || ""
           }))
       );
       dispatchPlanSetFormValue("dispatchPlanEditingId", plan.id);
       dispatchPlanSetFormValue("dispatchPlanOperationalDate", plan.operational_date);
       const dateInput = dispatchPlanElement("dispatchPlanOperationalDate");
       if (dateInput) dateInput.min = dispatchPlanTodayInManila();
-      dispatchPlanSetFormValue("dispatchPlanRouteName", plan.route_name);
-      dispatchPlanSetFormValue("dispatchPlanDescription", plan.description);
-      dispatchPlanSetFormValue("dispatchPlanScheduledStart", dispatchPlanToInputDateTime(plan.scheduled_start));
-      dispatchPlanSetFormValue("dispatchPlanExpectedReturn", dispatchPlanToInputDateTime(plan.expected_return));
-      dispatchPlanSetFormValue("dispatchPlanNotes", plan.notes);
       const title = dispatchPlanElement("dispatchPlanFormTitle");
       if (title) title.textContent = "Edit Dispatch Plan";
       const subtitle = dispatchPlanElement("dispatchPlanFormSubtitle");
@@ -1160,16 +1252,6 @@
     if (event.target.closest("[data-plan-stop-remove]")) removePlanStop(index);
   }
 
-  function dispatchPlanHandleStopInput(event) {
-    const input = event.target.closest("[data-plan-stop-arrival]");
-    const row = event.target.closest("[data-plan-stop-index]");
-    if (!input || !row) return;
-    const index = Number(row.dataset.planStopIndex);
-    if (!dispatchPlanState.stops[index]) return;
-    dispatchPlanState.stops[index].expected_arrival = input.value;
-    dispatchPlanRenderReview();
-  }
-
   function dispatchPlanMountModals() {
     DISPATCH_PLAN_CHILD_MODAL_IDS.forEach((id) => {
         const modal = dispatchPlanElement(id);
@@ -1208,7 +1290,6 @@
       addPlanStop(dispatchPlanElement("dispatchPlanDestinationSelect")?.value);
     });
     dispatchPlanElement("dispatchPlanStops")?.addEventListener("click", dispatchPlanHandleStopClick);
-    dispatchPlanElement("dispatchPlanStops")?.addEventListener("input", dispatchPlanHandleStopInput);
     [
       ["dispatchPlanFormOverlay", "dispatchPlanFormModal"],
       ["dispatchPlanFormCloseBtn", "dispatchPlanFormModal"],
@@ -1274,8 +1355,11 @@
     dispatchPlanValidateCancellation,
     dispatchPlanErrorMessage,
     dispatchPlanRunMutation,
+    dispatchPlanActualArrivalDisplay,
+    dispatchPlanStopRowsHtml,
     dispatchPlanRowsHtml,
     dispatchPlanDetailHtml,
+    dispatchPlanLoadDetail,
     loadDispatchPlans,
     loadDispatchPlanOptions,
     renderDispatchPlans,

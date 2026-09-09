@@ -182,7 +182,7 @@
 
 .dispatch-plans-table {
   width: 100%;
-  min-width: 1040px;
+  min-width: 760px;
   border-collapse: collapse;
 }
 
@@ -553,8 +553,31 @@ body > .dispatch-plan-modal .dispatch-plan-cancel-content {
   font-size: 11px;
 }
 
-.dispatch-plan-stop-arrival span {
+.dispatch-plan-stop-arrival-note {
+  min-width: 190px;
+  padding: 8px 10px;
+  border-radius: var(--wmo-radius-md);
+  background: #f1f8f4;
+}
+
+.dispatch-plan-stop-arrival-note span,
+.dispatch-plan-stop-arrival-note strong {
+  display: block;
+}
+
+.dispatch-plan-stop-arrival-note span {
+  color: #527064;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+.dispatch-plan-stop-arrival-note strong {
+  margin-top: 3px;
+  color: #275b44;
   font-size: 11px;
+  line-height: 1.35;
 }
 
 .dispatch-plan-stop-controls {
@@ -660,12 +683,59 @@ body > .dispatch-plan-modal .dispatch-plan-cancel-content {
   margin-top: 1px;
 }
 
+.dispatch-plan-detail-stop-main {
+  min-width: 0;
+}
+
+.dispatch-plan-detail-stop-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.dispatch-plan-detail-stop-heading > strong {
+  color: var(--wmo-ink);
+  font-size: 13px;
+}
+
+.dispatch-plan-detail-stop-address {
+  display: block;
+  margin-top: 3px;
+  color: var(--wmo-text-muted);
+  font-size: 11px;
+}
+
+.dispatch-plan-detail-arrival {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px solid #e2ece6;
+}
+
+.dispatch-plan-detail-arrival span {
+  color: var(--wmo-text-muted);
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+.dispatch-plan-detail-arrival strong {
+  color: #275b44;
+  font-size: 12px;
+  text-align: right;
+}
+
 @media (max-width: 900px) {
   .dispatch-plan-stop-row {
     grid-template-columns: auto minmax(0, 1fr) auto;
   }
 
-  .dispatch-plan-stop-arrival {
+  .dispatch-plan-stop-arrival-note {
     grid-column: 2 / -1;
   }
 }
@@ -748,7 +818,7 @@ body > .dispatch-plan-modal .dispatch-plan-cancel-content {
     grid-template-columns: auto 1fr;
   }
 
-  .dispatch-plan-stop-arrival,
+  .dispatch-plan-stop-arrival-note,
   .dispatch-plan-stop-controls {
     grid-column: 1 / -1;
   }
@@ -806,8 +876,8 @@ body > .dispatch-plan-modal .dispatch-plan-cancel-content {
 
 @media (max-width: 1200px) {
   #dispatchPlanningModal .dispatch-plans-table {
-    width: max(100%, 1040px) !important;
-    min-width: 1040px !important;
+    width: max(100%, 760px) !important;
+    min-width: 760px !important;
   }
 }
 

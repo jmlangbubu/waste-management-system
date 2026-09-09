@@ -154,12 +154,6 @@ function assignmentActivationState(plan, today) {
       activation_reason_code: "DISPATCH_PLAN_IMMUTABLE"
     };
   }
-  if (!plan.scheduled_start_at) {
-    return {
-      can_activate: false,
-      activation_reason_code: "DISPATCH_PLAN_SCHEDULE_REQUIRED"
-    };
-  }
   if (Number(plan.stop_count || 0) < 1) {
     return {
       can_activate: false,
@@ -799,14 +793,6 @@ class DispatchPlanActivationService {
           "DISPATCH_PLAN_TRUCK_SNAPSHOT_MISMATCH"
         );
       }
-      if (!plan.scheduled_start_at) {
-        throw new MobileDispatchPlanError(
-          "The plan requires a scheduled start before activation",
-          409,
-          "DISPATCH_PLAN_SCHEDULE_REQUIRED"
-        );
-      }
-
       const [planStops] = await connection.query(
         `
           SELECT
