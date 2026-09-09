@@ -58,7 +58,7 @@ global.escapeHtml = (value) => String(value);
 const {
   dashboardOperationsCalendarDate,
   dashboardOperationsPlannedForDate,
-  dashboardOperationsNextSchedule,
+  dashboardOperationsNextDispatch,
   dashboardOperationsStatus,
   dashboardOperationsDispatchModel,
   dashboardOperationsTrackingModel,
@@ -110,6 +110,8 @@ function testDashboardMarkupAndScope() {
   assert.match(dashboardCss, /dashboard-fleet-metrics[\s\S]*grid-column: span 3/);
   assert.match(dashboardCss, /@media \(max-width: 720px\)[\s\S]*operations-snapshot-grid[\s\S]*grid-template-columns: 1fr/);
   assert.doesNotMatch(dashboardSource, /setInterval\([^)]*loadDashboardOperationsSnapshot/);
+  assert.match(dashboardHtml, />Next Dispatch</);
+  assert.doesNotMatch(dashboardHtml, />Next Schedule</);
 }
 
 function testFleetMetrics() {
@@ -172,14 +174,32 @@ function testManilaDatesAndDispatchMetrics() {
   assert.equal(elements.get("dashboardDispatchToday").textContent, "1");
   assert.equal(elements.get("dashboardDispatchTomorrow").textContent, "1");
   assert.equal(elements.get("dashboardDispatchActive").textContent, "2");
-  assert.equal(elements.get("dashboardDispatchNext").textContent, "TRUCK-1");
-  assert.match(elements.get("dashboardDispatchNextMeta").textContent, /Today • 8:00 AM/);
+  assert.equal(elements.get("dashboardDispatchNext").textContent, "Today");
+  assert.equal(elements.get("dashboardDispatchNextMeta").textContent, "TRUCK-1");
 
-  const nextTomorrow = dashboardOperationsNextSchedule(tomorrowPlans, today, tomorrow);
+  const nextTomorrow = dashboardOperationsNextDispatch(tomorrowPlans, today, tomorrow);
   assert.deepEqual(nextTomorrow, {
-    truck: "Truck Four",
-    meta: "Tomorrow • 7:30 AM • Enforcer Four"
+    date: "Tomorrow",
+    meta: "Truck Four · Enforcer Four"
   });
+  const stableById = dashboardOperationsNextDispatch([
+    {
+      id: 12,
+      operational_date: tomorrow,
+      status: "planned",
+      truck_code_snapshot: "LATE-ID",
+      scheduled_start: `${tomorrow} 06:00:00`
+    },
+    {
+      id: 11,
+      operational_date: tomorrow,
+      status: "planned",
+      truck_code_snapshot: "LOW-ID",
+      scheduled_start: `${tomorrow} 18:00:00`
+    }
+  ], today, tomorrow);
+  assert.deepEqual(stableById, { date: "Tomorrow", meta: "LOW-ID" });
+  assert.doesNotMatch(dashboardSource, /dashboardOperationsTimeLabel|first\.scheduled_start|second\.scheduled_start/);
   renderDashboardDispatchSummary({ todayPlans: [], tomorrowPlans: [], liveDispatches: {}, today, tomorrow });
   assert.equal(elements.get("dashboardDispatchNext").textContent, "No upcoming plan");
   assert.equal(elements.get("dashboardDispatchNextMeta").textContent, "No planned dispatch found");

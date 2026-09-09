@@ -61,6 +61,89 @@ function plan(overrides = {}) {
   };
 }
 
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+function apiResponse(data) {
+  return {
+    ok: true,
+    status: 200,
+    json: async () => ({ success: true, data })
+  };
+}
+
+function classList(initial = []) {
+  const classes = new Set(initial);
+  return {
+    add: (...names) => names.forEach((name) => classes.add(name)),
+    remove: (...names) => names.forEach((name) => classes.delete(name)),
+    contains: (name) => classes.has(name),
+    toggle: (name, force) => {
+      if (force === true) classes.add(name);
+      else if (force === false) classes.delete(name);
+      else if (classes.has(name)) classes.delete(name);
+      else classes.add(name);
+      return classes.has(name);
+    }
+  };
+}
+
+function installDetailDom(request) {
+  const previous = new Map(
+    ["document", "webAdminFetch", "getDispatchPlanApiUrl", "getDispatchTicketApiUrl"]
+      .map((key) => [key, {
+        present: Object.prototype.hasOwnProperty.call(global, key),
+        value: global[key]
+      }])
+  );
+  const detailBody = { innerHTML: "" };
+  const detailModal = {
+    hidden: true,
+    classList: classList(["hidden"]),
+    setAttribute() {},
+    querySelector: () => null
+  };
+  const documentStub = {
+    activeElement: null,
+    documentElement: { classList: classList() },
+    body: { classList: classList() },
+    getElementById(id) {
+      if (id === "dispatchPlanDetailBody") return detailBody;
+      if (id === "dispatchPlanDetailModal") return detailModal;
+      return null;
+    },
+    querySelector(selector) {
+      if (selector === ".dispatch-plan-modal:not(.hidden)") {
+        return detailModal.classList.contains("hidden") ? null : detailModal;
+      }
+      return null;
+    }
+  };
+  global.document = documentStub;
+  global.webAdminFetch = request;
+  global.getDispatchPlanApiUrl = (id) => `/plans/${id}`;
+  global.getDispatchTicketApiUrl = (id) => `/tickets/${id}`;
+  return {
+    detailBody,
+    detailModal,
+    restore() {
+      for (const [key, state] of previous) {
+        if (state.present) global[key] = state.value;
+        else delete global[key];
+      }
+    }
+  };
+}
+
+const nextTurn = () => new Promise((resolve) => setImmediate(resolve));
+
 const scenarios = [];
 function scenario(letter, name, callback) {
   scenarios.push({ letter, name, callback });
@@ -193,17 +276,12 @@ scenario("M", "create request shape matches the merged backend contract", () => 
     scheduled_start: "2026-08-30T08:00",
     expected_return: "2026-08-30T16:00",
     notes: "Bring safety equipment"
-  }, [{ destination_id: 101, expected_arrival: "2026-08-30T09:00" }]);
+  }, [{ destination_id: 101 }]);
   assert.deepEqual(payload, {
     operational_date: "2026-08-30",
     fleet_truck_id: 4,
     assigned_enforcer_user_id: 11,
-    route_name: "Manual Route",
-    description: "Collect in submitted order",
-    scheduled_start: "2026-08-30T08:00",
-    expected_return: "2026-08-30T16:00",
-    notes: "Bring safety equipment",
-    stops: [{ destination_id: 101, stop_order: 1, expected_arrival: "2026-08-30T09:00" }]
+    stops: [{ destination_id: 101, stop_order: 1 }]
   });
   assert.equal(
     planning.dispatchPlanValidatePayload(payload, new Date("2026-08-29T04:00:00Z")).valid,
@@ -255,7 +333,8 @@ scenario("P", "plan list renders server response fields and friendly status", ()
   assert.match(html, /2026-08-30/);
   assert.match(html, /Garbage Truck 1/);
   assert.match(html, /Verified Enforcer/);
-  assert.match(html, /Manual Route/);
+  assert.doesNotMatch(html, /Manual Route|2026-08-30 08:00:00|2026-08-30 16:00:00/);
+  assert.equal((html.match(/<td>/g) || []).length, 6);
   assert.match(html, />Planned</);
   assert.match(html, /data-dispatch-plan-action="view"/);
 });
@@ -263,12 +342,248 @@ scenario("P", "plan list renders server response fields and friendly status", ()
 scenario("Q", "detail renders stops in backend stop_order", () => {
   const html = planning.dispatchPlanDetailHtml(plan({
     stops: [
-      { stop_order: 2, location_name_snapshot: "Second" },
-      { stop_order: 1, location_name_snapshot: "First" }
+      { stop_order: 2, location_name_snapshot: "Second", expected_arrival: "2026-08-30 10:00:00" },
+      { stop_order: 1, location_name_snapshot: "First", expected_arrival: "2026-08-30 09:00:00" }
     ]
   }));
   assert.ok(html.indexOf("First") < html.indexOf("Second"));
+  assert.match(html, /Waiting for tracking/);
+  assert.match(html, /Actual Arrival/);
+  assert.doesNotMatch(html, /Expected|Route Name|Scheduled Start|Expected Return|Description|Notes/);
   assert.doesNotMatch(html, /latitude|longitude|geofence/i);
+});
+
+scenario("AA", "stop cards explain tracking-controlled arrival without an input", () => {
+  const html = planning.dispatchPlanStopRowsHtml([{
+    destination_id: 101,
+    stop_order: 1,
+    display_label: "Pioneer Avenue",
+    barangay: "Verified destination"
+  }]);
+  assert.match(html, /Pioneer Avenue/);
+  assert.match(html, /Arrival/);
+  assert.match(html, /Recorded automatically during tracking/);
+  assert.doesNotMatch(html, /datetime-local|data-plan-stop-arrival|Expected Arrival/);
+  assert.doesNotMatch(planningSource, /dispatchPlanHandleStopInput|data-plan-stop-arrival/);
+});
+
+scenario("AB", "legacy expected arrival survives reorder but never becomes Actual Arrival", () => {
+  const reordered = planning.dispatchPlanMoveStopInList([
+    { destination_id: 101, expected_arrival: "2026-08-30 09:00:00" },
+    { destination_id: 102 }
+  ], 0, "down");
+  assert.deepEqual(planning.dispatchPlanBuildPayload({
+    operational_date: "2026-08-30",
+    fleet_truck_id: 4,
+    assigned_enforcer_user_id: 11
+  }, reordered).stops, [
+    { destination_id: 102, stop_order: 1 },
+    { destination_id: 101, stop_order: 2, expected_arrival: "2026-08-30 09:00:00" }
+  ]);
+
+  const html = planning.dispatchPlanDetailHtml(plan({
+    status: "activated",
+    activated_dispatch_ticket_id: 70,
+    stops: [{
+      stop_order: 1,
+      location_name_snapshot: "Pioneer Avenue",
+      expected_arrival: "2026-08-30 09:00:00"
+    }]
+  }), {
+    stops: [{
+      stop_order: 1,
+      stop_status: "arrived",
+      actual_arrival_at: "2026-09-09 14:35:00"
+    }]
+  });
+  assert.match(html, /Arrived/);
+  assert.match(html, /Sep 9, 2026 · 2:35 PM/);
+  assert.doesNotMatch(html, /Aug 30|Expected/);
+});
+
+scenario("AC", "activated detail reuses ticket API and isolates ticket failure", async () => {
+  const calls = [];
+  const loaded = await planning.dispatchPlanLoadDetail(7, {
+    getPlanUrl: (id) => `/plans/${id}`,
+    getTicketUrl: (id) => `/tickets/${id}`,
+    request: async (url) => {
+      calls.push(url);
+      return url.startsWith("/plans/")
+        ? plan({ activated_dispatch_ticket_id: 70 })
+        : { stops: [{ stop_order: 1, actual_arrival_at: null }] };
+    }
+  });
+  assert.deepEqual(calls, ["/plans/7", "/tickets/70"]);
+  assert.equal(loaded.ticketUnavailable, false);
+
+  const degraded = await planning.dispatchPlanLoadDetail(7, {
+    getPlanUrl: () => "/plans/7",
+    getTicketUrl: () => "/tickets/70",
+    request: async (url) => {
+      if (url.startsWith("/tickets/")) throw new Error("temporary");
+      return plan({
+        activated_dispatch_ticket_id: 70,
+        stops: [{ stop_order: 1, location_name_snapshot: "Pioneer Avenue" }]
+      });
+    }
+  });
+  assert.equal(degraded.ticketUnavailable, true);
+  assert.match(
+    planning.dispatchPlanDetailHtml(degraded.plan, null, { ticketUnavailable: true }),
+    /Tracking status temporarily unavailable/
+  );
+});
+
+scenario("AD", "form and table markup expose only the simplified planning flow", () => {
+  const formMarkup = elementMarkupById("dispatchPlanFormModal");
+  assert.match(formMarkup, />1<[\s\S]*>Assignment</);
+  assert.match(formMarkup, />2<[\s\S]*>Ordered Verified Destinations</);
+  assert.match(formMarkup, />3<[\s\S]*>Review</);
+  assert.doesNotMatch(formMarkup, /dispatchPlan(?:RouteName|Description|ScheduledStart|ExpectedReturn|Notes)/);
+  assert.doesNotMatch(formMarkup, /Schedule and Route Information|Expected Arrival/);
+  const parentMarkup = elementMarkupById("dispatchPlanningModal");
+  assert.match(parentMarkup, /<th>Date<\/th>[\s\S]*<th>Truck<\/th>[\s\S]*<th>Enforcer<\/th>[\s\S]*<th>Stops<\/th>[\s\S]*<th>Status<\/th>[\s\S]*<th>Actions<\/th>/);
+  assert.doesNotMatch(parentMarkup, /<th>Route<\/th>|<th>Schedule<\/th>/);
+  assert.doesNotMatch(planningSource, /colspan="8"/);
+  assert.match(planningSource, /colspan="6"/);
+});
+
+scenario("AE", "later plan selection wins when plan responses resolve out of order", async () => {
+  const planA = deferred();
+  const planB = deferred();
+  const dom = installDetailDom((url) => {
+    if (url === "/plans/1") return planA.promise;
+    if (url === "/plans/2") return planB.promise;
+    throw new Error(`Unexpected URL: ${url}`);
+  });
+  try {
+    const openingA = planning.openDispatchPlanDetail(1);
+    const openingB = planning.openDispatchPlanDetail(2);
+    planB.resolve(apiResponse(plan({ id: 2, truck_name_snapshot: "Plan B Truck" })));
+    await openingB;
+    assert.match(dom.detailBody.innerHTML, /Plan B Truck/);
+    const renderedB = dom.detailBody.innerHTML;
+
+    planA.resolve(apiResponse(plan({ id: 1, truck_name_snapshot: "Plan A Truck" })));
+    await openingA;
+    assert.equal(dom.detailBody.innerHTML, renderedB);
+    assert.doesNotMatch(dom.detailBody.innerHTML, /Plan A Truck/);
+  } finally {
+    planning.closeDispatchPlanningModalsForNavigation();
+    dom.restore();
+  }
+});
+
+scenario("AF", "late linked-ticket response cannot overwrite a newer plan", async () => {
+  const ticketA = deferred();
+  const calls = [];
+  const dom = installDetailDom((url) => {
+    calls.push(url);
+    if (url === "/plans/1") {
+      return Promise.resolve(apiResponse(plan({
+        id: 1,
+        activated_dispatch_ticket_id: 101,
+        truck_name_snapshot: "Plan A Truck",
+        stops: [{ stop_order: 1, location_name_snapshot: "Plan A Stop" }]
+      })));
+    }
+    if (url === "/tickets/101") return ticketA.promise;
+    if (url === "/plans/2") {
+      return Promise.resolve(apiResponse(plan({ id: 2, truck_name_snapshot: "Plan B Truck" })));
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  });
+  try {
+    const openingA = planning.openDispatchPlanDetail(1);
+    await nextTurn();
+    assert.ok(calls.includes("/tickets/101"));
+
+    const openingB = planning.openDispatchPlanDetail(2);
+    await openingB;
+    assert.match(dom.detailBody.innerHTML, /Plan B Truck/);
+    const renderedB = dom.detailBody.innerHTML;
+
+    ticketA.resolve(apiResponse({
+      stops: [{
+        stop_order: 1,
+        stop_status: "arrived",
+        actual_arrival_at: "2026-09-09 14:35:00"
+      }]
+    }));
+    await openingA;
+    assert.equal(dom.detailBody.innerHTML, renderedB);
+    assert.doesNotMatch(dom.detailBody.innerHTML, /Plan A Stop|Sep 9, 2026/);
+  } finally {
+    planning.closeDispatchPlanningModalsForNavigation();
+    dom.restore();
+  }
+});
+
+scenario("AG", "closing detail invalidates a pending response", async () => {
+  assert.match(
+    planningSource,
+    /function dispatchPlanCloseModal\(id\)[\s\S]*id === "dispatchPlanDetailModal"[\s\S]*dispatchPlanInvalidateDetailRequest\(\)/
+  );
+  const pending = deferred();
+  const dom = installDetailDom(() => pending.promise);
+  try {
+    const opening = planning.openDispatchPlanDetail(1);
+    planning.closeDispatchPlanningModalsForNavigation();
+    const contentAfterClose = dom.detailBody.innerHTML;
+    assert.equal(dom.detailModal.classList.contains("hidden"), true);
+
+    pending.resolve(apiResponse(plan({ id: 1, truck_name_snapshot: "Late Plan" })));
+    await opening;
+    assert.equal(dom.detailBody.innerHTML, contentAfterClose);
+    assert.doesNotMatch(dom.detailBody.innerHTML, /Late Plan/);
+    assert.equal(dom.detailModal.classList.contains("hidden"), true);
+  } finally {
+    planning.closeDispatchPlanningModalsForNavigation();
+    dom.restore();
+  }
+});
+
+scenario("AH", "stale rejection cannot replace the current plan with an error", async () => {
+  const planA = deferred();
+  const dom = installDetailDom((url) => {
+    if (url === "/plans/1") return planA.promise;
+    if (url === "/plans/2") {
+      return Promise.resolve(apiResponse(plan({ id: 2, truck_name_snapshot: "Plan B Truck" })));
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  });
+  try {
+    const openingA = planning.openDispatchPlanDetail(1);
+    await planning.openDispatchPlanDetail(2);
+    const renderedB = dom.detailBody.innerHTML;
+    assert.match(renderedB, /Plan B Truck/);
+
+    planA.reject(new Error("Stale Plan A failure"));
+    await openingA;
+    assert.equal(dom.detailBody.innerHTML, renderedB);
+    assert.doesNotMatch(dom.detailBody.innerHTML, /Stale Plan A failure/);
+  } finally {
+    planning.closeDispatchPlanningModalsForNavigation();
+    dom.restore();
+  }
+});
+
+scenario("AI", "current detail request still renders its safe error state", async () => {
+  const dom = installDetailDom(async () => ({
+    ok: false,
+    status: 503,
+    json: async () => ({ code: "DISPATCH_PLAN_DATABASE_ERROR" })
+  }));
+  try {
+    const result = await planning.openDispatchPlanDetail(1);
+    assert.equal(result, null);
+    assert.match(dom.detailBody.innerHTML, /Dispatch planning is temporarily unavailable/);
+    assert.match(dom.detailBody.innerHTML, /dispatch-plan-feedback error/);
+    assert.equal(dom.detailModal.classList.contains("hidden"), false);
+  } finally {
+    planning.closeDispatchPlanningModalsForNavigation();
+    dom.restore();
+  }
 });
 
 scenario("R", "only Planned plans expose edit controls", () => {
@@ -445,7 +760,7 @@ scenario("Z", "authorization, same-origin helpers, imports, and initialization s
 });
 
 async function run() {
-  assert.equal(scenarios.length, 26);
+  assert.equal(scenarios.length, 35);
   for (const current of scenarios) {
     try {
       await current.callback();
@@ -454,7 +769,7 @@ async function run() {
       throw error;
     }
   }
-  console.log("Dispatch Planning UI tests passed (26/26 required scenarios).");
+  console.log("Dispatch Planning UI tests passed (35/35 required scenarios).");
 }
 
 run().catch((error) => {

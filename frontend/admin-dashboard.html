@@ -513,8 +513,8 @@
               <strong id="dashboardDispatchActive">—</strong>
             </div>
             <div class="dashboard-next-schedule">
-              <span>Next Schedule</span>
-              <strong id="dashboardDispatchNext">Loading schedule…</strong>
+              <span>Next Dispatch</span>
+              <strong id="dashboardDispatchNext">Loading dispatch…</strong>
               <small id="dashboardDispatchNextMeta">Checking planned dispatches</small>
             </div>
           </div>
@@ -1473,7 +1473,7 @@
           <div>
             <span class="dispatch-plans-eyebrow">Pre-operation planning</span>
             <h2 id="dispatchPlansTitle">Dispatch Planning</h2>
-            <p>Prepare manual truck, enforcer, and ordered destination assignments for an operational date.</p>
+            <p>Prepare truck, enforcer, and ordered destination assignments for an operational date.</p>
           </div>
           <div class="dispatch-plans-header-actions">
             <button type="button" class="dispatch-plans-button secondary" id="dispatchPlansRefreshBtn">Refresh</button>
@@ -1505,15 +1505,13 @@
                 <th>Date</th>
                 <th>Truck</th>
                 <th>Enforcer</th>
-                <th>Route</th>
                 <th>Stops</th>
-                <th>Schedule</th>
                 <th>Status</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody id="dispatchPlansTableBody">
-              <tr><td colspan="8" class="dispatch-plans-table-state">Loading planned dispatches...</td></tr>
+              <tr><td colspan="6" class="dispatch-plans-table-state">Loading planned dispatches...</td></tr>
             </tbody>
           </table>
         </div>
@@ -1527,7 +1525,7 @@
   <div class="custom-modal-content dispatch-plan-modal-content">
     <div class="custom-modal-header">
       <div>
-        <span class="dispatch-plans-eyebrow">Manual WMO assignment</span>
+        <span class="dispatch-plans-eyebrow">WMO assignment</span>
         <h3 id="dispatchPlanFormTitle">Create Dispatch Plan</h3>
         <p id="dispatchPlanFormSubtitle">Select the operational date, assigned team, and ordered destinations.</p>
       </div>
@@ -1563,7 +1561,7 @@
         <section class="dispatch-plan-form-section" aria-labelledby="dispatchPlanDestinationsHeading">
           <div class="dispatch-plan-section-heading">
             <span>2</span>
-            <div><h4 id="dispatchPlanDestinationsHeading">Ordered Destinations</h4><p>Add verified destinations, then set their exact visit order manually.</p></div>
+            <div><h4 id="dispatchPlanDestinationsHeading">Ordered Verified Destinations</h4><p>Add verified destinations, then set their exact visit order.</p></div>
           </div>
           <div class="dispatch-plan-destination-picker">
             <label class="dispatch-plan-field">
@@ -1576,37 +1574,8 @@
           <div id="dispatchPlanStops" class="dispatch-plan-stops" aria-live="polite"></div>
         </section>
 
-        <section class="dispatch-plan-form-section" aria-labelledby="dispatchPlanScheduleHeading">
-          <div class="dispatch-plan-section-heading">
-            <span>3</span>
-            <div><h4 id="dispatchPlanScheduleHeading">Schedule and Route Information</h4><p>Optional planning notes only; no route optimization is performed.</p></div>
-          </div>
-          <div class="dispatch-plan-form-grid">
-            <label class="dispatch-plan-field dispatch-plan-field-wide">
-              <span>Route Name</span>
-              <input type="text" id="dispatchPlanRouteName" maxlength="180" placeholder="Planned Route">
-            </label>
-            <label class="dispatch-plan-field dispatch-plan-field-wide">
-              <span>Description</span>
-              <textarea id="dispatchPlanDescription" maxlength="5000" rows="3"></textarea>
-            </label>
-            <label class="dispatch-plan-field">
-              <span>Scheduled Start</span>
-              <input type="datetime-local" id="dispatchPlanScheduledStart">
-            </label>
-            <label class="dispatch-plan-field">
-              <span>Expected Return</span>
-              <input type="datetime-local" id="dispatchPlanExpectedReturn">
-            </label>
-            <label class="dispatch-plan-field dispatch-plan-field-wide">
-              <span>Notes</span>
-              <textarea id="dispatchPlanNotes" maxlength="5000" rows="3"></textarea>
-            </label>
-          </div>
-        </section>
-
         <section class="dispatch-plan-review" aria-labelledby="dispatchPlanReviewHeading">
-          <div><span>4</span><strong id="dispatchPlanReviewHeading">Review</strong></div>
+          <div><span>3</span><strong id="dispatchPlanReviewHeading">Review</strong></div>
           <p id="dispatchPlanReviewSummary">Choose an eligible truck, enforcer, and at least one ordered destination.</p>
           <small id="dispatchPlanFormRevision" class="hidden"></small>
         </section>

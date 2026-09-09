@@ -1,8 +1,20 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const Module = require("node:module");
 
 const projectRoot = path.join(__dirname, "..");
+const originalModuleLoad = Module._load;
+Module._load = function loadWithMockedActivationPool(request, parent, isMain) {
+  const parentPath = parent?.filename.replace(/\\/g, "/") || "";
+  if (
+    request === "../config/dbPromise" &&
+    /services\/(?:dispatchPlanActivationService|dispatchPlanService|dispatchService|trackingService)\.js$/.test(parentPath)
+  ) {
+    return {};
+  }
+  return originalModuleLoad.call(this, request, parent, isMain);
+};
 const {
   DispatchPlanActivationService,
   MobileDispatchPlanError,
@@ -12,6 +24,7 @@ const {
   nextCalendarDate,
   validateActivationActionId
 } = require("../services/dispatchPlanActivationService");
+Module._load = originalModuleLoad;
 
 const tests = [];
 const test = (name, callback) => tests.push({ name, callback });
@@ -120,11 +133,11 @@ test("server date/time helpers use Asia/Manila including the UTC boundary", () =
 });
 
 test("assignment response separates today and tomorrow with exact stored order", async () => {
-  const today = planRow();
+  const today = planRow({ scheduled_start_at: null });
   const tomorrow = planRow({
     id: 502,
     operational_date: "2026-09-01",
-    scheduled_start_at: "2026-09-01 08:00:00",
+    scheduled_start_at: null,
     expected_return_at: "2026-09-01 16:00:00"
   });
   const pool = new AssignmentPool(
@@ -154,6 +167,19 @@ test("assignment response separates today and tomorrow with exact stored order",
     result.tomorrow_assignment.activation_reason_code,
     "DISPATCH_PLAN_OPERATIONAL_DATE_NOT_TODAY"
   );
+});
+
+test("schedule-less today assignment can activate when every real gate passes", () => {
+  assert.deepEqual(
+    assignmentActivationState(
+      planRow({ scheduled_start_at: null }),
+      "2026-08-31"
+    ),
+    { can_activate: true, activation_reason_code: null }
+  );
+
+  const source = read("services/dispatchPlanActivationService.js");
+  assert.doesNotMatch(source, /DISPATCH_PLAN_SCHEDULE_REQUIRED/);
 });
 
 test("assignment lookup uses authenticated identity and ignores arbitrary authority", async () => {
