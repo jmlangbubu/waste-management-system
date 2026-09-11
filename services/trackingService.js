@@ -339,8 +339,17 @@ class TrackingService {
             ? this.normalizeTrackingDeviceStatus(rawExplicitStatus)
             : "";
 
-        if (explicitStatus === "gps_off" || explicitStatus === "sync_pending") {
-            return explicitStatus;
+        /*
+          GPS Offline is reserved for an explicit device/GPS-off report.
+          A missing or old server point can simply mean the phone kept tracking
+          locally while mobile data was weak, so that state remains Sync Pending.
+        */
+        if (explicitStatus === "gps_off") {
+            return "gps_off";
+        }
+
+        if (explicitStatus === "sync_pending") {
+            return "sync_pending";
         }
 
         const lastUpdated = this.normalizeDateTimeText(
@@ -351,27 +360,26 @@ class TrackingService {
         );
 
         if (!lastUpdated) {
-            return "gps_off";
+            return "sync_pending";
         }
 
         const referenceTimeMs = this.parseManilaDateTimeMs(referenceTime);
         const lastUpdatedMs = this.parseManilaDateTimeMs(lastUpdated);
 
         if (!referenceTimeMs || !lastUpdatedMs) {
-            return explicitStatus || "gps_off";
+            return explicitStatus === "active" ? "sync_pending" : (explicitStatus || "sync_pending");
         }
 
-        const ageAtEndSeconds = Math.max(0, Math.floor((referenceTimeMs - lastUpdatedMs) / 1000));
+        const ageAtEndSeconds = Math.max(
+            0,
+            Math.floor((referenceTimeMs - lastUpdatedMs) / 1000)
+        );
 
         if (ageAtEndSeconds <= 60) {
             return "active";
         }
 
-        if (ageAtEndSeconds <= 300) {
-            return "sync_pending";
-        }
-
-        return "gps_off";
+        return "sync_pending";
     }
 
     async ensureTrackingSessionReportColumns() {
@@ -1939,9 +1947,9 @@ class TrackingService {
         );
 
         /*
-          Update existing last-location row. If there is no row yet,
-          /tracking/active still shows the active session as GPS off because
-          there are no live route points.
+          Update an existing last-location row with the mobile device state.
+          If there is no location row yet, /tracking/active still returns the
+          authoritative active session as Sync Pending until GPS data arrives.
         */
         await db.query(
             `
@@ -2018,104 +2026,163 @@ class TrackingService {
                     DATE_FORMAT(tll.last_updated_at, '%Y-%m-%dT%H:%i:%s'),
                     '+08:00'
                 ) AS location_last_updated,
+                CONCAT(
+                    DATE_FORMAT(tll.updated_at, '%Y-%m-%dT%H:%i:%s'),
+                    '+08:00'
+                ) AS server_sync_at,
                 tll.status AS last_location_status,
-                TIMESTAMPDIFF(SECOND, tll.last_updated_at, current_time_ref.manila_now) AS last_sync_age_seconds,
+                TIMESTAMPDIFF(
+                    SECOND,
+                    tll.last_updated_at,
+                    current_time_ref.manila_now
+                ) AS last_sync_age_seconds,
+
+                /*
+                  truck_status is kept for older frontend callers. It now
+                  distinguishes weak/no-network synchronization from an explicit
+                  GPS/device failure instead of collapsing both into "offline".
+                */
                 CASE
-                    WHEN tts.session_status = 'active'
-                         AND tll.last_updated_at >= DATE_SUB(current_time_ref.manila_now, INTERVAL 30 SECOND)
+                    WHEN LOWER(COALESCE(tll.status, tts.last_device_status, '')) IN (
+                        'gps_off',
+                        'tracking_off',
+                        'permission_missing',
+                        'no_permission',
+                        'off'
+                    )
+                    THEN 'offline'
+
+                    WHEN tll.last_updated_at IS NOT NULL
+                         AND tll.last_updated_at >= DATE_SUB(
+                             current_time_ref.manila_now,
+                             INTERVAL 60 SECOND
+                         )
                     THEN 'active'
-                    ELSE 'offline'
+
+                    ELSE 'sync_pending'
                 END AS truck_status,
+
                 CASE
                     WHEN tts.session_status <> 'active'
                     THEN 'stopped'
 
-                    WHEN LOWER(COALESCE(tll.status, tts.last_device_status, '')) IN ('gps_off', 'tracking_off', 'permission_missing')
+                    WHEN LOWER(COALESCE(tll.status, tts.last_device_status, '')) IN (
+                        'gps_off',
+                        'tracking_off',
+                        'permission_missing',
+                        'no_permission',
+                        'off'
+                    )
                     THEN 'gps_off'
 
-                    WHEN LOWER(COALESCE(tll.status, tts.last_device_status, '')) IN ('sync_pending', 'weak_signal')
+                    WHEN LOWER(COALESCE(tll.status, tts.last_device_status, '')) IN (
+                        'sync_pending',
+                        'weak_signal',
+                        'pending',
+                        'offline',
+                        'not_syncing',
+                        'stale'
+                    )
                     THEN 'sync_pending'
 
                     WHEN tll.last_updated_at IS NULL
-                    THEN 'gps_off'
-
-                    WHEN tll.last_updated_at >= DATE_SUB(current_time_ref.manila_now, INTERVAL 60 SECOND)
-                    THEN 'active'
-
-                    WHEN tll.last_updated_at >= DATE_SUB(current_time_ref.manila_now, INTERVAL 5 MINUTE)
                     THEN 'sync_pending'
 
-                    ELSE 'gps_off'
+                    WHEN tll.last_updated_at >= DATE_SUB(
+                        current_time_ref.manila_now,
+                        INTERVAL 60 SECOND
+                    )
+                    THEN 'active'
+
+                    ELSE 'sync_pending'
                 END AS tracking_status_key,
+
                 CASE
                     WHEN tts.session_status <> 'active'
                     THEN 'Stopped'
 
-                    WHEN LOWER(COALESCE(tll.status, tts.last_device_status, '')) IN ('gps_off', 'tracking_off', 'permission_missing')
+                    WHEN LOWER(COALESCE(tll.status, tts.last_device_status, '')) IN (
+                        'gps_off',
+                        'tracking_off',
+                        'permission_missing',
+                        'no_permission',
+                        'off'
+                    )
                     THEN 'GPS off'
 
-                    WHEN LOWER(COALESCE(tll.status, tts.last_device_status, '')) IN ('sync_pending', 'weak_signal')
-                    THEN 'Sync pending'
-
-                    WHEN tll.last_updated_at IS NULL
-                    THEN 'GPS off'
-
-                    WHEN tll.last_updated_at >= DATE_SUB(current_time_ref.manila_now, INTERVAL 60 SECOND)
+                    WHEN tll.last_updated_at IS NOT NULL
+                         AND tll.last_updated_at >= DATE_SUB(
+                             current_time_ref.manila_now,
+                             INTERVAL 60 SECOND
+                         )
                     THEN 'Live'
 
-                    WHEN tll.last_updated_at >= DATE_SUB(current_time_ref.manila_now, INTERVAL 5 MINUTE)
-                    THEN 'Sync pending'
-
-                    ELSE 'GPS off'
+                    ELSE 'Sync pending'
                 END AS tracking_status_label,
+
                 CASE
                     WHEN tts.session_status <> 'active'
                     THEN 'Tracking session has ended.'
 
-                    WHEN LOWER(COALESCE(tll.status, tts.last_device_status, '')) IN ('gps_off', 'tracking_off', 'permission_missing')
-                    THEN 'GPS tracking is turned off. No live route points are being recorded.'
-
-                    WHEN LOWER(COALESCE(tll.status, tts.last_device_status, '')) IN ('sync_pending', 'weak_signal')
-                    THEN 'GPS may still be on, but mobile signal is weak. Route points will continue after the phone syncs.'
+                    WHEN LOWER(COALESCE(tll.status, tts.last_device_status, '')) IN (
+                        'gps_off',
+                        'tracking_off',
+                        'permission_missing',
+                        'no_permission',
+                        'off'
+                    )
+                    THEN 'The mobile device explicitly reported that GPS tracking is unavailable.'
 
                     WHEN tll.last_updated_at IS NULL
-                    THEN 'GPS tracking is turned off or no live GPS points are being recorded.'
+                    THEN 'The dispatch is active, but no server-synced GPS point is available yet.'
 
-                    WHEN tll.last_updated_at >= DATE_SUB(current_time_ref.manila_now, INTERVAL 60 SECOND)
+                    WHEN tll.last_updated_at >= DATE_SUB(
+                        current_time_ref.manila_now,
+                        INTERVAL 60 SECOND
+                    )
                     THEN 'Live GPS signal is syncing normally.'
 
-                    WHEN tll.last_updated_at >= DATE_SUB(current_time_ref.manila_now, INTERVAL 5 MINUTE)
-                    THEN 'GPS may still be on, but mobile signal is weak. Route points will continue after the phone syncs.'
-
-                    ELSE 'GPS tracking is turned off or no live GPS points are being recorded.'
+                    ELSE 'The dispatch is still active. The phone may be tracking locally while mobile data is weak; queued route points will appear after synchronization.'
                 END AS tracking_status_description,
+
+                /*
+                  gps_status remains the compatibility on/off field.
+                  Do not infer GPS-off from network silence; only an explicit
+                  mobile GPS/device-off report may set it to off.
+                */
                 CASE
-                    WHEN LOWER(COALESCE(tll.status, tts.last_device_status, '')) IN ('gps_off', 'tracking_off', 'permission_missing')
+                    WHEN LOWER(COALESCE(tll.status, tts.last_device_status, '')) IN (
+                        'gps_off',
+                        'tracking_off',
+                        'permission_missing',
+                        'no_permission',
+                        'off'
+                    )
                     THEN 'off'
 
-                    WHEN tll.last_updated_at IS NULL
-                    THEN 'off'
-
-                    WHEN tll.last_updated_at >= DATE_SUB(current_time_ref.manila_now, INTERVAL 5 MINUTE)
-                    THEN 'on'
-
-                    ELSE 'off'
+                    ELSE 'on'
                 END AS gps_status,
+
                 CASE
-                    WHEN LOWER(COALESCE(tll.status, tts.last_device_status, '')) IN ('gps_off', 'tracking_off', 'permission_missing')
+                    WHEN LOWER(COALESCE(tll.status, tts.last_device_status, '')) IN (
+                        'gps_off',
+                        'tracking_off',
+                        'permission_missing',
+                        'no_permission',
+                        'off'
+                    )
                     THEN 'not_syncing'
 
-                    WHEN LOWER(COALESCE(tll.status, tts.last_device_status, '')) IN ('sync_pending', 'weak_signal')
-                    THEN 'pending'
-
-                    WHEN tll.last_updated_at >= DATE_SUB(current_time_ref.manila_now, INTERVAL 60 SECOND)
+                    WHEN tll.last_updated_at IS NOT NULL
+                         AND tll.last_updated_at >= DATE_SUB(
+                             current_time_ref.manila_now,
+                             INTERVAL 60 SECOND
+                         )
                     THEN 'synced'
 
-                    WHEN tll.last_updated_at >= DATE_SUB(current_time_ref.manila_now, INTERVAL 5 MINUTE)
-                    THEN 'pending'
-
-                    ELSE 'not_syncing'
+                    ELSE 'pending'
                 END AS sync_status
+
             FROM truck_tracking_sessions tts
             LEFT JOIN truck_last_locations tll
                 ON tts.id = tll.session_id

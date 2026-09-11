@@ -16,10 +16,29 @@ const FLEET_OPERATIONAL_LABELS = Object.freeze({
   off_duty: "Off Duty"
 });
 
+const FLEET_TRACKING_LABELS = Object.freeze({
+  not_tracking: "Not Tracking",
+  online: "GPS Online",
+  sync_pending: "Sync Pending",
+  offline: "GPS Offline"
+});
+
+const FLEET_ASSIGNMENT_LABELS = Object.freeze({
+  available: "Available",
+  reserved: "Reserved",
+  on_dispatch: "On Dispatch",
+  returning_to_wmo: "Returning to WMO",
+  tracking_active: "Tracking Active",
+  unavailable: "Unavailable"
+});
+
+// Backward-compatible export name used by older tests/code.
 const FLEET_GPS_LABELS = Object.freeze({
-  online: "Online",
-  stale: "Stale",
-  offline: "Offline"
+  online: "GPS Online",
+  stale: "Sync Pending",
+  sync_pending: "Sync Pending",
+  offline: "GPS Offline",
+  not_tracking: "Not Tracking"
 });
 
 const FLEET_EMPTY_SUMMARY = Object.freeze({
@@ -66,11 +85,88 @@ function fleetOperationalLabel(truck = {}) {
   if (key === "planned" && truck.operational_date) {
     return `Planned for ${truck.operational_date}`;
   }
-  return FLEET_OPERATIONAL_LABELS[key] || String(truck.operational_state || "").trim() || "Off Duty";
+  return FLEET_OPERATIONAL_LABELS[key] ||
+    String(truck.operational_state || "").trim() ||
+    "Off Duty";
 }
 
+function fleetTrackingKey(truck = {}) {
+  const semanticKey = String(truck.tracking_status_key || "").trim().toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(FLEET_TRACKING_LABELS, semanticKey)) {
+    return semanticKey;
+  }
+
+  const hasActiveTrackingSession =
+    Number.isFinite(Number(truck.active_tracking_session_id)) &&
+    Number(truck.active_tracking_session_id) > 0;
+
+  if (!hasActiveTrackingSession) return "not_tracking";
+
+  const legacy = String(truck.gps_status || "").trim().toLowerCase();
+  if (["online", "active", "live", "synced"].includes(legacy)) return "online";
+  if (["stale", "sync_pending", "weak_signal", "pending"].includes(legacy)) {
+    return "sync_pending";
+  }
+  if (["offline", "gps_off", "tracking_off", "permission_missing"].includes(legacy)) {
+    return "offline";
+  }
+
+  // An authoritative active session with unknown/late sync is not the same
+  // as GPS being explicitly disabled.
+  return "sync_pending";
+}
+
+function fleetTrackingLabel(truck = {}) {
+  const key = fleetTrackingKey(truck);
+  return FLEET_TRACKING_LABELS[key] || "Not Tracking";
+}
+
+function fleetTrackingBadgeClass(truck = {}) {
+  const key = fleetTrackingKey(truck);
+  if (key === "sync_pending") return "stale";
+  return key;
+}
+
+// Compatibility helper retained for older callers/tests.
 function fleetGpsLabel(status) {
-  return FLEET_GPS_LABELS[String(status || "offline").toLowerCase()] || "Offline";
+  const key = String(status || "").toLowerCase();
+  if (!key) return "Not Tracking";
+  if (key === "stale") return "Sync Pending";
+  return FLEET_GPS_LABELS[key] || "Not Tracking";
+}
+
+function fleetAssignmentKey(truck = {}) {
+  const semanticKey = String(truck.assignment_state_key || "").trim().toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(FLEET_ASSIGNMENT_LABELS, semanticKey)) {
+    return semanticKey;
+  }
+
+  const operationalKey = String(truck.operational_state_key || "").trim().toLowerCase();
+
+  if (operationalKey === "returning_to_wmo") return "returning_to_wmo";
+  if (operationalKey === "active_dispatch") return "on_dispatch";
+  if (operationalKey === "tracking_awaiting_dispatch") return "tracking_active";
+  if (operationalKey === "planned") return "reserved";
+  if (truck.assignable === true) return "available";
+
+  return "unavailable";
+}
+
+function fleetAssignmentLabel(truck = {}) {
+  const key = fleetAssignmentKey(truck);
+  return FLEET_ASSIGNMENT_LABELS[key] || "Unavailable";
+}
+
+function fleetAssignmentBadgeClass(truck = {}) {
+  const key = fleetAssignmentKey(truck);
+
+  // Preserve the existing green "yes" visual for truly available trucks.
+  if (key === "available") return "yes";
+
+  // New semantic classes keep reserved/active states from looking like an
+  // error/red "No". They safely fall back to the neutral base badge until
+  // admin-fleet.css is updated in the next step.
+  return key;
 }
 
 function fleetRequiresReason(condition) {
@@ -113,6 +209,29 @@ function fleetConditionBadge(truck = {}) {
     ${reason ? `<small class="fleet-cell-note">${fleetEscape(reason)}</small>` : ""}`;
 }
 
+function fleetTrackingNote(truck = {}) {
+  const key = fleetTrackingKey(truck);
+  const lastSync = String(truck.tracking_last_sync_at || "").trim();
+
+  if (key === "not_tracking") {
+    return "Dispatch tracking has not started.";
+  }
+
+  if (key === "sync_pending") {
+    return lastSync
+      ? `Last synced ${lastSync}`
+      : "Waiting for the mobile device to sync.";
+  }
+
+  if (key === "offline") {
+    return lastSync
+      ? `Last synced ${lastSync}`
+      : "GPS is unavailable for the active operation.";
+  }
+
+  return lastSync ? `Last synced ${lastSync}` : "";
+}
+
 function fleetTableRowsHtml(trucks = []) {
   if (!Array.isArray(trucks) || trucks.length === 0) {
     return `
@@ -126,12 +245,15 @@ function fleetTableRowsHtml(trucks = []) {
 
   return trucks.map((truck) => {
     const id = Number(truck.id);
-    const condition = String(truck.fleet_condition || "").toLowerCase();
     const operationalKey = String(truck.operational_state_key || "off_duty").toLowerCase();
-    const gpsKey = String(truck.gps_status || "offline").toLowerCase();
+    const trackingKey = fleetTrackingKey(truck);
+    const trackingClass = fleetTrackingBadgeClass(truck);
+    const assignmentKey = fleetAssignmentKey(truck);
+    const assignmentClass = fleetAssignmentBadgeClass(truck);
+    const trackingNote = fleetTrackingNote(truck);
     const truckCode = String(truck.truck_code || "").trim() || "Not recorded";
     const truckName = String(truck.truck_name || "").trim() || truckCode;
-    const assignable = truck.assignable === true;
+
     return `
       <tr>
         <td>
@@ -140,9 +262,16 @@ function fleetTableRowsHtml(trucks = []) {
         </td>
         <td>${fleetEscape(String(truck.plate_number || "").trim() || "Not recorded")}</td>
         <td>${fleetConditionBadge(truck)}</td>
-        <td><span class="fleet-badge operational ${fleetEscape(operationalKey)}">${fleetEscape(fleetOperationalLabel(truck))}</span></td>
-        <td><span class="fleet-badge gps ${fleetEscape(gpsKey)}">${fleetEscape(fleetGpsLabel(gpsKey))}</span></td>
-        <td><span class="fleet-badge assignable ${assignable ? "yes" : "no"}">${assignable ? "Yes" : "No"}</span></td>
+        <td>
+          <span class="fleet-badge operational ${fleetEscape(operationalKey)}">${fleetEscape(fleetOperationalLabel(truck))}</span>
+        </td>
+        <td>
+          <span class="fleet-badge gps ${fleetEscape(trackingClass)}" data-tracking-state="${fleetEscape(trackingKey)}">${fleetEscape(fleetTrackingLabel(truck))}</span>
+          ${trackingNote ? `<small class="fleet-cell-note">${fleetEscape(trackingNote)}</small>` : ""}
+        </td>
+        <td>
+          <span class="fleet-badge assignable ${fleetEscape(assignmentClass)}" data-assignment-state="${fleetEscape(assignmentKey)}">${fleetEscape(fleetAssignmentLabel(truck))}</span>
+        </td>
         <td>
           <button
             type="button"
@@ -598,9 +727,15 @@ if (typeof module !== "undefined" && module.exports) {
     FLEET_CONDITION_LABELS,
     FLEET_OPERATIONAL_LABELS,
     FLEET_GPS_LABELS,
+    FLEET_TRACKING_LABELS,
+    FLEET_ASSIGNMENT_LABELS,
     fleetConditionLabel,
     fleetOperationalLabel,
     fleetGpsLabel,
+    fleetTrackingKey,
+    fleetTrackingLabel,
+    fleetAssignmentKey,
+    fleetAssignmentLabel,
     fleetRequiresReason,
     fleetValidateTruck,
     fleetValidateCondition,

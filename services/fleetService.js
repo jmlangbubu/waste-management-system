@@ -15,6 +15,22 @@ const OPERATIONAL_STATES = Object.freeze({
   off_duty: "Off Duty"
 });
 
+const ASSIGNMENT_STATES = Object.freeze({
+  available: "Available",
+  reserved: "Reserved",
+  on_dispatch: "On Dispatch",
+  returning_to_wmo: "Returning to WMO",
+  tracking_active: "Tracking Active",
+  unavailable: "Unavailable"
+});
+
+const TRACKING_STATES = Object.freeze({
+  not_tracking: "Not Tracking",
+  online: "GPS Online",
+  sync_pending: "Sync Pending",
+  offline: "GPS Offline"
+});
+
 class FleetServiceError extends Error {
   constructor(message, statusCode = 400, code = "FLEET_ERROR", cause = null) {
     super(message);
@@ -181,6 +197,113 @@ function baseFleetTruck(row = {}) {
   };
 }
 
+function normalizeTrackingState(tracking = null) {
+  if (!tracking) {
+    return {
+      key: "not_tracking",
+      label: TRACKING_STATES.not_tracking
+    };
+  }
+
+  const raw = String(
+    tracking.tracking_status_key ||
+    tracking.gps_status ||
+    tracking.last_location_status ||
+    tracking.last_device_status ||
+    ""
+  ).trim().toLowerCase();
+
+  if (["online", "active", "live", "synced"].includes(raw)) {
+    return {
+      key: "online",
+      label: TRACKING_STATES.online
+    };
+  }
+
+  if (
+    [
+      "sync_pending",
+      "weak_signal",
+      "pending",
+      "stale",
+      "not_syncing",
+      "offline"
+    ].includes(raw)
+  ) {
+    return {
+      key: "sync_pending",
+      label: TRACKING_STATES.sync_pending
+    };
+  }
+
+  if (
+    [
+      "gps_off",
+      "tracking_off",
+      "permission_missing",
+      "no_permission",
+      "off"
+    ].includes(raw)
+  ) {
+    return {
+      key: "offline",
+      label: TRACKING_STATES.offline
+    };
+  }
+
+  /*
+    If an authoritative active tracking session exists but the status is
+    temporarily unknown, treat it as Sync Pending rather than falsely
+    declaring the device/GPS offline.
+  */
+  return {
+    key: "sync_pending",
+    label: TRACKING_STATES.sync_pending
+  };
+}
+
+function deriveAssignmentState(truck, dispatch, tracking, plan) {
+  if (dispatch?.status === "returning_to_wmo") {
+    return {
+      key: "returning_to_wmo",
+      label: ASSIGNMENT_STATES.returning_to_wmo
+    };
+  }
+
+  if (dispatch) {
+    return {
+      key: "on_dispatch",
+      label: ASSIGNMENT_STATES.on_dispatch
+    };
+  }
+
+  if (tracking) {
+    return {
+      key: "tracking_active",
+      label: ASSIGNMENT_STATES.tracking_active
+    };
+  }
+
+  if (plan) {
+    return {
+      key: "reserved",
+      label: ASSIGNMENT_STATES.reserved
+    };
+  }
+
+  if (truck.fleet_condition === "available") {
+    return {
+      key: "available",
+      label: ASSIGNMENT_STATES.available
+    };
+  }
+
+  return {
+    key: "unavailable",
+    label: ASSIGNMENT_STATES.unavailable
+  };
+}
+
 function deriveFleetTruck(row, dispatch, tracking, plan) {
   const truck = baseFleetTruck(row);
   let operationalStateKey = "off_duty";
@@ -205,7 +328,8 @@ function deriveFleetTruck(row, dispatch, tracking, plan) {
       ticket_number: dispatch.ticket_number || null,
       dispatch_status: dispatch.status,
       route_name: dispatch.route_name || null,
-      assigned_personnel_name: dispatch.assigned_personnel_name || null
+      assigned_personnel_name: dispatch.assigned_personnel_name || null,
+      actual_start_at: dispatch.actual_start_at || null
     };
   } else if (tracking) {
     currentAssignment = {
@@ -231,6 +355,14 @@ function deriveFleetTruck(row, dispatch, tracking, plan) {
     !tracking &&
     !plan;
 
+  const assignmentState = deriveAssignmentState(
+    truck,
+    dispatch,
+    tracking,
+    plan
+  );
+  const trackingState = normalizeTrackingState(tracking);
+
   return {
     ...truck,
     operational_state_key: operationalStateKey,
@@ -238,10 +370,35 @@ function deriveFleetTruck(row, dispatch, tracking, plan) {
       ? `Planned for ${operationalDate}`
       : OPERATIONAL_STATES[operationalStateKey],
     operational_date: operationalDate,
+
+    /*
+      Keep the existing boolean for compatibility with existing planner code.
+      The frontend should no longer present false as a vague "No"; use the
+      semantic assignment fields below.
+    */
     assignable,
+
+    assignment_state_key: assignmentState.key,
+    assignment_state: assignmentState.label,
+
+    tracking_status_key: trackingState.key,
+    tracking_status: trackingState.label,
+
     active_tracking_session_id: tracking ? Number(tracking.id) : null,
     active_dispatch_ticket_id: dispatch ? Number(dispatch.id) : null,
-    gps_status: tracking?.gps_status || null,
+
+    /*
+      Compatibility field used by older Fleet UI code. It now carries a
+      truthful state:
+      - null when no tracking session exists
+      - online for fresh GPS
+      - sync_pending for stale/no-network sync
+      - offline only for explicit GPS/permission off
+    */
+    gps_status: tracking ? trackingState.key : null,
+
+    tracking_last_sync_at: tracking?.last_sync_at || null,
+    tracking_last_device_status: tracking?.last_device_status || null,
     current_assignment: currentAssignment
   };
 }
@@ -284,6 +441,7 @@ class FleetService {
     const now = this.now();
     const manilaNow = formatManilaDateTime(now.getTime());
     const operationalDate = currentManilaDate(now);
+
     const [[dispatchRows], [trackingRows], [planRows]] = await Promise.all([
       this.query(
         `
@@ -303,6 +461,7 @@ class FleetService {
             id DESC
         `
       ),
+
       this.query(
         `
           SELECT
@@ -310,17 +469,42 @@ class FleetService {
             tts.truck_id,
             tts.enforcer_name,
             DATE_FORMAT(tts.started_at, '%Y-%m-%d %H:%i:%s') AS started_at,
+            tts.last_device_status,
+            DATE_FORMAT(tll.last_updated_at, '%Y-%m-%d %H:%i:%s') AS last_sync_at,
+            tll.status AS last_location_status,
             CASE
               WHEN LOWER(COALESCE(tll.status, tts.last_device_status, ''))
-                IN ('gps_off', 'tracking_off', 'permission_missing')
+                IN ('gps_off', 'tracking_off', 'permission_missing', 'no_permission')
                 THEN 'offline'
+
+              WHEN LOWER(COALESCE(tll.status, tts.last_device_status, ''))
+                IN ('sync_pending', 'weak_signal', 'pending', 'offline')
+                THEN 'sync_pending'
+
               WHEN tll.last_updated_at IS NULL
-                THEN 'offline'
+                THEN 'sync_pending'
+
               WHEN tll.last_updated_at >= DATE_SUB(?, INTERVAL 60 SECOND)
                 THEN 'online'
-              WHEN tll.last_updated_at >= DATE_SUB(?, INTERVAL 5 MINUTE)
-                THEN 'stale'
-              ELSE 'offline'
+
+              ELSE 'sync_pending'
+            END AS tracking_status_key,
+            CASE
+              WHEN LOWER(COALESCE(tll.status, tts.last_device_status, ''))
+                IN ('gps_off', 'tracking_off', 'permission_missing', 'no_permission')
+                THEN 'offline'
+
+              WHEN LOWER(COALESCE(tll.status, tts.last_device_status, ''))
+                IN ('sync_pending', 'weak_signal', 'pending', 'offline')
+                THEN 'sync_pending'
+
+              WHEN tll.last_updated_at IS NULL
+                THEN 'sync_pending'
+
+              WHEN tll.last_updated_at >= DATE_SUB(?, INTERVAL 60 SECOND)
+                THEN 'online'
+
+              ELSE 'sync_pending'
             END AS gps_status
           FROM truck_tracking_sessions tts
           LEFT JOIN truck_last_locations tll
@@ -330,6 +514,7 @@ class FleetService {
         `,
         [manilaNow, manilaNow]
       ),
+
       this.query(
         `
           SELECT
@@ -382,6 +567,7 @@ class FleetService {
       if (FLEET_CONDITIONS.has(truck.fleet_condition)) {
         summary[truck.fleet_condition] += 1;
       }
+
       if (truck.operational_state_key === "returning_to_wmo") {
         summary.returning += 1;
       } else if (truck.operational_state_key === "active_dispatch") {
@@ -394,6 +580,7 @@ class FleetService {
         summary.off_duty += 1;
       }
     }
+
     return summary;
   }
 
@@ -424,6 +611,7 @@ class FleetService {
       `,
       [truckCode, plateNumber, plateNumber]
     );
+
     if (duplicates.length) {
       if (plateNumber && duplicates[0].plate_number === plateNumber) {
         throw new FleetServiceError(
@@ -432,6 +620,7 @@ class FleetService {
           "FLEET_PLATE_DUPLICATE"
         );
       }
+
       throw new FleetServiceError(
         "A fleet truck with this truck code already exists",
         409,
@@ -498,6 +687,7 @@ class FleetService {
       `,
       [id]
     );
+
     if (!rows.length) {
       throw new FleetServiceError(
         "Fleet truck not found",
@@ -534,7 +724,11 @@ module.exports.FleetService = FleetService;
 module.exports.FleetServiceError = FleetServiceError;
 module.exports.FLEET_CONDITIONS = FLEET_CONDITIONS;
 module.exports.OPERATIONAL_STATES = OPERATIONAL_STATES;
+module.exports.ASSIGNMENT_STATES = ASSIGNMENT_STATES;
+module.exports.TRACKING_STATES = TRACKING_STATES;
 module.exports.currentManilaDate = currentManilaDate;
 module.exports.deriveFleetTruck = deriveFleetTruck;
 module.exports.normalizeFleetCondition = normalizeFleetCondition;
 module.exports.normalizeFleetError = normalizeFleetError;
+module.exports.normalizeTrackingState = normalizeTrackingState;
+module.exports.deriveAssignmentState = deriveAssignmentState;
