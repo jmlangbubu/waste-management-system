@@ -270,33 +270,51 @@
   white-space: nowrap;
 }
 
+/* Healthy / available / live states */
 .fleet-badge.condition.available,
 .fleet-badge.assignable.yes,
+.fleet-badge.assignable.available,
 .fleet-badge.gps.online {
   border-color: #acd5bf;
   background: #edf9f1;
   color: #17613d;
 }
 
+/* Planned / reserved / delayed-sync states */
 .fleet-badge.condition.for_maintenance,
 .fleet-badge.gps.stale,
+.fleet-badge.gps.sync_pending,
 .fleet-badge.operational.returning_to_wmo,
-.fleet-badge.operational.planned {
+.fleet-badge.operational.planned,
+.fleet-badge.assignable.reserved,
+.fleet-badge.assignable.returning_to_wmo {
   border-color: #edc89c;
   background: var(--wmo-warning-soft);
   color: #8a3c08;
 }
 
+/* A truck with no active tracking session is not "GPS Offline". */
+.fleet-badge.gps.not_tracking {
+  border-color: #cddbd3;
+  background: #f5f8f6;
+  color: #405149;
+}
+
+/* Explicit GPS/device failure only. */
 .fleet-badge.condition.out_of_service,
 .fleet-badge.gps.offline,
-.fleet-badge.assignable.no {
+.fleet-badge.assignable.no,
+.fleet-badge.assignable.unavailable {
   border-color: #e7b8b4;
   background: #fff2f1;
   color: #8f211a;
 }
 
+/* Active operational ownership. */
 .fleet-badge.operational.active_dispatch,
-.fleet-badge.operational.tracking_awaiting_dispatch {
+.fleet-badge.operational.tracking_awaiting_dispatch,
+.fleet-badge.assignable.on_dispatch,
+.fleet-badge.assignable.tracking_active {
   border-color: #a9c9e9;
   background: #eef6ff;
   color: #205d91;
