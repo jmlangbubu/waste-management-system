@@ -190,7 +190,9 @@ exports.addLocationLogsBatch = async (req, res) => {
             duplicate_count: result.duplicate_count || 0,
             synced_count: Array.isArray(result.synced_local_point_ids)
                 ? result.synced_local_point_ids.length
-                : 0
+                : 0,
+            rejected_count: result.rejected_count || 0,
+            deferred_count: result.deferred_count || 0
         });
 
         return res.status(200).json({
@@ -198,7 +200,12 @@ exports.addLocationLogsBatch = async (req, res) => {
             message: result.message,
             inserted_count: result.inserted_count || 0,
             duplicate_count: result.duplicate_count || 0,
-            synced_local_point_ids: result.synced_local_point_ids || []
+            synced_local_point_ids: result.synced_local_point_ids || [],
+            rejected_count: result.rejected_count || 0,
+            rejected_local_point_ids: result.rejected_local_point_ids || [],
+            rejected_points: result.rejected_points || [],
+            deferred_count: result.deferred_count || 0,
+            deferred_points: result.deferred_points || []
         });
     } catch (error) {
         console.error('addLocationLogsBatch error:', error);

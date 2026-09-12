@@ -102,6 +102,8 @@ function getTruckLastSyncValue(truck) {
   if (!truck) return "";
 
   return (
+    truck.device_contact_at ||
+    truck.server_sync_at ||
     truck.last_device_status_at ||
     truck.last_sync_at ||
     truck.sync_updated_at ||

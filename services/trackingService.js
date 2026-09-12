@@ -1441,27 +1441,78 @@ class TrackingService {
                 message: "No location points to sync",
                 inserted_count: 0,
                 duplicate_count: 0,
-                synced_local_point_ids: []
+                synced_local_point_ids: [],
+                rejected_count: 0,
+                rejected_local_point_ids: [],
+                rejected_points: [],
+                deferred_count: 0,
+                deferred_points: []
             };
         }
 
-        const sortedLocations = locations
-            .map((item, index) => {
-                try {
-                    return validateGpsPointForStorage(item);
-                } catch (error) {
-                    if (error instanceof GpsValidationError) {
-                        error.message = `locations[${index}]: ${error.message}`;
-                    }
+        /*
+          Resolve the authoritative session before acknowledging any queue item.
+          This prevents an invalid batch from being treated as disposable when
+          the referenced tracking session itself does not exist.
+        */
+        const session = await this.getLocationLogSession(sessionId);
+        const validLocations = [];
+        const rejectedLocalPointIds = [];
+        const rejectedPoints = [];
+        const deferredPoints = [];
+
+        for (let index = 0; index < locations.length; index++) {
+            const item = locations[index];
+
+            try {
+                validLocations.push(validateGpsPointForStorage(item));
+            } catch (error) {
+                if (!(error instanceof GpsValidationError)) {
                     throw error;
                 }
-            })
+
+                const localPointId = this.cleanText(
+                    item && typeof item === "object"
+                        ? (item.local_point_id || item.localPointId || "")
+                        : ""
+                );
+                const code = this.cleanText(error.code) || "GPS_POINT_INVALID";
+                const message = this.cleanText(error.message) || "GPS point is invalid";
+
+                /*
+                  A future timestamp can become valid as wall-clock time catches
+                  up. Keep it in the durable Android queue instead of permanently
+                  discarding it as a poison point.
+                */
+                if (code === "GPS_TIMESTAMP_FUTURE") {
+                    deferredPoints.push({
+                        index,
+                        local_point_id: localPointId || null,
+                        code,
+                        message
+                    });
+                    continue;
+                }
+
+                if (localPointId && !rejectedLocalPointIds.includes(localPointId)) {
+                    rejectedLocalPointIds.push(localPointId);
+                }
+
+                rejectedPoints.push({
+                    index,
+                    local_point_id: localPointId || null,
+                    code,
+                    message
+                });
+            }
+        }
+
+        const sortedLocations = validLocations
             .sort((a, b) => a.timestampMs - b.timestampMs);
 
         let insertedCount = 0;
         let duplicateCount = 0;
         const syncedLocalPointIds = [];
-        const session = await this.getLocationLogSession(sessionId);
 
         for (const point of sortedLocations) {
             const result = await this.addSingleLocationLog(sessionId, point, {
@@ -1498,7 +1549,12 @@ class TrackingService {
             message: "Location batch synced successfully",
             inserted_count: insertedCount,
             duplicate_count: duplicateCount,
-            synced_local_point_ids: syncedLocalPointIds
+            synced_local_point_ids: syncedLocalPointIds,
+            rejected_count: rejectedPoints.length,
+            rejected_local_point_ids: rejectedLocalPointIds,
+            rejected_points: rejectedPoints,
+            deferred_count: deferredPoints.length,
+            deferred_points: deferredPoints
         };
     }
 
@@ -1691,6 +1747,13 @@ class TrackingService {
 
         if (!latest) return;
 
+        /*
+          Keep GPS sample time and server/device contact time as separate clocks.
+          latest.recorded_at is historical route evidence; serverContactAt is
+          when this server actually received/rebuilt the successfully synced batch.
+        */
+        const serverContactAt = this.getManilaNowDateTime();
+
         await db.query(
             `
             UPDATE truck_tracking_sessions
@@ -1709,8 +1772,8 @@ class TrackingService {
                 latest.latitude,
                 latest.longitude,
                 latest.recorded_at,
-                latest.recorded_at,
-                this.getManilaNowDateTime(),
+                serverContactAt,
+                serverContactAt,
                 sessionId
             ]
         );
@@ -2015,6 +2078,18 @@ class TrackingService {
                 tts.last_updated_at,
                 tts.last_device_status,
                 tts.last_device_status_at,
+                CASE
+                    WHEN tts.last_device_status_at IS NULL THEN NULL
+                    ELSE CONCAT(
+                        DATE_FORMAT(tts.last_device_status_at, '%Y-%m-%dT%H:%i:%s'),
+                        '+08:00'
+                    )
+                END AS device_contact_at,
+                TIMESTAMPDIFF(
+                    SECOND,
+                    tts.last_device_status_at,
+                    current_time_ref.manila_now
+                ) AS device_contact_age_seconds,
                 tts.session_distance_km,
                 tll.latitude,
                 tll.longitude,
