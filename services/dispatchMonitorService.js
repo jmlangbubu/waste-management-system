@@ -61,6 +61,13 @@ class DispatchMonitorService {
 
     this.running = true;
     try {
+      const rollover = await this.dispatchService.reconcileStaleActiveOperations();
+      if (rollover.reconciled_count > 0) {
+        console.info(
+          `[Dispatch Monitor] Reconciled ${rollover.reconciled_count} stale operational-day session(s).`
+        );
+      }
+
       const [relations] = await this.db.query(
         `
           SELECT

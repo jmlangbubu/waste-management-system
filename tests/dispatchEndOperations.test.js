@@ -220,7 +220,7 @@ async function testPreparedLinkedTicketIsNotChanged() {
   assert.equal(state.events.length, 0);
 }
 
-async function testTerminalStopsAtMidnightAreNotFalselyCompletedOrCancelled() {
+async function testTerminalStopsWithoutVerifiedReturnAreCancelledAtMidnight() {
   const { state, pool } = createPool({
     stops: [{ id: 11, stop_order: 1, stop_status: "completed" }]
   });
@@ -230,9 +230,15 @@ async function testTerminalStopsAtMidnightAreNotFalselyCompletedOrCancelled() {
     action_id: "ROLLOVER-58-20260828",
     recorded_at: "2026-08-28 00:00:00"
   });
-  assert.equal(result.outcome, "awaiting_verified_final_return");
-  assert.equal(state.ticket.status, "in_progress");
-  assert.equal(state.events.length, 0);
+  assert.equal(result.outcome, "day_end_incomplete");
+  assert.equal(state.ticket.status, "cancelled");
+  assert.equal(state.events.filter((event) =>
+    event.event_type === "dispatch_forced_day_rollover").length, 1);
+  assert.equal(state.events.some((event) =>
+    event.event_type === "returned_to_wmo"), false);
+  assert.equal(state.events.some((event) =>
+    event.event_type === "dispatch_completed"), false);
+  assert.equal(state.events[0].details.unfinished_stop_count, 0);
 }
 
 async function run() {
@@ -242,7 +248,7 @@ async function run() {
   await testTerminalTicketsAreNeverOverwritten();
   await testLunchReturnWithoutIntentDoesNothing();
   await testPreparedLinkedTicketIsNotChanged();
-  await testTerminalStopsAtMidnightAreNotFalselyCompletedOrCancelled();
+  await testTerminalStopsWithoutVerifiedReturnAreCancelledAtMidnight();
   console.log("Dispatch end-operations tests passed");
 }
 

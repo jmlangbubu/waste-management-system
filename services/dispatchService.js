@@ -631,6 +631,90 @@ function currentManilaDate(now = new Date()) {
   return `${values.year}-${values.month}-${values.day}`;
 }
 
+function currentManilaDateTime(now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23"
+  }).formatToParts(now);
+  const values = Object.fromEntries(
+    parts
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value])
+  );
+  return `${values.year}-${values.month}-${values.day} ${values.hour}:${values.minute}:${values.second}`;
+}
+
+function nextCalendarDate(dateText) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateText || ""));
+  if (!match) return "";
+  const next = new Date(Date.UTC(
+    Number(match[1]),
+    Number(match[2]) - 1,
+    Number(match[3]) + 1
+  ));
+  return next.toISOString().slice(0, 10);
+}
+
+function trackingFinalStateAtBoundary(session = {}, endedAt) {
+  const explicit = cleanText(
+    session.last_location_status || session.last_device_status || "",
+    80
+  ).toLowerCase();
+  let key = "sync_pending";
+
+  if ([
+    "gps_off",
+    "tracking_off",
+    "permission_missing",
+    "no_permission",
+    "off"
+  ].includes(explicit)) {
+    key = "gps_off";
+  } else if (![
+    "sync_pending",
+    "weak_signal",
+    "pending",
+    "stale",
+    "not_syncing",
+    "offline"
+  ].includes(explicit)) {
+    const endedAtMs = parseManilaTimestamp(endedAt);
+    const lastContactMs = parseManilaTimestamp(
+      session.location_last_updated ||
+      session.last_location_updated_at ||
+      session.last_updated_at
+    );
+    if (
+      Number.isFinite(endedAtMs) &&
+      Number.isFinite(lastContactMs) &&
+      lastContactMs <= endedAtMs + 60000 &&
+      endedAtMs - lastContactMs <= 60000
+    ) {
+      key = "active";
+    }
+  }
+
+  return {
+    key,
+    gps: key === "gps_off" ? "off" : "on",
+    sync: key === "active"
+      ? "synced"
+      : key === "sync_pending" ? "pending" : "not_syncing",
+    description: key === "active"
+      ? "Live GPS signal was syncing normally when tracking ended."
+      : key === "gps_off"
+        ? "GPS tracking was off or no live GPS points were recorded before tracking ended."
+        : "Mobile data was weak or offline when tracking ended. Saved points may sync later.",
+    lastLocationStatus: key === "active" ? "offline" : key
+  };
+}
+
 function manilaDayWindow(value, now = new Date()) {
   const date = value ? dateOnly(value, "date") : currentManilaDate(now);
   const [year, month, day] = date.split("-").map(Number);
@@ -4572,7 +4656,24 @@ class DispatchService {
       );
     }
 
-    return this.withTransaction(async (connection) => {
+    return this.withTransaction((connection) =>
+      this.finalizeMobileTrackingEndInTransaction(connection, sessionId, {
+        operationIntent,
+        endedAt,
+        actionId,
+        evidence
+      })
+    );
+  }
+
+  async finalizeMobileTrackingEndInTransaction(connection, sessionId, context) {
+      const {
+        operationIntent,
+        endedAt,
+        actionId,
+        evidence,
+        systemInitiated = false
+      } = context;
       const [rows] = await connection.query(
         `
           SELECT
@@ -4623,11 +4724,15 @@ class DispatchService {
         `,
         [relation.dispatch_ticket_id]
       );
-      const actor = {
-        actor_type: "mobile_enforcer",
-        actor_id: relation.enforcer_id || null,
-        actor_name: nullableText(relation.enforcer_name, 255)
-      };
+      const actor = systemInitiated
+        ? { actor_type: "system", actor_id: null, actor_name: null }
+        : {
+            actor_type: "mobile_enforcer",
+            actor_id: relation.enforcer_id || null,
+            actor_name: nullableText(relation.enforcer_name, 255)
+          };
+      const eventSource = systemInitiated ? "system" : "mobile";
+      const forcedRollover = operationIntent === "forced_day_rollover";
 
       if (operationIntent === "end_operations" && remainingStops.length === 0) {
         const returning = await this.moveTicketToReturningIfDone(
@@ -4662,7 +4767,7 @@ class DispatchService {
           tracking_session_id: sessionId,
           event_type: "returned_to_wmo",
           event_at: endedAt,
-          event_source: "mobile",
+          event_source: eventSource,
           ...actor,
           latitude: evidence.latitude,
           longitude: evidence.longitude,
@@ -4679,7 +4784,7 @@ class DispatchService {
           tracking_session_id: sessionId,
           event_type: "dispatch_completed",
           event_at: endedAt,
-          event_source: "mobile",
+          event_source: eventSource,
           ...actor,
           details: { operation_intent: operationIntent, action_id: actionId },
           idempotency_key: `dispatch-completed:${relation.dispatch_ticket_id}`
@@ -4690,14 +4795,13 @@ class DispatchService {
         };
       }
 
-      if (remainingStops.length === 0) {
+      if (remainingStops.length === 0 && !forcedRollover) {
         return {
           outcome: "awaiting_verified_final_return",
           dispatch_ticket_id: relation.dispatch_ticket_id
         };
       }
 
-      const forcedRollover = operationIntent === "forced_day_rollover";
       const eventType = forcedRollover
         ? "dispatch_forced_day_rollover"
         : "dispatch_day_end_incomplete";
@@ -4725,7 +4829,7 @@ class DispatchService {
           tracking_session_id: sessionId,
           event_type: "returned_to_wmo",
           event_at: endedAt,
-          event_source: "mobile",
+          event_source: eventSource,
           ...actor,
           latitude: evidence.latitude,
           longitude: evidence.longitude,
@@ -4743,7 +4847,7 @@ class DispatchService {
         tracking_session_id: sessionId,
         event_type: eventType,
         event_at: endedAt,
-        event_source: "mobile",
+        event_source: eventSource,
         ...actor,
         latitude: forcedRollover ? null : evidence.latitude,
         longitude: forcedRollover ? null : evidence.longitude,
@@ -4761,6 +4865,192 @@ class DispatchService {
         outcome: "day_end_incomplete",
         dispatch_ticket_id: relation.dispatch_ticket_id,
         forced_day_rollover: forcedRollover
+      };
+  }
+
+  async reconcileStaleActiveOperations() {
+    const now = this.now();
+    const currentOperationalDate = currentManilaDate(now);
+    const reconciledAt = currentManilaDateTime(now);
+    const [candidates] = await this.query(
+      `
+        SELECT
+          tts.id AS tracking_session_id
+        FROM truck_tracking_sessions tts
+        WHERE tts.session_status = 'active'
+          AND DATE(
+            COALESCE(
+              (
+                SELECT dt.dispatch_date
+                FROM dispatch_tracking_sessions dts
+                INNER JOIN dispatch_tickets dt
+                  ON dt.id = dts.dispatch_ticket_id
+                WHERE dts.tracking_session_id = tts.id
+                  AND dts.unlinked_at IS NULL
+                ORDER BY dts.is_primary DESC, dts.linked_at DESC, dts.id DESC
+                LIMIT 1
+              ),
+              tts.started_at
+            )
+          ) < ?
+        ORDER BY tts.id ASC
+      `,
+      [currentOperationalDate]
+    );
+
+    const results = [];
+    for (const candidate of candidates || []) {
+      const result = await this.reconcileStaleActiveOperation(
+        candidate.tracking_session_id,
+        currentOperationalDate,
+        reconciledAt
+      );
+      if (result.outcome === "reconciled") results.push(result);
+    }
+
+    return {
+      checked_count: (candidates || []).length,
+      reconciled_count: results.length,
+      sessions: results
+    };
+  }
+
+  async reconcileStaleActiveOperation(
+    trackingSessionId,
+    currentOperationalDate,
+    reconciledAt
+  ) {
+    const sessionId = requiredId(trackingSessionId, "tracking session id");
+    return this.withTransaction(async (connection) => {
+      const [rows] = await connection.query(
+        `
+          SELECT
+            tts.id,
+            tts.truck_id,
+            tts.enforcer_id,
+            tts.enforcer_name,
+            tts.session_status,
+            DATE_FORMAT(tts.started_at, '%Y-%m-%d %H:%i:%s') AS started_at,
+            DATE_FORMAT(tts.ended_at, '%Y-%m-%d %H:%i:%s') AS ended_at,
+            DATE_FORMAT(tts.shift_end_time, '%Y-%m-%d %H:%i:%s') AS shift_end_time,
+            DATE_FORMAT(tts.effective_shift_end_time, '%Y-%m-%d %H:%i:%s')
+              AS effective_shift_end_time,
+            DATE_FORMAT(tts.last_updated_at, '%Y-%m-%d %H:%i:%s') AS last_updated_at,
+            tts.last_device_status,
+            tll.status AS last_location_status,
+            DATE_FORMAT(tll.last_updated_at, '%Y-%m-%d %H:%i:%s')
+              AS location_last_updated,
+            DATE_FORMAT(dt.dispatch_date, '%Y-%m-%d') AS dispatch_date
+          FROM truck_tracking_sessions tts
+          LEFT JOIN dispatch_tracking_sessions dts
+            ON dts.tracking_session_id = tts.id
+           AND dts.unlinked_at IS NULL
+          LEFT JOIN dispatch_tickets dt
+            ON dt.id = dts.dispatch_ticket_id
+          LEFT JOIN truck_last_locations tll
+            ON tll.session_id = tts.id
+          WHERE tts.id = ?
+          ORDER BY dts.is_primary DESC, dts.linked_at DESC, dts.id DESC
+          LIMIT 1
+          FOR UPDATE
+        `,
+        [sessionId]
+      );
+      if (!rows.length || rows[0].session_status !== "active") {
+        return { outcome: "already_terminal", tracking_session_id: sessionId };
+      }
+
+      const session = rows[0];
+      const operationalDate = cleanText(session.dispatch_date, 10)
+        || cleanText(session.started_at, 19).slice(0, 10);
+      if (!operationalDate || operationalDate >= currentOperationalDate) {
+        return { outcome: "current_operational_day", tracking_session_id: sessionId };
+      }
+
+      const nextDate = nextCalendarDate(operationalDate);
+      const endedAt = nextDate ? `${nextDate} 00:00:00` : "";
+      const endedAtMs = parseManilaTimestamp(endedAt);
+      const reconciledAtMs = parseManilaTimestamp(reconciledAt);
+      const startedAtMs = parseManilaTimestamp(session.started_at);
+      if (
+        !Number.isFinite(endedAtMs) ||
+        !Number.isFinite(reconciledAtMs) ||
+        endedAtMs > reconciledAtMs ||
+        (Number.isFinite(startedAtMs) && endedAtMs < startedAtMs)
+      ) {
+        return { outcome: "invalid_operational_boundary", tracking_session_id: sessionId };
+      }
+
+      const finalState = trackingFinalStateAtBoundary(session, endedAt);
+      const compatibilityShiftEnd = cleanText(
+        session.effective_shift_end_time || session.shift_end_time,
+        19
+      ) || endedAt;
+      const [updateResult] = await connection.query(
+        `
+          UPDATE truck_tracking_sessions
+          SET session_status = 'auto_stopped',
+              ended_at = ?,
+              effective_shift_end_time = ?,
+              final_tracking_status_key = ?,
+              final_gps_status = ?,
+              final_sync_status = ?,
+              final_tracking_status_description = ?,
+              last_updated_at = ?,
+              updated_at = ?
+          WHERE id = ?
+            AND session_status = 'active'
+        `,
+        [
+          endedAt,
+          compatibilityShiftEnd,
+          finalState.key,
+          finalState.gps,
+          finalState.sync,
+          finalState.description,
+          endedAt,
+          reconciledAt,
+          sessionId
+        ]
+      );
+      if (Number(updateResult.affectedRows || 0) !== 1) {
+        return { outcome: "already_terminal", tracking_session_id: sessionId };
+      }
+
+      await connection.query(
+        `
+          UPDATE truck_last_locations
+          SET status = ?,
+              updated_at = ?
+          WHERE session_id = ?
+        `,
+        [finalState.lastLocationStatus, reconciledAt, sessionId]
+      );
+
+      const lifecycle = await this.finalizeMobileTrackingEndInTransaction(
+        connection,
+        sessionId,
+        {
+          operationIntent: "forced_day_rollover",
+          endedAt,
+          actionId: `server-forced-day-rollover:${sessionId}:${endedAt}`,
+          systemInitiated: true,
+          evidence: {
+            operation_intent: "forced_day_rollover",
+            recorded_at: endedAt,
+            latitude: null,
+            longitude: null,
+            accuracy: null,
+            distanceFromWmoMeters: null
+          }
+        }
+      );
+
+      return {
+        outcome: "reconciled",
+        tracking_session_id: sessionId,
+        ended_at: endedAt,
+        lifecycle_outcome: lifecycle.outcome
       };
     });
   }
