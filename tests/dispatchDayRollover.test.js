@@ -36,8 +36,8 @@ function createRolloverPool(options = {}) {
       shift_end_time: "2026-09-13 00:00:00",
       effective_shift_end_time: "2026-09-13 00:00:00",
       last_updated_at: "2026-09-12 22:00:00",
-      last_device_status: "active",
-      last_location_status: "active",
+      last_device_status: options.lastDeviceStatus || "active",
+      last_location_status: options.lastLocationStatus || "active",
       location_last_updated: "2026-09-12 22:00:00",
       dispatch_date: options.operationalDate || "2026-09-12"
     },
@@ -118,9 +118,18 @@ function createRolloverPool(options = {}) {
         }
         state.session.session_status = "auto_stopped";
         state.session.ended_at = parameters[0];
+        state.session.final_tracking_status_key = parameters[2];
+        state.session.final_gps_status = parameters[3];
+        state.session.final_sync_status = parameters[4];
+        state.session.final_tracking_status_description = parameters[5];
         return [{ affectedRows: 1 }];
       }
       if (normalized.startsWith("UPDATE truck_last_locations")) {
+        if (!["active", "offline"].includes(parameters[0])) {
+          const error = new Error("Data truncated for column 'status' at row 1");
+          error.code = "WARN_DATA_TRUNCATED";
+          throw error;
+        }
         state.lastLocationStatus = parameters[0];
         return [{ affectedRows: 1 }];
       }
@@ -189,6 +198,10 @@ async function testPreviousDayOperationRollsOverAtomically() {
   assert.equal(result.reconciled_count, 1);
   assert.equal(state.session.session_status, "auto_stopped");
   assert.equal(state.session.ended_at, "2026-09-13 00:00:00");
+  assert.equal(state.session.final_tracking_status_key, "sync_pending");
+  assert.equal(state.session.final_gps_status, "on");
+  assert.equal(state.session.final_sync_status, "pending");
+  assert.equal(state.lastLocationStatus, "offline");
   assert.equal(state.ticket.status, "cancelled");
   assert.equal(state.ticket.actual_end_at, "2026-09-13 00:00:00");
   assert.deepEqual(state.stops, originalStops);
@@ -201,6 +214,27 @@ async function testPreviousDayOperationRollsOverAtomically() {
   assert.equal(state.events[0].longitude, null);
   assert.equal(state.events.some((event) =>
     event.event_type === "dispatch_completed"), false);
+  assert.equal(state.commits, 1);
+  assert.equal(state.rollbacks, 0);
+}
+
+async function testGpsOffRolloverUsesLegacyOfflineStatus() {
+  const { pool, state } = createRolloverPool({
+    lastDeviceStatus: "gps_off",
+    lastLocationStatus: "gps_off"
+  });
+  const service = new DispatchService(pool, {
+    now: () => new Date("2026-09-13T00:15:00+08:00")
+  });
+
+  const result = await service.reconcileStaleActiveOperations();
+
+  assert.equal(result.reconciled_count, 1);
+  assert.equal(state.session.session_status, "auto_stopped");
+  assert.equal(state.session.final_tracking_status_key, "gps_off");
+  assert.equal(state.session.final_gps_status, "off");
+  assert.equal(state.session.final_sync_status, "not_syncing");
+  assert.equal(state.lastLocationStatus, "offline");
   assert.equal(state.commits, 1);
   assert.equal(state.rollbacks, 0);
 }
@@ -349,6 +383,7 @@ async function testExistingMonitorOwnsRolloverScheduling() {
 
 async function run() {
   await testPreviousDayOperationRollsOverAtomically();
+  await testGpsOffRolloverUsesLegacyOfflineStatus();
   await testCurrentDayOperationIsUntouched();
   await testTerminalStopsWithoutVerifiedReturnCancelAtMidnight();
   await testRolloverTransactionDoesNotLeavePartialTerminalState();

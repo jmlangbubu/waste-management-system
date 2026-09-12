@@ -6,6 +6,9 @@ const {
     validateGpsPointForStorage,
     qualifyGpsPointForOperationalUse
 } = require("../utils/gpsValidation");
+const {
+    getLegacyTerminalLastLocationStatus
+} = require("../utils/trackingStatusCompatibility");
 
 const WMO_GEOFENCE = Object.freeze({
     latitude: 6.1060875,
@@ -1310,7 +1313,7 @@ class TrackingService {
         const finalGpsStatus = this.getFinalGpsStatus(finalStatusKey);
         const finalSyncStatus = this.getFinalSyncStatus(finalStatusKey);
         const finalDescription = this.getTrackingStatusDescription(finalStatusKey);
-        const lastLocationStatus = finalStatusKey === "active" ? "offline" : finalStatusKey;
+        const lastLocationStatus = getLegacyTerminalLastLocationStatus(finalStatusKey);
 
         const updateSql = `
             UPDATE truck_tracking_sessions

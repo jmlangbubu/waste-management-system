@@ -55,7 +55,7 @@ function createService(dispatchCalls = []) {
   return service;
 }
 
-function session(status = "active", endedAt = null) {
+function session(status = "active", endedAt = null, overrides = {}) {
   return {
     id: 58,
     truck_id: "TRUCK-58",
@@ -68,7 +68,8 @@ function session(status = "active", endedAt = null) {
     last_updated_at: "2026-08-27 16:54:55",
     last_device_status: "active",
     last_location_status: "active",
-    location_last_updated: "2026-08-27 16:54:55"
+    location_last_updated: "2026-08-27 16:54:55",
+    ...overrides
   };
 }
 
@@ -176,6 +177,55 @@ async function testForcedRolloverHasNoWmoEvidence() {
   assert.equal(sessionUpdate[8], null);
   assert.equal(dispatchCalls[0].evidence.latitude, null);
   assert.equal(dispatchCalls[0].evidence.longitude, null);
+}
+
+async function testManualEndUsesLegacyOfflineForSemanticTerminalStates() {
+  const cases = [
+    {
+      sourceStatus: "offline",
+      expectedKey: "sync_pending",
+      expectedGps: "on",
+      expectedSync: "pending"
+    },
+    {
+      sourceStatus: "gps_off",
+      expectedKey: "gps_off",
+      expectedGps: "off",
+      expectedSync: "not_syncing"
+    }
+  ];
+
+  for (const testCase of cases) {
+    const service = createService();
+    let sessionUpdate = null;
+    let lastLocationUpdate = null;
+    queryHandler = async (sql, parameters = []) => {
+      const normalized = normalizeSql(sql);
+      if (normalized.includes("FROM truck_tracking_sessions tts")) {
+        return [[session("active", null, {
+          last_device_status: testCase.sourceStatus,
+          last_location_status: testCase.sourceStatus
+        })]];
+      }
+      if (normalized.startsWith("UPDATE truck_tracking_sessions")) {
+        sessionUpdate = parameters;
+        return [{ affectedRows: 1 }];
+      }
+      if (normalized.startsWith("UPDATE truck_last_locations")) {
+        lastLocationUpdate = parameters;
+        return [{ affectedRows: 1 }];
+      }
+      throw new Error(`Unexpected SQL: ${normalized}`);
+    };
+
+    const result = await service.stopTrackingSession(58, WMO_EVIDENCE);
+
+    assert.equal(result.success, true);
+    assert.equal(sessionUpdate[3], testCase.expectedKey);
+    assert.equal(sessionUpdate[4], testCase.expectedGps);
+    assert.equal(sessionUpdate[5], testCase.expectedSync);
+    assert.equal(lastLocationUpdate[0], "offline");
+  }
 }
 
 async function testForcedRolloverRequiresManilaMidnight() {
@@ -319,6 +369,7 @@ async function run() {
   await testOutsideWmoEndOperationsIsRejectedBeforeUpdate();
   await testRepeatedEndActionIsIdempotent();
   await testForcedRolloverHasNoWmoEvidence();
+  await testManualEndUsesLegacyOfflineForSemanticTerminalStates();
   await testForcedRolloverRequiresManilaMidnight();
   await testPointAfterHistoricalEndIsRejected();
   await testQueuedPointAtOrBeforeHistoricalEndIsAccepted();

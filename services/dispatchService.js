@@ -7,6 +7,9 @@ const {
   validateGpsPointForStorage,
   qualifyGpsPointForOperationalUse
 } = require("../utils/gpsValidation");
+const {
+  getLegacyTerminalLastLocationStatus
+} = require("../utils/trackingStatusCompatibility");
 
 const DISPATCH_STOP_TRANSITION_RULES = Object.freeze({
   departureHysteresisMeters: 25,
@@ -711,7 +714,7 @@ function trackingFinalStateAtBoundary(session = {}, endedAt) {
       : key === "gps_off"
         ? "GPS tracking was off or no live GPS points were recorded before tracking ended."
         : "Mobile data was weak or offline when tracking ended. Saved points may sync later.",
-    lastLocationStatus: key === "active" ? "offline" : key
+    lastLocationStatus: getLegacyTerminalLastLocationStatus(key)
   };
 }
 
