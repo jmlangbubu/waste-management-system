@@ -750,6 +750,17 @@ class DispatchPlanActivationService {
         plan.expected_return_at ||
         `${nextCalendarDate(plan.operational_date)} 00:00:00`;
 
+      /*
+        dispatch_tickets.scheduled_start_at is required by the current database
+        even though a dispatch plan may intentionally have no fixed start time.
+        For a schedule-less plan, use the authoritative mobile activation time
+        only as the generated ticket's compatibility start value. The plan
+        itself remains schedule-less, and actual_start_at is still written from
+        the linked tracking session.
+      */
+      const ticketScheduledStartAt =
+        plan.scheduled_start_at || startedAt;
+
       if (
         plan.activation_action_id ||
         plan.activated_dispatch_ticket_id ||
@@ -899,7 +910,7 @@ class DispatchPlanActivationService {
           assigned_personnel_id: userId,
           assigned_personnel_name: enforcerName,
           dispatch_date: plan.operational_date,
-          scheduled_start_at: plan.scheduled_start_at,
+          scheduled_start_at: ticketScheduledStartAt,
           expected_return_at: plan.expected_return_at,
           route_name: plan.route_name,
           route_description: plan.route_description,
