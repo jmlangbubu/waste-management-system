@@ -267,6 +267,53 @@ async function testQueuedPointAtOrBeforeHistoricalEndIsAccepted() {
   assert.equal(insertedParameters[9], "mobile_offline_queue");
 }
 
+async function testForcedRolloverCutoffAcceptsOnlyHistoricalQueue() {
+  const service = createService();
+  service.ensureOfflineTrackingColumns = async () => {};
+  const insertedPointIds = [];
+  queryHandler = async (sql, parameters = []) => {
+    const normalized = normalizeSql(sql);
+    if (normalized.startsWith("SELECT id, truck_id, session_status")) {
+      return [[{
+        id: 58,
+        truck_id: "TRUCK-58",
+        session_status: "auto_stopped",
+        shift_end_time: "2026-09-13 00:00:00",
+        ended_at: "2026-09-13 00:00:00"
+      }]];
+    }
+    if (normalized.startsWith("SELECT id FROM truck_location_logs")) return [[]];
+    if (normalized.startsWith("INSERT INTO truck_location_logs")) {
+      insertedPointIds.push(parameters[8]);
+      return [{ insertId: 701 }];
+    }
+    throw new Error(`Unexpected SQL: ${normalized}`);
+  };
+
+  const accepted = await service.addSingleLocationLog(58, {
+    latitude: 6.1060875,
+    longitude: 125.1816406,
+    accuracy: 8,
+    recorded_at: "2026-09-13 00:00:00",
+    local_point_id: "ROLLOVER-CUTOFF-POINT"
+  }, { skipRouteRecalculation: true });
+
+  assert.equal(accepted.duplicate, false);
+  assert.deepEqual(insertedPointIds, ["ROLLOVER-CUTOFF-POINT"]);
+
+  await assert.rejects(
+    () => service.addSingleLocationLog(58, {
+      latitude: 6.1060875,
+      longitude: 125.1816406,
+      accuracy: 8,
+      recorded_at: "2026-09-13 00:00:01",
+      local_point_id: "POST-ROLLOVER-POINT"
+    }, { skipRouteRecalculation: true }),
+    /no longer active/
+  );
+  assert.deepEqual(insertedPointIds, ["ROLLOVER-CUTOFF-POINT"]);
+}
+
 async function run() {
   await testHistoricalWmoEvidenceControlsEndedAt();
   await testOutsideWmoEndOperationsIsRejectedBeforeUpdate();
@@ -275,6 +322,7 @@ async function run() {
   await testForcedRolloverRequiresManilaMidnight();
   await testPointAfterHistoricalEndIsRejected();
   await testQueuedPointAtOrBeforeHistoricalEndIsAccepted();
+  await testForcedRolloverCutoffAcceptsOnlyHistoricalQueue();
   console.log("Tracking end-operations tests passed");
 }
 
