@@ -714,6 +714,18 @@ class DispatchPlanActivationService {
           "DISPATCH_PLAN_OPERATIONAL_DATE_NOT_TODAY"
         );
       }
+
+      /*
+        A dispatch plan may intentionally have no fixed start/return time.
+        Tracking still needs a future compatibility boundary so a schedule-less
+        operation does not receive shift_end_time equal to its actual start time.
+        Keep the dispatch ticket schedule fields untouched; actual_start_at is
+        still written from the authoritative tracking-session start.
+      */
+      const trackingOperationalBoundaryAt =
+        plan.expected_return_at ||
+        `${nextCalendarDate(plan.operational_date)} 00:00:00`;
+
       if (
         plan.activation_action_id ||
         plan.activated_dispatch_ticket_id ||
@@ -908,7 +920,7 @@ class DispatchPlanActivationService {
           enforcer_name: enforcerName,
           device_id: mobileSession.deviceId || null,
           started_at: startedAt,
-          shift_end_time: plan.expected_return_at || startedAt,
+          shift_end_time: trackingOperationalBoundaryAt,
           start_location: startLocation
         }
       );
