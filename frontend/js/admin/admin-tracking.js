@@ -34,8 +34,8 @@ function initializeTruckMap() {
    - Route redraws as one full route once queued mobile points sync.
 ========================================================= */
 
-const TRACKING_SYNC_PENDING_AFTER_MS = 30 * 1000;
-const TRACKING_DEVICE_OFFLINE_AFTER_MS = 2 * 60 * 1000;
+const TRACKING_SYNC_PENDING_AFTER_MS = 10 * 1000;
+const TRACKING_DEVICE_OFFLINE_AFTER_MS = 30 * 1000;
 const TRACKING_GPS_AVAILABILITY_WINDOW_MS = TRACKING_DEVICE_OFFLINE_AFTER_MS;
 const TRACKING_CLOCK_SKEW_TOLERANCE_MS = 60 * 1000;
 const TRACKING_ROUTE_GAP_MS = 90 * 1000;
@@ -126,21 +126,22 @@ function getTrackingAvailabilityMeta(truck, now = Date.now()) {
     };
   }
 
-  const statusValues = [
-    truck?.tracking_status_key,
-    truck?.tracking_warning_key,
-    truck?.last_location_status,
+  /*
+    GPS state and server connectivity are separate signals.
+
+    last_device_status is the phone's explicit GPS/device report.
+    location_last_updated is only the newest route point already uploaded.
+
+    A stale route point must never by itself mean that the device is offline:
+    the phone can be online while durable route points are still catching up
+    from the local queue.
+  */
+  const directDeviceValues = [
     truck?.last_device_status,
-    truck?.gps_status,
-    truck?.sync_status
+    truck?.gps_status
   ].map((value) => String(value || "").trim().toLowerCase());
 
-  /*
-    GPS Offline is reserved for an explicit GPS/device failure.
-    Loss of mobile data/Wi-Fi is a synchronization problem first, so an active
-    dispatch stays visible and keeps its last known marker/route on the web.
-  */
-  const explicitlyGpsOff = statusValues.some((value) =>
+  const explicitlyGpsOff = directDeviceValues.some((value) =>
     value === "off" ||
     value === "gps_off" ||
     value === "tracking_off" ||
@@ -152,13 +153,13 @@ function getTrackingAvailabilityMeta(truck, now = Date.now()) {
     value.includes("permission_missing")
   );
 
-  const explicitlySyncPending = statusValues.some((value) =>
-    value === "offline" ||
-    value === "not_syncing" ||
-    value === "sync_pending" ||
-    value === "weak_signal" ||
-    value === "pending" ||
-    value === "stale"
+  const explicitlyGpsOnline = directDeviceValues.some((value) =>
+    value === "active" ||
+    value === "live" ||
+    value === "on" ||
+    value === "gps_on" ||
+    value === "tracking_active" ||
+    value === "synced"
   );
 
   const latitude = parseTrackingCoordinate(truck?.latitude);
@@ -172,8 +173,18 @@ function getTrackingAvailabilityMeta(truck, now = Date.now()) {
     longitude <= 180 &&
     !(latitude === 0 && longitude === 0);
   const reliableCoordinates = validCoordinates && isTrackingPointReliable(truck);
-  const lastDate = parseTrackingDate(getTruckLastUpdateValue(truck));
-  const ageMs = lastDate ? now - lastDate.getTime() : Number.POSITIVE_INFINITY;
+
+  const lastGpsDate = parseTrackingDate(getTruckLastUpdateValue(truck));
+  const gpsAgeMs = lastGpsDate ? now - lastGpsDate.getTime() : Number.POSITIVE_INFINITY;
+
+  const lastContactDate = parseTrackingDate(getTruckLastSyncValue(truck));
+  const contactAgeMs = lastContactDate
+    ? now - lastContactDate.getTime()
+    : Number.POSITIVE_INFINITY;
+  const contactIsFresh =
+    lastContactDate &&
+    contactAgeMs >= -TRACKING_CLOCK_SKEW_TOLERANCE_MS &&
+    contactAgeMs < TRACKING_DEVICE_OFFLINE_AFTER_MS;
 
   if (explicitlyGpsOff) {
     return {
@@ -182,50 +193,51 @@ function getTrackingAvailabilityMeta(truck, now = Date.now()) {
       className: "gps-off",
       description: "The mobile device explicitly reported that GPS tracking is unavailable.",
       available: false,
-      ageMs
+      ageMs: gpsAgeMs
+    };
+  }
+
+  if (explicitlyGpsOnline && contactIsFresh) {
+    return {
+      key: "online",
+      label: "GPS Online",
+      className: "active",
+      description:
+        reliableCoordinates &&
+        gpsAgeMs >= -TRACKING_CLOCK_SKEW_TOLERANCE_MS &&
+        gpsAgeMs < TRACKING_SYNC_PENDING_AFTER_MS
+          ? "GPS is online and current route points are reaching the server."
+          : "GPS is online. Saved route points are still catching up with the server.",
+      available: true,
+      ageMs: gpsAgeMs
     };
   }
 
   if (
-    lastDate &&
-    ageMs >= TRACKING_DEVICE_OFFLINE_AFTER_MS
+    lastGpsDate &&
+    reliableCoordinates &&
+    gpsAgeMs >= -TRACKING_CLOCK_SKEW_TOLERANCE_MS &&
+    gpsAgeMs < TRACKING_SYNC_PENDING_AFTER_MS
   ) {
     return {
-      key: "device_offline",
-      label: "Device Offline",
-      className: "device-offline",
-      description: "The dispatch is still active. Showing the last known route until the mobile device reconnects.",
-      available: false,
-      ageMs
-    };
-  }
-
-  if (
-    explicitlySyncPending ||
-    !lastDate ||
-    !reliableCoordinates ||
-    ageMs < -TRACKING_CLOCK_SKEW_TOLERANCE_MS ||
-    ageMs >= TRACKING_SYNC_PENDING_AFTER_MS
-  ) {
-    return {
-      key: "stale",
-      label: "Sync Pending",
-      className: "sync-pending",
-      description: lastDate
-        ? "The dispatch is still active. Mobile route points may be waiting on the device and will sync automatically."
-        : "The dispatch is active, but no reliable server-synced GPS point is available yet.",
-      available: false,
-      ageMs
+      key: "online",
+      label: "GPS Online",
+      className: "active",
+      description: "A current reliable GPS point is available.",
+      available: true,
+      ageMs: gpsAgeMs
     };
   }
 
   return {
-    key: "online",
-    label: "GPS Online",
-    className: "active",
-    description: "A current reliable GPS point is syncing normally.",
-    available: true,
-    ageMs
+    key: "stale",
+    label: "Last Known GPS",
+    className: "sync-pending",
+    description: lastGpsDate
+      ? "The last uploaded GPS point is old. The active device may still be collecting points locally."
+      : "The dispatch is active, but no reliable server-synced GPS point is available yet.",
+    available: false,
+    ageMs: gpsAgeMs
   };
 }
 
@@ -246,23 +258,22 @@ function getTrackingStatusMeta(truck, now = Date.now()) {
 }
 
 function getTrackingConnectivityMeta(truck, now = Date.now()) {
-  const statusMeta = getTrackingStatusMeta(truck, now);
   const lastSyncDate = parseTrackingDate(getTruckLastSyncValue(truck));
-  const syncAgeMs = lastSyncDate ? now - lastSyncDate.getTime() : Number.POSITIVE_INFINITY;
+  const syncAgeMs = lastSyncDate
+    ? now - lastSyncDate.getTime()
+    : Number.POSITIVE_INFINITY;
 
-  if (statusMeta.key === "device_offline" || syncAgeMs >= TRACKING_DEVICE_OFFLINE_AFTER_MS) {
+  if (!lastSyncDate || syncAgeMs >= TRACKING_DEVICE_OFFLINE_AFTER_MS) {
     return {
       key: "device_offline",
       label: "Device Offline",
       className: "device-offline",
-      description: "The mobile device is not currently reaching the server.",
+      description: "No recent mobile-to-server contact has been received.",
       ageMs: syncAgeMs
     };
   }
 
   if (
-    statusMeta.key === "sync_pending" ||
-    !lastSyncDate ||
     syncAgeMs < -TRACKING_CLOCK_SKEW_TOLERANCE_MS ||
     syncAgeMs >= TRACKING_SYNC_PENDING_AFTER_MS
   ) {
@@ -270,7 +281,25 @@ function getTrackingConnectivityMeta(truck, now = Date.now()) {
       key: "sync_pending",
       label: "Sync Pending",
       className: "sync-pending",
-      description: "Mobile route points may be waiting on the device.",
+      description: "The last device contact is aging; saved route points may still be queued.",
+      ageMs: syncAgeMs
+    };
+  }
+
+  const gpsDate = parseTrackingDate(getTruckLastUpdateValue(truck));
+  const gpsAgeMs = gpsDate ? now - gpsDate.getTime() : Number.POSITIVE_INFINITY;
+  const routePointIsFresh =
+    gpsDate &&
+    gpsAgeMs >= -TRACKING_CLOCK_SKEW_TOLERANCE_MS &&
+    gpsAgeMs < TRACKING_SYNC_PENDING_AFTER_MS &&
+    isTrackingPointReliable(truck);
+
+  if (!routePointIsFresh) {
+    return {
+      key: "sync_pending",
+      label: "Sync Pending",
+      className: "sync-pending",
+      description: "The device is online, but queued route points are still catching up.",
       ageMs: syncAgeMs
     };
   }
@@ -279,7 +308,7 @@ function getTrackingConnectivityMeta(truck, now = Date.now()) {
     key: "synced",
     label: "Synced",
     className: "synced",
-    description: "The mobile device is currently syncing with the server.",
+    description: "The mobile device and route are currently synchronized.",
     ageMs: syncAgeMs
   };
 }
@@ -309,15 +338,23 @@ function getTrackingDisplayChannels(truck, now = Date.now()) {
     };
   }
 
-  const route = tracking.key === "active"
-    ? { key: "live", label: "Live", className: "live" }
-    : tracking.key === "sync_pending"
-      ? { key: "delayed", label: "Delayed", className: "delayed" }
-      : tracking.key === "device_offline"
-        ? { key: "last_known", label: "Last known", className: "last-known" }
-        : tracking.key === "gps_off"
-          ? { key: "gps_unavailable", label: "GPS unavailable", className: "gps-off" }
-          : { key: "idle", label: "Idle", className: "idle" };
+  const lastGpsDate = parseTrackingDate(getTruckLastUpdateValue(truck));
+  const gpsAgeMs = lastGpsDate
+    ? now - lastGpsDate.getTime()
+    : Number.POSITIVE_INFINITY;
+  const routePointIsFresh =
+    lastGpsDate &&
+    gpsAgeMs >= -TRACKING_CLOCK_SKEW_TOLERANCE_MS &&
+    gpsAgeMs < TRACKING_SYNC_PENDING_AFTER_MS &&
+    isTrackingPointReliable(truck);
+
+  const route = tracking.key === "gps_off"
+    ? { key: "gps_unavailable", label: "GPS unavailable", className: "gps-off" }
+    : connectivity.key === "device_offline"
+      ? { key: "last_known", label: "Last known", className: "last-known" }
+      : routePointIsFresh
+        ? { key: "live", label: "Live", className: "live" }
+        : { key: "delayed", label: "Catching up", className: "delayed" };
 
   return {
     tracking,
@@ -2281,6 +2318,50 @@ async function forceStopTruckSession(sessionId) {
   }
 }
 
+let trackingRealtimeRefreshTimer = null;
+let trackingRealtimeSocketBound = false;
+let trackingRealtimeBindRetryTimer = null;
+
+function scheduleTrackingRealtimeRefresh(reason = "tracking:refresh") {
+  if (trackingRealtimeRefreshTimer) {
+    clearTimeout(trackingRealtimeRefreshTimer);
+  }
+
+  trackingRealtimeRefreshTimer = setTimeout(() => {
+    trackingRealtimeRefreshTimer = null;
+    loadActiveTrucks();
+  }, 150);
+}
+
+function bindTrackingRealtimeRefresh() {
+  if (trackingRealtimeSocketBound) return;
+
+  const realtimeSocket =
+    typeof notificationRealtimeSocket !== "undefined"
+      ? notificationRealtimeSocket
+      : null;
+
+  if (!realtimeSocket || typeof realtimeSocket.on !== "function") {
+    if (!trackingRealtimeBindRetryTimer) {
+      trackingRealtimeBindRetryTimer = setTimeout(() => {
+        trackingRealtimeBindRetryTimer = null;
+        bindTrackingRealtimeRefresh();
+      }, 500);
+    }
+    return;
+  }
+
+  trackingRealtimeSocketBound = true;
+
+  realtimeSocket.on("tracking:refresh", (payload = {}) => {
+    scheduleTrackingRealtimeRefresh(payload.reason || "tracking:refresh");
+  });
+
+  realtimeSocket.on("connect", () => {
+    scheduleTrackingRealtimeRefresh("socket-connected");
+  });
+}
+
 function startTrackingAutoRefresh() {
   if (trackingPollInterval) {
     clearInterval(trackingPollInterval);
@@ -2288,6 +2369,7 @@ function startTrackingAutoRefresh() {
 
   bindActiveTruckSelection();
   updateTrackingActionButtons();
+  bindTrackingRealtimeRefresh();
   loadActiveTrucks();
 
   trackingPollInterval = setInterval(() => {
@@ -3316,6 +3398,7 @@ if (typeof module !== "undefined" && module.exports) {
     getTrackingAvailabilityMeta,
     getTrackingConnectivityMeta,
     getTrackingDisplayChannels,
+    scheduleTrackingRealtimeRefresh,
     getTrackingTruckDispatchState,
     getTrackingTruckExistingTicket,
     isTrackingMatchResponseCurrent,

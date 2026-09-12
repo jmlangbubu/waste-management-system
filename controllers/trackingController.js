@@ -36,11 +36,35 @@ function emitWmoTrackingNotification(req, notification) {
     }
 }
 
+function emitWmoTrackingRefresh(req, payload = {}) {
+    try {
+        const io = req.app && typeof req.app.get === 'function'
+            ? req.app.get('io')
+            : null;
+
+        if (!io || typeof io.to !== 'function') {
+            return;
+        }
+
+        io.to('wmo').emit('tracking:refresh', {
+            _source: 'tracking',
+            ...payload,
+            createdAt: new Date().toISOString()
+        });
+    } catch (error) {
+        console.error('emitWmoTrackingRefresh warning:', error);
+    }
+}
+
 exports.startTrackingSession = async (req, res) => {
     try {
         const result = await trackingService.startTrackingSession(req.body);
 
         emitWmoTrackingNotification(req, result.notification);
+        emitWmoTrackingRefresh(req, {
+            reason: 'session_start',
+            session_id: result.sessionId || null
+        });
 
         return res.status(200).json({
             success: true,
@@ -70,6 +94,11 @@ exports.stopTrackingSession = async (req, res) => {
         const result = await trackingService.stopTrackingSession(sessionId, req.body);
 
         emitWmoTrackingNotification(req, result.notification);
+        emitWmoTrackingRefresh(req, {
+            reason: 'session_stop',
+            session_id: sessionId,
+            truck_id: result.truck_id || null
+        });
 
         return res.status(200).json({
             success: true,
@@ -94,6 +123,11 @@ exports.stopTrackingSessionByWebAdmin = async (req, res) => {
         );
 
         emitWmoTrackingNotification(req, result.notification);
+        emitWmoTrackingRefresh(req, {
+            reason: 'session_stop',
+            session_id: req.params.sessionId,
+            truck_id: result.truck_id || null
+        });
 
         return res.status(200).json({
             success: true,
@@ -122,6 +156,13 @@ exports.addLocationLog = async (req, res) => {
         const { sessionId } = req.params;
         const result = await trackingService.addLocationLog(sessionId, req.body);
 
+        emitWmoTrackingRefresh(req, {
+            reason: 'location',
+            session_id: sessionId,
+            duplicate: result.duplicate === true,
+            local_point_id: result.local_point_id || null
+        });
+
         return res.status(200).json({
             success: true,
             message: result.message,
@@ -141,6 +182,16 @@ exports.addLocationLogsBatch = async (req, res) => {
     try {
         const { sessionId } = req.params;
         const result = await trackingService.addLocationLogsBatch(sessionId, req.body);
+
+        emitWmoTrackingRefresh(req, {
+            reason: 'batch',
+            session_id: sessionId,
+            inserted_count: result.inserted_count || 0,
+            duplicate_count: result.duplicate_count || 0,
+            synced_count: Array.isArray(result.synced_local_point_ids)
+                ? result.synced_local_point_ids.length
+                : 0
+        });
 
         return res.status(200).json({
             success: true,
@@ -164,6 +215,13 @@ exports.updateTrackingDeviceStatus = async (req, res) => {
         const result = await trackingService.updateTrackingDeviceStatus(sessionId, req.body);
 
         emitWmoTrackingNotification(req, result.notification);
+        emitWmoTrackingRefresh(req, {
+            reason: 'status',
+            session_id: sessionId,
+            truck_id: result.truck_id || null,
+            tracking_status_key: result.tracking_status_key,
+            gps_status: result.gps_status
+        });
 
         return res.status(200).json({
             success: true,
