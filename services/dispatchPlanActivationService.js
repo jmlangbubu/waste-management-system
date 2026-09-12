@@ -315,6 +315,16 @@ class DispatchPlanActivationService {
           );
         }
       }
+
+      if (!knownOperationalError(error)) {
+        console.error("[MobileDispatchPlan] Activation transaction failed:", {
+          code: error?.code || null,
+          message: error?.message || null,
+          sqlMessage: error?.sqlMessage || null,
+          sqlState: error?.sqlState || null
+        });
+      }
+
       throw normalizeActivationError(error);
     } finally {
       if (connection) connection.release();
@@ -655,6 +665,20 @@ class DispatchPlanActivationService {
     const receivedAt = this.now();
     const today = currentManilaDate(receivedAt);
     const startedAt = manilaDateTime(receivedAt);
+
+    /*
+      Planned activation calls the low-level connection-scoped tracking insert
+      directly. Unlike the legacy tracking-start path, that insert does not run
+      the optional tracking-session schema preflight itself. Run it here, before
+      BEGIN TRANSACTION, so any required report/status columns exist without a
+      DDL statement implicitly committing the activation transaction.
+    */
+    if (
+      this.trackingService &&
+      typeof this.trackingService.ensureTrackingSessionReportColumns === "function"
+    ) {
+      await this.trackingService.ensureTrackingSessionReportColumns();
+    }
 
     const transactionResult = await this.withTransaction(async (connection) => {
       const plan = await this.loadPlanForUpdate(connection, planId);
