@@ -589,6 +589,10 @@ body > #dispatchDailyReportModal {
 .dispatch-report-map-legend .suggested {
   border-color: #246ee9;
 }
+.dispatch-report-map-legend .approximate {
+  border-color: #64748b;
+  border-top-style: dashed;
+}
 
 .dispatch-report-map-legend .endpoint { border-color: #d83a3a; }
 .dispatch-report-map-legend .wmo { border-color: #173d2b; }
@@ -3036,6 +3040,11 @@ body > #dispatchDailyReportModal {
 #trackingSection .tracking-legend-line.planned {
   border-color: #2d73c7;
   border-top-style: solid;
+}
+
+#trackingSection .tracking-legend-line.current-leg {
+  border-color: #2d73c7;
+  border-top-style: dashed;
 }
 
 #trackingSection .tracking-legend-line.actual {

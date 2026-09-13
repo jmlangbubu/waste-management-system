@@ -11,6 +11,8 @@ const {
   DISPATCH_PLANNED_ROUTE_STYLE,
   DISPATCH_ROUTING_GPS_STALE_MS,
   DISPATCH_WMO_LOCATION,
+  buildDispatchCurrentLegGeometry,
+  buildDispatchPersistedActiveRouteLayers,
   buildDispatchPlannedJourney,
   buildDispatchRouteLayers,
   buildDispatchSelectionFallbackLayers,
@@ -242,7 +244,7 @@ function testPlannedRouteStyleAndPane() {
   assert.equal(DISPATCH_COMPLETED_ROUTE_PANE, "dispatchCompletedRoutePane");
   assert.equal(DISPATCH_MARKER_PANE, "dispatchMarkerPane");
   assert.equal(DISPATCH_CURRENT_ROUTE_STYLE.color, "#2d73c7");
-  assert.equal(DISPATCH_CURRENT_ROUTE_STYLE.dashArray, undefined);
+  assert.equal(DISPATCH_CURRENT_ROUTE_STYLE.dashArray, "10 8");
   assert.equal(DISPATCH_PLANNED_ROUTE_STYLE.color, "#2d73c7");
   assert.equal(DISPATCH_PLANNED_ROUTE_STYLE.weight, 5);
   assert.ok(DISPATCH_PLANNED_ROUTE_STYLE.opacity > 0.5);
@@ -261,8 +263,67 @@ function testPlannedRouteStyleAndPane() {
   );
   assert.match(dashboardSource, /> Actual trail</);
   assert.match(dashboardSource, /> Assigned route</);
+  assert.match(dashboardSource, /> Current leg</);
   assert.match(dashboardSource, /> Current truck</);
   assert.match(dashboardSource, /> Destination</);
+}
+
+function testPersistedRouteSlicesCurrentLegWithoutRouting() {
+  const route = [
+    point(6.1060, 125.1816),
+    point(6.1070, 125.1800),
+    point(6.1080, 125.1780),
+    point(6.1090, 125.1760),
+    point(6.1100, 125.1740),
+    point(6.1110, 125.1720),
+    point(6.1080, 125.1770),
+    point(6.1060, 125.1816)
+  ];
+  const stops = [
+    {
+      id: 1,
+      stop_order: 1,
+      stop_status: "completed",
+      latitude: route[2].lat,
+      longitude: route[2].lng,
+      location_name: "Completed"
+    },
+    {
+      id: 2,
+      stop_order: 2,
+      stop_status: "pending",
+      latitude: route[5].lat,
+      longitude: route[5].lng,
+      location_name: "Next"
+    }
+  ];
+  const leg = buildDispatchCurrentLegGeometry(route, stops, route[3]);
+  assert.equal(leg.currentIndex, 3);
+  assert.equal(leg.targetIndex, 5);
+  assert.equal(leg.targetStop.id, 2);
+  assert.deepEqual(leg.geometry, route.slice(3, 6));
+
+  const noFreshGps = buildDispatchCurrentLegGeometry(route, stops, null);
+  assert.equal(noFreshGps.currentIndex, 2, "offline display resumes from persisted completed progress");
+  assert.deepEqual(noFreshGps.geometry, route.slice(2, 6));
+
+  global.L = fakeLeaflet();
+  global.escapeHtml = (value) => String(value ?? "");
+  try {
+    const rendered = buildDispatchPersistedActiveRouteLayers(
+      { ticket: { id: 91 }, stops },
+      route,
+      route[3]
+    );
+    assert.equal(rendered.layers.planned.layers.length, 1);
+    assert.equal(rendered.layers.current.layers.length, 1);
+    assert.deepEqual(rendered.layers.current.layers[0].value, route.slice(3, 6).map((value) => [value.lat, value.lng]));
+    assert.equal(rendered.layers.current.layers[0].options.dashArray, "10 8");
+    assert.equal(rendered.layers.destinations.layers.length, 2);
+  } finally {
+    delete global.L;
+    delete global.escapeHtml;
+  }
 }
 
 function testActiveRouteUsesExactEndpointsAndDedicatedLayers() {
@@ -506,11 +567,18 @@ function testSavedMarkersRenderBeforeRoadRouting() {
   const immediateSavedMarkerIndex = activeRenderer.indexOf(
     "dispatchSavedStopRouteItems(details.stops)"
   );
+  const persistedRouteIndex = activeRenderer.indexOf(
+    "renderDispatchPersistedActiveRoute"
+  );
   const routingRequestIndex = activeRenderer.indexOf("requestDispatchRoadJourney");
   const failureSavedMarkerIndex = activeRenderer.indexOf(
     "dispatchSavedStopRouteItems(details.stops, items)"
   );
   assert.ok(immediateSavedMarkerIndex >= 0 && immediateSavedMarkerIndex < routingRequestIndex);
+  assert.ok(
+    persistedRouteIndex >= 0 && persistedRouteIndex < routingRequestIndex,
+    "persisted active geometry must short-circuit poll-time OSRM routing"
+  );
   assert.ok(failureSavedMarkerIndex > routingRequestIndex);
   assert.match(
     activeRenderer,
@@ -645,6 +713,7 @@ async function run() {
   testOnePlannedPolylineAndSeparateLayerGroups();
   testPlannedRouteStyleAndPane();
   testActiveRouteUsesExactEndpointsAndDedicatedLayers();
+  testPersistedRouteSlicesCurrentLegWithoutRouting();
   testReadyRequiresAnAttachedPolyline();
   testPollingRetainsPlannedRouteAndMapView();
   testSelectionHydratesTrackingBeforeActiveDispatch();
