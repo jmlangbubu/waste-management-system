@@ -29,6 +29,7 @@ Module._load = originalModuleLoad;
 const {
   buildDispatchIssuePlannedRouteSnapshot,
   dispatchPlannedRouteStopSignature: frontendStopSignature,
+  dispatchPlannedRouteSnapshotFromDetails,
   dispatchReportPlannedPoints
 } = require("../frontend/js/admin/admin-dispatch");
 
@@ -344,7 +345,23 @@ async function testCompletedClosedEarlyAndLegacyReports() {
   assert.equal(malformed.planned_route_snapshot, null);
 }
 
-function testReportUiUsesPersistedGeoJsonWithoutOsrm() {
+function testTicketDetailsExposePersistedRouteThroughExistingEvents() {
+  const stored = validStoredSnapshot();
+  const details = {
+    events: [{
+      id: 1,
+      event_type: "ticket_issued",
+      details: JSON.stringify({ planned_route: stored })
+    }]
+  };
+  assert.deepEqual(dispatchPlannedRouteSnapshotFromDetails(details), stored);
+  assert.equal(dispatchPlannedRouteSnapshotFromDetails({ events: [] }), null);
+  assert.equal(dispatchPlannedRouteSnapshotFromDetails({
+    events: [{ event_type: "ticket_issued", details: "invalid json" }]
+  }), null);
+}
+
+function testReportUiUsesPersistedGeoJsonAndSafeDisplayFallbacks() {
   const stored = validStoredSnapshot();
   assert.deepEqual(dispatchReportPlannedPoints(stored), routeCoordinates);
   assert.deepEqual(dispatchReportPlannedPoints({ geometry: { type: "LineString", coordinates: null } }), []);
@@ -368,8 +385,11 @@ function testReportUiUsesPersistedGeoJsonWithoutOsrm() {
     source.indexOf("function dispatchReportStopStatus"),
     source.indexOf("function openDispatchEndModal")
   );
-  assert.doesNotMatch(reportOpen, /router\.project-osrm|requestDispatchRoadJourney|requestDispatchRoadRoute/);
+  assert.doesNotMatch(reportOpen, /router\.project-osrm/);
+  assert.match(reportOpen, /requestDispatchRoadJourney/);
+  assert.match(reportOpen, /dispatchReportMatchActualTrail/);
   assert.match(reportOpen, /Original assigned road route was not recorded for this dispatch/);
+  assert.match(reportOpen, /Exact road route was not recorded for this dispatch\. Showing approximate path/);
   assert.match(reportOpen, /Dark green: actual GPS trail/);
   assert.match(reportOpen, /Blue: persisted assigned route/);
 
@@ -402,7 +422,8 @@ async function run() {
   await testIssueSnapshotFailureRollsBackTransaction();
   await testIssueIdentityValidationAndLegacyCompatibility();
   await testCompletedClosedEarlyAndLegacyReports();
-  testReportUiUsesPersistedGeoJsonWithoutOsrm();
+  testTicketDetailsExposePersistedRouteThroughExistingEvents();
+  testReportUiUsesPersistedGeoJsonAndSafeDisplayFallbacks();
   console.log("Dispatch planned-route snapshot tests passed");
 }
 

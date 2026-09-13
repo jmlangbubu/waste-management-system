@@ -5,9 +5,12 @@ const path = require("node:path");
 const {
   buildDispatchReportViewModel,
   dispatchReportActualPoints,
+  dispatchReportApproximateAssignedPoints,
   dispatchReportEventLabel,
+  dispatchReportMatchActualTrail,
   dispatchReportPlannedPoints,
   dispatchReportStopView,
+  dispatchReportTrailDisplayMode,
   dispatchReportTotalStopSeconds
 } = require("../frontend/js/admin/admin-dispatch");
 
@@ -164,6 +167,42 @@ function testPersistedBlueAndActualGreenRemainIndependent() {
   assert.deepEqual(secondOpen.planned_points, firstOpen.planned_points);
 }
 
+function testLimitedGpsAndLegacyAssignedRouteAreExplicitlyApproximate() {
+  const fixture = completedReportFixture();
+  fixture.route_logs = fixture.route_logs.slice(0, 2);
+  const report = buildDispatchReportViewModel(fixture);
+  assert.equal(report.has_actual_trail, false);
+  assert.equal(report.has_approximate_actual_path, true);
+  assert.equal(dispatchReportTrailDisplayMode(report.actual_points), "approximate");
+  assert.equal(
+    dispatchReportTrailDisplayMode(report.actual_points, { matchedSegmentCount: 1 }),
+    "road_matched"
+  );
+
+  const assignedFallback = dispatchReportApproximateAssignedPoints(report.stops);
+  assert.ok(assignedFallback.length >= 3);
+  assert.deepEqual(assignedFallback[0], assignedFallback.at(-1));
+  assert.deepEqual(
+    assignedFallback.slice(1, -1),
+    report.stops.map((stop) => ({ lat: Number(stop.latitude), lng: Number(stop.longitude) }))
+  );
+}
+
+async function testReportRoadMatchAdapterPreservesRawGps() {
+  const fixture = completedReportFixture();
+  const originalLogs = structuredClone(fixture.route_logs);
+  let receivedPoints = null;
+  const result = await dispatchReportMatchActualTrail(fixture.route_logs, {
+    matcher: async (points) => {
+      receivedPoints = points;
+      return { matchedSegmentCount: 1, segments: [{ geometry: points.map((point) => [point.lat, point.lng]) }] };
+    }
+  });
+  assert.equal(result.matchedSegmentCount, 1);
+  assert.equal(receivedPoints.length, fixture.route_logs.length);
+  assert.deepEqual(fixture.route_logs, originalLogs);
+}
+
 function testTimelineChronologyAndLabels() {
   const report = buildDispatchReportViewModel(completedReportFixture());
   assert.deepEqual(report.events.map((event) => event.id), [1, 2, 3, 4, 5]);
@@ -258,8 +297,11 @@ function testReadOnlyApiAndFrontendLifecycleStructure() {
   assert.match(reportBlock, /dispatchReportStopPopup/);
   assert.match(reportBlock, /Trip Start \/ Return Point/);
   assert.match(reportBlock, /Trip End/);
-  assert.match(reportBlock, /dispatchReportMap\?\.invalidateSize/);
-  assert.doesNotMatch(reportBlock, /router\.project-osrm|requestDispatchRoadJourney/);
+  assert.match(reportBlock, /map\.invalidateSize/);
+  assert.doesNotMatch(reportBlock, /router\.project-osrm/);
+  assert.match(reportBlock, /requestDispatchRoadJourney/);
+  assert.match(reportBlock, /dispatchReportMatchActualTrail/);
+  assert.match(reportBlock, /Showing approximate path/);
   assert.doesNotMatch(reportBlock, /dispatchReportSuggestedPoints\(stops\)/);
 
   const closeBlock = frontend.slice(
@@ -267,6 +309,7 @@ function testReadOnlyApiAndFrontendLifecycleStructure() {
     frontend.indexOf("function dispatchReportStopStatus")
   );
   assert.match(closeBlock, /dispatchReportMap\.remove\(\)/);
+  assert.match(closeBlock, /dispatchReportRouteAbortController\?\.abort\(\)/);
   const openBlock = frontend.slice(
     frontend.indexOf("async function openDispatchReport"),
     frontend.indexOf("function openDispatchEndModal")
@@ -284,11 +327,13 @@ function testReadOnlyApiAndFrontendLifecycleStructure() {
   assert.equal((html.match(/id="closeDispatchReportModalBtn"/g) || []).length, 1);
 }
 
-function run() {
+async function run() {
   testCompletedReportProjection();
   testOrderedStopRecordsAndPersistedTiming();
   testActualTrailAndPlannedRouteTruthfulness();
   testPersistedBlueAndActualGreenRemainIndependent();
+  testLimitedGpsAndLegacyAssignedRouteAreExplicitlyApproximate();
+  await testReportRoadMatchAdapterPreservesRawGps();
   testTimelineChronologyAndLabels();
   testClosedEarlyAndLegacyNullProjection();
   testDayEndIncompleteRemainsSeparateFromClosedEarly();
@@ -296,4 +341,7 @@ function run() {
   console.log("Dispatch operational report view tests passed");
 }
 
-run();
+run().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

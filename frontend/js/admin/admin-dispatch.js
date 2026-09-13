@@ -47,6 +47,7 @@ const DISPATCH_CURRENT_ROUTE_STYLE = Object.freeze({
   weight: 6,
   opacity: 0.94,
   pane: DISPATCH_CURRENT_ROUTE_PANE,
+  dashArray: "10 8",
   lineCap: "round",
   lineJoin: "round"
 });
@@ -78,6 +79,8 @@ let dispatchDailyReportsCache = [];
 let dispatchDailyReportsLoadedKey = "";
 let dispatchDailyReportMap = null;
 let dispatchDailyReportLayerGroup = null;
+let dispatchReportMapRenderGeneration = 0;
+let dispatchReportRouteAbortController = null;
 
 function dispatchPoint(latitude, longitude) {
   const lat = Number(latitude);
@@ -3062,6 +3065,192 @@ function dispatchActiveRouteStops(details = {}, groups = splitDispatchOperationa
   ].filter(Boolean)).map(({ stop }) => stop);
 }
 
+function dispatchNearestRoutePointIndex(routePoints = [], target = null, options = {}) {
+  const points = Array.isArray(routePoints) ? routePoints : [];
+  const targetPoint = dispatchPoint(
+    target?.latitude ?? target?.lat,
+    target?.longitude ?? target?.lng ?? target?.lon
+  );
+  if (!points.length || !targetPoint) return -1;
+
+  const startIndex = Math.max(0, Math.min(
+    points.length - 1,
+    Math.floor(Number(options.startIndex) || 0)
+  ));
+  const suppliedEndIndex = Number(options.endIndex);
+  const endIndex = Number.isFinite(suppliedEndIndex)
+    ? Math.max(startIndex, Math.min(points.length - 1, Math.floor(suppliedEndIndex)))
+    : points.length - 1;
+  let nearestIndex = -1;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+
+  for (let index = startIndex; index <= endIndex; index++) {
+    const routePoint = dispatchPoint(
+      points[index]?.latitude ?? points[index]?.lat,
+      points[index]?.longitude ?? points[index]?.lng ?? points[index]?.lon
+    );
+    const distance = dispatchDistanceMeters(routePoint, targetPoint);
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearestIndex = index;
+    }
+  }
+  return nearestIndex;
+}
+
+function buildDispatchCurrentLegGeometry(routePoints = [], stops = [], currentPosition = null, options = {}) {
+  const points = (Array.isArray(routePoints) ? routePoints : [])
+    .map((point) => dispatchPoint(
+      point?.latitude ?? point?.lat,
+      point?.longitude ?? point?.lng ?? point?.lon
+    ))
+    .filter(Boolean);
+  if (points.length < 2) {
+    return { geometry: [], currentIndex: -1, targetIndex: -1, targetStop: null };
+  }
+
+  const orderedStops = dispatchSavedStopRouteItems(stops).map(({ stop }) => stop);
+  let progressIndex = 0;
+  let targetStop = null;
+  for (const stop of orderedStops) {
+    if (!["completed", "skipped"].includes(String(stop.stop_status || "").toLowerCase())) {
+      targetStop = stop;
+      break;
+    }
+    const completedIndex = dispatchNearestRoutePointIndex(points, stop, {
+      startIndex: progressIndex
+    });
+    if (completedIndex >= 0) progressIndex = completedIndex;
+  }
+
+  const wmo = dispatchPoint(
+    options.wmo?.latitude ?? options.wmo?.lat ?? DISPATCH_WMO_LOCATION.latitude,
+    options.wmo?.longitude ?? options.wmo?.lng ?? DISPATCH_WMO_LOCATION.longitude
+  );
+  const targetPoint = targetStop || wmo;
+  const targetIndex = targetStop
+    ? dispatchNearestRoutePointIndex(points, targetPoint, { startIndex: progressIndex })
+    : points.length - 1;
+  if (targetIndex < 0) {
+    return { geometry: [], currentIndex: -1, targetIndex: -1, targetStop };
+  }
+
+  const currentIndex = currentPosition
+    ? dispatchNearestRoutePointIndex(points, currentPosition, {
+      startIndex: progressIndex,
+      endIndex: targetIndex
+    })
+    : progressIndex;
+  if (currentIndex < 0 || currentIndex >= targetIndex) {
+    return { geometry: [], currentIndex, targetIndex, targetStop };
+  }
+
+  return {
+    geometry: points.slice(currentIndex, targetIndex + 1),
+    currentIndex,
+    targetIndex,
+    targetStop
+  };
+}
+
+function buildDispatchPersistedActiveRouteLayers(details = {}, plannedPoints = [], currentPosition = null) {
+  const points = (Array.isArray(plannedPoints) ? plannedPoints : [])
+    .map((point) => dispatchPoint(
+      point?.latitude ?? point?.lat,
+      point?.longitude ?? point?.lng ?? point?.lon
+    ))
+    .filter(Boolean);
+  if (points.length < 2) return null;
+
+  const groups = splitDispatchOperationalStops(details.stops || []);
+  const layers = createDispatchPlannedLayerGroups({ detached: true });
+  layers.destinations = buildDispatchDestinationMarkerLayer(
+    dispatchSavedStopRouteItems(details.stops || []),
+    {
+      currentStopId: groups.currentStop?.id || null,
+      usePersistedStopOrder: true
+    }
+  );
+  L.polyline(
+    points.map((point) => [point.lat, point.lng]),
+    DISPATCH_PLANNED_ROUTE_STYLE
+  ).bindTooltip("Original assigned road route").addTo(layers.planned);
+
+  const currentLeg = buildDispatchCurrentLegGeometry(
+    points,
+    details.stops || [],
+    currentPosition
+  );
+  if (currentLeg.geometry.length >= 2) {
+    const targetLabel = currentLeg.targetStop?.location_name || "WMO return";
+    L.polyline(
+      currentLeg.geometry.map((point) => [point.lat, point.lng]),
+      DISPATCH_CURRENT_ROUTE_STYLE
+    ).bindTooltip(`Current leg to ${targetLabel}`).addTo(layers.current);
+  }
+
+  return { layers, points, currentLeg, groups };
+}
+
+function renderDispatchPersistedActiveRoute(details = {}, plannedPoints = [], currentPosition = null) {
+  const route = buildDispatchPersistedActiveRouteLayers(
+    details,
+    plannedPoints,
+    currentPosition
+  );
+  if (!route) return false;
+
+  const ticketId = details.ticket?.id || "unknown";
+  const sessionId = buildDispatchTrackingContext(details)?.session_id || selectedSessionId || null;
+  const markerSignature = dispatchActiveRouteMarkerStateSignature(details);
+  const snapshot = dispatchPlannedRouteSnapshotFromDetails(details) || {};
+  const routeSignature = [
+    "persisted",
+    ticketId,
+    snapshot.captured_at || "",
+    snapshot.stop_signature || "",
+    route.points.length,
+    route.currentLeg.currentIndex,
+    route.currentLeg.targetIndex,
+    markerSignature
+  ].join(":");
+  if (
+    dispatchLastRoutingSignature === routeSignature &&
+    dispatchLayerHasVisiblePolyline(dispatchPlannedLayerGroup)
+  ) {
+    return true;
+  }
+
+  activateDispatchPlannedLayerGroups(route.layers);
+  dispatchLastSuccessfulRouteCoordinates = route.points.map((point) => ({ ...point }));
+  dispatchLastSuccessfulRouteState = {
+    persistedSnapshot: true,
+    currentLeg: route.currentLeg,
+    completedStops: route.groups.completedStops,
+    skippedStops: route.groups.skippedStops
+  };
+  dispatchLastRouteDistanceMeters = Number.isFinite(Number(snapshot.distance_meters))
+    ? Number(snapshot.distance_meters)
+    : dispatchPolylineDistanceMeters(route.points);
+  dispatchLastRoutingSignature = routeSignature;
+  dispatchLastRoutingStart = route.points[0];
+  dispatchPendingRoutingSignature = "";
+  dispatchOffRouteSince = null;
+  dispatchActiveRouteTicketId = ticketId;
+  dispatchActiveRouteSessionId = sessionId;
+  dispatchActiveRouteMarkerSignature = markerSignature;
+  dispatchActiveRouteOrderSignature = dispatchActiveRouteStops(details, route.groups)
+    .map((stop) => String(stop.id))
+    .join(">");
+  dispatchOptimizedRouteStops = dispatchSavedStopRouteItems(details.stops || [])
+    .map(({ stop }) => stop);
+  if (!dispatchHasFittedActiveRoute) {
+    fitDispatchRouteOnMap();
+    dispatchHasFittedActiveRoute = true;
+  }
+  return true;
+}
+
 function renderDispatchPersistedActiveMarkers(details, groups) {
   const ticketId = details.ticket?.id || null;
   const trackingContext = buildDispatchTrackingContext(details);
@@ -3108,6 +3297,19 @@ function renderDispatchPlannedRoute(details, options = {}) {
   const ticketId = details.ticket?.id || "unknown";
   const wmo = dispatchPoint(DISPATCH_WMO_LOCATION.latitude, DISPATCH_WMO_LOCATION.longitude);
   const selectedRoutePoint = getDispatchSelectedReliablePoint();
+  const persistedRoutePoints = dispatchReportPlannedPoints(
+    dispatchPlannedRouteSnapshotFromDetails(details)
+  );
+
+  if (
+    activeTicket &&
+    persistedRoutePoints.length >= 2 &&
+    renderDispatchPersistedActiveRoute(details, persistedRoutePoints, selectedRoutePoint)
+  ) {
+    renderDispatchAssignedTicketOrder(details, options);
+    updateDispatchRoutePreviewNotice("ready");
+    return;
+  }
   const activeGpsAvailable = typeof getTrackingAvailabilityMeta !== "function" ||
     getTrackingAvailabilityMeta(selectedTrackingTruck).available;
   const activeRoutePoint = activeGpsAvailable ? selectedRoutePoint : null;
@@ -5934,6 +6136,9 @@ function closeDispatchDailyReportModal() {
 
 function closeDispatchReportModal() {
   closeDispatchModal("dispatchReportModal");
+  dispatchReportMapRenderGeneration += 1;
+  dispatchReportRouteAbortController?.abort();
+  dispatchReportRouteAbortController = null;
   if (dispatchReportMap) {
     dispatchReportMap.remove();
     dispatchReportMap = null;
@@ -6001,8 +6206,128 @@ function dispatchReportPlannedPoints(snapshot = null) {
   );
 }
 
+function dispatchPlannedRouteSnapshotFromDetails(details = {}) {
+  const directSnapshot = details?.planned_route_snapshot || null;
+  if (dispatchReportPlannedPoints(directSnapshot).length >= 2) return directSnapshot;
+
+  const issuedEvent = (Array.isArray(details?.events) ? details.events : []).find(
+    (event) => event?.event_type === "ticket_issued"
+  );
+  if (!issuedEvent) return null;
+  let eventDetails = issuedEvent.details;
+  if (typeof eventDetails === "string") {
+    try {
+      eventDetails = JSON.parse(eventDetails);
+    } catch (error) {
+      return null;
+    }
+  }
+  const snapshot = eventDetails?.planned_route || null;
+  return dispatchReportPlannedPoints(snapshot).length >= 2 ? snapshot : null;
+}
+
 function dispatchReportSuggestedPoints(snapshot = null) {
   return dispatchReportPlannedPoints(snapshot);
+}
+
+function dispatchReportTrackingPoints(routeLogs = []) {
+  const points = dispatchReportActualPoints(routeLogs);
+  return points.map((point, index) => ({
+    ...point,
+    lat: point.lat,
+    lng: point.lng,
+    stableId: Number.isFinite(Number(point.id)) ? Number(point.id) : index,
+    timestamp: dispatchTimestampMilliseconds(point.recorded_at)
+  }));
+}
+
+function dispatchReportApproximateAssignedPoints(stops = [], wmoInput = DISPATCH_WMO_LOCATION) {
+  const wmo = dispatchPoint(
+    wmoInput?.latitude ?? wmoInput?.lat,
+    wmoInput?.longitude ?? wmoInput?.lng
+  );
+  const orderedStops = dispatchReportSortedStops(stops)
+    .map((stop) => dispatchPoint(stop.latitude, stop.longitude))
+    .filter(Boolean);
+  const points = [wmo, ...orderedStops, wmo].filter(Boolean);
+  return points.filter((point, index) =>
+    !index || dispatchDistanceMeters(point, points[index - 1]) >= 0.1
+  );
+}
+
+function dispatchReportTrailDisplayMode(actualPoints = [], matchedResult = null) {
+  const pointCount = Array.isArray(actualPoints) ? actualPoints.length : 0;
+  if (Number(matchedResult?.matchedSegmentCount || 0) > 0) return "road_matched";
+  if (pointCount === 2) return "approximate";
+  if (pointCount > 2) return "raw_gps";
+  return "missing";
+}
+
+function dispatchReportRawTrailSegments(points = []) {
+  if (typeof splitTrackingDisplaySegments === "function") {
+    return splitTrackingDisplaySegments(points);
+  }
+  return Array.isArray(points) && points.length ? [points] : [];
+}
+
+function dispatchReportRenderTrailSegments(layerGroup, segments = [], mode = "raw_gps") {
+  layerGroup?.clearLayers?.();
+  (Array.isArray(segments) ? segments : []).forEach((segment) => {
+    const geometry = (Array.isArray(segment?.geometry) ? segment.geometry : segment)
+      .map((point) => Array.isArray(point)
+        ? [Number(point[0]), Number(point[1])]
+        : [Number(point?.lat), Number(point?.lng)])
+      .filter(([lat, lng]) =>
+        Number.isFinite(lat) && lat >= -90 && lat <= 90 &&
+        Number.isFinite(lng) && lng >= -180 && lng <= 180
+      );
+    if (geometry.length < 2) return;
+    const approximate = mode === "approximate";
+    const roadMatchedSegment = mode === "road_matched" || segment?.matched === true;
+    L.polyline(geometry, {
+      color: approximate ? "#64748b" : "#176b3a",
+      weight: approximate ? 4 : 5,
+      opacity: approximate ? 0.78 : 0.95,
+      dashArray: approximate ? "8 8" : undefined,
+      lineCap: "round",
+      lineJoin: "round"
+    }).bindTooltip(
+      approximate
+        ? "Approximate path between limited GPS observations"
+        : roadMatchedSegment
+          ? "Road-matched actual trail (display-derived from GPS)"
+          : "Actual GPS trail"
+    ).addTo(layerGroup);
+  });
+}
+
+async function dispatchReportMatchActualTrail(routeLogs = [], options = {}) {
+  const fallbackPoints = dispatchReportTrackingPoints(routeLogs);
+  const displayResult = typeof buildTrackingDisplayRoute === "function"
+    ? buildTrackingDisplayRoute(routeLogs)
+    : null;
+  const points = Array.isArray(displayResult?.displayedPoints)
+    ? displayResult.displayedPoints
+    : fallbackPoints;
+  if (points.length < 2) return null;
+  const matcher = options.matcher || (
+    typeof getCachedTrackingMatch === "function"
+      ? (displayPoints) => getCachedTrackingMatch(
+        displayPoints,
+        options.cacheNamespace || "dispatch-report",
+        typeof trackingRouteSignature === "function"
+          ? trackingRouteSignature(displayPoints)
+          : displayPoints.map((point) => `${point.stableId}:${point.timestamp}`).join("|"),
+        { signal: options.signal }
+      )
+      : typeof matchTrackingDisplaySegments === "function"
+        ? (displayPoints) => matchTrackingDisplaySegments(displayPoints, {
+          signal: options.signal
+        })
+        : null
+  );
+  if (!matcher) return null;
+  return matcher(points);
 }
 
 function dispatchReportSortedStops(stops = []) {
@@ -6126,7 +6451,8 @@ function buildDispatchReportViewModel(data = {}) {
   );
   const routeLogs = Array.isArray(data.route_logs) ? data.route_logs : [];
   const actualPoints = dispatchReportActualPoints(routeLogs);
-  const plannedPoints = dispatchReportPlannedPoints(data.planned_route_snapshot);
+  const plannedRouteSnapshot = dispatchPlannedRouteSnapshotFromDetails(data);
+  const plannedPoints = dispatchReportPlannedPoints(plannedRouteSnapshot);
 
   return {
     ticket,
@@ -6161,9 +6487,11 @@ function buildDispatchReportViewModel(data = {}) {
     stops,
     events,
     route_logs: routeLogs,
+    planned_route_snapshot: plannedRouteSnapshot,
     actual_points: actualPoints,
     planned_points: plannedPoints,
-    has_actual_trail: actualPoints.length >= 2,
+    has_actual_trail: actualPoints.length >= 3,
+    has_approximate_actual_path: actualPoints.length === 2,
     has_planned_route: plannedPoints.length >= 2
   };
 }
@@ -6193,17 +6521,35 @@ function dispatchReportStopPopup(stop = {}) {
 function renderDispatchReportMap(report = {}) {
   const mapElement = document.getElementById("dispatchReportMap");
   if (!mapElement || typeof L === "undefined") return;
+  const generation = ++dispatchReportMapRenderGeneration;
+  dispatchReportRouteAbortController?.abort();
+  const routeController = typeof AbortController === "function"
+    ? new AbortController()
+    : null;
+  dispatchReportRouteAbortController = routeController;
   if (dispatchReportMap) dispatchReportMap.remove();
   dispatchReportMap = L.map(mapElement, { zoomControl: true });
+  const map = dispatchReportMap;
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
     attribution: "&copy; OpenStreetMap contributors"
-  }).addTo(dispatchReportMap);
-  dispatchReportActualLayerGroup = L.layerGroup().addTo(dispatchReportMap);
-  dispatchReportSuggestedLayerGroup = L.layerGroup().addTo(dispatchReportMap);
+  }).addTo(map);
+  dispatchReportActualLayerGroup = L.layerGroup().addTo(map);
+  dispatchReportSuggestedLayerGroup = L.layerGroup().addTo(map);
+  const actualTrailLayer = L.layerGroup().addTo(dispatchReportActualLayerGroup);
+  const assignedRouteLayer = L.layerGroup().addTo(dispatchReportSuggestedLayerGroup);
 
   const actual = report.actual_points || [];
   const planned = report.planned_points || [];
+  const reportTrackingDisplay = typeof buildTrackingDisplayRoute === "function"
+    ? buildTrackingDisplayRoute(report.route_logs || [])
+    : null;
+  const rawTrackingPoints = dispatchReportTrackingPoints(report.route_logs || []);
+  const trackingPoints = report.has_approximate_actual_path
+    ? rawTrackingPoints
+    : Array.isArray(reportTrackingDisplay?.displayedPoints)
+      ? reportTrackingDisplay.displayedPoints
+      : rawTrackingPoints;
   const wmo = dispatchPoint(
     DISPATCH_WMO_LOCATION.latitude,
     DISPATCH_WMO_LOCATION.longitude
@@ -6214,7 +6560,54 @@ function renderDispatchReportMap(report = {}) {
       weight: 4,
       opacity: 0.82
     }).bindTooltip("Persisted assigned route")
-      .addTo(dispatchReportSuggestedLayerGroup);
+      .addTo(assignedRouteLayer);
+  } else {
+    const approximateAssigned = dispatchReportApproximateAssignedPoints(report.stops, wmo);
+    if (approximateAssigned.length >= 2) {
+      L.polyline(approximateAssigned.map((point) => [point.lat, point.lng]), {
+        color: "#64748b",
+        weight: 4,
+        opacity: 0.72,
+        dashArray: "8 8",
+        lineCap: "round",
+        lineJoin: "round"
+      }).bindTooltip("Approximate path from saved dispatch destinations")
+        .addTo(assignedRouteLayer);
+
+      void requestDispatchRoadJourney(
+        approximateAssigned,
+        routeController?.signal,
+        { generation }
+      ).then((coordinates) => {
+        if (
+          generation !== dispatchReportMapRenderGeneration ||
+          map !== dispatchReportMap ||
+          routeController?.signal?.aborted
+        ) return;
+        assignedRouteLayer.clearLayers();
+        L.polyline(coordinates, {
+          color: "#246ee9",
+          weight: 4,
+          opacity: 0.82,
+          dashArray: "12 7",
+          lineCap: "round",
+          lineJoin: "round"
+        }).bindTooltip("Display-only reconstructed assigned road route")
+          .addTo(assignedRouteLayer);
+        const legend = document.getElementById("dispatchReportAssignedRouteLegend");
+        if (legend) {
+          legend.innerHTML = '<i class="suggested"></i>Blue dashed: reconstructed assigned route';
+        }
+        const notice = document.getElementById("dispatchReportAssignedRouteNotice");
+        if (notice) {
+          notice.textContent = "Original assigned road route was not recorded. A display-only road route was reconstructed from the saved destinations.";
+        }
+      }).catch((error) => {
+        if (error?.name !== "AbortError") {
+          console.warn("Dispatch report assigned-route reconstruction unavailable:", error);
+        }
+      });
+    }
   }
   report.stops.forEach((stop) => {
     const point = dispatchPoint(stop.latitude, stop.longitude);
@@ -6248,12 +6641,48 @@ function renderDispatchReportMap(report = {}) {
     }).bindPopup(`<div class="dispatch-report-map-popup"><b>WMO</b><h5>Trip Start / Return Point</h5>${wmoRows.join("")}</div>`)
       .addTo(dispatchReportSuggestedLayerGroup);
   }
-  if (actual.length >= 2) {
-    L.polyline(actual.map((point) => [point.lat, point.lng]), {
-      color: "#176b3a",
-      weight: 5,
-      opacity: 0.95
-    }).bindTooltip("Actual GPS trail").addTo(dispatchReportActualLayerGroup);
+  if (trackingPoints.length >= 2) {
+    const initialMode = dispatchReportTrailDisplayMode(trackingPoints);
+    dispatchReportRenderTrailSegments(
+      actualTrailLayer,
+      dispatchReportRawTrailSegments(trackingPoints),
+      initialMode
+    );
+
+    void dispatchReportMatchActualTrail(report.route_logs || [], {
+      cacheNamespace: `dispatch-report:${report.ticket?.id || report.tracking_session?.tracking_session_id || "unknown"}`,
+      signal: routeController?.signal
+    }).then((matchedResult) => {
+      if (
+        !matchedResult ||
+        Number(matchedResult.matchedSegmentCount || 0) < 1 ||
+        generation !== dispatchReportMapRenderGeneration ||
+        map !== dispatchReportMap ||
+        routeController?.signal?.aborted
+      ) return;
+      dispatchReportRenderTrailSegments(
+        actualTrailLayer,
+        matchedResult.segments,
+        matchedResult.displayMode === "mixed_fallback" ? "mixed" : "road_matched"
+      );
+      const legend = document.getElementById("dispatchReportActualTrailLegend");
+      if (legend) {
+        legend.innerHTML = matchedResult.displayMode === "mixed_fallback"
+          ? '<i class="actual"></i>Dark green: actual trail (partly road-matched)'
+          : '<i class="actual"></i>Dark green: road-matched actual trail';
+      }
+      const notice = document.getElementById("dispatchReportActualTrailNotice");
+      if (notice) {
+        notice.textContent = matchedResult.displayMode === "mixed_fallback"
+          ? "Available trail portions are road-matched from recorded GPS evidence; raw GPS fallback portions and records remain unchanged."
+          : "The displayed trail is road-matched from recorded GPS evidence; raw GPS records remain unchanged.";
+        notice.classList.remove("hidden");
+      }
+    }).catch((error) => {
+      if (error?.name !== "AbortError") {
+        console.warn("Dispatch report road-matched trail unavailable:", error);
+      }
+    });
   }
   const endPoint = actual.at(-1);
   if (endPoint) {
@@ -6271,9 +6700,11 @@ function renderDispatchReportMap(report = {}) {
     .filter(Boolean);
   const bounds = [...actual, ...planned, ...stopPoints, ...(wmo ? [wmo] : [])]
     .map((point) => [point.lat, point.lng]);
-  if (bounds.length) dispatchReportMap.fitBounds(bounds, { padding: [24, 24], maxZoom: 16 });
-  else dispatchReportMap.setView([DISPATCH_WMO_LOCATION.latitude, DISPATCH_WMO_LOCATION.longitude], 14);
-  setTimeout(() => dispatchReportMap?.invalidateSize(), 50);
+  if (bounds.length) map.fitBounds(bounds, { padding: [24, 24], maxZoom: 16 });
+  else map.setView([DISPATCH_WMO_LOCATION.latitude, DISPATCH_WMO_LOCATION.longitude], 14);
+  setTimeout(() => {
+    if (map === dispatchReportMap) map.invalidateSize();
+  }, 50);
 }
 
 function renderDispatchReportDetails(data = {}) {
@@ -6313,6 +6744,28 @@ function renderDispatchReportDetails(data = {}) {
     <div class="dispatch-report-event"><i aria-hidden="true"></i><div><strong>${dispatchEscape(event.label)}</strong><small>${dispatchEscape(dispatchRecordedDateTime(event.event_at))}${event.actor_name ? ` · ${dispatchEscape(event.actor_name)}` : ""}</small></div></div>`).join("")
     : '<div class="dispatch-report-empty">Detailed trip events are not recorded for this dispatch.</div>';
   const dayEndIncomplete = status === "day_end_incomplete";
+  const reconstructableAssignedRoute = !report.has_planned_route &&
+    dispatchReportApproximateAssignedPoints(report.stops).length >= 2;
+  const actualLegendMarkup = report.has_approximate_actual_path
+    ? '<span id="dispatchReportActualTrailLegend"><i class="approximate"></i>Approximate path from limited GPS points</span>'
+    : report.has_actual_trail
+      ? '<span id="dispatchReportActualTrailLegend"><i class="actual"></i>Dark green: actual GPS trail</span>'
+      : "";
+  const assignedLegendMarkup = report.has_planned_route
+    ? '<span id="dispatchReportAssignedRouteLegend"><i class="suggested"></i>Blue: persisted assigned route</span>'
+    : reconstructableAssignedRoute
+      ? '<span id="dispatchReportAssignedRouteLegend"><i class="approximate"></i>Approximate assigned path</span>'
+      : "";
+  const actualRouteNotice = report.has_approximate_actual_path
+    ? '<p id="dispatchReportActualTrailNotice" class="dispatch-report-route-notice">Exact road route was not recorded for this dispatch. Showing approximate path between the two recorded GPS points.</p>'
+    : report.has_actual_trail
+      ? '<p id="dispatchReportActualTrailNotice" class="dispatch-report-route-notice hidden"></p>'
+      : '<p class="dispatch-report-empty">No GPS trail recorded.</p>';
+  const assignedRouteNotice = report.has_planned_route
+    ? ""
+    : reconstructableAssignedRoute
+      ? '<p id="dispatchReportAssignedRouteNotice" class="dispatch-report-route-notice">Original assigned road route was not recorded for this dispatch. Showing an approximate path while a display-only road route is reconstructed from saved destinations.</p>'
+      : '<p class="dispatch-report-route-notice">Original assigned road route was not recorded for this dispatch. Exact road route cannot be reconstructed because saved destination coordinates are unavailable.</p>';
   const closureMarkup = status === "closed_early" || dayEndIncomplete ? `
     <aside class="dispatch-report-closure">
       <div><span>${dayEndIncomplete ? "Day-End Reason" : "Closed Early"}</span><strong>${dispatchEscape(dispatchRecordedText(report.closure_reason))}</strong></div>
@@ -6343,7 +6796,7 @@ function renderDispatchReportDetails(data = {}) {
       <div><span>Returned to WMO</span><strong>${dispatchEscape(dispatchRecordedDateTime(report.returned_at))}</strong></div>
     </div></section>
     <section class="dispatch-report-section"><h4>Destination Records</h4><div class="dispatch-report-stop-list">${stopMarkup}</div></section>
-    <section class="dispatch-report-section"><h4>Route Map</h4><div class="dispatch-report-map-wrap"><div id="dispatchReportMap"></div></div><div class="dispatch-report-map-legend"><span><i class="actual"></i>Dark green: actual GPS trail</span>${report.has_planned_route ? '<span><i class="suggested"></i>Blue: persisted assigned route</span>' : ""}<span><i class="endpoint"></i>Red: historical end point</span><span><i class="wmo"></i>W: WMO</span></div>${report.has_actual_trail ? "" : '<p class="dispatch-report-empty">No GPS trail recorded.</p>'}${report.has_planned_route ? "" : '<p class="dispatch-report-route-notice">Original assigned road route was not recorded for this dispatch.</p>'}</section>
+    <section class="dispatch-report-section"><h4>Route Map</h4><div class="dispatch-report-map-wrap"><div id="dispatchReportMap"></div></div><div class="dispatch-report-map-legend">${actualLegendMarkup}${assignedLegendMarkup}<span><i class="endpoint"></i>Red: historical end point</span><span><i class="wmo"></i>W: WMO</span></div>${actualRouteNotice}${assignedRouteNotice}</section>
     <section class="dispatch-report-section"><h4>Activity Timeline</h4><div class="dispatch-report-timeline">${timelineMarkup}</div></section>`;
   renderDispatchReportMap(report);
 }
@@ -7154,6 +7607,8 @@ if (typeof module !== "undefined" && module.exports) {
     DISPATCH_ORDERED_ROUTE_REQUIRED_MESSAGE,
     DISPATCH_NON_TERMINAL_TICKET_STATUSES,
     buildDispatchDestinationMarkerLayer,
+    buildDispatchCurrentLegGeometry,
+    buildDispatchPersistedActiveRouteLayers,
     buildDispatchPlannedJourney,
     buildDispatchRouteLayers,
     buildDispatchSelectionFallbackLayers,
@@ -7179,8 +7634,13 @@ if (typeof module !== "undefined" && module.exports) {
     resolveDispatchMonitoringRefresh,
     dispatchReportStopStatus,
     dispatchReportActualPoints,
+    dispatchReportApproximateAssignedPoints,
+    dispatchReportMatchActualTrail,
     dispatchReportSuggestedPoints,
     dispatchReportPlannedPoints,
+    dispatchPlannedRouteSnapshotFromDetails,
+    dispatchReportTrackingPoints,
+    dispatchReportTrailDisplayMode,
     dispatchReportSortedStops,
     dispatchReportSortedEvents,
     dispatchReportTotalStopSeconds,
@@ -7194,6 +7654,7 @@ if (typeof module !== "undefined" && module.exports) {
     dispatchManilaOperatingDay,
     dispatchNormalizeTicketNumber,
     dispatchRouteNeedsRecalculation,
+    dispatchNearestRoutePointIndex,
     resolveDispatchRouteOrigin,
     dispatchRouteSegmentWithEndpoints,
     dispatchPolylineHasValidCoordinates,
