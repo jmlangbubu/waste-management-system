@@ -263,9 +263,10 @@ function testPlannedRouteStyleAndPane() {
   );
   assert.match(dashboardSource, /> Actual trail</);
   assert.match(dashboardSource, /> Assigned route</);
-  assert.match(dashboardSource, /> Current leg</);
+  assert.match(dashboardSource, /> Live guide</);
   assert.match(dashboardSource, /> Current truck</);
   assert.match(dashboardSource, /> Destination</);
+  assert.match(dashboardSource, /> WMO</);
 }
 
 function testPersistedRouteSlicesCurrentLegWithoutRouting() {
@@ -316,9 +317,11 @@ function testPersistedRouteSlicesCurrentLegWithoutRouting() {
       route[3]
     );
     assert.equal(rendered.layers.planned.layers.length, 1);
-    assert.equal(rendered.layers.current.layers.length, 1);
-    assert.deepEqual(rendered.layers.current.layers[0].value, route.slice(3, 6).map((value) => [value.lat, value.lng]));
-    assert.equal(rendered.layers.current.layers[0].options.dashArray, "10 8");
+    assert.equal(
+      rendered.layers.current.layers.length,
+      0,
+      "the dynamic live guide must not be a slice of the assigned route"
+    );
     assert.equal(rendered.layers.destinations.layers.length, 2);
   } finally {
     delete global.L;

@@ -1,14 +1,10 @@
 const db = require("../config/dbPromise");
 const dispatchService = require("./dispatchService");
+const WMO_LOCATION = require("../utils/wmoGeofence");
 
 const INITIAL_DELAY_MS = 15000;
 const MONITOR_DELAY_MS = 15000;
 const LOCATION_BATCH_SIZE = 500;
-const WMO_LOCATION = Object.freeze({
-  latitude: 6.1060875,
-  longitude: 125.1816406,
-  radiusMeters: 100
-});
 
 function chronologyMs(value) {
   if (value instanceof Date) return value.getTime();
@@ -20,13 +16,22 @@ function chronologyMs(value) {
 }
 
 class DispatchMonitorService {
-  constructor(pool = db, service = dispatchService) {
+  constructor(pool = db, service = dispatchService, tracking = null) {
     this.db = pool;
     this.dispatchService = service;
+    this.trackingService = tracking;
+    this.io = null;
     this.started = false;
     this.running = false;
     this.timer = null;
     this.missingTablesWarningLogged = false;
+  }
+
+  getTrackingService() {
+    if (!this.trackingService) {
+      this.trackingService = require("./trackingService");
+    }
+    return this.trackingService;
   }
 
   scheduleNextRun(delayMs = MONITOR_DELAY_MS) {
@@ -37,7 +42,8 @@ class DispatchMonitorService {
     }, delayMs);
   }
 
-  start() {
+  start(io = null) {
+    if (io) this.io = io;
     if (this.started) return;
     this.started = true;
     this.scheduleNextRun(INITIAL_DELAY_MS);
@@ -49,6 +55,42 @@ class DispatchMonitorService {
       clearTimeout(this.timer);
       this.timer = null;
     }
+  }
+
+  emitTrackingRefresh(payload = {}) {
+    if (!this.io || typeof this.io.to !== "function") return;
+    this.io.to("wmo").emit("tracking:refresh", {
+      _source: "dispatch-monitor",
+      ...payload,
+      createdAt: new Date().toISOString()
+    });
+  }
+
+  async completeVerifiedWmoReturn(relation) {
+    if (typeof this.dispatchService.findVerifiedAutomaticWmoReturn !== "function") {
+      return null;
+    }
+    const evidence = await this.dispatchService.findVerifiedAutomaticWmoReturn(
+      relation.id,
+      WMO_LOCATION
+    );
+    if (!evidence) return null;
+
+    const tracking = this.getTrackingService();
+    if (typeof tracking.stopTrackingSessionAtVerifiedWmoReturn !== "function") {
+      return null;
+    }
+    const result = await tracking.stopTrackingSessionAtVerifiedWmoReturn(
+      evidence.tracking_session_id,
+      evidence
+    );
+    this.emitTrackingRefresh({
+      reason: "verified_wmo_return",
+      session_id: evidence.tracking_session_id,
+      truck_id: result?.truck_id || null,
+      dispatch_ticket_id: evidence.dispatch_ticket_id
+    });
+    return result;
   }
 
   async runCycle() {
@@ -183,6 +225,7 @@ class DispatchMonitorService {
         await this.dispatchService.reconcileAutomaticDispatchHistory(
           relation.id
         );
+        await this.completeVerifiedWmoReturn(relation);
         await this.dispatchService.reconcileEndedTrackingSession(
           relation.id,
           WMO_LOCATION
@@ -202,6 +245,7 @@ class DispatchMonitorService {
       if (logs.length < LOCATION_BATCH_SIZE) break;
     }
 
+    await this.completeVerifiedWmoReturn(relation);
     await this.dispatchService.reconcileEndedTrackingSession(
       relation.id,
       WMO_LOCATION

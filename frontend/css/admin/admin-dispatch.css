@@ -3042,7 +3042,7 @@ body > #dispatchDailyReportModal {
   border-top-style: solid;
 }
 
-#trackingSection .tracking-legend-line.current-leg {
+#trackingSection .tracking-legend-line.live-guide {
   border-color: #2d73c7;
   border-top-style: dashed;
 }
