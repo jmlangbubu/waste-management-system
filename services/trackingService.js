@@ -9,12 +9,7 @@ const {
 const {
     getLegacyTerminalLastLocationStatus
 } = require("../utils/trackingStatusCompatibility");
-
-const WMO_GEOFENCE = Object.freeze({
-    latitude: 6.1060875,
-    longitude: 125.1816406,
-    radiusMeters: 100
-});
+const WMO_GEOFENCE = require("../utils/wmoGeofence");
 
 class TrackingStartEligibilityError extends Error {
     constructor(message, code, statusCode = 400) {
@@ -1211,7 +1206,7 @@ class TrackingService {
     }
 
 
-    async stopTrackingSession(sessionId, data = {}) {
+    async stopTrackingSession(sessionId, data = {}, options = {}) {
         await this.ensureTrackingSessionReportColumns();
 
         let {
@@ -1263,7 +1258,9 @@ class TrackingService {
             end_latitude = endEvidence.latitude;
             end_longitude = endEvidence.longitude;
             stop_type = endEvidence.operation_intent === "end_operations"
-                ? "manual_wmo_stop"
+                ? options.systemInitiated === true
+                    ? "auto_stopped"
+                    : "manual_wmo_stop"
                 : "auto_stopped";
         } else {
             const hasEndLatitude = end_latitude !== null && end_latitude !== undefined;
@@ -1288,7 +1285,9 @@ class TrackingService {
             const existingEndedAt = this.normalizeDateTimeText(session.ended_at);
             if (endEvidence && existingEndedAt === endEvidence.recorded_at) {
                 await this.getDispatchLifecycleService()
-                    .finalizeMobileTrackingEnd(sessionId, endEvidence);
+                    .finalizeMobileTrackingEnd(sessionId, endEvidence, {
+                        systemInitiated: options.systemInitiated === true
+                    });
             }
             const notification = await this.createTrackingCompletedNotification({
                 ...session,
@@ -1363,7 +1362,9 @@ class TrackingService {
 
         if (endEvidence) {
             await this.getDispatchLifecycleService()
-                .finalizeMobileTrackingEnd(sessionId, endEvidence);
+                .finalizeMobileTrackingEnd(sessionId, endEvidence, {
+                    systemInitiated: options.systemInitiated === true
+                });
         }
 
         const notification = await this.createTrackingCompletedNotification({
@@ -1382,6 +1383,17 @@ class TrackingService {
             already_stopped: false,
             notification
         };
+    }
+
+    async stopTrackingSessionAtVerifiedWmoReturn(sessionId, evidence = {}) {
+        return this.stopTrackingSession(sessionId, {
+            operation_intent: "end_operations",
+            action_id: evidence.action_id,
+            recorded_at: evidence.recorded_at,
+            end_latitude: evidence.end_latitude,
+            end_longitude: evidence.end_longitude,
+            end_accuracy: evidence.end_accuracy
+        }, { systemInitiated: true });
     }
 
     async stopTrackingSessionByWebAdmin(sessionId, actor = {}) {

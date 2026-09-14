@@ -13,8 +13,9 @@ const {
 
 const DISPATCH_STOP_TRANSITION_RULES = Object.freeze({
   departureHysteresisMeters: 25,
-  confirmationSampleCount: 3,
-  arrivalConfirmationSeconds: 60,
+  arrivalConfirmationSampleCount: 1,
+  departureConfirmationSampleCount: 3,
+  arrivalConfirmationSeconds: 0,
   departureConfirmationSeconds: 30,
   arrivalCandidateGapMs: 90000,
   departureCandidateGapMs: 60000
@@ -237,6 +238,9 @@ function evaluateDispatchTransitionCandidate(
   const confirmationSeconds = kind === "arrival"
     ? DISPATCH_STOP_TRANSITION_RULES.arrivalConfirmationSeconds
     : DISPATCH_STOP_TRANSITION_RULES.departureConfirmationSeconds;
+  const confirmationSampleCount = kind === "arrival"
+    ? DISPATCH_STOP_TRANSITION_RULES.arrivalConfirmationSampleCount
+    : DISPATCH_STOP_TRANSITION_RULES.departureConfirmationSampleCount;
   const currentTimeMs = Number.isFinite(Number(locationLog.timestampMs))
     ? Number(locationLog.timestampMs)
     : parseManilaTimestamp(locationLog.recorded_at);
@@ -260,7 +264,7 @@ function evaluateDispatchTransitionCandidate(
     candidateCount,
     elapsedSeconds,
     confirmed:
-      candidateCount >= DISPATCH_STOP_TRANSITION_RULES.confirmationSampleCount &&
+      candidateCount >= confirmationSampleCount &&
       elapsedSeconds >= confirmationSeconds
   };
 }
@@ -4642,7 +4646,7 @@ class DispatchService {
     );
   }
 
-  async finalizeMobileTrackingEnd(trackingSessionId, evidence = {}) {
+  async finalizeMobileTrackingEnd(trackingSessionId, evidence = {}, options = {}) {
     const sessionId = requiredId(trackingSessionId, "tracking session id");
     const operationIntent = cleanText(evidence.operation_intent, 80).toLowerCase();
     if (!["end_operations", "forced_day_rollover"].includes(operationIntent)) {
@@ -4664,7 +4668,8 @@ class DispatchService {
         operationIntent,
         endedAt,
         actionId,
-        evidence
+        evidence,
+        systemInitiated: options.systemInitiated === true
       })
     );
   }
@@ -4741,7 +4746,7 @@ class DispatchService {
         const returning = await this.moveTicketToReturningIfDone(
           connection,
           relation.dispatch_ticket_id,
-          "mobile",
+          eventSource,
           actor,
           sessionId,
           endedAt
@@ -5056,6 +5061,120 @@ class DispatchService {
         lifecycle_outcome: lifecycle.outcome
       };
     });
+  }
+
+  async findVerifiedAutomaticWmoReturn(relationId, wmoLocation) {
+    const relationKey = requiredId(relationId, "dispatch tracking relation id");
+    const wmoLatitude = Number(wmoLocation?.latitude);
+    const wmoLongitude = Number(wmoLocation?.longitude);
+    const wmoRadiusMeters = Number(wmoLocation?.radiusMeters);
+    if (
+      !Number.isFinite(wmoLatitude) ||
+      !Number.isFinite(wmoLongitude) ||
+      !Number.isFinite(wmoRadiusMeters)
+    ) {
+      throw new DispatchServiceError(
+        "Dispatch monitor WMO geofence is invalid",
+        500,
+        "DISPATCH_MONITOR_CONFIGURATION_ERROR"
+      );
+    }
+
+    const [relationRows] = await this.query(
+      `
+        SELECT
+          dts.id,
+          dts.dispatch_ticket_id,
+          dts.tracking_session_id,
+          dt.status AS dispatch_status,
+          tts.session_status,
+          tts.truck_id,
+          DATE_FORMAT(tts.started_at, '%Y-%m-%d %H:%i:%s') AS started_at,
+          DATE_FORMAT(dt.returning_to_wmo_at, '%Y-%m-%d %H:%i:%s')
+            AS returning_to_wmo_at
+        FROM dispatch_tracking_sessions dts
+        INNER JOIN dispatch_tickets dt
+          ON dt.id = dts.dispatch_ticket_id
+        INNER JOIN truck_tracking_sessions tts
+          ON tts.id = dts.tracking_session_id
+        WHERE dts.id = ?
+          AND dts.unlinked_at IS NULL
+          AND dts.is_primary = 1
+          AND tts.session_status = 'active'
+          AND dt.status IN ('dispatched', 'in_progress', 'returning_to_wmo')
+          AND EXISTS (
+            SELECT 1
+            FROM dispatch_route_stops drs_any
+            WHERE drs_any.dispatch_ticket_id = dt.id
+          )
+          AND NOT EXISTS (
+            SELECT 1
+            FROM dispatch_route_stops drs_remaining
+            WHERE drs_remaining.dispatch_ticket_id = dt.id
+              AND drs_remaining.stop_status NOT IN ('completed', 'skipped')
+          )
+        LIMIT 1
+      `,
+      [relationKey]
+    );
+    if (!relationRows.length) return null;
+
+    const relation = relationRows[0];
+    const [locationRows] = await this.query(
+      `
+        SELECT
+          id,
+          latitude,
+          longitude,
+          accuracy,
+          DATE_FORMAT(recorded_at, '%Y-%m-%d %H:%i:%s') AS recorded_at
+        FROM truck_location_logs
+        WHERE session_id = ?
+          AND truck_id = ?
+        ORDER BY recorded_at DESC, id DESC
+        LIMIT 25
+      `,
+      [relation.tracking_session_id, relation.truck_id]
+    );
+
+    const startedAtMs = parseManilaTimestamp(relation.started_at);
+    const returningAtMs = parseManilaTimestamp(relation.returning_to_wmo_at);
+    if (!Number.isFinite(returningAtMs)) return null;
+    for (const locationRow of locationRows || []) {
+      const qualification = qualifyGpsPointForOperationalUse(locationRow, {
+        referenceTimeMs: this.now().getTime()
+      });
+      const pointTimeMs = qualification.point?.timestampMs;
+      if (
+        !qualification.reliable ||
+        (Number.isFinite(startedAtMs) && pointTimeMs < startedAtMs) ||
+        pointTimeMs < returningAtMs
+      ) {
+        continue;
+      }
+
+      const distanceFromWmoMeters = haversineMeters(
+        qualification.point.latitude,
+        qualification.point.longitude,
+        wmoLatitude,
+        wmoLongitude
+      );
+      if (distanceFromWmoMeters > wmoRadiusMeters) return null;
+
+      return {
+        tracking_session_id: relation.tracking_session_id,
+        dispatch_ticket_id: relation.dispatch_ticket_id,
+        operation_intent: "end_operations",
+        action_id: `server-verified-wmo-return:${relation.dispatch_ticket_id}`,
+        recorded_at: qualification.point.recorded_at,
+        end_latitude: qualification.point.latitude,
+        end_longitude: qualification.point.longitude,
+        end_accuracy: qualification.point.accuracy,
+        distanceFromWmoMeters
+      };
+    }
+
+    return null;
   }
 
   async reconcileEndedTrackingSession(relationId, wmoLocation) {

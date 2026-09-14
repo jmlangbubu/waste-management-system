@@ -43,8 +43,8 @@ function normalizeSql(sql) {
 function createService(dispatchCalls = []) {
   const service = new TrackingService({
     dispatchService: {
-      async finalizeMobileTrackingEnd(sessionId, evidence) {
-        dispatchCalls.push({ sessionId: Number(sessionId), evidence });
+      async finalizeMobileTrackingEnd(sessionId, evidence, options) {
+        dispatchCalls.push({ sessionId: Number(sessionId), evidence, options });
         return { outcome: "completed" };
       }
     }
@@ -103,6 +103,46 @@ async function testHistoricalWmoEvidenceControlsEndedAt() {
   assert.equal(dispatchCalls.length, 1);
   assert.equal(dispatchCalls[0].evidence.recorded_at, "2026-08-27 16:55:00");
   assert.equal(dispatchCalls[0].evidence.action_id, WMO_EVIDENCE.action_id);
+}
+
+async function testVerifiedAutomaticWmoReturnReusesAuthoritativeEndFlow() {
+  const dispatchCalls = [];
+  const service = createService(dispatchCalls);
+  let sessionUpdate = null;
+  let lastLocationUpdate = null;
+  queryHandler = async (sql, parameters = []) => {
+    const normalized = normalizeSql(sql);
+    if (normalized.includes("FROM truck_tracking_sessions tts")) {
+      return [[session()]];
+    }
+    if (normalized.startsWith("UPDATE truck_tracking_sessions")) {
+      sessionUpdate = parameters;
+      return [{ affectedRows: 1 }];
+    }
+    if (normalized.startsWith("UPDATE truck_last_locations")) {
+      lastLocationUpdate = parameters;
+      return [{ affectedRows: 1 }];
+    }
+    throw new Error(`Unexpected SQL: ${normalized}`);
+  };
+
+  const result = await service.stopTrackingSessionAtVerifiedWmoReturn(58, {
+    tracking_session_id: 58,
+    dispatch_ticket_id: 91,
+    action_id: "server-verified-wmo-return:91",
+    recorded_at: WMO_EVIDENCE.recorded_at,
+    end_latitude: WMO_EVIDENCE.end_latitude,
+    end_longitude: WMO_EVIDENCE.end_longitude,
+    end_accuracy: WMO_EVIDENCE.end_accuracy
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(sessionUpdate[0], "auto_stopped");
+  assert.equal(sessionUpdate[1], WMO_EVIDENCE.recorded_at);
+  assert.equal(lastLocationUpdate[0], "offline");
+  assert.equal(dispatchCalls.length, 1);
+  assert.equal(dispatchCalls[0].evidence.operation_intent, "end_operations");
+  assert.deepEqual(dispatchCalls[0].options, { systemInitiated: true });
 }
 
 async function testOutsideWmoEndOperationsIsRejectedBeforeUpdate() {
@@ -366,6 +406,7 @@ async function testForcedRolloverCutoffAcceptsOnlyHistoricalQueue() {
 
 async function run() {
   await testHistoricalWmoEvidenceControlsEndedAt();
+  await testVerifiedAutomaticWmoReturnReusesAuthoritativeEndFlow();
   await testOutsideWmoEndOperationsIsRejectedBeforeUpdate();
   await testRepeatedEndActionIsIdempotent();
   await testForcedRolloverHasNoWmoEvidence();

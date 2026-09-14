@@ -282,7 +282,7 @@ if (typeof complaintRoutes.startOverdueAcceptedComplaintScheduler === "function"
   complaintRoutes.startOverdueAcceptedComplaintScheduler(app);
 }
 
-dispatchMonitorService.start();
+dispatchMonitorService.start(io);
 
 
 /* =========================

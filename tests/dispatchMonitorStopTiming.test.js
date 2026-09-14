@@ -71,6 +71,7 @@ function createCandidateHarness(initialStop = {}) {
     ...initialStop
   };
   const events = [];
+  const transitions = { nextStopUpdates: 0, returningChecks: 0 };
   let previousLog = null;
   let nextLogId = 1;
 
@@ -82,8 +83,12 @@ function createCandidateHarness(initialStop = {}) {
     events.push(event);
     return events.length;
   };
-  service.updateNextStop = async () => {};
-  service.moveTicketToReturningIfDone = async () => {};
+  service.updateNextStop = async () => {
+    transitions.nextStopUpdates += 1;
+  };
+  service.moveTicketToReturningIfDone = async () => {
+    transitions.returningChecks += 1;
+  };
 
   const connection = {
     async query(sql, parameters = []) {
@@ -183,14 +188,15 @@ function createCandidateHarness(initialStop = {}) {
     return log;
   }
 
-  return { service, connection, stop, events, arrival, departure };
+  return { service, connection, stop, events, transitions, arrival, departure };
 }
 
 function testRulesAndStrictHistoricalEvidence() {
   assert.deepEqual(DISPATCH_STOP_TRANSITION_RULES, {
     departureHysteresisMeters: 25,
-    confirmationSampleCount: 3,
-    arrivalConfirmationSeconds: 60,
+    arrivalConfirmationSampleCount: 1,
+    departureConfirmationSampleCount: 3,
+    arrivalConfirmationSeconds: 0,
     departureConfirmationSeconds: 30,
     arrivalCandidateGapMs: 90000,
     departureCandidateGapMs: 60000
@@ -225,11 +231,9 @@ function testRulesAndStrictHistoricalEvidence() {
   ).reason, "GPS_TIMESTAMP_FUTURE");
 }
 
-async function testArrivalConfirmationUsesFirstCandidateTime() {
+async function testArrivalUsesFirstQualifiedEntryTime() {
   const harness = createCandidateHarness();
   await harness.arrival("2026-08-26 12:00:00");
-  await harness.arrival("2026-08-26 12:00:30");
-  await harness.arrival("2026-08-26 12:01:05");
 
   assert.equal(harness.stop.stop_status, "arrived");
   assert.equal(harness.stop.actual_arrival_at, "2026-08-26 12:00:00");
@@ -238,41 +242,37 @@ async function testArrivalConfirmationUsesFirstCandidateTime() {
   assert.equal(harness.events.length, 1);
   assert.equal(harness.events[0].event_type, "arrived_at_stop");
   assert.equal(harness.events[0].event_at, "2026-08-26 12:00:00");
-  assert.equal(harness.events[0].details.confirmed_at, "2026-08-26 12:01:05");
-  assert.equal(harness.events[0].details.candidate_sample_count, 3);
+  assert.equal(harness.events[0].details.confirmed_at, "2026-08-26 12:00:00");
+  assert.equal(harness.events[0].details.candidate_sample_count, 1);
   assert.equal(harness.events[0].idempotency_key, "auto-arrive:91:11");
 }
 
-async function testArrivalNeedsBothCountAndDuration() {
-  const underDuration = createCandidateHarness();
-  await underDuration.arrival("2026-08-26 12:00:00");
-  await underDuration.arrival("2026-08-26 12:00:20");
-  await underDuration.arrival("2026-08-26 12:00:40");
-  assert.equal(underDuration.stop.stop_status, "on_the_way");
-  assert.equal(underDuration.stop.arrival_candidate_count, 3);
+async function testArrivalRequiresQualifiedInGeofenceEvidenceAndIsIdempotent() {
+  const harness = createCandidateHarness();
+  await harness.arrival("2026-08-26 12:00:00", false, 101);
+  assert.equal(harness.stop.stop_status, "on_the_way");
+  assert.equal(harness.events.length, 0);
 
-  const underCount = createCandidateHarness();
-  await underCount.arrival("2026-08-26 12:00:00");
-  await underCount.arrival("2026-08-26 12:01:10");
-  assert.equal(underCount.stop.stop_status, "on_the_way");
-  assert.equal(underCount.stop.arrival_candidate_count, 2);
-}
+  const firstArrival = await harness.arrival("2026-08-26 12:00:10", true, 100);
+  assert.equal(harness.stop.stop_status, "arrived");
+  assert.equal(harness.stop.actual_arrival_at, "2026-08-26 12:00:10");
 
-async function testArrivalGapAndJitterResetCandidates() {
-  const gap = createCandidateHarness();
-  await gap.arrival("2026-08-26 12:00:00");
-  await gap.arrival("2026-08-26 12:01:31");
-  assert.equal(gap.stop.arrival_candidate_at, "2026-08-26 12:01:31");
-  assert.equal(gap.stop.arrival_candidate_count, 1);
-
-  const jitter = createCandidateHarness();
-  await jitter.arrival("2026-08-26 12:00:00", true, 98);
-  await jitter.arrival("2026-08-26 12:00:30", false, 103);
-  await jitter.arrival("2026-08-26 12:01:00", true, 99);
-  await jitter.arrival("2026-08-26 12:01:30", false, 108);
-  assert.equal(jitter.stop.stop_status, "on_the_way");
-  assert.equal(jitter.stop.arrival_candidate_at, null);
-  assert.equal(jitter.events.length, 0);
+  const staleArrival = {
+    ...harness.stop,
+    stop_status: "on_the_way",
+    arrival_candidate_at: null,
+    arrival_candidate_count: 0
+  };
+  await harness.service.advanceArrivalCandidate(
+    harness.connection,
+    RELATION,
+    staleArrival,
+    firstArrival,
+    true,
+    20
+  );
+  assert.equal(harness.events.length, 1);
+  assert.equal(harness.stop.actual_arrival_at, "2026-08-26 12:00:10");
 }
 
 async function testDepartureUsesFirstCandidateAndPersistedArrivalForDwell() {
@@ -292,6 +292,8 @@ async function testDepartureUsesFirstCandidateAndPersistedArrivalForDwell() {
   assert.equal(harness.events[0].event_at, "2026-08-26 12:30:00");
   assert.equal(harness.events[0].details.confirmed_at, "2026-08-26 12:30:35");
   assert.equal(harness.events[0].idempotency_key, "auto-depart:91:11");
+  assert.equal(harness.transitions.nextStopUpdates, 1);
+  assert.equal(harness.transitions.returningChecks, 1);
 }
 
 async function testDepartureDurationGapAndHysteresisRules() {
@@ -347,14 +349,12 @@ async function testDepartureBeforeArrivalAndNegativeChronologyAreImpossible() {
 
 async function testTransitionEventsRemainIdempotent() {
   const arrival = createCandidateHarness();
-  await arrival.arrival("2026-08-26 12:00:00");
-  await arrival.arrival("2026-08-26 12:00:30");
-  const confirmingArrival = await arrival.arrival("2026-08-26 12:01:05");
+  const confirmingArrival = await arrival.arrival("2026-08-26 12:00:00");
   const staleArrival = {
     ...arrival.stop,
     stop_status: "on_the_way",
     arrival_candidate_at: "2026-08-26 12:00:00",
-    arrival_candidate_count: 2
+    arrival_candidate_count: 0
   };
   await arrival.service.advanceArrivalCandidate(
     arrival.connection,
@@ -514,9 +514,8 @@ function testMonitorPreservesIncrementalChronologicalProcessing() {
 
 async function run() {
   testRulesAndStrictHistoricalEvidence();
-  await testArrivalConfirmationUsesFirstCandidateTime();
-  await testArrivalNeedsBothCountAndDuration();
-  await testArrivalGapAndJitterResetCandidates();
+  await testArrivalUsesFirstQualifiedEntryTime();
+  await testArrivalRequiresQualifiedInGeofenceEvidenceAndIsIdempotent();
   await testDepartureUsesFirstCandidateAndPersistedArrivalForDwell();
   await testDepartureDurationGapAndHysteresisRules();
   await testDepartureBeforeArrivalAndNegativeChronologyAreImpossible();

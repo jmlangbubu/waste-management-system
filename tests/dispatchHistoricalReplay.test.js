@@ -677,8 +677,8 @@ async function testPagedPersistenceAndTransactionRetry() {
 
 async function testStaleAutomaticEventsAreRemovedWithoutReopeningTicket() {
   const incompleteEvidence = [
-    gps(1, "2026-08-27 12:00:00", 25),
-    gps(2, "2026-08-27 12:00:30", 20)
+    gps(1, "2026-08-27 12:00:00", 110),
+    gps(2, "2026-08-27 12:00:30", 105)
   ];
   const harness = createPersistenceHarness(incompleteEvidence, {
     dispatchStatus: "completed"
