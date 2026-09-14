@@ -14,10 +14,13 @@ const {
   isTrackingMatchResponseCurrent,
   joinTrackingMatchedChunkGeometry,
   matchTrackingDisplaySegments,
+  moveTrackingMarker,
   parseTrackingMatchResponse,
   renderTrackingActualRoute,
   resolveTrackingStartMarkerAction,
-  splitTrackingDisplaySegments
+  splitTrackingDisplaySegments,
+  trackingActualTrailLayerIsVisible,
+  trackingBearingDegrees
 } = require("../frontend/js/admin/admin-tracking.js");
 
 const ROOT = path.resolve(__dirname, "..");
@@ -451,9 +454,11 @@ function testSessionScopedStartStateAndExistingMapContracts() {
   assert.match(startMarker, /pane: "dispatchMarkerPane"/);
   assert.match(startMarker, /zIndexOffset: -100/);
   assert.match(startMarker, /formatTrackingTimeSafe/);
-  assert.match(loader, /selectedCurrentMarker\.setLatLng\(currentPoint\)/, "current marker still moves");
-  assert.match(loader, /selectedCurrentMarker = L\.marker\(currentPoint,[\s\S]*zIndexOffset: 100/);
-  assert.match(loader, /Current reliable location/);
+  assert.match(loader, /selectedCurrentMarker = updateTruckMarkerWithReliableRoutePoint/,
+    "the selected truck must reuse the operational truck marker");
+  assert.doesNotMatch(loader, /selectedCurrentMarker = L\.marker/,
+    "route refresh must not create a second current-position marker");
+  assert.match(trackingSource, /Last reliable point:/);
   assert.match(actualRenderer, /dashArray: "8, 10"/);
   assert.match(actualRenderer, /trackingActualRoutePane/);
   assert.doesNotMatch(matchedRenderer, /dispatchPlannedRoute|dispatchDestination|selectedDispatchTicket/);
@@ -513,17 +518,143 @@ function testActualRouteRendererKeepsRawGeometryWhenMatchIsUnusable() {
     ]
   });
   assert.equal(group, featureGroups[0]);
-  assert.deepEqual(group.layers.map((line) => line.geometry), [
+  assert.deepEqual(group.layers.filter((line) => !line.options.dashArray).map((line) => line.geometry), [
     [[points[0].lat, points[0].lng], [points[1].lat, points[1].lng]],
     [[points[2].lat, points[2].lng], [points[3].lat, points[3].lng]]
   ]);
-  assert.equal(mapLayers.length, 1, "confirmed GPS gap keeps one dashed raw-endpoint connector");
-  assert.equal(mapLayers[0].options.dashArray, "8, 10");
+  assert.equal(group.layers.filter((line) => line.options.dashArray).length, 1,
+    "confirmed GPS gap stays inside the swappable Actual Trail group");
+  assert.equal(group.layers.find((line) => line.options.dashArray).options.dashArray, "8, 10");
+  assert.equal(mapLayers.length, 0, "Actual Trail children do not accumulate outside their group");
 
   delete global.window;
   delete global.truckMap;
   delete global.selectedRoutePolyline;
   delete global.L;
+}
+
+function testLargeHistoricalRouteProducesVisibleActualTrail() {
+  const mapLayers = new Set();
+  global.window = { trackingGapPolylines: [] };
+  global.selectedRoutePolyline = null;
+  global.truckMap = {
+    addLayer(layer) {
+      mapLayers.add(layer);
+    },
+    hasLayer(layer) {
+      return mapLayers.has(layer) || [...mapLayers].some((group) =>
+        Array.isArray(group?.layers) && group.layers.includes(layer)
+      );
+    },
+    removeLayer(layer) {
+      mapLayers.delete(layer);
+    }
+  };
+  global.L = {
+    featureGroup() {
+      return {
+        layers: [],
+        addTo(map) {
+          map.addLayer(this);
+          return this;
+        },
+        getLayers() {
+          return this.layers;
+        }
+      };
+    },
+    polyline(geometry, options) {
+      return {
+        geometry,
+        options,
+        addTo(group) {
+          group.layers.push(this);
+          return this;
+        },
+        bindPopup() {
+          return this;
+        }
+      };
+    }
+  };
+
+  const points = Array.from({ length: 214 }, (_, index) => acceptedPoint(index));
+  const group = renderTrackingActualRoute(points);
+  assert.equal(group.getLayers().length, 1);
+  assert.equal(group.getLayers()[0].geometry.length, 214);
+  assert.equal(group.getLayers()[0].options.pane, "trackingActualRoutePane");
+  assert.equal(group.getLayers()[0].options.color, "#285a48");
+  assert.ok(group.getLayers()[0].options.weight >= 6);
+  assert.equal(trackingActualTrailLayerIsVisible(global.truckMap, group), true);
+
+  delete global.window;
+  delete global.truckMap;
+  delete global.selectedRoutePolyline;
+  delete global.L;
+}
+
+function testMarkerMovementAndBearingReuse() {
+  const calls = [];
+  const marker = {
+    setLatLng(value) {
+      calls.push(value);
+    }
+  };
+  const start = { lat: 6.1, lng: 125.1 };
+  const end = { lat: 6.1, lng: 125.1002 };
+  const bearing = trackingBearingDegrees(start, end);
+  assert.ok(bearing > 89 && bearing < 91, "eastward movement derives an eastward bearing");
+  const result = moveTrackingMarker(marker, start, end, {
+    durationMs: 800,
+    now: () => 0,
+    requestFrame(callback) {
+      callback(800);
+      return 1;
+    }
+  });
+  assert.equal(result.animated, true);
+  assert.deepEqual(calls.at(-1), [end.lat, end.lng]);
+  assert.equal(trackingBearingDegrees(start, { lat: 6.1, lng: 125.100001 }), null,
+    "movement below the bearing threshold preserves the prior heading");
+
+  const loader = functionBlock(
+    trackingSource,
+    "async function loadTruckRoute",
+    "async function hydrateSelectedTruckWorkspace"
+  );
+  assert.match(loader, /if \(!keepView && routeChanged\)/,
+    "five-second keepView polling must not force fitBounds");
+  assert.doesNotMatch(loader, /L\.map\(/,
+    "marker updates must not recreate the map");
+}
+
+function testNavigationDiagnosticsContract() {
+  [
+    "trackingRawPointCount",
+    "trackingAcceptedPointCount",
+    "trackingActualSegmentCount",
+    "trackingActualLayerVisible",
+    "trackingAssignedRoutePointCount",
+    "trackingLiveGuideTarget",
+    "trackingLiveGuidePointCount",
+    "trackingLiveGuideLayerVisible",
+    "trackingLiveGuideReason",
+    "trackingLiveGuideTime",
+    "trackingLiveGuideDistance",
+    "trackingCurrentStopStatus"
+  ].forEach((id) => {
+    assert.equal((dashboardHtml.match(new RegExp(`id="${id}"`, "g")) || []).length, 1, `${id} must exist once`);
+  });
+  const paneOrder = [
+    '"dispatchPlannedRoutePane", "420"',
+    '"dispatchCompletedRoutePane", "430"',
+    '"trackingActualRoutePane", "440"',
+    '"dispatchCurrentRoutePane", "460"',
+    '"dispatchMarkerPane", "650"',
+    '"trackingTruckPane", "700"'
+  ].map((token) => trackingSource.indexOf(token));
+  assert.ok(paneOrder.every((index) => index >= 0));
+  assert.deepEqual(paneOrder, [...paneOrder].sort((first, second) => first - second));
 }
 
 async function run() {
@@ -536,6 +667,9 @@ async function run() {
   await testGrowingRouteReusesCompletedHistoricalChunks();
   testSessionScopedStartStateAndExistingMapContracts();
   testActualRouteRendererKeepsRawGeometryWhenMatchIsUnusable();
+  testLargeHistoricalRouteProducesVisibleActualTrail();
+  testMarkerMovementAndBearingReuse();
+  testNavigationDiagnosticsContract();
   console.log("trackingRoadMatchDisplay.test.js: all assertions passed");
 }
 

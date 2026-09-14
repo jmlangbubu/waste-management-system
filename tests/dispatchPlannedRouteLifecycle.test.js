@@ -243,18 +243,20 @@ function testPlannedRouteStyleAndPane() {
   assert.equal(DISPATCH_PLANNED_ROUTE_PANE, "dispatchPlannedRoutePane");
   assert.equal(DISPATCH_COMPLETED_ROUTE_PANE, "dispatchCompletedRoutePane");
   assert.equal(DISPATCH_MARKER_PANE, "dispatchMarkerPane");
-  assert.equal(DISPATCH_CURRENT_ROUTE_STYLE.color, "#2d73c7");
-  assert.equal(DISPATCH_CURRENT_ROUTE_STYLE.dashArray, "10 8");
+  assert.equal(DISPATCH_CURRENT_ROUTE_STYLE.color, "#f28c18");
+  assert.equal(DISPATCH_CURRENT_ROUTE_STYLE.dashArray, undefined);
+  assert.ok(DISPATCH_CURRENT_ROUTE_STYLE.weight > DISPATCH_PLANNED_ROUTE_STYLE.weight);
   assert.equal(DISPATCH_PLANNED_ROUTE_STYLE.color, "#2d73c7");
   assert.equal(DISPATCH_PLANNED_ROUTE_STYLE.weight, 5);
   assert.ok(DISPATCH_PLANNED_ROUTE_STYLE.opacity > 0.5);
   assert.equal(DISPATCH_PLANNED_ROUTE_STYLE.dashArray, undefined);
   assert.equal(DISPATCH_PLANNED_ROUTE_STYLE.pane, DISPATCH_PLANNED_ROUTE_PANE);
-  assert.match(trackingSource, /"trackingActualRoutePane", "460"/);
-  assert.match(trackingSource, /"dispatchPlannedRoutePane", "440"/);
-  assert.match(trackingSource, /"dispatchCurrentRoutePane", "455"/);
-  assert.match(trackingSource, /"dispatchCompletedRoutePane", "470"/);
+  assert.match(trackingSource, /"dispatchPlannedRoutePane", "420"/);
+  assert.match(trackingSource, /"dispatchCompletedRoutePane", "430"/);
+  assert.match(trackingSource, /"trackingActualRoutePane", "440"/);
+  assert.match(trackingSource, /"dispatchCurrentRoutePane", "460"/);
   assert.match(trackingSource, /"dispatchMarkerPane", "650"/);
+  assert.match(trackingSource, /"trackingTruckPane", "700"/);
   assert.match(trackingSource, /TRACKING_ACTUAL_ROUTE_COLOR = "#285a48"/);
   assert.equal(
     (trackingSource.match(/color: TRACKING_ACTUAL_ROUTE_COLOR/g) || []).length,
@@ -646,7 +648,7 @@ function testIssueSelectionPollingAndFailureLifecycle() {
   assert.match(activeRenderer, /resolveDispatchRouteOrigin\(activeRoutePoint, \{ wmo \}\)/);
   assert.match(activeRenderer, /const startPoint = routeOrigin\.point \|\| wmo/);
   assert.match(activeRenderer, /createDispatchPlannedLayerGroups\(\{ detached: true \}\)/);
-  assert.match(activeRenderer, /requestDispatchRoadJourney[\s\S]*activateDispatchPlannedLayerGroups\(layers\)/);
+  assert.match(activeRenderer, /requestDispatchRoadJourney[\s\S]*activateDispatchPlannedLayerGroups\(layers, \{ preserveLiveGuide: activeTicket \}\)/);
   assert.doesNotMatch(activeRenderer, /requestDispatchRoadCostMatrix/);
   assert.match(activeRenderer, /renderDispatchPersistedActiveMarkers\(details, groups\)/);
   assert.match(activeRenderer, /renderDispatchTerminalStopMarkers\(layers, groups\.completedStops, groups\.skippedStops\)/);

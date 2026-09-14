@@ -234,7 +234,9 @@ function testActualDispatchStartMarkerAndExistingRouteMarkersRemainIndependent()
   assert.match(route, /const startPoint = latlngs\[0\]/);
   assert.match(route, /ensureTrackingDispatchStartMarker\(sessionId, routeResult\.startPoint \|\| routePoints\[0\]\)/);
   assert.match(route, /selectedReliableRoutePoint = currentReliablePoint/);
-  assert.match(route, /selectedCurrentMarker = L\.marker/);
+  assert.match(route, /selectedCurrentMarker = updateTruckMarkerWithReliableRoutePoint/);
+  assert.doesNotMatch(route, /selectedCurrentMarker = L\.marker/,
+    "the selected route must reuse the operational truck marker rather than overlay a duplicate");
   assert.match(actualRoute, /trackingActualRoutePane/);
   assert.match(dispatch, /const DISPATCH_PLANNED_ROUTE_STYLE[\s\S]*color: "#2d73c7"/);
   assert.match(dispatch, /createDispatchWmoMarkerLayer[\s\S]*dispatchMarkerIcon\("W", "wmo"\)/);

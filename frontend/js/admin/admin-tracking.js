@@ -6,15 +6,18 @@ function initializeTruckMap() {
   truckMap = L.map("truckMap").setView([6.1164, 125.1716], 13);
 
   [
-    ["trackingActualRoutePane", "460"],
-    ["dispatchPlannedRoutePane", "440"],
-    ["dispatchCurrentRoutePane", "455"],
-    ["dispatchCompletedRoutePane", "470"],
-    ["dispatchMarkerPane", "650"]
+    ["dispatchPlannedRoutePane", "420"],
+    ["dispatchCompletedRoutePane", "430"],
+    ["trackingActualRoutePane", "440"],
+    ["dispatchCurrentRoutePane", "460"],
+    ["dispatchMarkerPane", "650"],
+    ["trackingTruckPane", "700"]
   ].forEach(([name, zIndex]) => {
     const pane = truckMap.getPane(name) || truckMap.createPane(name);
     pane.style.zIndex = zIndex;
-    pane.style.pointerEvents = name === "dispatchMarkerPane" ? "auto" : "none";
+    pane.style.pointerEvents = ["dispatchMarkerPane", "trackingTruckPane"].includes(name)
+      ? "auto"
+      : "none";
   });
   trackingCurrentTruckLayerGroup = L.layerGroup().addTo(truckMap);
 
@@ -46,6 +49,8 @@ const TRACKING_MAX_DISPLAY_SPEED_METERS_PER_SECOND = 35;
 const TRACKING_MIN_JUMP_DISTANCE_METERS = 200;
 const TRACKING_FALLBACK_RECENT_POINT_LIMIT = 12;
 const TRACKING_ACTUAL_ROUTE_COLOR = "#285a48";
+const TRACKING_MARKER_ANIMATION_MS = 800;
+const TRACKING_MARKER_MIN_BEARING_DISTANCE_METERS = 5;
 const TRACKING_MATCH_SERVICE_ORIGIN = "https://router.project-osrm.org";
 const TRACKING_MATCH_TIMEOUT_MS = 12 * 1000;
 const TRACKING_MATCH_MAX_COORDINATES = 10;
@@ -943,6 +948,79 @@ function trackingHaversineMeters(pointA, pointB) {
   return earthRadiusMeters * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+function trackingBearingDegrees(pointA, pointB, minimumDistanceMeters = TRACKING_MARKER_MIN_BEARING_DISTANCE_METERS) {
+  if (trackingHaversineMeters(pointA, pointB) < minimumDistanceMeters) return null;
+  const latitudeA = Number(pointA?.lat);
+  const longitudeA = Number(pointA?.lng);
+  const latitudeB = Number(pointB?.lat);
+  const longitudeB = Number(pointB?.lng);
+  if (![latitudeA, longitudeA, latitudeB, longitudeB].every(Number.isFinite)) return null;
+  const toRadians = (degrees) => (degrees * Math.PI) / 180;
+  const toDegrees = (radians) => (radians * 180) / Math.PI;
+  const longitudeDelta = toRadians(longitudeB - longitudeA);
+  const y = Math.sin(longitudeDelta) * Math.cos(toRadians(latitudeB));
+  const x = Math.cos(toRadians(latitudeA)) * Math.sin(toRadians(latitudeB)) -
+    Math.sin(toRadians(latitudeA)) * Math.cos(toRadians(latitudeB)) * Math.cos(longitudeDelta);
+  return (toDegrees(Math.atan2(y, x)) + 360) % 360;
+}
+
+function moveTrackingMarker(marker, previousPoint, nextPoint, options = {}) {
+  if (!marker?.setLatLng || !nextPoint) return { moved: false, animated: false };
+  const renderedPoint = typeof marker.getLatLng === "function" ? marker.getLatLng() : null;
+  const startPoint = [renderedPoint?.lat, renderedPoint?.lng].every((value) =>
+    Number.isFinite(Number(value))
+  )
+    ? renderedPoint
+    : previousPoint;
+  const start = {
+    lat: Number(startPoint?.lat),
+    lng: Number(startPoint?.lng)
+  };
+  const end = {
+    lat: Number(nextPoint?.lat),
+    lng: Number(nextPoint?.lng)
+  };
+  if (![end.lat, end.lng].every(Number.isFinite)) return { moved: false, animated: false };
+
+  const browserWindow = typeof window !== "undefined" ? window : null;
+  const requestFrame = options.requestFrame || browserWindow?.requestAnimationFrame?.bind(browserWindow);
+  const cancelFrame = options.cancelFrame || browserWindow?.cancelAnimationFrame?.bind(browserWindow);
+  const durationMs = Number(options.durationMs ?? TRACKING_MARKER_ANIMATION_MS);
+  const shouldAnimate = options.animate !== false &&
+    [start.lat, start.lng].every(Number.isFinite) &&
+    typeof requestFrame === "function" &&
+    durationMs > 0;
+
+  if (marker.__trackingMoveFrame && typeof cancelFrame === "function") {
+    cancelFrame(marker.__trackingMoveFrame);
+  }
+  marker.__trackingMoveFrame = null;
+
+  if (!shouldAnimate) {
+    marker.setLatLng([end.lat, end.lng]);
+    return { moved: true, animated: false };
+  }
+
+  const now = options.now || (() => browserWindow?.performance?.now?.() ?? Date.now());
+  const startedAt = now();
+  const step = (frameTime) => {
+    const elapsed = Math.max(0, Number(frameTime ?? now()) - startedAt);
+    const progress = Math.min(1, elapsed / durationMs);
+    const eased = 1 - ((1 - progress) ** 3);
+    marker.setLatLng([
+      start.lat + ((end.lat - start.lat) * eased),
+      start.lng + ((end.lng - start.lng) * eased)
+    ]);
+    if (progress < 1) {
+      marker.__trackingMoveFrame = requestFrame(step);
+    } else {
+      marker.__trackingMoveFrame = null;
+    }
+  };
+  marker.__trackingMoveFrame = requestFrame(step);
+  return { moved: true, animated: true };
+}
+
 function parseTrackingCoordinate(value) {
   if (value === null || value === undefined || String(value).trim() === "") {
     return Number.NaN;
@@ -1100,10 +1178,102 @@ function buildTrackingDisplayRoute(routeLogs = []) {
   };
 }
 
+function setTrackingDiagnosticText(id, value) {
+  if (typeof document === "undefined") return;
+  const element = document.getElementById(id);
+  if (element) element.textContent = String(value ?? "--");
+}
+
+function updateTrackingMapDiagnostics(patch = {}) {
+  if (Object.prototype.hasOwnProperty.call(patch, "actualTrailSegments") &&
+    typeof trackingActualTrailSegmentCount !== "undefined") {
+    trackingActualTrailSegmentCount = Number(patch.actualTrailSegments) || 0;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "actualTrailVisible") &&
+    typeof trackingActualTrailVisible !== "undefined") {
+    trackingActualTrailVisible = Boolean(patch.actualTrailVisible);
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "assignedRoutePoints") &&
+    typeof dispatchAssignedRoutePointCount !== "undefined") {
+    dispatchAssignedRoutePointCount = Number(patch.assignedRoutePoints) || 0;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "liveGuideTarget") &&
+    typeof dispatchLiveGuideTargetLabel !== "undefined") {
+    dispatchLiveGuideTargetLabel = String(patch.liveGuideTarget || "");
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "liveGuideReason") &&
+    typeof dispatchLiveGuideLastRerouteReason !== "undefined") {
+    dispatchLiveGuideLastRerouteReason = String(patch.liveGuideReason || "");
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "liveGuideAt") &&
+    typeof dispatchLiveGuideLastRerouteAt !== "undefined") {
+    dispatchLiveGuideLastRerouteAt = patch.liveGuideAt || null;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "liveGuideDistanceMeters") &&
+    typeof dispatchLiveGuideDistanceMeters !== "undefined") {
+    const distance = Number(patch.liveGuideDistanceMeters);
+    dispatchLiveGuideDistanceMeters = Number.isFinite(distance) ? distance : null;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "currentStopStatus") &&
+    typeof dispatchCurrentStopStatus !== "undefined") {
+    dispatchCurrentStopStatus = String(patch.currentStopStatus || "");
+  }
+
+  const actualSegments = typeof trackingActualTrailSegmentCount === "undefined"
+    ? Number(patch.actualTrailSegments) || 0
+    : trackingActualTrailSegmentCount;
+  const actualVisible = typeof trackingActualTrailVisible === "undefined"
+    ? Boolean(patch.actualTrailVisible)
+    : trackingActualTrailVisible;
+  const assignedPoints = typeof dispatchAssignedRoutePointCount === "undefined"
+    ? Number(patch.assignedRoutePoints) || 0
+    : dispatchAssignedRoutePointCount;
+  const guideTarget = typeof dispatchLiveGuideTargetLabel === "undefined"
+    ? String(patch.liveGuideTarget || "")
+    : dispatchLiveGuideTargetLabel;
+  const guidePoints = typeof dispatchLiveGuideCoordinates === "undefined"
+    ? 0
+    : dispatchLiveGuideCoordinates.length;
+  const guideVisible = typeof dispatchCurrentRouteLayerGroup !== "undefined" &&
+    typeof dispatchLayerHasVisiblePolyline === "function"
+    ? dispatchLayerHasVisiblePolyline(dispatchCurrentRouteLayerGroup)
+    : Boolean(patch.liveGuideVisible);
+  const guideReason = typeof dispatchLiveGuideLastRerouteReason === "undefined"
+    ? String(patch.liveGuideReason || "")
+    : dispatchLiveGuideLastRerouteReason;
+  const guideAt = typeof dispatchLiveGuideLastRerouteAt === "undefined"
+    ? patch.liveGuideAt
+    : dispatchLiveGuideLastRerouteAt;
+  const guideDistance = typeof dispatchLiveGuideDistanceMeters === "undefined"
+    ? Number(patch.liveGuideDistanceMeters)
+    : dispatchLiveGuideDistanceMeters;
+  const currentStopStatusValue = typeof dispatchCurrentStopStatus === "undefined"
+    ? String(patch.currentStopStatus || "")
+    : dispatchCurrentStopStatus;
+
+  setTrackingDiagnosticText("trackingActualSegmentCount", actualSegments);
+  setTrackingDiagnosticText("trackingActualLayerVisible", actualVisible ? "Yes" : "No");
+  setTrackingDiagnosticText("trackingAssignedRoutePointCount", assignedPoints);
+  setTrackingDiagnosticText("trackingLiveGuideTarget", guideTarget || "--");
+  setTrackingDiagnosticText("trackingLiveGuidePointCount", guidePoints);
+  setTrackingDiagnosticText("trackingLiveGuideLayerVisible", guideVisible ? "Yes" : "No");
+  setTrackingDiagnosticText("trackingLiveGuideReason", guideReason || "--");
+  setTrackingDiagnosticText(
+    "trackingLiveGuideTime",
+    guideAt && typeof formatTrackingTimeSafe === "function" ? formatTrackingTimeSafe(guideAt) : "--"
+  );
+  setTrackingDiagnosticText(
+    "trackingLiveGuideDistance",
+    Number.isFinite(Number(guideDistance)) ? `${Math.round(Number(guideDistance))} m` : "--"
+  );
+  setTrackingDiagnosticText("trackingCurrentStopStatus", currentStopStatusValue || "--");
+}
+
 function updateTrackingRouteStats(routeResult = {}) {
   const routePointCount = document.getElementById("trackingRoutePointCount");
   const rawPointCount = document.getElementById("trackingRawPointCount");
   const filteredPointCount = document.getElementById("trackingFilteredPointCount");
+  const acceptedPointCount = document.getElementById("trackingAcceptedPointCount");
   const routeGapCount = document.getElementById("trackingRouteGapCount");
   const diagnosticsNotice = document.getElementById("trackingDiagnosticsNotice");
   if (routePointCount) {
@@ -1117,6 +1287,7 @@ function updateTrackingRouteStats(routeResult = {}) {
       : 0;
     routePointCount.textContent = String(mappedCount);
     if (rawPointCount) rawPointCount.textContent = String(rawCount);
+    if (acceptedPointCount) acceptedPointCount.textContent = String(mappedCount);
     if (filteredPointCount) {
       filteredPointCount.textContent = String(Math.max(0, rawCount - mappedCount));
     }
@@ -1128,6 +1299,7 @@ function updateTrackingRouteStats(routeResult = {}) {
           ? "Raw GPS data remains unchanged; filtering applies only to this map."
           : "Select a truck to inspect its route.";
     }
+    updateTrackingMapDiagnostics();
   }
 }
 
@@ -1150,11 +1322,44 @@ function clearTrackingGapPolylines() {
   window.trackingGapPolylines = [];
 }
 
+function trackingPolylineHasDisplayGeometry(layer) {
+  const coordinates = typeof layer?.getLatLngs === "function"
+    ? layer.getLatLngs()
+    : layer?.geometry;
+  const flatten = (items = []) => Array.isArray(items)
+    ? items.flatMap((item) => Array.isArray(item) && item.length >= 2 &&
+      Number.isFinite(Number(item[0])) && Number.isFinite(Number(item[1]))
+      ? [item]
+      : flatten(item))
+    : [items];
+  return flatten(coordinates).filter((point) => {
+    const lat = Number(point?.lat ?? point?.[0]);
+    const lng = Number(point?.lng ?? point?.[1]);
+    return Number.isFinite(lat) && Number.isFinite(lng);
+  }).length >= 2;
+}
+
+function trackingActualTrailLayerIsVisible(map = truckMap, layerGroup = selectedRoutePolyline) {
+  if (!map || !layerGroup) return false;
+  if (typeof map.hasLayer === "function" && !map.hasLayer(layerGroup)) return false;
+  const layers = typeof layerGroup.getLayers === "function"
+    ? layerGroup.getLayers()
+    : (Array.isArray(layerGroup.layers) ? layerGroup.layers : []);
+  return layers.some((layer) =>
+    trackingPolylineHasDisplayGeometry(layer) &&
+    (typeof map.hasLayer !== "function" || map.hasLayer(layer))
+  );
+}
+
 function renderTrackingActualRoute(routePoints = [], matchedResult = null) {
   if (!truckMap) return null;
-  if (selectedRoutePolyline) truckMap.removeLayer(selectedRoutePolyline);
-  clearTrackingGapPolylines();
-  selectedRoutePolyline = L.featureGroup().addTo(truckMap);
+  const previousLayerGroup = selectedRoutePolyline;
+  const previousGapPolylines = Array.isArray(window.trackingGapPolylines)
+    ? [...window.trackingGapPolylines]
+    : [];
+  const nextLayerGroup = L.featureGroup();
+  const nextGapPolylines = [];
+  let solidSegmentCount = 0;
 
   const rawSegments = splitTrackingDisplaySegments(routePoints);
   rawSegments.forEach((segment, index) => {
@@ -1169,12 +1374,13 @@ function renderTrackingActualRoute(routePoints = [], matchedResult = null) {
 
     L.polyline(geometry, {
       color: TRACKING_ACTUAL_ROUTE_COLOR,
-      weight: 5,
-      opacity: 0.9,
+      weight: 6,
+      opacity: 0.96,
       pane: "trackingActualRoutePane",
       lineCap: "round",
       lineJoin: "round"
-    }).addTo(selectedRoutePolyline);
+    }).addTo(nextLayerGroup);
+    solidSegmentCount += 1;
   });
 
   for (let index = 1; index < rawSegments.length; index++) {
@@ -1190,12 +1396,40 @@ function renderTrackingActualRoute(routePoints = [], matchedResult = null) {
       opacity: 0.7,
       pane: "trackingActualRoutePane",
       dashArray: "8, 10"
-    }).addTo(truckMap);
+    }).addTo(nextLayerGroup);
     gapLine.bindPopup("Connected display segment after a confirmed synchronization gap.");
-    window.trackingGapPolylines.push(gapLine);
+    nextGapPolylines.push(gapLine);
   }
 
-  return selectedRoutePolyline;
+  const nextLayers = typeof nextLayerGroup.getLayers === "function"
+    ? nextLayerGroup.getLayers()
+    : (nextLayerGroup.layers || []);
+  if (!nextLayers.some(trackingPolylineHasDisplayGeometry)) {
+    updateTrackingMapDiagnostics({
+      actualTrailSegments: solidSegmentCount,
+      actualTrailVisible: trackingActualTrailLayerIsVisible(truckMap, previousLayerGroup)
+    });
+    return previousLayerGroup || null;
+  }
+
+  nextLayerGroup.addTo(truckMap);
+  selectedRoutePolyline = nextLayerGroup;
+  if (previousLayerGroup && previousLayerGroup !== nextLayerGroup) {
+    truckMap.removeLayer(previousLayerGroup);
+  }
+  previousGapPolylines.forEach((line) => {
+    try {
+      truckMap.removeLayer(line);
+    } catch (_error) {
+      // A group removal may already have removed this child layer.
+    }
+  });
+  window.trackingGapPolylines = nextGapPolylines;
+  updateTrackingMapDiagnostics({
+    actualTrailSegments: solidSegmentCount,
+    actualTrailVisible: trackingActualTrailLayerIsVisible(truckMap, nextLayerGroup)
+  });
+  return nextLayerGroup;
 }
 
 function clearTrackingRoadMatchRequest() {
@@ -1284,7 +1518,7 @@ function getRoutePointTimestamp(point) {
   return date ? date.getTime() : 0;
 }
 
-function buildTrackingMarkerIcon(statusMeta) {
+function buildTrackingMarkerIcon(statusMeta, bearing = null) {
   const color = statusMeta?.key === "active"
     ? "#198754"
     : statusMeta?.key === "sync_pending"
@@ -1298,12 +1532,15 @@ function buildTrackingMarkerIcon(statusMeta) {
   const pulse = statusMeta?.key === "active"
     ? "tracking-marker-pulse"
     : "";
+  const normalizedBearing = Number.isFinite(Number(bearing)) ? Number(bearing) : 90;
 
   return L.divIcon({
     className: `custom-truck-marker ${statusMeta?.className || ""}`,
     html: `
-      <div class="truck-marker-shell ${pulse}" style="--truck-marker-color:${color};">
-        ${getTrackingInlineIcon("truck")}
+      <div class="truck-marker-bearing" style="--truck-marker-rotation:${normalizedBearing - 90}deg;">
+        <div class="truck-marker-shell ${pulse}" style="--truck-marker-color:${color};">
+          ${getTrackingInlineIcon("truck")}
+        </div>
       </div>
     `,
     iconSize: [38, 38],
@@ -1572,7 +1809,10 @@ function updateTruckMarkers(trucks) {
 
   Object.keys(truckMarkers).forEach((sessionId) => {
     if (activeSessionIds.has(String(sessionId))) return;
-    if (truckMarkers[sessionId]) truckMap.removeLayer(truckMarkers[sessionId]);
+    if (truckMarkers[sessionId]) {
+      if (selectedCurrentMarker === truckMarkers[sessionId]) selectedCurrentMarker = null;
+      (trackingCurrentTruckLayerGroup || truckMap).removeLayer(truckMarkers[sessionId]);
+    }
     delete truckMarkers[sessionId];
     delete trackingMarkerStateBySession[sessionId];
   });
@@ -1619,23 +1859,31 @@ function updateTruckMarkers(trucks) {
 
     if (!marker && reliable) {
       marker = L.marker([point.lat, point.lng], {
-        icon: buildTrackingMarkerIcon(statusMeta),
+        icon: buildTrackingMarkerIcon(statusMeta, previousState.bearing),
         riseOnHover: true,
-        pane: "dispatchMarkerPane"
-      }).addTo(truckMap);
+        pane: "trackingTruckPane",
+        zIndexOffset: 200
+      }).addTo(trackingCurrentTruckLayerGroup || truckMap);
       truckMarkers[sessionId] = marker;
       trackingMarkerStateBySession[sessionId] = {
         lat: point.lat,
         lng: point.lng,
         timestamp: point.timestamp,
-        statusKey: statusMeta.key
+        statusKey: statusMeta.key,
+        bearing: previousState.bearing ?? null
       };
     } else if (marker && reliable && movementPlausible) {
       const isNewer = !previousState.timestamp || point.timestamp >= previousState.timestamp;
       const changedPosition =
         point.lat !== previousState.lat || point.lng !== previousState.lng;
+      const nextBearing = changedPosition
+        ? trackingBearingDegrees(previousState, point)
+        : null;
+      const bearing = nextBearing ?? previousState.bearing ?? null;
       if (isNewer && changedPosition) {
-        marker.setLatLng([point.lat, point.lng]);
+        moveTrackingMarker(marker, previousState, point, {
+          animate: getTrackingAvailabilityMeta(truck).available
+        });
       }
       if (isNewer) {
         trackingMarkerStateBySession[sessionId] = {
@@ -1643,15 +1891,19 @@ function updateTruckMarkers(trucks) {
           lat: point.lat,
           lng: point.lng,
           timestamp: point.timestamp,
-          statusKey: statusMeta.key
+          statusKey: statusMeta.key,
+          bearing
         };
       }
     }
 
     if (!marker) return;
     const currentState = trackingMarkerStateBySession[sessionId] || previousState;
-    if (currentState.statusKey !== statusMeta.key) {
-      marker.setIcon(buildTrackingMarkerIcon(statusMeta));
+    if (
+      previousState.statusKey !== statusMeta.key ||
+      currentState.bearing !== previousState.bearing
+    ) {
+      marker.setIcon(buildTrackingMarkerIcon(statusMeta, currentState.bearing));
       trackingMarkerStateBySession[sessionId] = {
         ...currentState,
         statusKey: statusMeta.key
@@ -1674,32 +1926,45 @@ function updateTruckMarkers(trucks) {
 }
 
 function updateTruckMarkerWithReliableRoutePoint(sessionId, point) {
-  if (!truckMap || !point || !isTrackingPointReliable(point)) return;
+  if (!truckMap || !point || !isTrackingPointReliable(point)) return null;
   const sessionKey = String(sessionId);
   const truck = activeTrackingTrucks.find(
     (item) => String(item.session_id) === sessionKey
   ) || selectedTrackingTruck;
-  if (!truck) return;
+  if (!truck) return null;
 
   const statusMeta = getTrackingStatusMeta(truck);
   const previousState = trackingMarkerStateBySession[sessionKey] || {};
-  if (previousState.timestamp && point.timestamp < previousState.timestamp) return;
+  if (previousState.timestamp && point.timestamp < previousState.timestamp) return truckMarkers[sessionKey] || null;
   let marker = truckMarkers[sessionKey];
+  const changedPosition = Number.isFinite(previousState.lat) && Number.isFinite(previousState.lng) &&
+    (point.lat !== previousState.lat || point.lng !== previousState.lng);
+  const nextBearing = changedPosition
+    ? trackingBearingDegrees(previousState, point)
+    : null;
+  const bearing = nextBearing ?? previousState.bearing ?? null;
   if (!marker) {
     marker = L.marker([point.lat, point.lng], {
-      icon: buildTrackingMarkerIcon(statusMeta),
+      icon: buildTrackingMarkerIcon(statusMeta, bearing),
       riseOnHover: true,
-      pane: "dispatchMarkerPane"
-    }).addTo(truckMap).bindPopup("");
+      pane: "trackingTruckPane",
+      zIndexOffset: 200
+    }).addTo(trackingCurrentTruckLayerGroup || truckMap).bindPopup("");
     truckMarkers[sessionKey] = marker;
   } else {
-    marker.setLatLng([point.lat, point.lng]);
+    moveTrackingMarker(marker, previousState, point, {
+      animate: getTrackingAvailabilityMeta(truck).available
+    });
+    if (previousState.statusKey !== statusMeta.key || bearing !== previousState.bearing) {
+      marker.setIcon(buildTrackingMarkerIcon(statusMeta, bearing));
+    }
   }
   trackingMarkerStateBySession[sessionKey] = {
     lat: point.lat,
     lng: point.lng,
     timestamp: point.timestamp,
-    statusKey: statusMeta.key
+    statusKey: statusMeta.key,
+    bearing
   };
   if (!marker.getPopup()) marker.bindPopup("");
   marker.setPopupContent(`
@@ -1709,6 +1974,7 @@ function updateTruckMarkerWithReliableRoutePoint(sessionId, point) {
     Accuracy: ${escapeHtml(getTrackingPointAccuracy(point) ?? "not reported")}${getTrackingPointAccuracy(point) === null ? "" : " m"}<br>
     Last reliable point: ${escapeHtml(formatTrackingTimeSafe(point.recorded_at || point.created_at || point.createdAt))}
   `);
+  return marker;
 }
 
 async function loadTruckRoute(sessionId, options = {}) {
@@ -1742,7 +2008,8 @@ async function loadTruckRoute(sessionId, options = {}) {
 
     const latlngs = routePoints.map((p) => [p.lat, p.lng]);
     const nextRouteSignature = trackingRouteSignature(routePoints);
-    const routeChanged = nextRouteSignature !== selectedRouteSignature || !selectedRoutePolyline;
+    const routeChanged = nextRouteSignature !== selectedRouteSignature ||
+      !trackingActualTrailLayerIsVisible(truckMap, selectedRoutePolyline);
     if (routeChanged) {
       renderTrackingActualRoute(routePoints);
       selectedRouteSignature = nextRouteSignature;
@@ -1753,31 +2020,11 @@ async function loadTruckRoute(sessionId, options = {}) {
     const currentReliablePoint = routeResult.markerPoint;
 
     if (currentReliablePoint) {
-      const currentPoint = [currentReliablePoint.lat, currentReliablePoint.lng];
       selectedReliableRoutePoint = currentReliablePoint;
-      if (!selectedCurrentMarker) {
-        const currentIcon = L.divIcon({
-          className: "custom-current-marker",
-          html: '<span class="tracking-route-endpoint current"></span>',
-          iconSize: [20, 20],
-          iconAnchor: [10, 10]
-        });
-        selectedCurrentMarker = L.marker(currentPoint, {
-          icon: currentIcon,
-          pane: "dispatchMarkerPane",
-          zIndexOffset: 100
-        })
-          .addTo(trackingCurrentTruckLayerGroup || truckMap)
-          .bindPopup("");
-      } else {
-        selectedCurrentMarker.setLatLng(currentPoint);
-      }
-      const locationAvailability = getTrackingAvailabilityMeta(selectedTrackingTruck);
-      selectedCurrentMarker.setPopupContent(locationAvailability.available
-        ? "Current reliable location"
-        : `Last known reliable location · ${formatTrackingTimeSafe(currentReliablePoint.recorded_at || currentReliablePoint.created_at || currentReliablePoint.createdAt)}`
+      selectedCurrentMarker = updateTruckMarkerWithReliableRoutePoint(
+        sessionId,
+        currentReliablePoint
       );
-      updateTruckMarkerWithReliableRoutePoint(sessionId, currentReliablePoint);
       if (typeof updateDispatchSelectedTruckContext === "function") {
         updateDispatchSelectedTruckContext(selectedTrackingTruck);
       }
@@ -1835,10 +2082,7 @@ function resetTrackingView(options = {}) {
   clearTrackingGapPolylines();
   clearTrackingDispatchStartMarker();
 
-  if (selectedCurrentMarker && truckMap) {
-    (trackingCurrentTruckLayerGroup || truckMap).removeLayer(selectedCurrentMarker);
-    selectedCurrentMarker = null;
-  }
+  selectedCurrentMarker = null;
 
   selectedSessionId = null;
   selectedTruckId = null;
@@ -1861,6 +2105,17 @@ function resetTrackingView(options = {}) {
   }
 
   updateTrackingRouteStats({ rawCount: 0, displayedPoints: [] });
+  updateTrackingMapDiagnostics({
+    actualTrailSegments: 0,
+    actualTrailVisible: false,
+    assignedRoutePoints: 0,
+    liveGuideTarget: "",
+    liveGuideReason: "",
+    liveGuideAt: null,
+    liveGuideDistanceMeters: null,
+    currentStopStatus: "",
+    liveGuideVisible: false
+  });
 
   const trackingSignalStatus = document.getElementById("trackingSignalStatus");
   if (trackingSignalStatus) {
@@ -2206,7 +2461,6 @@ function selectTruck(sessionId, truckId, options = {}) {
     selectedRouteSignature = "";
     clearTrackingGapPolylines();
     clearTrackingDispatchStartMarker();
-    if (selectedCurrentMarker && truckMap) (trackingCurrentTruckLayerGroup || truckMap).removeLayer(selectedCurrentMarker);
     selectedCurrentMarker = null;
     selectedReliableRoutePoint = null;
   }
@@ -3386,6 +3640,8 @@ if (typeof module !== "undefined" && module.exports) {
     TRACKING_GPS_AVAILABILITY_WINDOW_MS,
     TRACKING_MATCH_MAX_COORDINATES,
     TRACKING_ROUTE_GAP_MS,
+    TRACKING_ACTUAL_ROUTE_COLOR,
+    TRACKING_MARKER_ANIMATION_MS,
     buildTrackingDisplayRoute,
     buildTrackingMatchUrl,
     buildTrackingAvailabilitySnapshot,
@@ -3407,6 +3663,7 @@ if (typeof module !== "undefined" && module.exports) {
     isTrackingTruckAvailable,
     joinTrackingMatchedChunkGeometry,
     matchTrackingDisplaySegments,
+    moveTrackingMarker,
     parseTrackingDate,
     parseTrackingMatchResponse,
     renderTrackingActualRoute,
@@ -3414,6 +3671,8 @@ if (typeof module !== "undefined" && module.exports) {
     resolveTrackingStartMarkerAction,
     resolveTrackingMonitoredDispatch,
     splitTrackingDisplaySegments,
+    trackingActualTrailLayerIsVisible,
+    trackingBearingDegrees,
     trackingRouteSignature
   };
 }

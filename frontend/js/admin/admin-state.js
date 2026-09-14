@@ -72,6 +72,8 @@ let activeTrackingTrucks = [];
 let selectedTrackingTruck = null;
 let selectedReliableRoutePoint = null;
 let trackingMarkerStateBySession = {};
+let trackingActualTrailSegmentCount = 0;
+let trackingActualTrailVisible = false;
 
 // Dispatch planning (kept separate from legacy tracking layers)
 let dispatchLiveBySession = {};
@@ -135,6 +137,13 @@ let dispatchLiveGuideLastStart = null;
 let dispatchLiveGuideCoordinates = [];
 let dispatchLiveGuideOffRouteSince = null;
 let dispatchLiveGuideLastRequestAt = 0;
+let dispatchLiveGuideLastRequestedTargetSignature = "";
+let dispatchLiveGuideLastRerouteReason = "";
+let dispatchLiveGuideLastRerouteAt = null;
+let dispatchAssignedRoutePointCount = 0;
+let dispatchLiveGuideTargetLabel = "";
+let dispatchLiveGuideDistanceMeters = null;
+let dispatchCurrentStopStatus = "";
 let dispatchPlannerOpen = false;
 let dispatchPlannerDirty = false;
 let dispatchPlannerDirtySessionId = null;

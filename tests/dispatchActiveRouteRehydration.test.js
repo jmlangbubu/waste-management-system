@@ -142,7 +142,8 @@ function testPollingRouteSignatureRetainsUnchangedActualTrail() {
   const emptyRouteIndex = loader.indexOf("if (!routePoints.length)");
   const renderRouteIndex = loader.indexOf("renderTrackingActualRoute(routePoints)");
   assert.ok(emptyRouteIndex >= 0 && emptyRouteIndex < renderRouteIndex);
-  assert.match(loader, /const routeChanged = nextRouteSignature !== selectedRouteSignature \|\| !selectedRoutePolyline/);
+  assert.match(loader, /const routeChanged = nextRouteSignature !== selectedRouteSignature \|\|[\s\S]*!trackingActualTrailLayerIsVisible\(truckMap, selectedRoutePolyline\)/,
+    "a detached or empty trail must be restored even when its data signature is unchanged");
   assert.match(loader, /if \(routeChanged\) \{[\s\S]*renderTrackingActualRoute\(routePoints\)/);
   assert.match(loader, /if \(!keepView && routeChanged\)/);
 }
@@ -189,7 +190,7 @@ function testActiveRendererRestoresMetadataMarkersAndBlueRouteTogether() {
   assert.match(activeRenderer, /dispatchActiveRouteStops\(details, groups\)/);
   assert.match(activeRenderer, /getTrackingAvailabilityMeta\(selectedTrackingTruck\)\.available/);
   assert.match(activeRenderer, /resolveDispatchRouteOrigin\(activeRoutePoint, \{ wmo \}\)/);
-  assert.match(activeRenderer, /requestDispatchRoadJourney\([\s\S]*activateDispatchPlannedLayerGroups\(layers\)/);
+  assert.match(activeRenderer, /requestDispatchRoadJourney\([\s\S]*activateDispatchPlannedLayerGroups\(layers, \{ preserveLiveGuide: activeTicket \}\)/);
   assert.match(markerRenderer, /dispatchSavedStopRouteItems\(details\.stops \|\| \[\]\)/);
   assert.match(markerRenderer, /usePersistedStopOrder: true/);
   assert.match(markerRenderer, /currentStopId: groups\.currentStop\?\.id \|\| null/);

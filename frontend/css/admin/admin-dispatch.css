@@ -1099,6 +1099,7 @@ body > #dispatchDailyReportModal {
 }
 
 .dispatch-route-marker {
+  position: relative;
   display: grid;
   place-items: center;
   width: 26px;
@@ -1114,6 +1115,27 @@ body > #dispatchDailyReportModal {
 
 .dispatch-route-marker.completed {
   background: #2e8b57;
+}
+
+.dispatch-route-marker.completed::after {
+  position: absolute;
+  right: -5px;
+  bottom: -4px;
+  display: grid;
+  width: 13px;
+  height: 13px;
+  place-items: center;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #17683d;
+  content: "\2713";
+  font-size: 8px;
+  line-height: 1;
+}
+
+.dispatch-route-marker.arrived {
+  background: #2e8b57;
+  box-shadow: 0 0 0 6px rgba(46, 139, 87, 0.2), 0 2px 8px rgba(20, 48, 35, 0.28);
 }
 
 .dispatch-route-marker.skipped {
@@ -2181,7 +2203,7 @@ body > #dispatchDailyReportModal {
   top: calc(100% + 8px);
   right: 0;
   z-index: 900;
-  width: 230px;
+  width: min(390px, calc(100vw - 32px));
   padding: 12px;
   border: 1px solid #d7e2dc;
   border-radius: 11px;
@@ -2196,7 +2218,7 @@ body > #dispatchDailyReportModal {
 
 #trackingSection .tracking-diagnostics-popover dl {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 5px;
   margin: 9px 0;
 }
@@ -2221,6 +2243,7 @@ body > #dispatchDailyReportModal {
   margin-top: 2px;
   color: #244d38;
   font-weight: 900;
+  overflow-wrap: anywhere;
 }
 
 #trackingSection .tracking-diagnostics-popover p {
@@ -3043,8 +3066,9 @@ body > #dispatchDailyReportModal {
 }
 
 #trackingSection .tracking-legend-line.live-guide {
-  border-color: #2d73c7;
-  border-top-style: dashed;
+  border-color: #f28c18;
+  border-top-width: 4px;
+  border-top-style: solid;
 }
 
 #trackingSection .tracking-legend-line.actual {
@@ -3621,6 +3645,11 @@ body > #dispatchDailyReportModal {
 #trackingSection .dispatch-route-marker.current {
   background: #e47d1b;
   box-shadow: 0 0 0 6px rgba(228, 125, 27, 0.2), 0 2px 8px rgba(20, 48, 35, 0.28);
+}
+
+#trackingSection .dispatch-route-marker.arrived {
+  background: #2e8b57;
+  box-shadow: 0 0 0 6px rgba(46, 139, 87, 0.2), 0 2px 8px rgba(20, 48, 35, 0.28);
 }
 
 @media (min-width: 993px) {
