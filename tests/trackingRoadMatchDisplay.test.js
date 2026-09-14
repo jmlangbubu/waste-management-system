@@ -638,8 +638,14 @@ function testNavigationDiagnosticsContract() {
     "trackingLiveGuideTarget",
     "trackingLiveGuidePointCount",
     "trackingLiveGuideLayerVisible",
+    "trackingLiveGuideOrigin",
+    "trackingLiveGuideOriginTime",
+    "trackingAlternativeRouteCount",
+    "trackingAlternativeVisibleCount",
     "trackingLiveGuideReason",
     "trackingLiveGuideTime",
+    "trackingLiveGuideRequestStatus",
+    "trackingLiveGuideMovedDistance",
     "trackingLiveGuideDistance",
     "trackingCurrentStopStatus"
   ].forEach((id) => {
@@ -649,6 +655,7 @@ function testNavigationDiagnosticsContract() {
     '"dispatchPlannedRoutePane", "420"',
     '"dispatchCompletedRoutePane", "430"',
     '"trackingActualRoutePane", "440"',
+    '"dispatchAlternativeRoutePane", "450"',
     '"dispatchCurrentRoutePane", "460"',
     '"dispatchMarkerPane", "650"',
     '"trackingTruckPane", "700"'

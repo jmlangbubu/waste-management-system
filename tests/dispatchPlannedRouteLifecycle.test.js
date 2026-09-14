@@ -168,6 +168,8 @@ async function testOneOrderedOsrmRequestAndParsedPolyline() {
     }
   });
   assert.match(requestedUrl, /125\.31,6\.31;125\.32,6\.32;125\.33,6\.33/);
+  assert.match(requestedUrl, /alternatives=false&steps=false&overview=full&geometries=geojson/,
+    "the shared planner/report route request keeps its existing single-route contract");
   assert.deepEqual(route, waypoints.map((item) => [item.lat, item.lng]));
 }
 
@@ -265,7 +267,8 @@ function testPlannedRouteStyleAndPane() {
   );
   assert.match(dashboardSource, /> Actual trail</);
   assert.match(dashboardSource, /> Assigned route</);
-  assert.match(dashboardSource, /> Live guide</);
+  assert.match(dashboardSource, /> Primary live guide</);
+  assert.match(dashboardSource, /> Alternative route</);
   assert.match(dashboardSource, /> Current truck</);
   assert.match(dashboardSource, /> Destination</);
   assert.match(dashboardSource, /> WMO</);
