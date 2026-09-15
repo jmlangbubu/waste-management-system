@@ -46,7 +46,7 @@ const DISPATCH_PLANNED_ROUTE_STYLE = Object.freeze({
   color: "#2d73c7",
   weight: 5,
   opacity: 0.9,
-  pane: DISPATCH_PLANNED_ROUTE_PANE,
+  pane: "overlayPane",
   lineCap: "round",
   lineJoin: "round"
 });
@@ -54,7 +54,7 @@ const DISPATCH_CURRENT_ROUTE_STYLE = Object.freeze({
   color: "#f28c18",
   weight: 7,
   opacity: 0.98,
-  pane: DISPATCH_CURRENT_ROUTE_PANE,
+  pane: "overlayPane",
   lineCap: "round",
   lineJoin: "round"
 });
@@ -62,7 +62,7 @@ const DISPATCH_ALTERNATIVE_ROUTE_STYLE = Object.freeze({
   color: "#66b7e8",
   weight: 4,
   opacity: 0.72,
-  pane: DISPATCH_ALTERNATIVE_ROUTE_PANE,
+  pane: "overlayPane",
   lineCap: "round",
   lineJoin: "round"
 });
@@ -70,7 +70,7 @@ const DISPATCH_COMPLETED_ROUTE_STYLE = Object.freeze({
   color: "#408a71",
   weight: 5,
   opacity: 0.9,
-  pane: DISPATCH_COMPLETED_ROUTE_PANE,
+  pane: "overlayPane",
   lineCap: "round",
   lineJoin: "round"
 });
@@ -3613,6 +3613,7 @@ function replaceDispatchLiveGuideLayer(layerGroup, coordinates = [], targetLabel
   previousLayers.forEach((layer) => {
     if (layer !== replacement) layerGroup.removeLayer?.(layer);
   });
+  replacement.bringToFront?.();
   return replacement;
 }
 
@@ -3664,6 +3665,8 @@ function replaceDispatchLiveNavigationLayers(
     });
     previousPrimaryLayers.forEach((layer) => primaryLayerGroup.removeLayer?.(layer));
     previousAlternativeLayers.forEach((layer) => alternativeLayerGroup.removeLayer?.(layer));
+    alternativeLayers.forEach((layer) => layer.bringToFront?.());
+    primaryLayer.bringToFront?.();
     return { primaryLayer, alternativeLayers };
   } catch (error) {
     attachedLayers.forEach(({ group, layer }) => group.removeLayer?.(layer));
@@ -3718,6 +3721,8 @@ function restoreDispatchLiveGuideLayerIfMissing(target) {
       target.label
     );
   }
+  dispatchAlternativeRouteLayerGroup?.eachLayer?.((layer) => layer.bringToFront?.());
+  dispatchCurrentRouteLayerGroup?.eachLayer?.((layer) => layer.bringToFront?.());
   return dispatchLiveGuideLayerIsVisible();
 }
 
