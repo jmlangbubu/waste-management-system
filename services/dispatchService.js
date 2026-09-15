@@ -3982,12 +3982,12 @@ class DispatchService {
           SELECT
             dts.*,
             dt.status AS dispatch_status,
-            dt.actual_end_at,
-            dt.cancelled_at,
-            dt.completed_at AS dispatch_completed_at,
+            DATE_FORMAT(dt.actual_end_at, '%Y-%m-%d %H:%i:%s') AS actual_end_at,
+            DATE_FORMAT(dt.cancelled_at, '%Y-%m-%d %H:%i:%s') AS cancelled_at,
+            DATE_FORMAT(dt.completed_at, '%Y-%m-%d %H:%i:%s') AS dispatch_completed_at,
             tts.session_status,
-            tts.started_at AS tracking_started_at,
-            tts.ended_at AS tracking_ended_at
+            DATE_FORMAT(tts.started_at, '%Y-%m-%d %H:%i:%s') AS tracking_started_at,
+            DATE_FORMAT(tts.ended_at, '%Y-%m-%d %H:%i:%s') AS tracking_ended_at
           FROM dispatch_tracking_sessions dts
           INNER JOIN dispatch_tickets dt
             ON dt.id = dts.dispatch_ticket_id
@@ -4006,7 +4006,24 @@ class DispatchService {
       const relation = relationRows[0];
       const [stopRows] = await connection.query(
         `
-          SELECT *
+          SELECT
+            id,
+            dispatch_ticket_id,
+            stop_order,
+            location_name,
+            address_reference,
+            latitude,
+            longitude,
+            geofence_radius_meters,
+            stop_status,
+            DATE_FORMAT(actual_arrival_at, '%Y-%m-%d %H:%i:%s') AS actual_arrival_at,
+            arrival_source,
+            DATE_FORMAT(actual_departure_at, '%Y-%m-%d %H:%i:%s') AS actual_departure_at,
+            departure_source,
+            stop_duration_seconds,
+            DATE_FORMAT(completed_at, '%Y-%m-%d %H:%i:%s') AS completed_at,
+            DATE_FORMAT(skipped_at, '%Y-%m-%d %H:%i:%s') AS skipped_at,
+            skip_reason
           FROM dispatch_route_stops
           WHERE dispatch_ticket_id = ?
           ORDER BY stop_order ASC, id ASC
@@ -4016,7 +4033,18 @@ class DispatchService {
       );
       const [eventRows] = await connection.query(
         `
-          SELECT *
+          SELECT
+            id,
+            dispatch_route_stop_id,
+            tracking_session_id,
+            event_type,
+            event_source,
+            DATE_FORMAT(event_at, '%Y-%m-%d %H:%i:%s') AS event_at,
+            latitude,
+            longitude,
+            accuracy_meters,
+            details,
+            idempotency_key
           FROM dispatch_events
           WHERE dispatch_ticket_id = ?
             AND event_type IN (
@@ -4328,7 +4356,19 @@ class DispatchService {
 
       const [stopRows] = await connection.query(
         `
-          SELECT *
+          SELECT
+            id,
+            dispatch_ticket_id,
+            stop_order,
+            latitude,
+            longitude,
+            geofence_radius_meters,
+            stop_status,
+            DATE_FORMAT(arrival_candidate_at, '%Y-%m-%d %H:%i:%s') AS arrival_candidate_at,
+            arrival_candidate_count,
+            DATE_FORMAT(actual_arrival_at, '%Y-%m-%d %H:%i:%s') AS actual_arrival_at,
+            DATE_FORMAT(departure_candidate_at, '%Y-%m-%d %H:%i:%s') AS departure_candidate_at,
+            departure_candidate_count
           FROM dispatch_route_stops
           WHERE dispatch_ticket_id = ?
             AND stop_status NOT IN ('completed', 'skipped')
@@ -4403,7 +4443,9 @@ class DispatchService {
   async getPreviousLocationLog(connection, locationLog) {
     const [rows] = await connection.query(
       `
-        SELECT id, recorded_at
+        SELECT
+          id,
+          DATE_FORMAT(recorded_at, '%Y-%m-%d %H:%i:%s') AS recorded_at
         FROM truck_location_logs
         WHERE session_id = ?
           AND (
