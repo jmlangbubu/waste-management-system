@@ -9,6 +9,7 @@ function initializeTruckMap() {
     ["dispatchPlannedRoutePane", "420"],
     ["dispatchCompletedRoutePane", "430"],
     ["trackingActualRoutePane", "440"],
+    ["dispatchAlternativeRoutePane", "450"],
     ["dispatchCurrentRoutePane", "460"],
     ["dispatchMarkerPane", "650"],
     ["trackingTruckPane", "700"]
@@ -1209,6 +1210,21 @@ function updateTrackingMapDiagnostics(patch = {}) {
     typeof dispatchLiveGuideLastRerouteAt !== "undefined") {
     dispatchLiveGuideLastRerouteAt = patch.liveGuideAt || null;
   }
+  if (Object.prototype.hasOwnProperty.call(patch, "liveGuideOriginAt") &&
+    typeof dispatchLiveGuideLastOriginAt !== "undefined") {
+    dispatchLiveGuideLastOriginAt = patch.liveGuideOriginAt || null;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "liveGuideMovedMeters") &&
+    typeof dispatchLiveGuideMovedMeters !== "undefined") {
+    const distance = Number(patch.liveGuideMovedMeters);
+    dispatchLiveGuideMovedMeters = Number.isFinite(distance) ? distance : null;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "liveGuideRequestSucceeded") &&
+    typeof dispatchLiveGuideLastRequestSucceeded !== "undefined") {
+    dispatchLiveGuideLastRequestSucceeded = typeof patch.liveGuideRequestSucceeded === "boolean"
+      ? patch.liveGuideRequestSucceeded
+      : null;
+  }
   if (Object.prototype.hasOwnProperty.call(patch, "liveGuideDistanceMeters") &&
     typeof dispatchLiveGuideDistanceMeters !== "undefined") {
     const distance = Number(patch.liveGuideDistanceMeters);
@@ -1244,6 +1260,28 @@ function updateTrackingMapDiagnostics(patch = {}) {
   const guideAt = typeof dispatchLiveGuideLastRerouteAt === "undefined"
     ? patch.liveGuideAt
     : dispatchLiveGuideLastRerouteAt;
+  const guideOrigin = typeof dispatchLiveGuideLastStart === "undefined"
+    ? String(patch.liveGuideOrigin || "")
+    : dispatchLiveGuideLastStart
+      ? `${Number(dispatchLiveGuideLastStart.lat).toFixed(5)}, ${Number(dispatchLiveGuideLastStart.lng).toFixed(5)}`
+      : "";
+  const guideOriginAt = typeof dispatchLiveGuideLastOriginAt === "undefined"
+    ? patch.liveGuideOriginAt
+    : dispatchLiveGuideLastOriginAt;
+  const alternativeRouteCount = typeof dispatchLiveGuideAlternativeCoordinates === "undefined"
+    ? Number(patch.liveGuideAlternativeRouteCount) || 0
+    : typeof dispatchLiveGuideAlternativeRouteCount === "undefined"
+      ? dispatchLiveGuideAlternativeCoordinates.length
+      : dispatchLiveGuideAlternativeRouteCount;
+  const alternativeVisibleCount = typeof dispatchAlternativeRouteVisibleCount === "function"
+    ? dispatchAlternativeRouteVisibleCount()
+    : Number(patch.liveGuideAlternativeVisibleCount) || 0;
+  const guideRequestSucceeded = typeof dispatchLiveGuideLastRequestSucceeded === "undefined"
+    ? patch.liveGuideRequestSucceeded
+    : dispatchLiveGuideLastRequestSucceeded;
+  const guideMovedMeters = typeof dispatchLiveGuideMovedMeters === "undefined"
+    ? Number(patch.liveGuideMovedMeters)
+    : dispatchLiveGuideMovedMeters;
   const guideDistance = typeof dispatchLiveGuideDistanceMeters === "undefined"
     ? Number(patch.liveGuideDistanceMeters)
     : dispatchLiveGuideDistanceMeters;
@@ -1257,10 +1295,33 @@ function updateTrackingMapDiagnostics(patch = {}) {
   setTrackingDiagnosticText("trackingLiveGuideTarget", guideTarget || "--");
   setTrackingDiagnosticText("trackingLiveGuidePointCount", guidePoints);
   setTrackingDiagnosticText("trackingLiveGuideLayerVisible", guideVisible ? "Yes" : "No");
+  setTrackingDiagnosticText("trackingLiveGuideOrigin", guideOrigin || "--");
+  setTrackingDiagnosticText(
+    "trackingLiveGuideOriginTime",
+    guideOriginAt && typeof formatTrackingTimeSafe === "function"
+      ? formatTrackingTimeSafe(guideOriginAt)
+      : "--"
+  );
+  setTrackingDiagnosticText("trackingAlternativeRouteCount", alternativeRouteCount);
+  setTrackingDiagnosticText("trackingAlternativeVisibleCount", alternativeVisibleCount);
   setTrackingDiagnosticText("trackingLiveGuideReason", guideReason || "--");
   setTrackingDiagnosticText(
     "trackingLiveGuideTime",
     guideAt && typeof formatTrackingTimeSafe === "function" ? formatTrackingTimeSafe(guideAt) : "--"
+  );
+  setTrackingDiagnosticText(
+    "trackingLiveGuideRequestStatus",
+    guideRequestSucceeded === true
+      ? "Success"
+      : guideRequestSucceeded === false
+        ? "Failed"
+        : guideAt
+          ? "Pending"
+          : "--"
+  );
+  setTrackingDiagnosticText(
+    "trackingLiveGuideMovedDistance",
+    Number.isFinite(Number(guideMovedMeters)) ? `${Math.round(Number(guideMovedMeters))} m` : "--"
   );
   setTrackingDiagnosticText(
     "trackingLiveGuideDistance",

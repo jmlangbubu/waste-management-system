@@ -5,15 +5,23 @@ const path = require("node:path");
 const {
   DISPATCH_LIVE_GUIDE_MIN_REQUEST_INTERVAL_MS,
   DISPATCH_LIVE_GUIDE_MISSING_RETRY_MS,
+  DISPATCH_LIVE_GUIDE_MOVEMENT_METERS,
+  DISPATCH_LIVE_GUIDE_OFF_ROUTE_HOLD_MS,
+  DISPATCH_LIVE_GUIDE_OFF_ROUTE_METERS,
+  DISPATCH_LIVE_GUIDE_MAX_ALTERNATIVES,
+  DISPATCH_ALTERNATIVE_ROUTE_PANE,
+  DISPATCH_ALTERNATIVE_ROUTE_STYLE,
   DISPATCH_CURRENT_ROUTE_STYLE,
-  DISPATCH_ROUTING_MOVEMENT_METERS,
-  DISPATCH_ROUTING_OFF_ROUTE_HOLD_MS,
-  DISPATCH_ROUTING_OFF_ROUTE_METERS,
   DISPATCH_WMO_LOCATION,
+  dispatchLiveNavigationAccuracyIsReliable,
   evaluateDispatchLiveGuideReroute,
   dispatchStopMarkerClass,
+  parseDispatchLiveNavigationPayload,
   replaceDispatchLiveGuideLayer,
+  replaceDispatchLiveNavigationLayers,
   renderDispatchLiveGuide,
+  requestDispatchLiveNavigationRoutes,
+  requestDispatchRoadJourney,
   resolveDispatchLiveGuideTarget
 } = require("../frontend/js/admin/admin-dispatch");
 
@@ -90,7 +98,7 @@ function testDeviationAndNoiseDecisions() {
   assert.ok(pending.offRouteSince);
 
   const sustained = evaluateDispatchLiveGuideReroute(offRouteTruck, targetSignature, {
-    now: now + DISPATCH_ROUTING_OFF_ROUTE_HOLD_MS + 1,
+    now: now + DISPATCH_LIVE_GUIDE_OFF_ROUTE_HOLD_MS + 1,
     lastTargetSignature: targetSignature,
     lastStart: offRouteTruck,
     routeCoordinates: guide,
@@ -111,7 +119,9 @@ function testDeviationAndNoiseDecisions() {
   });
   assert.equal(stable.shouldReroute, false);
   assert.equal(stable.reason, "stable");
-  assert.equal(DISPATCH_ROUTING_OFF_ROUTE_METERS, 45);
+  assert.equal(DISPATCH_LIVE_GUIDE_OFF_ROUTE_METERS, 30);
+  assert.equal(DISPATCH_LIVE_GUIDE_MOVEMENT_METERS, 25);
+  assert.equal(DISPATCH_LIVE_GUIDE_OFF_ROUTE_HOLD_MS, 7000);
 }
 
 function testPollingDoesNotSpamRouting() {
@@ -129,7 +139,7 @@ function testPollingDoesNotSpamRouting() {
     offRouteSince: null,
     lastRequestAt
   });
-  assert.ok(DISPATCH_ROUTING_MOVEMENT_METERS <= 70);
+  assert.equal(DISPATCH_LIVE_GUIDE_MOVEMENT_METERS, 25);
   assert.equal(fiveSecondPoll.shouldReroute, false);
   assert.equal(fiveSecondPoll.reason, "rate_limited");
 
@@ -209,9 +219,114 @@ function testPollingDoesNotSpamRouting() {
   assert.equal(failedDestinationChangeRetry.reason, "destination_changed");
 }
 
+async function testNavigationOnlyAlternativesRequestAndParsing() {
+  const start = point(6.201, 125.201);
+  const destination = point(6.211, 125.211);
+  const candidates = [0, 1, 2, 3].map((offset) => ({
+    distance: 1000 + offset,
+    duration: 100 + offset,
+    geometry: {
+      coordinates: [
+        [start.lng, start.lat],
+        [125.205 + offset * 0.0001, 6.205 + offset * 0.0001],
+        [destination.lng, destination.lat]
+      ]
+    }
+  }));
+  const parsed = parseDispatchLiveNavigationPayload({ routes: candidates }, start, destination);
+  assert.equal(parsed.routeCount, 4, "all valid provider routes are counted");
+  assert.equal(parsed.primary.index, 0, "the first valid OSRM route remains primary");
+  assert.equal(parsed.alternatives.length, DISPATCH_LIVE_GUIDE_MAX_ALTERNATIVES);
+  assert.deepEqual(parsed.alternatives.map((route) => route.index), [1, 2]);
+
+  let navigationUrl = "";
+  const navigationRoutes = await requestDispatchLiveNavigationRoutes(
+    start,
+    destination,
+    new AbortController().signal,
+    {
+      generation: 21,
+      fetchImplementation: async (url) => {
+        navigationUrl = url;
+        return { ok: true, status: 200, json: async () => ({ routes: candidates }) };
+      }
+    }
+  );
+  assert.match(navigationUrl, /alternatives=true&steps=false&overview=full&geometries=geojson/);
+  assert.equal(navigationRoutes.primary.coordinates.length, 3);
+  assert.equal(navigationRoutes.alternatives.length, 2);
+  const cachedNavigationRoutes = await requestDispatchLiveNavigationRoutes(
+    start,
+    destination,
+    new AbortController().signal,
+    {
+      fetchImplementation: async () => {
+        throw new Error("origin/destination cache should prevent a duplicate request");
+      }
+    }
+  );
+  assert.deepEqual(cachedNavigationRoutes, navigationRoutes);
+  assert.notEqual(cachedNavigationRoutes, navigationRoutes, "cached route sets are returned as safe copies");
+  const cancelled = new AbortController();
+  cancelled.abort();
+  await assert.rejects(
+    requestDispatchLiveNavigationRoutes(start, destination, cancelled.signal),
+    (error) => error?.name === "AbortError"
+  );
+
+  let legacyUrl = "";
+  const legacyStart = point(6.221, 125.221);
+  const legacyEnd = point(6.231, 125.231);
+  const legacyRoute = await requestDispatchRoadJourney(
+    [legacyStart, legacyEnd],
+    new AbortController().signal,
+    {
+      fetchImplementation: async (url) => {
+        legacyUrl = url;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            routes: [{ geometry: { coordinates: [
+              [legacyStart.lng, legacyStart.lat],
+              [legacyEnd.lng, legacyEnd.lat]
+            ] } }]
+          })
+        };
+      }
+    }
+  );
+  assert.match(legacyUrl, /alternatives=false&steps=false&overview=full&geometries=geojson/);
+  assert.deepEqual(legacyRoute, [
+    [legacyStart.lat, legacyStart.lng],
+    [legacyEnd.lat, legacyEnd.lng]
+  ], "the shared planner/report route helper keeps its coordinate-array contract");
+
+  const oneRouteStart = point(6.241, 125.241);
+  const oneRouteEnd = point(6.251, 125.251);
+  const oneRoute = await requestDispatchLiveNavigationRoutes(
+    oneRouteStart,
+    oneRouteEnd,
+    new AbortController().signal,
+    {
+      fetchImplementation: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ routes: [{ geometry: { coordinates: [
+          [oneRouteStart.lng, oneRouteStart.lat],
+          [oneRouteEnd.lng, oneRouteEnd.lat]
+        ] } }] })
+      })
+    }
+  );
+  assert.equal(oneRoute.routeCount, 1);
+  assert.equal(oneRoute.alternatives.length, 0, "one OSRM route renders normally without alternatives");
+}
+
 function testGuideLayerReplacementAndFailurePreservationContracts() {
   const events = [];
   const oldLayer = { id: "old" };
+  const oldAlternative = { id: "old-alternative" };
   const group = {
     layers: [oldLayer],
     getLayers() {
@@ -222,18 +337,32 @@ function testGuideLayerReplacementAndFailurePreservationContracts() {
       this.layers = this.layers.filter((candidate) => candidate !== layer);
     }
   };
+  const alternativeGroup = {
+    layers: [oldAlternative],
+    getLayers() {
+      return [...this.layers];
+    },
+    removeLayer(layer) {
+      events.push(`remove:${layer.id}`);
+      this.layers = this.layers.filter((candidate) => candidate !== layer);
+    }
+  };
+  let layerSequence = 0;
   global.L = {
     polyline(coordinates, options) {
       return {
-        id: "new",
+        id: `new-${++layerSequence}`,
         coordinates,
         options,
+        getLatLngs() {
+          return this.coordinates;
+        },
         bindTooltip(label) {
           this.label = label;
           return this;
         },
         addTo(target) {
-          events.push("add:new");
+          events.push(`add:${this.id}`);
           target.layers.push(this);
           return this;
         }
@@ -247,9 +376,52 @@ function testGuideLayerReplacementAndFailurePreservationContracts() {
   );
   assert.equal(replacement.options.color, "#f28c18");
   assert.equal(replacement.options.dashArray, undefined);
-  assert.deepEqual(events, ["add:new", "remove:old"],
+  assert.deepEqual(events, ["add:new-1", "remove:old"],
     "the valid replacement is attached before the previous guide is removed");
   assert.deepEqual(group.layers, [replacement], "guide replacement cannot accumulate polylines");
+
+  events.length = 0;
+  const navigationReplacement = replaceDispatchLiveNavigationLayers(
+    group,
+    alternativeGroup,
+    {
+      primary: { coordinates: [[6.1, 125.1], [6.2, 125.2]] },
+      alternatives: [
+        { coordinates: [[6.1, 125.1], [6.15, 125.18], [6.2, 125.2]] },
+        { coordinates: [[6.1, 125.1], [6.16, 125.17], [6.2, 125.2]] }
+      ]
+    },
+    "Pioneer Avenue"
+  );
+  assert.equal(navigationReplacement.primaryLayer.options.color, "#f28c18");
+  assert.equal(navigationReplacement.alternativeLayers.length, 2);
+  navigationReplacement.alternativeLayers.forEach((layer) => {
+    assert.equal(layer.options.color, "#66b7e8");
+    assert.equal(layer.options.pane, DISPATCH_ALTERNATIVE_ROUTE_PANE);
+    assert.deepEqual(layer.options, DISPATCH_ALTERNATIVE_ROUTE_STYLE);
+  });
+  assert.equal(group.layers.length, 1);
+  assert.equal(alternativeGroup.layers.length, 2);
+  assert.ok(
+    events.indexOf("add:new-2") < events.indexOf(`remove:${replacement.id}`),
+    "new primary attaches before the previous primary is removed"
+  );
+  assert.ok(
+    events.indexOf("add:new-3") < events.indexOf("remove:old-alternative"),
+    "new alternatives attach before previous alternatives are removed"
+  );
+
+  replaceDispatchLiveNavigationLayers(
+    group,
+    alternativeGroup,
+    {
+      primary: { coordinates: [[6.11, 125.11], [6.21, 125.21]] },
+      alternatives: [{ coordinates: [[6.11, 125.11], [6.21, 125.21]] }]
+    },
+    "Next destination"
+  );
+  assert.equal(group.layers.length, 1, "primary layers cannot accumulate");
+  assert.equal(alternativeGroup.layers.length, 1, "alternative layers cannot accumulate");
   delete global.L;
 
   const guideRenderer = liveGuideSource();
@@ -257,10 +429,10 @@ function testGuideLayerReplacementAndFailurePreservationContracts() {
   assert.ok(requestIndex > 0);
   assert.doesNotMatch(guideRenderer.slice(0, requestIndex), /clearLayers/,
     "pending reroutes must retain the current guide");
-  assert.match(guideRenderer, /replaceDispatchLiveGuideLayer/);
+  assert.match(guideRenderer, /replaceDispatchLiveNavigationLayers/);
   const catchBlock = guideRenderer.slice(guideRenderer.indexOf("} catch (error)"));
-  assert.doesNotMatch(catchBlock, /clearLayers/,
-    "an OSRM failure must not blank the last valid guide");
+  assert.match(catchBlock, /target\.signature !== dispatchLiveGuideTargetSignature[\s\S]*clearLayers/,
+    "only a guide for a previous destination may be cleared after a failed target change");
 }
 
 function testMarkerStatusVisualSemantics() {
@@ -293,18 +465,22 @@ function testFarFromAssignedRouteStillGeneratesGuide() {
 }
 
 async function testValidLiveContextRendersRoadGuide() {
-  const layerGroup = {
+  const createLayerGroup = () => ({
     layers: [],
-    getLayers() {
-      return [...this.layers];
-    },
+    getLayers() { return [...this.layers]; },
     removeLayer(layer) {
       this.layers = this.layers.filter((candidate) => candidate !== layer);
-    }
-  };
+    },
+    addTo() { return this; }
+  });
+  const layerGroup = createLayerGroup();
+  const alternativeLayerGroup = createLayerGroup();
   const map = {
     hasLayer(layer) {
-      return layer === layerGroup || layerGroup.layers.includes(layer);
+      return layer === layerGroup ||
+        layer === alternativeLayerGroup ||
+        layerGroup.layers.includes(layer) ||
+        alternativeLayerGroup.layers.includes(layer);
     }
   };
   global.L = {
@@ -331,6 +507,7 @@ async function testValidLiveContextRendersRoadGuide() {
     selectedSessionId: 58,
     dispatchLiveBySession: {},
     dispatchCurrentRouteLayerGroup: layerGroup,
+    dispatchAlternativeRouteLayerGroup: alternativeLayerGroup,
     dispatchLiveGuideRequestTimer: null,
     dispatchLiveGuideAbortController: null,
     dispatchLiveGuideGeneration: 0,
@@ -338,11 +515,16 @@ async function testValidLiveContextRendersRoadGuide() {
     dispatchLiveGuidePendingSignature: "",
     dispatchLiveGuideLastStart: null,
     dispatchLiveGuideCoordinates: [],
+    dispatchLiveGuideAlternativeCoordinates: [],
+    dispatchLiveGuideAlternativeRouteCount: 0,
     dispatchLiveGuideOffRouteSince: null,
     dispatchLiveGuideLastRequestAt: 0,
     dispatchLiveGuideLastRequestedTargetSignature: "",
     dispatchLiveGuideLastRerouteReason: "",
     dispatchLiveGuideLastRerouteAt: null,
+    dispatchLiveGuideLastRequestSucceeded: null,
+    dispatchLiveGuideLastOriginAt: null,
+    dispatchLiveGuideMovedMeters: null,
     dispatchAssignedRoutePointCount: 3,
     dispatchLiveGuideTargetLabel: "",
     dispatchLiveGuideDistanceMeters: null,
@@ -353,6 +535,7 @@ async function testValidLiveContextRendersRoadGuide() {
   const position = {
     lat: 6.12,
     lng: 125.19,
+    accuracy: 12,
     recorded_at: new Date().toISOString()
   };
   const details = {
@@ -369,12 +552,17 @@ async function testValidLiveContextRendersRoadGuide() {
   };
   const started = renderDispatchLiveGuide(details, position, {
     groups: { currentStop: details.stops[0] },
-    routeRequest: async (waypoints) => {
-      assert.deepEqual(waypoints, [
-        { lat: position.lat, lng: position.lng },
-        { lat: 6.13, lng: 125.2 }
-      ]);
-      return [[position.lat, position.lng], [6.125, 125.195], [6.13, 125.2]];
+    routeRequest: async (start, destination) => {
+      assert.deepEqual(start, { lat: position.lat, lng: position.lng });
+      assert.deepEqual(destination, { lat: 6.13, lng: 125.2 });
+      return {
+        primary: { coordinates: [[position.lat, position.lng], [6.125, 125.195], [6.13, 125.2]] },
+        alternatives: [
+          { coordinates: [[position.lat, position.lng], [6.124, 125.196], [6.13, 125.2]] },
+          { coordinates: [[position.lat, position.lng], [6.126, 125.194], [6.13, 125.2]] }
+        ],
+        routeCount: 3
+      };
     },
     schedule(callback) {
       scheduledWork = callback();
@@ -386,9 +574,15 @@ async function testValidLiveContextRendersRoadGuide() {
   assert.equal(layerGroup.layers.length, 1);
   assert.equal(layerGroup.layers[0].coordinates.length, 3);
   assert.equal(layerGroup.layers[0].options.color, "#f28c18");
+  assert.equal(alternativeLayerGroup.layers.length, 2);
+  assert.ok(alternativeLayerGroup.layers.every((layer) => layer.options.color === "#66b7e8"));
   assert.match(global.dispatchLiveGuideTargetSignature, /stop:1/);
+  assert.equal(global.dispatchLiveGuideAlternativeRouteCount, 2);
+  assert.equal(global.dispatchLiveGuideLastRequestSucceeded, true);
+  assert.equal(global.dispatchLiveGuideLastOriginAt, position.recorded_at);
 
   layerGroup.layers = [];
+  alternativeLayerGroup.layers = [];
   let unexpectedRecoveryRequest = false;
   assert.equal(renderDispatchLiveGuide(details, position, {
     groups: { currentStop: details.stops[0] },
@@ -404,8 +598,11 @@ async function testValidLiveContextRendersRoadGuide() {
   assert.equal(unexpectedRecoveryRequest, false,
     "a detached cached guide is restored without another OSRM request");
   assert.equal(layerGroup.layers.length, 1);
+  assert.equal(alternativeLayerGroup.layers.length, 2,
+    "detached cached alternatives are restored without another OSRM request");
 
   const firstGuide = layerGroup.layers[0];
+  const firstAlternatives = [...alternativeLayerGroup.layers];
   let resolveChangedRoute;
   const changedDetails = {
     ...details,
@@ -430,13 +627,21 @@ async function testValidLiveContextRendersRoadGuide() {
   }), true);
   assert.equal(layerGroup.layers[0], firstGuide,
     "the old guide remains visible while the destination-change route is pending");
-  resolveChangedRoute([[position.lat, position.lng], [6.13, 125.2], [6.14, 125.21]]);
+  resolveChangedRoute({
+    primary: { coordinates: [[position.lat, position.lng], [6.13, 125.2], [6.14, 125.21]] },
+    alternatives: [{ coordinates: [[position.lat, position.lng], [6.132, 125.198], [6.14, 125.21]] }],
+    routeCount: 2
+  });
   await scheduledWork;
   assert.equal(layerGroup.layers.length, 1, "destination change swaps rather than accumulates guides");
   assert.notEqual(layerGroup.layers[0], firstGuide);
+  assert.equal(alternativeLayerGroup.layers.length, 1);
+  assert.ok(!alternativeLayerGroup.layers.some((layer) => firstAlternatives.includes(layer)),
+    "destination change replaces alternatives from the previous target");
   assert.match(global.dispatchLiveGuideTargetSignature, /stop:2/);
 
   const retainedGuide = layerGroup.layers[0];
+  const retainedAlternatives = [...alternativeLayerGroup.layers];
   const originalWarn = console.warn;
   console.warn = () => {};
   try {
@@ -457,16 +662,43 @@ async function testValidLiveContextRendersRoadGuide() {
   }
   assert.deepEqual(layerGroup.layers, [retainedGuide],
     "a failed reroute preserves the last valid guide");
+  assert.deepEqual(alternativeLayerGroup.layers, retainedAlternatives,
+    "a failed reroute preserves the last valid alternatives");
+
+  let poorAccuracyRequest = false;
+  assert.equal(dispatchLiveNavigationAccuracyIsReliable({ accuracy: 75 }), false);
+  assert.equal(renderDispatchLiveGuide(changedDetails, {
+    ...position,
+    accuracy: 75,
+    lat: position.lat + 0.001
+  }, {
+    force: true,
+    groups: { currentStop: changedDetails.stops[0] },
+    routeRequest: async () => {
+      poorAccuracyRequest = true;
+      throw new Error("must not run");
+    },
+    schedule() {
+      poorAccuracyRequest = true;
+      return 4;
+    }
+  }), false);
+  assert.equal(poorAccuracyRequest, false, "accuracy-poor GPS cannot trigger a navigation reroute");
 
   [
     "L", "truckMap", "selectedSessionId", "dispatchLiveBySession",
     "dispatchCurrentRouteLayerGroup", "dispatchLiveGuideRequestTimer",
+    "dispatchAlternativeRouteLayerGroup",
     "dispatchLiveGuideAbortController", "dispatchLiveGuideGeneration",
     "dispatchLiveGuideTargetSignature", "dispatchLiveGuidePendingSignature",
     "dispatchLiveGuideLastStart", "dispatchLiveGuideCoordinates",
+    "dispatchLiveGuideAlternativeCoordinates",
+    "dispatchLiveGuideAlternativeRouteCount",
     "dispatchLiveGuideOffRouteSince", "dispatchLiveGuideLastRequestAt",
     "dispatchLiveGuideLastRequestedTargetSignature",
     "dispatchLiveGuideLastRerouteReason", "dispatchLiveGuideLastRerouteAt",
+    "dispatchLiveGuideLastRequestSucceeded", "dispatchLiveGuideLastOriginAt",
+    "dispatchLiveGuideMovedMeters",
     "dispatchAssignedRoutePointCount", "dispatchLiveGuideTargetLabel",
     "dispatchLiveGuideDistanceMeters", "dispatchCurrentStopStatus"
   ].forEach((key) => delete global[key]);
@@ -474,10 +706,11 @@ async function testValidLiveContextRendersRoadGuide() {
 
 function testRouteTruthsStaySeparate() {
   const guideRenderer = liveGuideSource();
-  assert.match(guideRenderer, /routeRequest\(\s*\[startPoint, target\.point\]/);
-  assert.match(guideRenderer, /: requestDispatchRoadJourney/,
-    "production rendering must still use the shared OSRM request helper");
+  assert.match(guideRenderer, /routeRequest\(\s*startPoint,\s*target\.point/);
+  assert.match(guideRenderer, /: requestDispatchLiveNavigationRoutes/,
+    "production live navigation must use its alternatives-aware request helper");
   assert.match(guideRenderer, /dispatchLiveGuideCoordinates\s*=/);
+  assert.match(guideRenderer, /dispatchLiveGuideAlternativeCoordinates\s*=/);
   assert.doesNotMatch(guideRenderer, /dispatchLastSuccessfulRouteCoordinates\s*=/);
   assert.doesNotMatch(guideRenderer, /selectedRoutePolyline|matchTrackingDisplaySegments|getCachedTrackingMatch/);
   assert.match(source, /Original assigned road route/);
@@ -486,7 +719,8 @@ function testRouteTruthsStaySeparate() {
   assert.match(trackingSource, /getCachedTrackingMatch/);
   assert.match(dashboardSource, /> Actual trail</);
   assert.match(dashboardSource, /> Assigned route</);
-  assert.match(dashboardSource, /> Live guide</);
+  assert.match(dashboardSource, /> Primary live guide</);
+  assert.match(dashboardSource, /> Alternative route</);
   assert.match(dashboardSource, /> Current truck</);
   assert.match(dashboardSource, /> Destination</);
   assert.match(dashboardSource, /> WMO</);
@@ -499,12 +733,27 @@ function testRouteTruthsStaySeparate() {
     /markerSignature/,
     "marker-state refreshes must not tear down stable assigned/live route layers"
   );
+  assert.doesNotMatch(guideRenderer, /fitBounds|setView/,
+    "normal navigation polling preserves operator zoom and pan");
+  assert.match(guideRenderer, /generation !== dispatchLiveGuideGeneration/);
+  assert.match(guideRenderer, /expectedAlternativeLayerGroup !== dispatchAlternativeRouteLayerGroup/);
+  const routeLoaderStart = trackingSource.indexOf("async function loadTruckRoute");
+  const routeLoaderEnd = trackingSource.indexOf("async function hydrateSelectedTruckWorkspace", routeLoaderStart);
+  const routeLoader = trackingSource.slice(routeLoaderStart, routeLoaderEnd);
+  assert.ok(
+    routeLoader.indexOf("updateTruckMarkerWithReliableRoutePoint") <
+      routeLoader.indexOf("renderTrackingRoadMatchedRoute"),
+    "accepted GPS moves the shared truck marker before asynchronous route display work"
+  );
+  assert.match(trackingSource, /if \(!keepView && routeChanged\)/,
+    "normal five-second refreshes do not refit the map");
 }
 
 async function run() {
   testTargetProgressionAndWmoReturn();
   testDeviationAndNoiseDecisions();
   testPollingDoesNotSpamRouting();
+  await testNavigationOnlyAlternativesRequestAndParsing();
   testFarFromAssignedRouteStillGeneratesGuide();
   testGuideLayerReplacementAndFailurePreservationContracts();
   testMarkerStatusVisualSemantics();

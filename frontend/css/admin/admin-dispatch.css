@@ -3071,6 +3071,13 @@ body > #dispatchDailyReportModal {
   border-top-style: solid;
 }
 
+#trackingSection .tracking-legend-line.alternative-guide {
+  border-color: #66b7e8;
+  border-top-width: 3px;
+  border-top-style: solid;
+  opacity: 0.72;
+}
+
 #trackingSection .tracking-legend-line.actual {
   background: #285a48;
   border-color: #285a48;

@@ -21,8 +21,13 @@ const DISPATCH_ROUTING_DEBOUNCE_MS = 300;
 const DISPATCH_ROUTING_MOVEMENT_METERS = 50;
 const DISPATCH_ROUTING_OFF_ROUTE_METERS = 45;
 const DISPATCH_ROUTING_OFF_ROUTE_HOLD_MS = 15000;
-const DISPATCH_LIVE_GUIDE_MIN_REQUEST_INTERVAL_MS = 30000;
+const DISPATCH_LIVE_GUIDE_MOVEMENT_METERS = 25;
+const DISPATCH_LIVE_GUIDE_OFF_ROUTE_METERS = 30;
+const DISPATCH_LIVE_GUIDE_OFF_ROUTE_HOLD_MS = 7000;
+const DISPATCH_LIVE_GUIDE_MIN_REQUEST_INTERVAL_MS = 12000;
 const DISPATCH_LIVE_GUIDE_MISSING_RETRY_MS = 10000;
+const DISPATCH_LIVE_GUIDE_MAX_ACCURACY_METERS = 50;
+const DISPATCH_LIVE_GUIDE_MAX_ALTERNATIVES = 2;
 const DISPATCH_ROUTING_GPS_STALE_MS = 5 * 60 * 1000;
 const DISPATCH_ROUTING_TIMEOUT_MS = 15000;
 const DISPATCH_ROUTING_COST_TIE_METERS = 1;
@@ -33,6 +38,7 @@ const DISPATCH_PLANNED_ROUTE_MAX_POINTS = 10000;
 const DISPATCH_PLANNED_ROUTE_MAX_BYTES = 512 * 1024;
 const DISPATCH_PLANNED_ROUTE_MAX_DISTANCE_METERS = 2000000;
 const DISPATCH_CURRENT_ROUTE_PANE = "dispatchCurrentRoutePane";
+const DISPATCH_ALTERNATIVE_ROUTE_PANE = "dispatchAlternativeRoutePane";
 const DISPATCH_PLANNED_ROUTE_PANE = "dispatchPlannedRoutePane";
 const DISPATCH_COMPLETED_ROUTE_PANE = "dispatchCompletedRoutePane";
 const DISPATCH_MARKER_PANE = "dispatchMarkerPane";
@@ -49,6 +55,14 @@ const DISPATCH_CURRENT_ROUTE_STYLE = Object.freeze({
   weight: 7,
   opacity: 0.98,
   pane: DISPATCH_CURRENT_ROUTE_PANE,
+  lineCap: "round",
+  lineJoin: "round"
+});
+const DISPATCH_ALTERNATIVE_ROUTE_STYLE = Object.freeze({
+  color: "#66b7e8",
+  weight: 4,
+  opacity: 0.72,
+  pane: DISPATCH_ALTERNATIVE_ROUTE_PANE,
   lineCap: "round",
   lineJoin: "round"
 });
@@ -366,6 +380,9 @@ function dispatchDistanceToRouteMeters(point, coordinates = []) {
 
 function evaluateDispatchDynamicReroute(startPoint, signature, options = {}) {
   const now = Number(options.now ?? Date.now());
+  const movementThreshold = Number(options.movementThreshold ?? DISPATCH_ROUTING_MOVEMENT_METERS);
+  const offRouteThreshold = Number(options.offRouteThreshold ?? DISPATCH_ROUTING_OFF_ROUTE_METERS);
+  const offRouteHoldMs = Number(options.offRouteHoldMs ?? DISPATCH_ROUTING_OFF_ROUTE_HOLD_MS);
   const lastSignature = options.lastSignature ??
     (typeof dispatchLastRoutingSignature === "undefined" ? "" : dispatchLastRoutingSignature);
   const lastStart = options.lastStart ??
@@ -375,25 +392,54 @@ function evaluateDispatchDynamicReroute(startPoint, signature, options = {}) {
   const previousOffRouteSince = Object.prototype.hasOwnProperty.call(options, "offRouteSince")
     ? options.offRouteSince
     : (typeof dispatchOffRouteSince === "undefined" ? null : dispatchOffRouteSince);
+  const distanceMovedMeters = dispatchDistanceMeters(startPoint, lastStart);
+  const distanceOffRouteMeters = dispatchDistanceToRouteMeters(startPoint, routeCoordinates);
   if (options.force) {
-    return { shouldReroute: true, reason: "forced", offRouteSince: null };
+    return {
+      shouldReroute: true,
+      reason: "forced",
+      offRouteSince: null,
+      distanceMovedMeters,
+      distanceOffRouteMeters
+    };
   }
   if (!lastSignature || signature !== lastSignature || !lastStart) {
-    return { shouldReroute: true, reason: "destinations_changed", offRouteSince: null };
+    return {
+      shouldReroute: true,
+      reason: "destinations_changed",
+      offRouteSince: null,
+      distanceMovedMeters,
+      distanceOffRouteMeters
+    };
   }
-  if (dispatchDistanceMeters(startPoint, lastStart) >= DISPATCH_ROUTING_MOVEMENT_METERS) {
-    return { shouldReroute: true, reason: "truck_moved", offRouteSince: null };
+  if (distanceMovedMeters >= movementThreshold) {
+    return {
+      shouldReroute: true,
+      reason: "truck_moved",
+      offRouteSince: null,
+      distanceMovedMeters,
+      distanceOffRouteMeters
+    };
   }
-  const offRoute = dispatchDistanceToRouteMeters(startPoint, routeCoordinates) >=
-    DISPATCH_ROUTING_OFF_ROUTE_METERS;
-  if (!offRoute) return { shouldReroute: false, reason: "stable", offRouteSince: null };
+  const offRoute = distanceOffRouteMeters >= offRouteThreshold;
+  if (!offRoute) {
+    return {
+      shouldReroute: false,
+      reason: "stable",
+      offRouteSince: null,
+      distanceMovedMeters,
+      distanceOffRouteMeters
+    };
+  }
   const offRouteSince = previousOffRouteSince ?? now;
   return {
-    shouldReroute: now - offRouteSince >= DISPATCH_ROUTING_OFF_ROUTE_HOLD_MS,
-    reason: now - offRouteSince >= DISPATCH_ROUTING_OFF_ROUTE_HOLD_MS
+    shouldReroute: now - offRouteSince >= offRouteHoldMs,
+    reason: now - offRouteSince >= offRouteHoldMs
       ? "sustained_off_route"
       : "off_route_pending",
-    offRouteSince
+    offRouteSince,
+    distanceMovedMeters,
+    distanceOffRouteMeters
   };
 }
 
@@ -489,7 +535,10 @@ function evaluateDispatchLiveGuideReroute(startPoint, targetSignature, options =
     lastSignature: lastTargetSignature,
     lastStart,
     routeCoordinates,
-    offRouteSince
+    offRouteSince,
+    movementThreshold: DISPATCH_LIVE_GUIDE_MOVEMENT_METERS,
+    offRouteThreshold: DISPATCH_LIVE_GUIDE_OFF_ROUTE_METERS,
+    offRouteHoldMs: DISPATCH_LIVE_GUIDE_OFF_ROUTE_HOLD_MS
   });
   if (!decision.shouldReroute) return decision;
   if (now - lastRequestAt < DISPATCH_LIVE_GUIDE_MIN_REQUEST_INTERVAL_MS) {
@@ -1069,6 +1118,7 @@ function captureDispatchRoutePreviewState() {
   return {
     layers: {
       current: dispatchCurrentRouteLayerGroup,
+      alternatives: dispatchAlternativeRouteLayerGroup,
       planned: dispatchPlannedLayerGroup,
       completed: dispatchCompletedRouteLayerGroup,
       geometry: dispatchSelectedGeometryLayerGroup,
@@ -1098,8 +1148,10 @@ function restoreDispatchRoutePreviewState(snapshot) {
 
   const planned = snapshot.layers.planned;
   const current = snapshot.layers.current;
-  if (planned || current) {
+  const alternatives = snapshot.layers.alternatives;
+  if (planned || current || alternatives) {
     dispatchCurrentRouteLayerGroup = current;
+    dispatchAlternativeRouteLayerGroup = alternatives;
     dispatchPlannedLayerGroup = planned;
     dispatchCompletedRouteLayerGroup = snapshot.layers.completed;
     dispatchSelectedGeometryLayerGroup = snapshot.layers.geometry;
@@ -1108,6 +1160,7 @@ function restoreDispatchRoutePreviewState(snapshot) {
     if (truckMap) {
       [
         dispatchCurrentRouteLayerGroup,
+        dispatchAlternativeRouteLayerGroup,
         planned,
         dispatchCompletedRouteLayerGroup,
         dispatchSelectedGeometryLayerGroup,
@@ -2104,6 +2157,7 @@ function clearDispatchPlannedRoute(reason = "explicit reset") {
   if (truckMap) {
     [...new Set([
       dispatchCurrentRouteLayerGroup,
+      dispatchAlternativeRouteLayerGroup,
       dispatchSelectedGeometryLayerGroup,
       dispatchStartMarkerLayerGroup,
       dispatchCompletedRouteLayerGroup,
@@ -2111,6 +2165,7 @@ function clearDispatchPlannedRoute(reason = "explicit reset") {
     ].filter(Boolean))].forEach((layerGroup) => truckMap.removeLayer(layerGroup));
   }
   dispatchCurrentRouteLayerGroup = null;
+  dispatchAlternativeRouteLayerGroup = null;
   dispatchPlannedLayerGroup = null;
   dispatchCompletedRouteLayerGroup = null;
   dispatchSelectedGeometryLayerGroup = null;
@@ -2127,21 +2182,33 @@ function clearDispatchLiveGuide(reason = "live guide reset") {
   dispatchLiveGuideTargetSignature = "";
   dispatchLiveGuideLastStart = null;
   dispatchLiveGuideCoordinates = [];
+  dispatchLiveGuideAlternativeCoordinates = [];
+  dispatchLiveGuideAlternativeRouteCount = 0;
   dispatchLiveGuideOffRouteSince = null;
   dispatchLiveGuideLastRequestAt = 0;
   dispatchLiveGuideLastRequestedTargetSignature = "";
   dispatchLiveGuideLastRerouteReason = "";
   dispatchLiveGuideLastRerouteAt = null;
+  dispatchLiveGuideLastRequestSucceeded = null;
+  dispatchLiveGuideLastOriginAt = null;
+  dispatchLiveGuideMovedMeters = null;
   dispatchLiveGuideTargetLabel = "";
   dispatchLiveGuideDistanceMeters = null;
   dispatchCurrentStopStatus = "";
   dispatchCurrentRouteLayerGroup?.clearLayers?.();
+  dispatchAlternativeRouteLayerGroup?.clearLayers?.();
   if (typeof updateTrackingMapDiagnostics === "function") {
     updateTrackingMapDiagnostics({
       liveGuideTarget: "",
       liveGuideReason: "",
       liveGuideAt: null,
       liveGuideDistanceMeters: null,
+      liveGuideOrigin: "",
+      liveGuideOriginAt: null,
+      liveGuideMovedMeters: null,
+      liveGuideRequestSucceeded: null,
+      liveGuideAlternativeRouteCount: 0,
+      liveGuideAlternativeVisibleCount: 0,
       currentStopStatus: "",
       liveGuideVisible: false
     });
@@ -2247,6 +2314,7 @@ function renderDispatchDestinationMarkers(items = [], options = {}) {
 function createDispatchPlannedLayerGroups(options = {}) {
   const groups = {
     current: L.layerGroup(),
+    alternatives: L.layerGroup(),
     planned: L.layerGroup(),
     completed: L.layerGroup(),
     geometry: L.layerGroup(),
@@ -2265,16 +2333,23 @@ function activateDispatchPlannedLayerGroups(groups, options = {}) {
   const nextCurrentLayerGroup = preserveLiveGuide && dispatchCurrentRouteLayerGroup
     ? dispatchCurrentRouteLayerGroup
     : groups.current;
+  const nextAlternativeLayerGroup = preserveLiveGuide && dispatchAlternativeRouteLayerGroup
+    ? dispatchAlternativeRouteLayerGroup
+    : groups.alternatives;
   [...new Set([
     dispatchCurrentRouteLayerGroup,
+    dispatchAlternativeRouteLayerGroup,
     dispatchSelectedGeometryLayerGroup,
     dispatchDestinationMarkerLayerGroup,
     dispatchStartMarkerLayerGroup,
     dispatchCompletedRouteLayerGroup,
     dispatchPlannedLayerGroup
-  ].filter((layerGroup) => layerGroup && layerGroup !== nextCurrentLayerGroup))]
+  ].filter((layerGroup) => layerGroup &&
+    layerGroup !== nextCurrentLayerGroup &&
+    layerGroup !== nextAlternativeLayerGroup))]
     .forEach((layerGroup) => truckMap.removeLayer(layerGroup));
   dispatchCurrentRouteLayerGroup = nextCurrentLayerGroup;
+  dispatchAlternativeRouteLayerGroup = nextAlternativeLayerGroup;
   dispatchPlannedLayerGroup = groups.planned;
   dispatchCompletedRouteLayerGroup = groups.completed;
   dispatchSelectedGeometryLayerGroup = groups.geometry;
@@ -2282,9 +2357,10 @@ function activateDispatchPlannedLayerGroups(groups, options = {}) {
   dispatchStartMarkerLayerGroup = groups.start;
   [
     groups.geometry,
-    nextCurrentLayerGroup,
     groups.planned,
     groups.completed,
+    nextAlternativeLayerGroup,
+    nextCurrentLayerGroup,
     groups.destinations,
     groups.start
   ].forEach((layerGroup) => layerGroup.addTo(truckMap));
@@ -2793,6 +2869,14 @@ function dispatchRoutingRouteStore() {
   return dispatchRoutingRouteStore.localCache;
 }
 
+function dispatchLiveNavigationRouteStore() {
+  if (typeof dispatchLiveNavigationCache !== "undefined") return dispatchLiveNavigationCache;
+  if (!dispatchLiveNavigationRouteStore.localCache) {
+    dispatchLiveNavigationRouteStore.localCache = new Map();
+  }
+  return dispatchLiveNavigationRouteStore.localCache;
+}
+
 function dispatchUniqueRoutingPoints(points = []) {
   const unique = new Map();
   points.filter(Boolean).forEach((point) => {
@@ -2840,6 +2924,47 @@ function parseDispatchOsrmRoutePayload(payload, waypoints = []) {
     coordinates: route,
     routeCount: routes.length,
     distance: Number(routes[0]?.distance)
+  };
+}
+
+function parseDispatchLiveNavigationPayload(payload, startPoint, destinationPoint) {
+  const routes = Array.isArray(payload?.routes) ? payload.routes : [];
+  const validRoutes = routes.map((route, index) => {
+    const rawCoordinates = route?.geometry?.coordinates;
+    if (!Array.isArray(rawCoordinates) || rawCoordinates.length < 2) return null;
+    const coordinates = rawCoordinates
+      .map((point) => [Number(point?.[1]), Number(point?.[0])])
+      .filter((point) => point.every(Number.isFinite));
+    if (
+      coordinates.length < 2 ||
+      !dispatchRoutingResponsePreservesOrder(startPoint, destinationPoint, coordinates)
+    ) {
+      return null;
+    }
+    return {
+      index,
+      coordinates,
+      distance: Number.isFinite(Number(route.distance)) ? Number(route.distance) : null,
+      duration: Number.isFinite(Number(route.duration)) ? Number(route.duration) : null
+    };
+  }).filter(Boolean);
+  if (!validRoutes.length) throw new Error("No drivable live navigation route was returned.");
+  return {
+    primary: validRoutes[0],
+    alternatives: validRoutes.slice(1, DISPATCH_LIVE_GUIDE_MAX_ALTERNATIVES + 1),
+    routeCount: validRoutes.length
+  };
+}
+
+function cloneDispatchLiveNavigationRoutes(routes) {
+  const cloneRoute = (route) => ({
+    ...route,
+    coordinates: route.coordinates.map((coordinate) => [...coordinate])
+  });
+  return {
+    primary: cloneRoute(routes.primary),
+    alternatives: routes.alternatives.map(cloneRoute),
+    routeCount: routes.routeCount
   };
 }
 
@@ -3028,6 +3153,94 @@ async function requestDispatchRoadJourney(waypoints, signal, options = {}) {
   }
   routeStore.set(key, route);
   return route;
+}
+
+async function requestDispatchLiveNavigationRoutes(start, destination, signal, options = {}) {
+  const startPoint = dispatchPoint(
+    start?.latitude ?? start?.lat,
+    start?.longitude ?? start?.lng ?? start?.lon
+  );
+  const destinationPoint = dispatchPoint(
+    destination?.latitude ?? destination?.lat,
+    destination?.longitude ?? destination?.lng ?? destination?.lon
+  );
+  if (!startPoint || !destinationPoint) {
+    throw new Error("Live navigation requires a usable origin and destination.");
+  }
+  if (signal?.aborted) {
+    const cancelledError = new Error("Live navigation request was cancelled.");
+    cancelledError.name = "AbortError";
+    throw cancelledError;
+  }
+
+  const key = dispatchRoutingWaypointsCacheKey([startPoint, destinationPoint]);
+  const routeStore = dispatchLiveNavigationRouteStore();
+  if (routeStore.has(key)) {
+    const cachedRoutes = cloneDispatchLiveNavigationRoutes(routeStore.get(key));
+    dispatchRouteDebug("OSRM live navigation cache hit", {
+      route_count: cachedRoutes.routeCount,
+      alternative_count: cachedRoutes.alternatives.length,
+      coordinate_count: cachedRoutes.primary.coordinates.length,
+      generation_id: options.generation ?? null
+    });
+    return cachedRoutes;
+  }
+
+  const coordinateList = [startPoint, destinationPoint]
+    .map((point) => `${point.lng},${point.lat}`)
+    .join(";");
+  const url = `https://router.project-osrm.org/route/v1/driving/${coordinateList}?alternatives=true&steps=false&overview=full&geometries=geojson`;
+  const requestController = new AbortController();
+  const timeoutMs = Number(options.timeoutMs) || DISPATCH_ROUTING_TIMEOUT_MS;
+  const fetchImplementation = options.fetchImplementation || fetch;
+  const cancelFromParent = () => requestController.abort();
+  signal?.addEventListener("abort", cancelFromParent, { once: true });
+  let timedOut = false;
+  const timeoutId = setTimeout(() => {
+    timedOut = true;
+    requestController.abort();
+  }, timeoutMs);
+  dispatchRouteDebug("OSRM live navigation request", {
+    url: dispatchSafeRoutingUrl(url, 2),
+    waypoint_count: 2,
+    generation_id: options.generation ?? null
+  });
+
+  let response;
+  try {
+    response = await fetchImplementation(url, { signal: requestController.signal });
+  } catch (error) {
+    if (timedOut) {
+      const timeoutError = new Error("OSRM live navigation request timed out.");
+      timeoutError.name = "TimeoutError";
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+    signal?.removeEventListener("abort", cancelFromParent);
+  }
+  if (!response.ok) {
+    dispatchRouteDebug("OSRM live navigation response", {
+      http_status: response.status,
+      route_count: 0,
+      coordinate_count: 0,
+      generation_id: options.generation ?? null
+    });
+    throw new Error(`OSRM live navigation request failed (${response.status}).`);
+  }
+
+  const payload = await response.json();
+  const routes = parseDispatchLiveNavigationPayload(payload, startPoint, destinationPoint);
+  dispatchRouteDebug("OSRM live navigation response", {
+    http_status: response.status,
+    route_count: routes.routeCount,
+    alternative_count: routes.alternatives.length,
+    coordinate_count: routes.primary.coordinates.length,
+    generation_id: options.generation ?? null
+  });
+  routeStore.set(key, cloneDispatchLiveNavigationRoutes(routes));
+  return cloneDispatchLiveNavigationRoutes(routes);
 }
 
 function splitDispatchOperationalStops(stops = []) {
@@ -3358,8 +3571,70 @@ function replaceDispatchLiveGuideLayer(layerGroup, coordinates = [], targetLabel
   return replacement;
 }
 
+function dispatchLiveGuideCoordinatePoints(coordinates = []) {
+  if (!Array.isArray(coordinates)) return [];
+  return coordinates.map((coordinate) => {
+    if (Array.isArray(coordinate)) return dispatchPoint(coordinate[0], coordinate[1]);
+    return dispatchPoint(
+      coordinate?.latitude ?? coordinate?.lat,
+      coordinate?.longitude ?? coordinate?.lng ?? coordinate?.lon
+    );
+  }).filter(Boolean);
+}
+
+function replaceDispatchLiveNavigationLayers(
+  primaryLayerGroup,
+  alternativeLayerGroup,
+  routes,
+  targetLabel = "current destination"
+) {
+  if (!primaryLayerGroup || !alternativeLayerGroup || !routes?.primary) return null;
+  const primaryPoints = dispatchLiveGuideCoordinatePoints(routes.primary.coordinates);
+  if (primaryPoints.length < 2) return null;
+  const alternativePoints = (Array.isArray(routes.alternatives) ? routes.alternatives : [])
+    .slice(0, DISPATCH_LIVE_GUIDE_MAX_ALTERNATIVES)
+    .map((route) => dispatchLiveGuideCoordinatePoints(route?.coordinates))
+    .filter((points) => points.length >= 2);
+  const previousPrimaryLayers = primaryLayerGroup.getLayers?.() || [];
+  const previousAlternativeLayers = alternativeLayerGroup.getLayers?.() || [];
+  const attachedLayers = [];
+
+  try {
+    const primaryLayer = L.polyline(
+      primaryPoints.map((point) => [point.lat, point.lng]),
+      DISPATCH_CURRENT_ROUTE_STYLE
+    )
+      .bindTooltip(`Primary live guide to ${targetLabel}`)
+      .addTo(primaryLayerGroup);
+    attachedLayers.push({ group: primaryLayerGroup, layer: primaryLayer });
+    const alternativeLayers = alternativePoints.map((points, index) => {
+      const layer = L.polyline(
+        points.map((point) => [point.lat, point.lng]),
+        DISPATCH_ALTERNATIVE_ROUTE_STYLE
+      )
+        .bindTooltip(`Alternative ${index + 1} to ${targetLabel}`)
+        .addTo(alternativeLayerGroup);
+      attachedLayers.push({ group: alternativeLayerGroup, layer });
+      return layer;
+    });
+    previousPrimaryLayers.forEach((layer) => primaryLayerGroup.removeLayer?.(layer));
+    previousAlternativeLayers.forEach((layer) => alternativeLayerGroup.removeLayer?.(layer));
+    return { primaryLayer, alternativeLayers };
+  } catch (error) {
+    attachedLayers.forEach(({ group, layer }) => group.removeLayer?.(layer));
+    throw error;
+  }
+}
+
 function dispatchLiveGuideLayerIsVisible(layerGroup = dispatchCurrentRouteLayerGroup) {
   return dispatchLayerHasVisiblePolyline(layerGroup);
+}
+
+function dispatchAlternativeRouteVisibleCount(layerGroup = dispatchAlternativeRouteLayerGroup) {
+  if (!layerGroup?.getLayers || !truckMap?.hasLayer?.(layerGroup)) return 0;
+  return layerGroup.getLayers().filter((layer) =>
+    dispatchPolylineHasValidCoordinates(layer) && truckMap.hasLayer?.(layer)
+  ).length;
 }
 
 function restoreDispatchLiveGuideLayerIfMissing(target) {
@@ -3367,25 +3642,43 @@ function restoreDispatchLiveGuideLayerIfMissing(target) {
     !target ||
     target.signature !== dispatchLiveGuideTargetSignature ||
     !Array.isArray(dispatchLiveGuideCoordinates) ||
-    dispatchLiveGuideCoordinates.length < 2 ||
-    dispatchLiveGuideLayerIsVisible()
+    dispatchLiveGuideCoordinates.length < 2
   ) {
     return false;
   }
+  [dispatchAlternativeRouteLayerGroup, dispatchCurrentRouteLayerGroup]
+    .filter(Boolean)
+    .forEach((layerGroup) => {
+      if (
+        truckMap &&
+        layerGroup.addTo &&
+        typeof truckMap.hasLayer === "function" &&
+        !truckMap.hasLayer(layerGroup)
+      ) {
+        layerGroup.addTo(truckMap);
+      }
+    });
+  const expectedAlternativeCount = dispatchLiveGuideAlternativeCoordinates.length;
   if (
-    truckMap &&
-    dispatchCurrentRouteLayerGroup?.addTo &&
-    typeof truckMap.hasLayer === "function" &&
-    !truckMap.hasLayer(dispatchCurrentRouteLayerGroup)
+    !dispatchLiveGuideLayerIsVisible() ||
+    dispatchAlternativeRouteVisibleCount() !== expectedAlternativeCount
   ) {
-    dispatchCurrentRouteLayerGroup.addTo(truckMap);
+    replaceDispatchLiveNavigationLayers(
+      dispatchCurrentRouteLayerGroup,
+      dispatchAlternativeRouteLayerGroup,
+      {
+        primary: { coordinates: dispatchLiveGuideCoordinates },
+        alternatives: dispatchLiveGuideAlternativeCoordinates.map((coordinates) => ({ coordinates }))
+      },
+      target.label
+    );
   }
-  replaceDispatchLiveGuideLayer(
-    dispatchCurrentRouteLayerGroup,
-    dispatchLiveGuideCoordinates,
-    target.label
-  );
   return dispatchLiveGuideLayerIsVisible();
+}
+
+function dispatchLiveNavigationAccuracyIsReliable(position, maximumMeters = DISPATCH_LIVE_GUIDE_MAX_ACCURACY_METERS) {
+  const accuracy = Number(position?.accuracy ?? position?.accuracy_meters);
+  return !Number.isFinite(accuracy) || accuracy <= maximumMeters;
 }
 
 function publishDispatchNavigationDiagnostics(details, target, startPoint, patch = {}) {
@@ -3404,6 +3697,14 @@ function publishDispatchNavigationDiagnostics(details, target, startPoint, patch
       liveGuideReason: dispatchLiveGuideLastRerouteReason,
       liveGuideAt: dispatchLiveGuideLastRerouteAt,
       liveGuideDistanceMeters: dispatchLiveGuideDistanceMeters,
+      liveGuideOrigin: dispatchLiveGuideLastStart
+        ? `${dispatchLiveGuideLastStart.lat.toFixed(5)}, ${dispatchLiveGuideLastStart.lng.toFixed(5)}`
+        : "",
+      liveGuideOriginAt: dispatchLiveGuideLastOriginAt,
+      liveGuideMovedMeters: dispatchLiveGuideMovedMeters,
+      liveGuideRequestSucceeded: dispatchLiveGuideLastRequestSucceeded,
+      liveGuideAlternativeRouteCount: dispatchLiveGuideAlternativeRouteCount,
+      liveGuideAlternativeVisibleCount: dispatchAlternativeRouteVisibleCount(),
       currentStopStatus: dispatchCurrentStopStatus,
       liveGuideVisible: dispatchLiveGuideLayerIsVisible(),
       ...patch
@@ -3438,6 +3739,13 @@ function renderDispatchLiveGuide(details = {}, currentPosition = null, options =
   }
   restoreDispatchLiveGuideLayerIfMissing(target);
   publishDispatchNavigationDiagnostics(details, target, startPoint);
+  if (!dispatchLiveNavigationAccuracyIsReliable(currentPosition)) {
+    dispatchLiveGuideLastRerouteReason = "accuracy_poor";
+    publishDispatchNavigationDiagnostics(details, target, startPoint, {
+      liveGuideReason: dispatchLiveGuideLastRerouteReason
+    });
+    return false;
+  }
   const now = Date.now();
   const reroute = evaluateDispatchLiveGuideReroute(startPoint, target.signature, {
     force: options.force === true,
@@ -3456,59 +3764,104 @@ function renderDispatchLiveGuide(details = {}, currentPosition = null, options =
   dispatchLiveGuideAbortController?.abort();
   const generation = ++dispatchLiveGuideGeneration;
   const expectedLayerGroup = dispatchCurrentRouteLayerGroup;
+  const expectedAlternativeLayerGroup = dispatchAlternativeRouteLayerGroup;
+  const movedMeters = dispatchLiveGuideLastStart
+    ? dispatchDistanceMeters(startPoint, dispatchLiveGuideLastStart)
+    : null;
   dispatchLiveGuidePendingSignature = requestSignature;
   dispatchLiveGuideLastRequestAt = now;
   dispatchLiveGuideLastRequestedTargetSignature = target.signature;
   dispatchLiveGuideLastRerouteReason = reroute.reason;
   dispatchLiveGuideLastRerouteAt = new Date(now).toISOString();
+  dispatchLiveGuideLastRequestSucceeded = null;
+  dispatchLiveGuideMovedMeters = Number.isFinite(movedMeters) ? movedMeters : null;
   publishDispatchNavigationDiagnostics(details, target, startPoint, {
     liveGuideReason: reroute.reason,
-    liveGuideAt: dispatchLiveGuideLastRerouteAt
+    liveGuideAt: dispatchLiveGuideLastRerouteAt,
+    liveGuideMovedMeters: dispatchLiveGuideMovedMeters,
+    liveGuideRequestSucceeded: null
   });
   const schedule = typeof options.schedule === "function" ? options.schedule : setTimeout;
   const routeRequest = typeof options.routeRequest === "function"
     ? options.routeRequest
-    : requestDispatchRoadJourney;
+    : requestDispatchLiveNavigationRoutes;
   dispatchLiveGuideRequestTimer = schedule(async () => {
     const controller = new AbortController();
     dispatchLiveGuideAbortController = controller;
     try {
-      const coordinates = await routeRequest(
-        [startPoint, target.point],
+      const routes = await routeRequest(
+        startPoint,
+        target.point,
         controller.signal,
         { generation }
       );
       if (
         controller.signal.aborted ||
         generation !== dispatchLiveGuideGeneration ||
-        expectedLayerGroup !== dispatchCurrentRouteLayerGroup
+        expectedLayerGroup !== dispatchCurrentRouteLayerGroup ||
+        expectedAlternativeLayerGroup !== dispatchAlternativeRouteLayerGroup
       ) {
         return;
       }
 
-      const replacement = replaceDispatchLiveGuideLayer(
+      const replacement = replaceDispatchLiveNavigationLayers(
         expectedLayerGroup,
-        coordinates,
+        expectedAlternativeLayerGroup,
+        routes,
         target.label
       );
       if (!replacement) throw new Error("Live guide returned no drawable route geometry.");
       dispatchLiveGuideTargetSignature = target.signature;
       dispatchLiveGuideLastStart = { ...startPoint };
-      dispatchLiveGuideCoordinates = coordinates.map(([lat, lng]) => ({ lat, lng }));
+      dispatchLiveGuideLastOriginAt = new Date(
+        dispatchTimestampMilliseconds(
+          currentPosition.timestamp || currentPosition.recorded_at || currentPosition.created_at
+        ) || now
+      ).toISOString();
+      dispatchLiveGuideCoordinates = dispatchLiveGuideCoordinatePoints(routes.primary.coordinates);
+      dispatchLiveGuideAlternativeCoordinates = routes.alternatives
+        .slice(0, DISPATCH_LIVE_GUIDE_MAX_ALTERNATIVES)
+        .map((route) => dispatchLiveGuideCoordinatePoints(route.coordinates));
+      const returnedRouteCount = Number(routes.routeCount);
+      dispatchLiveGuideAlternativeRouteCount = Math.max(
+        0,
+        Number.isFinite(returnedRouteCount)
+          ? returnedRouteCount - 1
+          : dispatchLiveGuideAlternativeCoordinates.length
+      );
       dispatchLiveGuideOffRouteSince = null;
+      dispatchLiveGuideLastRequestSucceeded = true;
       publishDispatchNavigationDiagnostics(details, target, startPoint, {
-        liveGuideVisible: true
+        liveGuideVisible: true,
+        liveGuideRequestSucceeded: true
       });
       dispatchRouteDebug("live guide rendered", {
         trigger: reroute.reason,
         target: target.signature,
         generation_id: generation,
-        coordinate_count: coordinates.length
+        coordinate_count: dispatchLiveGuideCoordinates.length,
+        alternative_count: dispatchLiveGuideAlternativeCoordinates.length
       });
     } catch (error) {
       if (error.name !== "AbortError") {
         console.warn("Dispatch live guide update unavailable:", error);
-        publishDispatchNavigationDiagnostics(details, target, startPoint);
+        if (
+          dispatchLiveGuideTargetSignature &&
+          target.signature !== dispatchLiveGuideTargetSignature
+        ) {
+          expectedLayerGroup?.clearLayers?.();
+          expectedAlternativeLayerGroup?.clearLayers?.();
+          dispatchLiveGuideTargetSignature = "";
+          dispatchLiveGuideLastStart = null;
+          dispatchLiveGuideCoordinates = [];
+          dispatchLiveGuideAlternativeCoordinates = [];
+          dispatchLiveGuideAlternativeRouteCount = 0;
+          dispatchLiveGuideLastOriginAt = null;
+        }
+        dispatchLiveGuideLastRequestSucceeded = false;
+        publishDispatchNavigationDiagnostics(details, target, startPoint, {
+          liveGuideRequestSucceeded: false
+        });
       }
     } finally {
       if (dispatchLiveGuideAbortController === controller) {
@@ -7956,14 +8309,21 @@ if (typeof module !== "undefined" && module.exports) {
     DISPATCH_ROUTING_OFF_ROUTE_METERS,
     DISPATCH_ROUTING_OFF_ROUTE_HOLD_MS,
     DISPATCH_ROUTING_GPS_STALE_MS,
+    DISPATCH_LIVE_GUIDE_MOVEMENT_METERS,
+    DISPATCH_LIVE_GUIDE_OFF_ROUTE_METERS,
+    DISPATCH_LIVE_GUIDE_OFF_ROUTE_HOLD_MS,
     DISPATCH_LIVE_GUIDE_MIN_REQUEST_INTERVAL_MS,
     DISPATCH_LIVE_GUIDE_MISSING_RETRY_MS,
+    DISPATCH_LIVE_GUIDE_MAX_ACCURACY_METERS,
+    DISPATCH_LIVE_GUIDE_MAX_ALTERNATIVES,
     DISPATCH_CURRENT_ROUTE_PANE,
+    DISPATCH_ALTERNATIVE_ROUTE_PANE,
     DISPATCH_PLANNED_ROUTE_PANE,
     DISPATCH_COMPLETED_ROUTE_PANE,
     DISPATCH_MARKER_PANE,
     DISPATCH_PLANNED_ROUTE_STYLE,
     DISPATCH_CURRENT_ROUTE_STYLE,
+    DISPATCH_ALTERNATIVE_ROUTE_STYLE,
     DISPATCH_COMPLETED_ROUTE_STYLE,
     DISPATCH_TICKET_CREATE_FAILURE_MESSAGE,
     DISPATCH_ORDERED_ROUTE_REQUIRED_MESSAGE,
@@ -8023,6 +8383,8 @@ if (typeof module !== "undefined" && module.exports) {
     dispatchPolylineHasValidCoordinates,
     dispatchLayerHasVisiblePolyline,
     dispatchLiveGuideLayerIsVisible,
+    dispatchAlternativeRouteVisibleCount,
+    dispatchLiveNavigationAccuracyIsReliable,
     dispatchDistanceToRouteMeters,
     evaluateDispatchDynamicReroute,
     evaluateDispatchLiveGuideReroute,
@@ -8053,11 +8415,14 @@ if (typeof module !== "undefined" && module.exports) {
     splitDispatchOperationalStops,
     matchDispatchCatalogCandidateForStop,
     parseDispatchOsrmRoutePayload,
+    parseDispatchLiveNavigationPayload,
     requestDispatchRoadCostMatrix,
     requestDispatchRoadJourney,
+    requestDispatchLiveNavigationRoutes,
     requestDispatchRoadRoute,
     renderDispatchLiveGuide,
     resolveDispatchLivePollState,
-    replaceDispatchLiveGuideLayer
+    replaceDispatchLiveGuideLayer,
+    replaceDispatchLiveNavigationLayers
   };
 }
