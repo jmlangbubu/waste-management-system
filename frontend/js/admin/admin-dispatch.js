@@ -451,21 +451,53 @@ function resolveDispatchLiveGuideTarget(details = {}, options = {}) {
     options.wmo?.longitude ?? options.wmo?.lng ?? DISPATCH_WMO_LOCATION.longitude
   );
   const point = stop ? dispatchPoint(stop.latitude, stop.longitude) : wmo;
-  if (!point) return null;
+  if (!point || !wmo) return null;
+
+  const orderedStops = dispatchActiveRouteStops(details, groups);
+  const remainingRoutePoints = orderedStops
+    .map((routeStop) => ({
+      stop: routeStop,
+      point: dispatchPoint(routeStop.latitude, routeStop.longitude)
+    }))
+    .filter((item) => item.point);
   const ticketId = details.ticket?.id || "unknown";
   const sessionId = options.sessionId || "unknown";
-  const targetKey = stop ? `stop:${stop.id}` : "wmo:return";
+  const routeSequence = remainingRoutePoints.map(({ stop: routeStop, point: routePoint }) => [
+    routeStop.id ?? "unknown",
+    dispatchPersistedStopOrder(routeStop, ""),
+    routeStop.stop_status || "pending",
+    `${routePoint.lat.toFixed(6)},${routePoint.lng.toFixed(6)}`
+  ].join("@"));
+
   return {
     point,
     stop,
     label: stop?.location_name || "WMO return",
+    orderedStops,
+    remainingRoutePoints,
+    wmo,
     signature: [
       `ticket:${ticketId}`,
       `session:${sessionId}`,
-      targetKey,
-      `${point.lat.toFixed(6)},${point.lng.toFixed(6)}`
+      `remaining:${routeSequence.join(">") || "wmo"}`,
+      `wmo:${wmo.lat.toFixed(6)},${wmo.lng.toFixed(6)}`
     ].join(":")
   };
+}
+
+function dispatchOperationalRouteWaypoints(startPoint, target) {
+  if (!startPoint || !target?.wmo) return [];
+  const ordered = [
+    startPoint,
+    ...(Array.isArray(target.remainingRoutePoints)
+      ? target.remainingRoutePoints.map((item) => item.point)
+      : []),
+    target.wmo
+  ].filter(Boolean);
+
+  return ordered.filter((point, index) =>
+    index === 0 || dispatchDistanceMeters(point, ordered[index - 1]) >= 0.1
+  );
 }
 
 function evaluateDispatchLiveGuideReroute(startPoint, targetSignature, options = {}) {
@@ -1212,13 +1244,11 @@ function dispatchLayerHasVisiblePolyline(layerGroup, map = truckMap) {
 }
 
 function dispatchHasVisiblePlannedRoute() {
-  return Boolean(
-    dispatchLastSuccessfulRouteCoordinates.length >= 2 &&
-    (
-      dispatchLayerHasVisiblePolyline(dispatchCurrentRouteLayerGroup) ||
-      dispatchLayerHasVisiblePolyline(dispatchPlannedLayerGroup)
-    )
-  );
+  const plannedVisible = dispatchLastSuccessfulRouteCoordinates.length >= 2 &&
+    dispatchLayerHasVisiblePolyline(dispatchPlannedLayerGroup);
+  const operationalVisible = dispatchLiveGuideCoordinates.length >= 2 &&
+    dispatchLayerHasVisiblePolyline(dispatchCurrentRouteLayerGroup);
+  return Boolean(plannedVisible || operationalVisible);
 }
 
 function dispatchRoutingResponseIsCurrent(
@@ -2309,6 +2339,21 @@ function renderDispatchDestinationMarkers(items = [], options = {}) {
   dispatchDestinationMarkerLayerGroup.addTo(truckMap);
   ensureDispatchWmoMarker();
   return dispatchDestinationMarkerLayerGroup;
+}
+
+function ensureDispatchLiveNavigationLayerGroups() {
+  if (!truckMap || typeof L === "undefined") return false;
+  if (!dispatchCurrentRouteLayerGroup) {
+    dispatchCurrentRouteLayerGroup = L.layerGroup().addTo(truckMap);
+  } else if (typeof truckMap.hasLayer === "function" && !truckMap.hasLayer(dispatchCurrentRouteLayerGroup)) {
+    dispatchCurrentRouteLayerGroup.addTo(truckMap);
+  }
+  if (!dispatchAlternativeRouteLayerGroup) {
+    dispatchAlternativeRouteLayerGroup = L.layerGroup().addTo(truckMap);
+  } else if (typeof truckMap.hasLayer === "function" && !truckMap.hasLayer(dispatchAlternativeRouteLayerGroup)) {
+    dispatchAlternativeRouteLayerGroup.addTo(truckMap);
+  }
+  return true;
 }
 
 function createDispatchPlannedLayerGroups(options = {}) {
@@ -3604,7 +3649,7 @@ function replaceDispatchLiveNavigationLayers(
       primaryPoints.map((point) => [point.lat, point.lng]),
       DISPATCH_CURRENT_ROUTE_STYLE
     )
-      .bindTooltip(`Primary live guide to ${targetLabel}`)
+      .bindTooltip(`Active route through remaining destinations · current target: ${targetLabel}`)
       .addTo(primaryLayerGroup);
     attachedLayers.push({ group: primaryLayerGroup, layer: primaryLayer });
     const alternativeLayers = alternativePoints.map((points, index) => {
@@ -3713,7 +3758,11 @@ function publishDispatchNavigationDiagnostics(details, target, startPoint, patch
 }
 
 function renderDispatchLiveGuide(details = {}, currentPosition = null, options = {}) {
-  if (!dispatchTicketIsLive(details.ticket) || !currentPosition || !dispatchCurrentRouteLayerGroup) {
+  if (
+    !dispatchTicketIsLive(details.ticket) ||
+    !currentPosition ||
+    !ensureDispatchLiveNavigationLayerGroups()
+  ) {
     publishDispatchNavigationDiagnostics(details, null, null, { liveGuideVisible: false });
     return false;
   }
@@ -3727,18 +3776,11 @@ function renderDispatchLiveGuide(details = {}, currentPosition = null, options =
     return false;
   }
 
-  const origin = resolveDispatchRouteOrigin(currentPosition);
-  if (["missing", "stale"].includes(origin.source)) {
-    publishDispatchNavigationDiagnostics(details, target, null);
-    return false;
-  }
   const startPoint = dispatchPoint(currentPosition.lat, currentPosition.lng);
   if (!startPoint) {
     publishDispatchNavigationDiagnostics(details, target, null);
     return false;
   }
-  restoreDispatchLiveGuideLayerIfMissing(target);
-  publishDispatchNavigationDiagnostics(details, target, startPoint);
   if (!dispatchLiveNavigationAccuracyIsReliable(currentPosition)) {
     dispatchLiveGuideLastRerouteReason = "accuracy_poor";
     publishDispatchNavigationDiagnostics(details, target, startPoint, {
@@ -3746,11 +3788,67 @@ function renderDispatchLiveGuide(details = {}, currentPosition = null, options =
     });
     return false;
   }
+
+  const operationalWaypoints = dispatchOperationalRouteWaypoints(startPoint, target);
+  if (operationalWaypoints.length < 2) {
+    publishDispatchNavigationDiagnostics(details, target, startPoint, { liveGuideVisible: false });
+    return false;
+  }
+
+  restoreDispatchLiveGuideLayerIfMissing(target);
+  publishDispatchNavigationDiagnostics(details, target, startPoint);
+
+  const availability = typeof getTrackingAvailabilityMeta === "function"
+    ? getTrackingAvailabilityMeta(selectedTrackingTruck)
+    : { available: true };
+  const livePosition = availability?.available === true;
   const now = Date.now();
-  const reroute = evaluateDispatchLiveGuideReroute(startPoint, target.signature, {
-    force: options.force === true,
-    now
-  });
+  let reroute;
+
+  if (livePosition) {
+    const origin = resolveDispatchRouteOrigin(currentPosition);
+    if (["missing", "stale"].includes(origin.source)) {
+      publishDispatchNavigationDiagnostics(details, target, startPoint);
+      return false;
+    }
+    reroute = evaluateDispatchLiveGuideReroute(startPoint, target.signature, {
+      force: options.force === true,
+      now
+    });
+  } else {
+    const hasCurrentOperationalRoute =
+      target.signature === dispatchLiveGuideTargetSignature &&
+      Array.isArray(dispatchLiveGuideCoordinates) &&
+      dispatchLiveGuideCoordinates.length >= 2 &&
+      dispatchLiveGuideLayerIsVisible();
+    const recentlyRequested =
+      dispatchLiveGuideLastRequestedTargetSignature === target.signature &&
+      dispatchLiveGuideLastRequestAt > 0 &&
+      now - dispatchLiveGuideLastRequestAt < DISPATCH_LIVE_GUIDE_MISSING_RETRY_MS;
+
+    if (hasCurrentOperationalRoute && !options.force) {
+      dispatchLiveGuideLastRerouteReason = "last_known_stable";
+      publishDispatchNavigationDiagnostics(details, target, startPoint, {
+        liveGuideReason: dispatchLiveGuideLastRerouteReason
+      });
+      return false;
+    }
+    if (recentlyRequested && !options.force) {
+      dispatchLiveGuideLastRerouteReason = "rate_limited";
+      publishDispatchNavigationDiagnostics(details, target, startPoint, {
+        liveGuideReason: dispatchLiveGuideLastRerouteReason
+      });
+      return false;
+    }
+    reroute = {
+      shouldReroute: true,
+      reason: target.signature !== dispatchLiveGuideTargetSignature
+        ? "last_known_destinations_changed"
+        : "last_known_route_missing",
+      offRouteSince: null
+    };
+  }
+
   dispatchLiveGuideOffRouteSince = reroute.offRouteSince;
   if (!reroute.shouldReroute) {
     publishDispatchNavigationDiagnostics(details, target, startPoint);
@@ -3758,7 +3856,7 @@ function renderDispatchLiveGuide(details = {}, currentPosition = null, options =
   }
 
   const requestSignature = `${target.signature}:${startPoint.lat.toFixed(5)},${startPoint.lng.toFixed(5)}`;
-  if (dispatchLiveGuidePendingSignature.startsWith(`${target.signature}:`)) return false;
+  if (dispatchLiveGuidePendingSignature === requestSignature) return false;
 
   clearTimeout(dispatchLiveGuideRequestTimer);
   dispatchLiveGuideAbortController?.abort();
@@ -3781,17 +3879,23 @@ function renderDispatchLiveGuide(details = {}, currentPosition = null, options =
     liveGuideMovedMeters: dispatchLiveGuideMovedMeters,
     liveGuideRequestSucceeded: null
   });
+
   const schedule = typeof options.schedule === "function" ? options.schedule : setTimeout;
-  const routeRequest = typeof options.routeRequest === "function"
-    ? options.routeRequest
-    : requestDispatchLiveNavigationRoutes;
+  const operationalRouteRequest = typeof options.operationalRouteRequest === "function"
+    ? options.operationalRouteRequest
+    : requestDispatchRoadJourney;
+  const alternativeRouteRequest = typeof options.alternativeRouteRequest === "function"
+    ? options.alternativeRouteRequest
+    : typeof options.routeRequest === "function"
+      ? options.routeRequest
+      : requestDispatchLiveNavigationRoutes;
+
   dispatchLiveGuideRequestTimer = schedule(async () => {
     const controller = new AbortController();
     dispatchLiveGuideAbortController = controller;
     try {
-      const routes = await routeRequest(
-        startPoint,
-        target.point,
+      const primaryCoordinates = await operationalRouteRequest(
+        operationalWaypoints,
         controller.signal,
         { generation }
       );
@@ -3803,14 +3907,51 @@ function renderDispatchLiveGuide(details = {}, currentPosition = null, options =
       ) {
         return;
       }
+      if (!Array.isArray(primaryCoordinates) || primaryCoordinates.length < 2) {
+        throw new Error("Operational route returned no drawable road geometry.");
+      }
 
+      let alternativeNavigation = { alternatives: [], routeCount: 1 };
+      try {
+        alternativeNavigation = await alternativeRouteRequest(
+          startPoint,
+          target.point,
+          controller.signal,
+          { generation }
+        );
+      } catch (alternativeError) {
+        if (alternativeError?.name === "AbortError") throw alternativeError;
+        dispatchRouteDebug("alternative navigation unavailable", {
+          generation_id: generation,
+          reason: alternativeError?.message || alternativeError?.name || "routing_error"
+        });
+      }
+      if (
+        controller.signal.aborted ||
+        generation !== dispatchLiveGuideGeneration ||
+        expectedLayerGroup !== dispatchCurrentRouteLayerGroup ||
+        expectedAlternativeLayerGroup !== dispatchAlternativeRouteLayerGroup
+      ) {
+        return;
+      }
+
+      const routes = {
+        primary: { coordinates: primaryCoordinates },
+        alternatives: Array.isArray(alternativeNavigation?.alternatives)
+          ? alternativeNavigation.alternatives
+          : [],
+        routeCount: Number.isFinite(Number(alternativeNavigation?.routeCount))
+          ? Number(alternativeNavigation.routeCount)
+          : 1
+      };
       const replacement = replaceDispatchLiveNavigationLayers(
         expectedLayerGroup,
         expectedAlternativeLayerGroup,
         routes,
         target.label
       );
-      if (!replacement) throw new Error("Live guide returned no drawable route geometry.");
+      if (!replacement) throw new Error("Operational route returned no drawable route geometry.");
+
       dispatchLiveGuideTargetSignature = target.signature;
       dispatchLiveGuideLastStart = { ...startPoint };
       dispatchLiveGuideLastOriginAt = new Date(
@@ -3818,7 +3959,7 @@ function renderDispatchLiveGuide(details = {}, currentPosition = null, options =
           currentPosition.timestamp || currentPosition.recorded_at || currentPosition.created_at
         ) || now
       ).toISOString();
-      dispatchLiveGuideCoordinates = dispatchLiveGuideCoordinatePoints(routes.primary.coordinates);
+      dispatchLiveGuideCoordinates = dispatchLiveGuideCoordinatePoints(primaryCoordinates);
       dispatchLiveGuideAlternativeCoordinates = routes.alternatives
         .slice(0, DISPATCH_LIVE_GUIDE_MAX_ALTERNATIVES)
         .map((route) => dispatchLiveGuideCoordinatePoints(route.coordinates));
@@ -3835,33 +3976,26 @@ function renderDispatchLiveGuide(details = {}, currentPosition = null, options =
         liveGuideVisible: true,
         liveGuideRequestSucceeded: true
       });
-      dispatchRouteDebug("live guide rendered", {
+      if (dispatchPlannerMode === "live") updateDispatchRoutePreviewNotice("ready");
+      dispatchRouteDebug("operational route rendered", {
         trigger: reroute.reason,
+        navigation_mode: livePosition ? "live" : "last_known",
         target: target.signature,
         generation_id: generation,
+        waypoint_count: operationalWaypoints.length,
         coordinate_count: dispatchLiveGuideCoordinates.length,
         alternative_count: dispatchLiveGuideAlternativeCoordinates.length
       });
     } catch (error) {
       if (error.name !== "AbortError") {
-        console.warn("Dispatch live guide update unavailable:", error);
-        if (
-          dispatchLiveGuideTargetSignature &&
-          target.signature !== dispatchLiveGuideTargetSignature
-        ) {
-          expectedLayerGroup?.clearLayers?.();
-          expectedAlternativeLayerGroup?.clearLayers?.();
-          dispatchLiveGuideTargetSignature = "";
-          dispatchLiveGuideLastStart = null;
-          dispatchLiveGuideCoordinates = [];
-          dispatchLiveGuideAlternativeCoordinates = [];
-          dispatchLiveGuideAlternativeRouteCount = 0;
-          dispatchLiveGuideLastOriginAt = null;
-        }
+        console.warn("Dispatch operational route update unavailable:", error);
         dispatchLiveGuideLastRequestSucceeded = false;
         publishDispatchNavigationDiagnostics(details, target, startPoint, {
           liveGuideRequestSucceeded: false
         });
+        if (dispatchPlannerMode === "live" && !dispatchLiveGuideLayerIsVisible()) {
+          updateDispatchRoutePreviewNotice("error");
+        }
       }
     } finally {
       if (dispatchLiveGuideAbortController === controller) {
@@ -3999,6 +4133,7 @@ function renderDispatchPlannedRoute(details, options = {}) {
   const activeGpsAvailable = typeof getTrackingAvailabilityMeta !== "function" ||
     getTrackingAvailabilityMeta(selectedTrackingTruck).available;
   const activeRoutePoint = activeGpsAvailable ? selectedRoutePoint : null;
+  const displayRoutePoint = selectedRoutePoint;
   const persistedRoutePoints = dispatchReportPlannedPoints(
     dispatchPlannedRouteSnapshotFromDetails(details)
   );
@@ -4010,7 +4145,7 @@ function renderDispatchPlannedRoute(details, options = {}) {
   if (
     activeTicket &&
     persistedRoutePoints.length >= 2 &&
-    renderDispatchPersistedActiveRoute(details, persistedRoutePoints, activeRoutePoint)
+    renderDispatchPersistedActiveRoute(details, persistedRoutePoints, displayRoutePoint)
   ) {
     renderDispatchAssignedTicketOrder(details, options);
     updateDispatchRoutePreviewNotice("ready");
@@ -4023,6 +4158,10 @@ function renderDispatchPlannedRoute(details, options = {}) {
 
   if (activeTicket) {
     renderDispatchPersistedActiveMarkers(details, groups);
+    renderDispatchLiveGuide(details, displayRoutePoint, {
+      groups,
+      force: options.force === true
+    });
   } else if (!dispatchHasVisiblePlannedRoute() && details.stops.length) {
     renderDispatchSelectionFallback(
       dispatchSavedStopRouteItems(details.stops),
@@ -4041,7 +4180,7 @@ function renderDispatchPlannedRoute(details, options = {}) {
     ["missing", "stale"].includes(routeOrigin.source) &&
     dispatchHasVisiblePlannedRoute()
   ) {
-    renderDispatchLiveGuide(details, activeRoutePoint, { groups });
+    renderDispatchLiveGuide(details, displayRoutePoint, { groups });
     renderDispatchAssignedTicketOrder(details, options);
     updateDispatchRoutePreviewNotice("ready");
     return;
@@ -4072,7 +4211,7 @@ function renderDispatchPlannedRoute(details, options = {}) {
   dispatchOffRouteSince = reroute.offRouteSince;
   if (!reroute.shouldReroute) {
     if (activeTicket) {
-      renderDispatchLiveGuide(details, activeRoutePoint, { groups });
+      renderDispatchLiveGuide(details, displayRoutePoint, { groups });
     }
     renderDispatchAssignedTicketOrder(details, options);
     if (dispatchHasVisiblePlannedRoute()) updateDispatchRoutePreviewNotice("ready");
@@ -4149,7 +4288,7 @@ function renderDispatchPlannedRoute(details, options = {}) {
       dispatchLastRoutingStart = startPoint;
       dispatchOffRouteSince = null;
       if (activeTicket) {
-        renderDispatchLiveGuide(details, activeRoutePoint, {
+        renderDispatchLiveGuide(details, displayRoutePoint, {
           groups,
           force: options.force === true
         });
@@ -4176,6 +4315,10 @@ function renderDispatchPlannedRoute(details, options = {}) {
       if (!dispatchHasVisiblePlannedRoute()) {
         if (activeTicket) {
           renderDispatchPersistedActiveMarkers(details, groups);
+          renderDispatchLiveGuide(details, displayRoutePoint, {
+            groups,
+            force: options.force === true
+          });
         } else {
           renderDispatchSelectionFallback(
             dispatchSavedStopRouteItems(details.stops, items),
@@ -4186,7 +4329,9 @@ function renderDispatchPlannedRoute(details, options = {}) {
           );
         }
       }
-      updateDispatchRoutePreviewNotice("error");
+      updateDispatchRoutePreviewNotice(
+        activeTicket && dispatchLiveGuideLayerIsVisible() ? "ready" : "error"
+      );
     } finally {
       if (dispatchRoutingAbortController === controller) dispatchRoutingAbortController = null;
       if (generation === dispatchRoutingGeneration) {
