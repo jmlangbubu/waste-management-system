@@ -173,7 +173,7 @@ class DispatchMonitorService {
             latitude,
             longitude,
             accuracy,
-            recorded_at
+            DATE_FORMAT(recorded_at, '%Y-%m-%d %H:%i:%s') AS recorded_at
           FROM truck_location_logs
           WHERE session_id = ?
             AND id > ?
