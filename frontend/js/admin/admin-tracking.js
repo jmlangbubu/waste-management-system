@@ -1437,7 +1437,7 @@ function renderTrackingActualRoute(routePoints = [], matchedResult = null) {
       color: TRACKING_ACTUAL_ROUTE_COLOR,
       weight: 6,
       opacity: 0.96,
-      pane: "trackingActualRoutePane",
+      pane: "overlayPane",
       lineCap: "round",
       lineJoin: "round"
     }).addTo(nextLayerGroup);
@@ -1455,7 +1455,7 @@ function renderTrackingActualRoute(routePoints = [], matchedResult = null) {
       color: TRACKING_ACTUAL_ROUTE_COLOR,
       weight: 4,
       opacity: 0.7,
-      pane: "trackingActualRoutePane",
+      pane: "overlayPane",
       dashArray: "8, 10"
     }).addTo(nextLayerGroup);
     gapLine.bindPopup("Connected display segment after a confirmed synchronization gap.");
