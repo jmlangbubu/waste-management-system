@@ -455,7 +455,7 @@
               </svg>
             </div>
             <div>
-              <h3 id="dashboardFleetStatusTitle">Fleet Status</h3>
+              <h3 id="dashboardFleetStatusTitle">Truck Status</h3>
               <p>Registered condition and live operations.</p>
             </div>
           </div>
@@ -981,7 +981,7 @@
     <div class="tracking-module-toolbar">
       <span class="tracking-eyebrow">WMO operations workspace</span>
       <div class="tracking-module-actions" aria-label="WMO operations actions">
-        <button type="button" class="tracking-compact-link" id="openFleetOverviewBtn" hidden>Fleet Overview</button>
+        <button type="button" class="tracking-compact-link" id="openFleetOverviewBtn" hidden>Truck Operations</button>
         <button type="button" class="tracking-compact-link" id="openDispatchPlanningBtn" hidden>Dispatch Planning</button>
         <button type="button" class="tracking-compact-link tracking-panel-tickets-button" id="dispatchOpenTicketsBtn">Tickets</button>
         <button type="button" class="tracking-compact-link" id="openTrackingReportsBtn">
@@ -1397,21 +1397,21 @@
   <div class="custom-modal-content fleet-overview-parent-content">
     <div class="custom-modal-header fleet-overview-parent-header">
       <div>
-        <span class="fleet-overview-eyebrow">WMO fleet management</span>
-        <p>Review the registered fleet, operational state, and current GPS availability.</p>
+        <span class="fleet-overview-eyebrow">WMO truck management</span>
+        <p>Review registered trucks, operation status, and current GPS availability.</p>
       </div>
-      <button type="button" class="modal-close-btn" id="fleetOverviewParentCloseBtn" aria-label="Close Fleet Overview">&times;</button>
+      <button type="button" class="modal-close-btn" id="fleetOverviewParentCloseBtn" aria-label="Close Truck Operations">&times;</button>
     </div>
     <div class="custom-modal-body fleet-overview-parent-body">
       <div class="page-card fleet-overview-card" aria-labelledby="fleetOverviewTitle">
         <div class="fleet-overview-header">
           <div>
-            <span class="fleet-overview-eyebrow">Registered WMO fleet</span>
-            <h2 id="fleetOverviewTitle">Fleet Overview</h2>
-            <p>Fleet condition and current operational activity are reported separately.</p>
+            <span class="fleet-overview-eyebrow">Registered WMO trucks</span>
+            <h2 id="fleetOverviewTitle">Truck Operations</h2>
+            <p>Truck condition and current operation status are shown separately.</p>
           </div>
           <div class="fleet-overview-actions">
-            <button type="button" class="fleet-button secondary" id="fleetRefreshBtn" aria-label="Refresh fleet overview">
+            <button type="button" class="fleet-button secondary" id="fleetRefreshBtn" aria-label="Refresh truck operations">
               Refresh
             </button>
             <button type="button" class="fleet-button primary" id="fleetAddTruckBtn">
@@ -1420,31 +1420,31 @@
           </div>
         </div>
 
-        <div class="fleet-summary-grid" aria-label="Fleet summary">
+        <div class="fleet-summary-grid" aria-label="Truck summary">
           <article class="fleet-summary-card total">
             <span>Total Trucks</span>
             <strong id="fleetSummaryTotal">0</strong>
-            <small>Registered fleet</small>
+            <small>Registered trucks</small>
           </article>
           <article class="fleet-summary-card available">
             <span>Available</span>
             <strong id="fleetSummaryAvailable">0</strong>
-            <small>Fleet condition</small>
+            <small>Truck condition</small>
           </article>
           <article class="fleet-summary-card active">
             <span>Active</span>
             <strong id="fleetSummaryActive">0</strong>
-            <small>Operational state</small>
+            <small>Operation status</small>
           </article>
           <article class="fleet-summary-card maintenance">
             <span>For Maintenance</span>
             <strong id="fleetSummaryMaintenance">0</strong>
-            <small>Fleet condition</small>
+            <small>Truck condition</small>
           </article>
           <article class="fleet-summary-card unavailable">
             <span>Out of Service</span>
             <strong id="fleetSummaryOutOfService">0</strong>
-            <small>Fleet condition</small>
+            <small>Truck condition</small>
           </article>
         </div>
 
@@ -1459,10 +1459,10 @@
               <tr>
                 <th>Truck</th>
                 <th>Plate Number</th>
-                <th>Fleet Condition</th>
-                <th>Operational State</th>
+                <th>Truck Condition</th>
+                <th>Operation Status</th>
                 <th>GPS</th>
-                <th>Assignable</th>
+                <th>Availability</th>
                 <th>Action</th>
               </tr>
             </thead>
@@ -1510,7 +1510,7 @@
             <select id="dispatchPlansStatusFilter">
               <option value="">All statuses</option>
               <option value="planned">Planned</option>
-              <option value="activated">Activated</option>
+              <option value="activated">Active / Completed</option>
               <option value="cancelled">Cancelled</option>
             </select>
           </label>
@@ -1557,7 +1557,7 @@
         <section class="dispatch-plan-form-section" aria-labelledby="dispatchPlanAssignmentHeading">
           <div class="dispatch-plan-section-heading">
             <span>1</span>
-            <div><h4 id="dispatchPlanAssignmentHeading">Assignment</h4><p>Choose the date, eligible fleet truck, and active mobile enforcer.</p></div>
+            <div><h4 id="dispatchPlanAssignmentHeading">Assignment</h4><p>Choose the date, eligible truck, and active mobile enforcer.</p></div>
           </div>
           <div class="dispatch-plan-form-grid">
             <label class="dispatch-plan-field">
@@ -1565,7 +1565,7 @@
               <input type="date" id="dispatchPlanOperationalDate" required>
             </label>
             <label class="dispatch-plan-field">
-              <span>Fleet Truck <b aria-hidden="true">*</b></span>
+              <span>Truck <b aria-hidden="true">*</b></span>
               <select id="dispatchPlanFleetTruck" required><option value="">Choose an eligible truck</option></select>
             </label>
             <p id="dispatchPlanTruckGuidance" class="dispatch-plan-field-guidance hidden"></p>
@@ -1649,8 +1649,8 @@
   <div class="custom-modal-content fleet-modal-content">
     <div class="custom-modal-header">
       <div>
-        <h3 id="fleetAddTruckTitle">Add Fleet Truck</h3>
-        <p>Register a verified truck in the official WMO fleet roster.</p>
+        <h3 id="fleetAddTruckTitle">Add Truck</h3>
+        <p>Register a verified truck in the official WMO truck roster.</p>
       </div>
       <button type="button" class="modal-close-btn" id="fleetAddTruckCloseBtn" aria-label="Close add truck dialog">&times;</button>
     </div>
@@ -1670,7 +1670,7 @@
             <input type="text" id="fleetPlateNumber" name="plate_number" maxlength="50" autocomplete="off">
           </div>
           <div class="fleet-form-field">
-            <label for="fleetInitialCondition">Fleet Condition</label>
+            <label for="fleetInitialCondition">Truck Condition</label>
             <select id="fleetInitialCondition" name="fleet_condition">
               <option value="available" selected>Available</option>
               <option value="for_maintenance">For Maintenance</option>
@@ -1696,7 +1696,7 @@
   <div class="custom-modal-content fleet-modal-content">
     <div class="custom-modal-header">
       <div>
-        <h3 id="fleetConditionTitle">Change Fleet Condition</h3>
+        <h3 id="fleetConditionTitle">Change Truck Condition</h3>
         <p id="fleetConditionTruckLabel">Select the truck's roster condition.</p>
       </div>
       <button type="button" class="modal-close-btn" id="fleetConditionCloseBtn" aria-label="Close condition dialog">&times;</button>
@@ -1704,7 +1704,7 @@
     <div class="custom-modal-body">
       <form id="fleetConditionForm" class="fleet-form" novalidate>
         <div class="fleet-form-field">
-          <label for="fleetConditionValue">Fleet Condition</label>
+          <label for="fleetConditionValue">Truck Condition</label>
           <select id="fleetConditionValue" name="fleet_condition">
             <option value="available">Available</option>
             <option value="for_maintenance">For Maintenance</option>

@@ -127,9 +127,27 @@
     const normalized = String(status || "").trim().toLowerCase();
     return {
       planned: "Planned",
-      activated: "Activated",
+      activated: "Active",
+      active: "Active",
+      completed: "Completed",
       cancelled: "Cancelled"
     }[normalized] || "Unknown";
+  }
+
+  function dispatchPlanOperationalStatus(plan = {}, ticketDetails = null) {
+    const planStatus = String(plan.status || "").trim().toLowerCase();
+    if (["planned", "cancelled"].includes(planStatus)) return planStatus;
+    if (planStatus !== "activated") return planStatus || "unknown";
+
+    const linkedTicketStatus = String(
+      ticketDetails?.ticket?.status ||
+      plan.activated_dispatch_ticket_status ||
+      ""
+    ).trim().toLowerCase();
+
+    if (linkedTicketStatus === "completed") return "completed";
+    if (linkedTicketStatus === "cancelled") return "cancelled";
+    return "active";
   }
 
   function dispatchPlanViewPermissions(status) {
@@ -282,7 +300,7 @@
     const dateResult = dispatchPlanValidateOperationalDate(payload.operational_date, now);
     if (!dateResult.valid) return dateResult;
     if (!dispatchPlanPositiveId(payload.fleet_truck_id)) {
-      return { valid: false, message: "Choose an eligible fleet truck." };
+      return { valid: false, message: "Choose an eligible truck." };
     }
     if (!dispatchPlanPositiveId(payload.assigned_enforcer_user_id)) {
       return { valid: false, message: "Choose an eligible active enforcer." };
@@ -375,6 +393,7 @@
     }
     return plans.map((plan) => {
       const status = String(plan.status || "").toLowerCase();
+      const operationalStatus = dispatchPlanOperationalStatus(plan);
       const permissions = dispatchPlanViewPermissions(status);
       const actions = [
         `<button type="button" class="dispatch-plan-row-action" data-dispatch-plan-action="view" data-plan-id="${Number(plan.id)}">View</button>`,
@@ -391,7 +410,7 @@
           <td><span class="dispatch-plan-cell-primary">${dispatchPlanEscape(plan.truck_name_snapshot || plan.truck_code_snapshot || "Truck")}</span><span class="dispatch-plan-cell-secondary">${dispatchPlanEscape(plan.truck_code_snapshot || "")}</span></td>
           <td>${dispatchPlanEscape(plan.assigned_enforcer_name_snapshot || "Not recorded")}</td>
           <td>${Number(plan.stop_count || 0)}</td>
-          <td><span class="dispatch-plan-status-badge ${dispatchPlanEscape(status)}">${dispatchPlanEscape(dispatchPlanStatusLabel(status))}</span></td>
+          <td><span class="dispatch-plan-status-badge ${dispatchPlanEscape(status)} ${dispatchPlanEscape(operationalStatus)}">${dispatchPlanEscape(dispatchPlanStatusLabel(operationalStatus))}</span></td>
           <td><div class="dispatch-plan-row-actions">${actions}</div></td>
         </tr>`;
     }).join("");
@@ -409,6 +428,7 @@
   }
 
   function dispatchPlanDetailHtml(plan = {}, ticketDetails = null, options = {}) {
+    const operationalStatus = dispatchPlanOperationalStatus(plan, ticketDetails);
     const stops = [...(plan.stops || [])].sort(
       (left, right) => Number(left.stop_order) - Number(right.stop_order)
     );
@@ -450,7 +470,7 @@
       : '<p>No ordered destinations were recorded.</p>';
     return `
       <div class="dispatch-plan-detail-grid">
-        <div class="dispatch-plan-detail-item"><span>Status</span><strong><span class="dispatch-plan-status-badge ${dispatchPlanEscape(plan.status)}">${dispatchPlanEscape(dispatchPlanStatusLabel(plan.status))}</span></strong></div>
+        <div class="dispatch-plan-detail-item"><span>Status</span><strong><span class="dispatch-plan-status-badge ${dispatchPlanEscape(plan.status)} ${dispatchPlanEscape(operationalStatus)}">${dispatchPlanEscape(dispatchPlanStatusLabel(operationalStatus))}</span></strong></div>
         <div class="dispatch-plan-detail-item"><span>Operational Date</span><strong>${dispatchPlanEscape(plan.operational_date || "Not recorded")}</strong></div>
         <div class="dispatch-plan-detail-item"><span>Truck</span><strong>${dispatchPlanEscape(plan.truck_name_snapshot || "Not recorded")} · ${dispatchPlanEscape(plan.truck_code_snapshot || "No code")}</strong></div>
         <div class="dispatch-plan-detail-item"><span>Enforcer</span><strong>${dispatchPlanEscape(plan.assigned_enforcer_name_snapshot || "Not recorded")}</strong></div>
@@ -593,7 +613,7 @@
     dispatchPlanSetFeedback(
       "dispatchPlanTruckGuidance",
       !dispatchPlanState.loadingOptions && trucks.length === 0
-        ? "No eligible fleet trucks are available for this date. Register and verify the WMO fleet roster in Fleet Monitoring before creating a dispatch plan."
+        ? "No eligible trucks are available for this date. Register and verify the WMO truck roster in Truck Operations before creating a dispatch plan."
         : "",
       "error"
     );
@@ -1343,6 +1363,7 @@
     dispatchPlanValidateOperationalDate,
     dispatchPlanUserHasAccess,
     dispatchPlanStatusLabel,
+    dispatchPlanOperationalStatus,
     dispatchPlanViewPermissions,
     dispatchPlanTruckOptionsHtml,
     dispatchPlanEnforcerOptionsHtml,
