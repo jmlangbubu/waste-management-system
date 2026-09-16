@@ -436,6 +436,8 @@ function normalizePlanRow(row = {}) {
       row.activated_dispatch_ticket_id === undefined
       ? null
       : Number(row.activated_dispatch_ticket_id),
+    activated_dispatch_ticket_status:
+      String(row.activated_dispatch_ticket_status || "").trim().toLowerCase() || null,
     stop_count: Number(row.stop_count || 0),
     revision: Number(row.revision || 1),
     created_at: row.created_at || null,
@@ -520,7 +522,7 @@ class DispatchPlanService {
     );
     if (!rows.length) {
       throw new DispatchPlanServiceError(
-        "Fleet truck not found",
+        "Truck not found",
         404,
         "DISPATCH_PLAN_TRUCK_NOT_FOUND"
       );
@@ -528,7 +530,7 @@ class DispatchPlanService {
     const truck = rows[0];
     if (String(truck.fleet_condition).toLowerCase() !== "available") {
       throw new DispatchPlanServiceError(
-        "The selected fleet truck is not available for planning",
+        "The selected truck is not available for planning",
         409,
         "DISPATCH_PLAN_TRUCK_UNAVAILABLE"
       );
@@ -810,6 +812,8 @@ class DispatchPlanService {
           DATE_FORMAT(dp.scheduled_start_at, '%Y-%m-%d %H:%i:%s') AS scheduled_start,
           DATE_FORMAT(dp.expected_return_at, '%Y-%m-%d %H:%i:%s') AS expected_return,
           dp.notes,
+          dp.activated_dispatch_ticket_id,
+          dt.status AS activated_dispatch_ticket_status,
           dp.revision,
           DATE_FORMAT(dp.created_at, '%Y-%m-%d %H:%i:%s') AS created_at,
           DATE_FORMAT(dp.updated_at, '%Y-%m-%d %H:%i:%s') AS updated_at,
@@ -823,6 +827,8 @@ class DispatchPlanService {
           GROUP BY dispatch_plan_id
         ) stop_summary
           ON stop_summary.dispatch_plan_id = dp.id
+        LEFT JOIN dispatch_tickets dt
+          ON dt.id = dp.activated_dispatch_ticket_id
         ${where}
         ORDER BY dp.operational_date ASC, dp.id ASC
       `,
@@ -851,6 +857,7 @@ class DispatchPlanService {
             DATE_FORMAT(dp.expected_return_at, '%Y-%m-%d %H:%i:%s') AS expected_return,
             dp.notes,
             dp.activated_dispatch_ticket_id,
+            dt.status AS activated_dispatch_ticket_status,
             dp.revision,
             DATE_FORMAT(dp.created_at, '%Y-%m-%d %H:%i:%s') AS created_at,
             DATE_FORMAT(dp.updated_at, '%Y-%m-%d %H:%i:%s') AS updated_at,
@@ -859,6 +866,8 @@ class DispatchPlanService {
             (SELECT COUNT(*) FROM dispatch_plan_stops count_stops
               WHERE count_stops.dispatch_plan_id = dp.id) AS stop_count
           FROM dispatch_plans dp
+          LEFT JOIN dispatch_tickets dt
+            ON dt.id = dp.activated_dispatch_ticket_id
           WHERE dp.id = ?
           LIMIT 1
         `,

@@ -4626,7 +4626,7 @@ function dispatchLiveStopSummaryMarkup(stop = {}, stops = [], options = {}) {
       <div class="dispatch-live-stop-summary-grid">
         <div><small>Arrived</small><strong>${dispatchEscape(summary.arrivalLabel)}</strong></div>
         <div><small>Departed</small><strong>${dispatchEscape(summary.departureLabel)}</strong></div>
-        <div><small>Dwell</small><strong>${dispatchEscape(summary.dwellLabel)}</strong></div>
+        <div><small>Time at Stop</small><strong>${dispatchEscape(summary.dwellLabel)}</strong></div>
         <div><small>Next destination</small><strong>${dispatchEscape(summary.nextLabel)}</strong></div>
         <div class="dispatch-live-stop-summary-wide"><small>Left for next stop</small><strong>${dispatchEscape(summary.leftForNextLabel)}</strong></div>
         ${skipReason}
@@ -7534,7 +7534,7 @@ function dispatchReportStopPopup(stop = {}) {
     dispatchReportPopupRow("Arrival", dispatchRecordedDateTime(stop.arrival_at)),
     dispatchReportPopupRow("Departure", dispatchRecordedDateTime(stop.departure_at)),
     dispatchReportPopupRow(
-      "Dwell",
+      "Time at Stop",
       stop.dwell_seconds === null
         ? "Not recorded"
         : dispatchFormatDuration(stop.dwell_seconds)
@@ -7761,7 +7761,7 @@ function renderDispatchReportDetails(data = {}) {
         <div class="dispatch-report-stop-facts">
           <div><span>Actual Arrival</span><strong>${dispatchEscape(dispatchRecordedDateTime(stop.arrival_at))}</strong></div>
           <div><span>Actual Departure</span><strong>${dispatchEscape(dispatchRecordedDateTime(stop.departure_at))}</strong></div>
-          <div><span>Dwell</span><strong>${dispatchEscape(stop.dwell_seconds === null ? "Not recorded" : dispatchFormatDuration(stop.dwell_seconds))}</strong></div>
+          <div><span>Time at Stop</span><strong>${dispatchEscape(stop.dwell_seconds === null ? "Not recorded" : dispatchFormatDuration(stop.dwell_seconds))}</strong></div>
           ${stop.skip_reason ? `<div class="dispatch-report-stop-reason"><span>Skip Reason</span><strong>${dispatchEscape(dispatchRecordedText(stop.skip_reason))}</strong></div>` : ""}
         </div>
       </div>
@@ -7911,7 +7911,7 @@ function renderDispatchDailyReportMap(data = {}) {
     const dispatch = dispatchesById.get(String(stop.dispatch_ticket_id));
     const markerNumber = index + 1;
     const statusLabel = dispatchReportStopStatus(stop);
-    const popup = `<div class="dispatch-report-map-popup"><b>Stop ${dispatchEscape(markerNumber)}</b><h5>${dispatchEscape(dispatchRecordedText(stop.location_name))}</h5>${dispatchReportPopupRow("Ticket", dispatchRecordedText(dispatch?.ticket_number))}${dispatchReportPopupRow("Status", statusLabel)}${dispatchReportPopupRow("Arrival", dispatchRecordedDateTime(stop.actual_arrival_at))}${dispatchReportPopupRow("Daily dwell", dispatchFormatDuration(stop.daily_stop_duration_seconds || 0))}</div>`;
+    const popup = `<div class="dispatch-report-map-popup"><b>Stop ${dispatchEscape(markerNumber)}</b><h5>${dispatchEscape(dispatchRecordedText(stop.location_name))}</h5>${dispatchReportPopupRow("Ticket", dispatchRecordedText(dispatch?.ticket_number))}${dispatchReportPopupRow("Status", statusLabel)}${dispatchReportPopupRow("Arrival", dispatchRecordedDateTime(stop.actual_arrival_at))}${dispatchReportPopupRow("Time at Stop Today", dispatchFormatDuration(stop.daily_stop_duration_seconds || 0))}</div>`;
     L.marker([point.lat, point.lng], {
       icon: L.divIcon({
         className: "dispatch-report-stop-marker-shell",
@@ -7990,7 +7990,7 @@ function renderDispatchDailyReportDetails(data = {}) {
         <div class="dispatch-report-stop-facts">
           <div><span>Actual Arrival</span><strong>${dispatchEscape(dispatchRecordedDateTime(stop.actual_arrival_at))}</strong></div>
           <div><span>Actual Departure</span><strong>${dispatchEscape(dispatchRecordedDateTime(stop.actual_departure_at))}</strong></div>
-          <div><span>Dwell This Day</span><strong>${dispatchEscape(dispatchFormatDuration(stop.daily_stop_duration_seconds || 0))}</strong></div>
+          <div><span>Time at Stop This Day</span><strong>${dispatchEscape(dispatchFormatDuration(stop.daily_stop_duration_seconds || 0))}</strong></div>
         </div>
       </div>
     </article>`).join("")
