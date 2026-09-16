@@ -188,8 +188,17 @@ test("assignment lookup uses authenticated identity and ignores arbitrary author
     now: () => new Date("2026-08-31T00:00:00.000Z")
   });
   await service.listAssignments(eligibleUser({ user_id: 999, enforcer_id: 999 }));
-  assert.deepEqual(pool.queries[0].parameters.slice(-3), [
+  const nonTerminalStatuses = [
+    "prepared",
+    "dispatched",
+    "in_progress",
+    "returning_to_wmo"
+  ];
+  assert.deepEqual(pool.queries[0].parameters, [
+    ...nonTerminalStatuses,
+    ...nonTerminalStatuses,
     77,
+    ...nonTerminalStatuses,
     "2026-08-31",
     "2026-09-01"
   ]);
@@ -206,7 +215,8 @@ test("activated today remains visible with linked IDs and is read-only", async (
     planRow({
       status: "activated",
       activated_dispatch_ticket_id: 901,
-      activated_tracking_session_id: 902
+      activated_tracking_session_id: 902,
+      linked_dispatch_ticket_status: "in_progress"
     })
   ], [stopRow(501, 1, "First")]);
   const service = new DispatchPlanActivationService(pool, {
