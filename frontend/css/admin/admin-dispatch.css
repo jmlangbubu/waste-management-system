@@ -1911,6 +1911,109 @@ body > #dispatchDailyReportModal {
   border-top: 1px solid var(--dispatch-border);
 }
 
+
+#trackingSection .dispatch-live-stop-history[hidden] {
+  display: none;
+}
+
+#trackingSection .dispatch-readonly-route-row[data-dispatch-live-stop-id] {
+  cursor: pointer;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+#trackingSection .dispatch-readonly-route-row[data-dispatch-live-stop-id]:hover,
+#trackingSection .dispatch-readonly-route-row[data-dispatch-live-stop-id]:focus-visible,
+#trackingSection .dispatch-readonly-route-row[data-dispatch-live-stop-id].expanded {
+  border-color: #94bca7;
+  box-shadow: 0 0 0 2px rgba(47, 138, 52, 0.08);
+  outline: none;
+}
+
+#trackingSection .dispatch-readonly-route-row .dispatch-live-stop-history {
+  grid-column: 1 / -1;
+  margin-top: 2px;
+}
+
+.dispatch-live-stop-summary {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid #dce8e1;
+  border-radius: 9px;
+  background: #ffffff;
+}
+
+.dispatch-live-stop-summary-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.dispatch-live-stop-summary-heading > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.dispatch-live-stop-summary-heading small,
+.dispatch-live-stop-summary-grid small {
+  color: #718078;
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.dispatch-live-stop-summary-heading strong {
+  overflow-wrap: anywhere;
+  color: #173c2c;
+  font-size: 10px;
+}
+
+.dispatch-live-stop-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.dispatch-live-stop-summary-grid > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 7px;
+  border-radius: 7px;
+  background: #f5f9f7;
+}
+
+.dispatch-live-stop-summary-grid strong {
+  overflow-wrap: anywhere;
+  color: #203b2f;
+  font-size: 9px;
+}
+
+.dispatch-live-stop-summary-grid .dispatch-live-stop-summary-wide {
+  grid-column: 1 / -1;
+}
+
+.dispatch-live-stop-summary.is-map-popup {
+  min-width: 250px;
+  max-width: 310px;
+  padding: 4px;
+  border: 0;
+  background: transparent;
+}
+
+.dispatch-live-stop-popup .leaflet-popup-content {
+  margin: 12px 14px;
+}
+
+.dispatch-live-stop-popup .dispatch-stop-status {
+  flex: 0 0 auto;
+  padding: 4px 7px;
+}
+
 #trackingSection .dispatch-live-stop-history > div {
   display: grid;
   gap: 1px;
@@ -7058,5 +7161,18 @@ body > #dispatchTicketDetailsModal .dispatch-details-stop small {
     display: grid !important;
     grid-template-columns: 1fr;
     gap: 2px;
+  }
+}
+
+
+@media (max-width: 620px) {
+  #trackingSection .dispatch-live-stop-summary-grid,
+  .dispatch-live-stop-summary.is-map-popup .dispatch-live-stop-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  #trackingSection .dispatch-live-stop-summary-grid .dispatch-live-stop-summary-wide,
+  .dispatch-live-stop-summary.is-map-popup .dispatch-live-stop-summary-wide {
+    grid-column: auto;
   }
 }

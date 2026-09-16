@@ -5162,6 +5162,25 @@ class DispatchService {
     if (!relationRows.length) return null;
 
     const relation = relationRows[0];
+    const startedAtMs = parseManilaTimestamp(relation.started_at);
+    const returningAtMs = parseManilaTimestamp(relation.returning_to_wmo_at);
+    if (!Number.isFinite(returningAtMs)) return null;
+
+    /*
+      Automatic WMO closure is allowed to use delayed/offline GPS history only
+      after every dispatch stop is terminal. This is historical route evidence,
+      not a request to treat an old point as a current live GPS sample.
+
+      Limit candidate rows to the WMO bounding box first, then apply the exact
+      haversine distance and the same <=50 m accuracy/timestamp rules used by
+      automatic stop evidence. This keeps the monitor efficient even when a
+      session contains a long route history.
+    */
+    const latitudeDelta = wmoRadiusMeters / 111320;
+    const longitudeScale = 111320 * Math.cos((wmoLatitude * Math.PI) / 180);
+    const longitudeDelta = longitudeScale > 0
+      ? wmoRadiusMeters / longitudeScale
+      : 180;
     const [locationRows] = await this.query(
       `
         SELECT
@@ -5173,22 +5192,35 @@ class DispatchService {
         FROM truck_location_logs
         WHERE session_id = ?
           AND truck_id = ?
-        ORDER BY recorded_at DESC, id DESC
-        LIMIT 25
+          AND recorded_at >= ?
+          AND accuracy IS NOT NULL
+          AND accuracy > 0
+          AND accuracy <= ?
+          AND latitude BETWEEN ? AND ?
+          AND longitude BETWEEN ? AND ?
+        ORDER BY recorded_at ASC, id ASC
       `,
-      [relation.tracking_session_id, relation.truck_id]
+      [
+        relation.tracking_session_id,
+        relation.truck_id,
+        relation.returning_to_wmo_at,
+        MAX_RELIABLE_ACCURACY_METERS,
+        wmoLatitude - latitudeDelta,
+        wmoLatitude + latitudeDelta,
+        wmoLongitude - longitudeDelta,
+        wmoLongitude + longitudeDelta
+      ]
     );
 
-    const startedAtMs = parseManilaTimestamp(relation.started_at);
-    const returningAtMs = parseManilaTimestamp(relation.returning_to_wmo_at);
-    if (!Number.isFinite(returningAtMs)) return null;
+    const referenceTimeMs = this.now().getTime();
     for (const locationRow of locationRows || []) {
-      const qualification = qualifyGpsPointForOperationalUse(locationRow, {
-        referenceTimeMs: this.now().getTime()
+      const evidence = qualifyDispatchStopEvidence(locationRow, {
+        referenceTimeMs
       });
-      const pointTimeMs = qualification.point?.timestampMs;
+      const pointTimeMs = evidence.point?.timestampMs;
       if (
-        !qualification.reliable ||
+        !evidence.qualified ||
+        !Number.isFinite(pointTimeMs) ||
         (Number.isFinite(startedAtMs) && pointTimeMs < startedAtMs) ||
         pointTimeMs < returningAtMs
       ) {
@@ -5196,23 +5228,24 @@ class DispatchService {
       }
 
       const distanceFromWmoMeters = haversineMeters(
-        qualification.point.latitude,
-        qualification.point.longitude,
+        evidence.point.latitude,
+        evidence.point.longitude,
         wmoLatitude,
         wmoLongitude
       );
-      if (distanceFromWmoMeters > wmoRadiusMeters) return null;
+      if (distanceFromWmoMeters > wmoRadiusMeters) continue;
 
       return {
         tracking_session_id: relation.tracking_session_id,
         dispatch_ticket_id: relation.dispatch_ticket_id,
         operation_intent: "end_operations",
         action_id: `server-verified-wmo-return:${relation.dispatch_ticket_id}`,
-        recorded_at: qualification.point.recorded_at,
-        end_latitude: qualification.point.latitude,
-        end_longitude: qualification.point.longitude,
-        end_accuracy: qualification.point.accuracy,
-        distanceFromWmoMeters
+        recorded_at: evidence.point.recorded_at,
+        end_latitude: evidence.point.latitude,
+        end_longitude: evidence.point.longitude,
+        end_accuracy: evidence.point.accuracy,
+        distanceFromWmoMeters,
+        historical_return_evidence: true
       };
     }
 

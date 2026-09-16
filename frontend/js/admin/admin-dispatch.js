@@ -96,6 +96,7 @@ let dispatchDailyReportMap = null;
 let dispatchDailyReportLayerGroup = null;
 let dispatchReportMapRenderGeneration = 0;
 let dispatchReportRouteAbortController = null;
+let dispatchExpandedLiveStopId = null;
 
 function dispatchPoint(latitude, longitude) {
   const lat = Number(latitude);
@@ -2312,21 +2313,42 @@ function dispatchMarkerOrder(stop, index, options = {}) {
 
 function buildDispatchDestinationMarkerLayer(items = [], options = {}) {
   const layerGroup = L.layerGroup();
-  (Array.isArray(items) ? items : []).forEach(({ stop }, index) => {
+  const sourceItems = Array.isArray(items) ? items : [];
+  const summaryStops = Array.isArray(options.summaryStops)
+    ? options.summaryStops
+    : sourceItems.map((item) => item?.stop).filter(Boolean);
+  sourceItems.forEach(({ stop }, index) => {
     if (!stop) return;
     const latitude = Number(stop.latitude);
     const longitude = Number(stop.longitude);
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
     const displayOrder = dispatchMarkerOrder(stop, index, options);
-    L.marker([latitude, longitude], {
+    const marker = L.marker([latitude, longitude], {
       icon: dispatchMarkerIcon(
         displayOrder,
         dispatchStopMarkerClass(stop, options.currentStopId)
       ),
       pane: DISPATCH_MARKER_PANE
-    })
-      .bindTooltip(stop.location_name || `Stop ${displayOrder}`)
-      .addTo(layerGroup);
+    }).bindTooltip(stop.location_name || `Stop ${displayOrder}`);
+    if (options.showLiveStopSummary === true) {
+      marker.bindPopup(
+        dispatchLiveStopSummaryMarkup(stop, summaryStops, { popup: true }),
+        { maxWidth: 330, className: "dispatch-live-stop-popup" }
+      );
+      marker.on("popupopen", () => {
+        const latestStops = Array.isArray(selectedDispatchTicket?.stops)
+          ? selectedDispatchTicket.stops
+          : summaryStops;
+        const stopKey = dispatchLiveStopKey(stop);
+        const latestStop = latestStops.find(
+          (candidate) => dispatchLiveStopKey(candidate) === stopKey
+        ) || stop;
+        marker.setPopupContent(
+          dispatchLiveStopSummaryMarkup(latestStop, latestStops, { popup: true })
+        );
+      });
+    }
+    marker.addTo(layerGroup);
   });
   return layerGroup;
 }
@@ -3574,7 +3596,9 @@ function buildDispatchPersistedActiveRouteLayers(details = {}, plannedPoints = [
     dispatchSavedStopRouteItems(details.stops || []),
     {
       currentStopId: groups.currentStop?.id || null,
-      usePersistedStopOrder: true
+      usePersistedStopOrder: true,
+      showLiveStopSummary: true,
+      summaryStops: details.stops || []
     }
   );
   L.polyline(
@@ -4118,7 +4142,9 @@ function renderDispatchPersistedActiveMarkers(details, groups) {
       dispatchSavedStopRouteItems(details.stops || []),
       {
         currentStopId: groups.currentStop?.id || null,
-        usePersistedStopOrder: true
+        usePersistedStopOrder: true,
+        showLiveStopSummary: true,
+        summaryStops: details.stops || []
       }
     );
     dispatchActiveRouteMarkerSignature = markerSignature;
@@ -4509,6 +4535,134 @@ function dispatchTicketViewMode(ticket = {}) {
   return "details";
 }
 
+function dispatchLiveStopKey(stop = {}) {
+  const id = stop.id ?? stop.stop_id;
+  if (id !== null && id !== undefined && String(id).trim()) return String(id);
+  return `order-${String(stop.stop_order ?? "unknown")}`;
+}
+
+function dispatchLiveStopDwellSeconds(stop = {}) {
+  const stored = Number(stop.stop_duration_seconds);
+  if (Number.isFinite(stored) && stored >= 0) return Math.floor(stored);
+
+  const arrivalMs = dispatchTimestampMilliseconds(stop.actual_arrival_at);
+  if (!arrivalMs) return null;
+  const departureMs = dispatchTimestampMilliseconds(stop.actual_departure_at);
+  const status = String(stop.stop_status || "").toLowerCase();
+  const endMs = departureMs || (status === "arrived" ? Date.now() : 0);
+  if (!endMs || endMs < arrivalMs) return null;
+  return Math.floor((endMs - arrivalMs) / 1000);
+}
+
+function dispatchFormatStopDwell(totalSeconds) {
+  const seconds = Number(totalSeconds);
+  if (!Number.isFinite(seconds) || seconds < 0) return "Not recorded";
+  const wholeSeconds = Math.floor(seconds);
+  const hours = Math.floor(wholeSeconds / 3600);
+  const minutes = Math.floor((wholeSeconds % 3600) / 60);
+  const remainingSeconds = wholeSeconds % 60;
+  const parts = [];
+  if (hours) parts.push(`${hours}h`);
+  if (minutes || hours) parts.push(`${minutes}m`);
+  parts.push(`${remainingSeconds}s`);
+  return parts.join(" ");
+}
+
+function dispatchLiveStopSummaryData(stop = {}, stops = []) {
+  const orderedStops = [...(Array.isArray(stops) ? stops : [])]
+    .filter(Boolean)
+    .sort((first, second) => Number(first.stop_order) - Number(second.stop_order));
+  const stopKey = dispatchLiveStopKey(stop);
+  const currentIndex = orderedStops.findIndex(
+    (candidate) => dispatchLiveStopKey(candidate) === stopKey
+  );
+  const nextStop = currentIndex >= 0 ? orderedStops[currentIndex + 1] || null : null;
+  const status = String(stop.stop_status || "pending").toLowerCase();
+  const arrivalAt = stop.actual_arrival_at || null;
+  const departureAt = stop.actual_departure_at || null;
+  const dwellSeconds = dispatchLiveStopDwellSeconds(stop);
+  const departedLabel = departureAt
+    ? dispatchFormatDateTime(departureAt)
+    : status === "arrived"
+      ? "Waiting to depart"
+      : ["completed", "skipped"].includes(status)
+        ? "Not recorded"
+        : "Waiting for arrival";
+  return {
+    stopKey,
+    order: stop.stop_order,
+    name: stop.location_name || `Destination ${stop.stop_order || ""}`.trim(),
+    status,
+    statusLabel: dispatchStatusLabel(status),
+    arrivalLabel: arrivalAt ? dispatchFormatDateTime(arrivalAt) : "Waiting for arrival",
+    departureLabel: departedLabel,
+    dwellLabel: dwellSeconds === null
+      ? (status === "arrived" ? "In progress" : "Not recorded")
+      : dispatchFormatStopDwell(dwellSeconds),
+    nextLabel: nextStop
+      ? `${nextStop.stop_order}. ${nextStop.location_name || "Next destination"}`
+      : "Return to WMO",
+    leftForNextLabel: departureAt
+      ? dispatchFormatDateTime(departureAt)
+      : status === "arrived"
+        ? "Waiting to depart"
+        : "Not yet recorded",
+    skipReason: String(stop.skip_reason || "").trim()
+  };
+}
+
+function dispatchLiveStopSummaryMarkup(stop = {}, stops = [], options = {}) {
+  const summary = dispatchLiveStopSummaryData(stop, stops);
+  const popupClass = options.popup ? " is-map-popup" : "";
+  const skipReason = summary.skipReason
+    ? `<div class="dispatch-live-stop-summary-wide"><small>Skip reason</small><strong>${dispatchEscape(summary.skipReason)}</strong></div>`
+    : "";
+  return `
+    <div class="dispatch-live-stop-summary${popupClass}">
+      <div class="dispatch-live-stop-summary-heading">
+        <div><small>Stop ${dispatchEscape(summary.order)}</small><strong>${dispatchEscape(summary.name)}</strong></div>
+        <span class="dispatch-stop-status ${dispatchStatusClass(summary.status)}">${dispatchEscape(summary.statusLabel)}</span>
+      </div>
+      <div class="dispatch-live-stop-summary-grid">
+        <div><small>Arrived</small><strong>${dispatchEscape(summary.arrivalLabel)}</strong></div>
+        <div><small>Departed</small><strong>${dispatchEscape(summary.departureLabel)}</strong></div>
+        <div><small>Dwell</small><strong>${dispatchEscape(summary.dwellLabel)}</strong></div>
+        <div><small>Next destination</small><strong>${dispatchEscape(summary.nextLabel)}</strong></div>
+        <div class="dispatch-live-stop-summary-wide"><small>Left for next stop</small><strong>${dispatchEscape(summary.leftForNextLabel)}</strong></div>
+        ${skipReason}
+      </div>
+    </div>
+  `;
+}
+
+function setDispatchExpandedLiveStop(stopId) {
+  const key = stopId === null || stopId === undefined ? null : String(stopId);
+  dispatchExpandedLiveStopId = dispatchExpandedLiveStopId === key ? null : key;
+  document.querySelectorAll(
+    "#dispatchCurrentPanel [data-dispatch-live-stop-id]"
+  ).forEach((row) => {
+    const expanded = dispatchExpandedLiveStopId === row.dataset.dispatchLiveStopId;
+    row.classList.toggle("expanded", expanded);
+    row.setAttribute("aria-expanded", String(expanded));
+    const summary = row.querySelector("[data-dispatch-live-stop-summary]");
+    if (summary) summary.hidden = !expanded;
+  });
+}
+
+function handleDispatchLiveStopSummaryClick(event) {
+  const row = event.target.closest?.("[data-dispatch-live-stop-id]");
+  if (!row || !event.currentTarget?.contains(row)) return;
+  setDispatchExpandedLiveStop(row.dataset.dispatchLiveStopId);
+}
+
+function handleDispatchLiveStopSummaryKeydown(event) {
+  if (!["Enter", " "].includes(event.key)) return;
+  const row = event.target.closest?.("[data-dispatch-live-stop-id]");
+  if (!row || !event.currentTarget?.contains(row)) return;
+  event.preventDefault();
+  setDispatchExpandedLiveStop(row.dataset.dispatchLiveStopId);
+}
+
 function renderDispatchReadOnlyRoute(stops = [], currentStop = null) {
   const orderedStops = [...stops].sort(
     (first, second) => Number(first.stop_order) - Number(second.stop_order)
@@ -4546,20 +4700,31 @@ function renderDispatchReadOnlyRoute(stops = [], currentStop = null) {
       : isCurrent
         ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 8 7-8 7"/></svg>'
         : dispatchEscape(stop.stop_order);
+    const stopKey = dispatchLiveStopKey(stop);
+    const expanded = dispatchExpandedLiveStopId === stopKey;
     return `
-      <article class="dispatch-readonly-route-row ${stateClass}">
+      <article class="dispatch-readonly-route-row ${stateClass}${expanded ? " expanded" : ""}"
+        data-dispatch-live-stop-id="${dispatchEscape(stopKey)}"
+        role="button"
+        tabindex="0"
+        aria-expanded="${expanded ? "true" : "false"}"
+        aria-label="View timeline for stop ${dispatchEscape(stop.stop_order)} ${dispatchEscape(stop.location_name || "Destination")}">
         <span class="dispatch-readonly-route-marker">${marker}</span>
         <div>
           <strong><b>${dispatchEscape(stop.stop_order)}</b> ${dispatchEscape(stop.location_name || "Destination")}</strong>
           <span>${dispatchEscape(stateLabel)}</span>
           ${timing}
         </div>
+        <div class="dispatch-live-stop-history" data-dispatch-live-stop-summary ${expanded ? "" : "hidden"}>
+          <small>Operational Timeline</small>
+          ${dispatchLiveStopSummaryMarkup(stop, orderedStops)}
+        </div>
       </article>
     `;
   }).join("");
   return `
     <section class="dispatch-readonly-route" aria-labelledby="dispatchReadOnlyRouteHeading">
-      <div class="dispatch-readonly-section-heading"><small id="dispatchReadOnlyRouteHeading">Assigned Route</small><span>Saved order</span></div>
+      <div class="dispatch-readonly-section-heading"><small id="dispatchReadOnlyRouteHeading">Assigned Route</small><span>Click a stop for timeline</span></div>
       <div class="dispatch-readonly-route-list">${routeRows || '<div class="dispatch-route-empty">No saved destinations.</div>'}</div>
       <div class="dispatch-readonly-return"><span>W</span><div><small>Return</small><strong>WMO</strong></div></div>
     </section>
@@ -8194,6 +8359,9 @@ function setupDispatchModule() {
     const ticketId = selectedDispatchTicket?.ticket?.id;
     if (ticketId) openDispatchEndModal(ticketId);
   });
+  const dispatchCurrentPanel = document.getElementById("dispatchCurrentPanel");
+  dispatchCurrentPanel?.addEventListener("click", handleDispatchLiveStopSummaryClick);
+  dispatchCurrentPanel?.addEventListener("keydown", handleDispatchLiveStopSummaryKeydown);
   document
     .getElementById("dispatchPlannerConfirmationCancelBtn")
     ?.addEventListener("click", () => closeDispatchPlannerConfirmation());
