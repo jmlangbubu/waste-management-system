@@ -170,12 +170,16 @@ function getFleetTrucksApiUrl() {
   return `${getAppApiBase()}/fleet/trucks`;
 }
 
+function getFleetTruckApiUrl(truckId) {
+  return `${getFleetTrucksApiUrl()}/${encodeURIComponent(truckId)}`;
+}
+
 function getFleetSummaryApiUrl() {
   return `${getAppApiBase()}/fleet/summary`;
 }
 
 function getFleetTruckConditionApiUrl(truckId) {
-  return `${getFleetTrucksApiUrl()}/${encodeURIComponent(truckId)}/condition`;
+  return `${getFleetTruckApiUrl(truckId)}/condition`;
 }
 
 // =========================
@@ -281,6 +285,7 @@ window.webAdminFetch = webAdminFetch;
 window.getWebAuthSessionApiUrl = getWebAuthSessionApiUrl;
 window.getWebAuthLogoutApiUrl = getWebAuthLogoutApiUrl;
 window.getFleetTrucksApiUrl = getFleetTrucksApiUrl;
+window.getFleetTruckApiUrl = getFleetTruckApiUrl;
 window.getFleetSummaryApiUrl = getFleetSummaryApiUrl;
 window.getFleetTruckConditionApiUrl = getFleetTruckConditionApiUrl;
 

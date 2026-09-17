@@ -1691,6 +1691,112 @@
   </div>
 </div>
 
+<!-- MANAGE TRUCK -->
+<div id="fleetManageModal" class="custom-modal fleet-modal hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="fleetManageTitle">
+  <div class="custom-modal-overlay" id="fleetManageOverlay"></div>
+  <div class="custom-modal-content fleet-modal-content fleet-manage-modal-content">
+    <div class="custom-modal-header">
+      <div>
+        <h3 id="fleetManageTitle">Manage Truck</h3>
+        <p>Review truck details and choose what you want to update.</p>
+      </div>
+      <button type="button" class="modal-close-btn" id="fleetManageCloseBtn" aria-label="Close manage truck dialog">&times;</button>
+    </div>
+
+    <div class="custom-modal-body">
+      <div class="fleet-manage-summary">
+        <div class="fleet-manage-heading">
+          <div>
+            <span class="fleet-manage-eyebrow">Selected truck</span>
+            <strong id="fleetManageTruckCode">-</strong>
+            <small id="fleetManageTruckName">-</small>
+          </div>
+          <span id="fleetManageCondition" class="fleet-badge condition">-</span>
+        </div>
+
+        <dl class="fleet-manage-details">
+          <div>
+            <dt>Plate Number</dt>
+            <dd id="fleetManagePlateNumber">-</dd>
+          </div>
+          <div>
+            <dt>Operational State</dt>
+            <dd id="fleetManageOperationalState">-</dd>
+          </div>
+          <div>
+            <dt>GPS</dt>
+            <dd id="fleetManageGps">-</dd>
+          </div>
+          <div>
+            <dt>Availability</dt>
+            <dd id="fleetManageAssignable">-</dd>
+          </div>
+        </dl>
+
+        <div id="fleetManageConditionReasonWrap" class="fleet-manage-reason hidden">
+          <span>Condition Reason</span>
+          <p id="fleetManageConditionReason">-</p>
+        </div>
+      </div>
+
+      <div class="fleet-manage-actions">
+        <button type="button" class="fleet-button primary" id="fleetManageEditBtn">
+          Edit Truck Details
+        </button>
+        <button type="button" class="fleet-button secondary" id="fleetManageConditionBtn">
+          Change Condition
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT TRUCK DETAILS -->
+<div id="fleetEditTruckModal" class="custom-modal fleet-modal hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="fleetEditTruckTitle">
+  <div class="custom-modal-overlay" id="fleetEditTruckOverlay"></div>
+  <div class="custom-modal-content fleet-modal-content">
+    <div class="custom-modal-header">
+      <div>
+        <h3 id="fleetEditTruckTitle">Edit Truck Details</h3>
+        <p>Update the registered truck information without changing its fleet condition.</p>
+      </div>
+      <button type="button" class="modal-close-btn" id="fleetEditTruckCloseBtn" aria-label="Close edit truck dialog">&times;</button>
+    </div>
+
+    <div class="custom-modal-body">
+      <form id="fleetEditTruckForm" class="fleet-form" novalidate>
+        <div class="fleet-form-grid">
+          <div class="fleet-form-field">
+            <label for="fleetEditTruckCode">Truck Code <span aria-hidden="true">*</span></label>
+            <input type="text" id="fleetEditTruckCode" name="truck_code" maxlength="100" autocomplete="off" required>
+          </div>
+
+          <div class="fleet-form-field">
+            <label for="fleetEditTruckName">Truck Name <span aria-hidden="true">*</span></label>
+            <input type="text" id="fleetEditTruckName" name="truck_name" maxlength="150" autocomplete="off" required>
+          </div>
+
+          <div class="fleet-form-field">
+            <label for="fleetEditPlateNumber">Plate Number</label>
+            <input type="text" id="fleetEditPlateNumber" name="plate_number" maxlength="50" autocomplete="off">
+          </div>
+        </div>
+
+        <p class="fleet-edit-note">
+          Truck Code can only be changed when the truck has no active or planned operation.
+        </p>
+
+        <div id="fleetEditTruckFeedback" class="fleet-form-feedback hidden" role="alert"></div>
+
+        <div class="fleet-form-actions fleet-edit-form-actions">
+          <button type="button" class="fleet-button secondary" id="fleetEditTruckCancelBtn">Cancel</button>
+          <button type="submit" class="fleet-button primary" id="fleetEditTruckSubmitBtn">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
 <div id="fleetConditionModal" class="custom-modal fleet-modal hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="fleetConditionTitle">
   <div class="custom-modal-overlay" id="fleetConditionOverlay"></div>
   <div class="custom-modal-content fleet-modal-content">
