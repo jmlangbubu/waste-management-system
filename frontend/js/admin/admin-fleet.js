@@ -53,12 +53,16 @@ let fleetTrucksCache = [];
 let fleetSummaryCache = { ...FLEET_EMPTY_SUMMARY };
 let fleetHasLoadedTrucks = false;
 let fleetSelectedConditionTruck = null;
+let fleetSelectedManageTruck = null;
+let fleetSelectedEditTruck = null;
 let fleetLastModalTrigger = null;
 let fleetParentModalTrigger = null;
 let fleetRefreshInProgress = false;
 
 const FLEET_CHILD_MODAL_IDS = Object.freeze([
   "fleetAddTruckModal",
+  "fleetManageModal",
+  "fleetEditTruckModal",
   "fleetConditionModal"
 ]);
 
@@ -191,6 +195,18 @@ function fleetValidateTruck(payload = {}) {
   return { valid: true, message: "" };
 }
 
+function fleetValidateTruckDetails(payload = {}) {
+  if (!String(payload.truck_code || "").trim()) {
+    return { valid: false, message: "Truck Code is required." };
+  }
+
+  if (!String(payload.truck_name || "").trim()) {
+    return { valid: false, message: "Truck Name is required." };
+  }
+
+  return { valid: true, message: "" };
+}
+
 function fleetValidateCondition(payload = {}) {
   if (!Object.prototype.hasOwnProperty.call(FLEET_CONDITION_LABELS, payload.fleet_condition)) {
     return { valid: false, message: "Select a valid fleet condition." };
@@ -276,10 +292,10 @@ function fleetTableRowsHtml(trucks = []) {
           <button
             type="button"
             class="fleet-row-action"
-            data-fleet-change-condition="${fleetEscape(Number.isInteger(id) && id > 0 ? id : "")}"
-            aria-label="Change condition for ${fleetEscape(truckCode)}"
+            data-fleet-manage="${fleetEscape(Number.isInteger(id) && id > 0 ? id : "")}"
+            aria-label="Manage ${fleetEscape(truckCode)}"
             ${Number.isInteger(id) && id > 0 ? "" : "disabled"}
-          >Change Condition</button>
+          >Manage</button>
         </td>
       </tr>`;
   }).join("");
@@ -513,6 +529,9 @@ function closeFleetModalsForNavigation() {
     modal.hidden = true;
     modal.setAttribute("aria-hidden", "true");
   });
+  fleetSelectedManageTruck = null;
+  fleetSelectedEditTruck = null;
+  fleetSelectedConditionTruck = null;
   fleetLastModalTrigger = null;
   fleetParentModalTrigger = null;
   fleetSyncModalScrollLock();
@@ -573,9 +592,128 @@ async function submitFleetTruck(event) {
   }
 }
 
-function openFleetConditionModal(truckId, trigger = null) {
+function fleetFindTruckById(truckId) {
   const id = Number(truckId);
-  const truck = fleetTrucksCache.find((item) => Number(item.id) === id);
+  if (!Number.isInteger(id) || id <= 0) return null;
+  return fleetTrucksCache.find((item) => Number(item.id) === id) || null;
+}
+
+function openFleetManageModal(truckId, trigger = null) {
+  const truck = fleetFindTruckById(truckId);
+
+  if (!truck) {
+    fleetNotify("The selected fleet truck is no longer available. Refresh and try again.", "error");
+    return false;
+  }
+
+  fleetSelectedManageTruck = truck;
+
+  const condition = String(truck.fleet_condition || "").toLowerCase();
+  const conditionBadge = document.getElementById("fleetManageCondition");
+  const reasonWrap = document.getElementById("fleetManageConditionReasonWrap");
+  const reason = String(truck.condition_reason || "").trim();
+
+  const values = {
+    fleetManageTruckCode: String(truck.truck_code || "").trim() || "Not recorded",
+    fleetManageTruckName: String(truck.truck_name || "").trim() || "Not recorded",
+    fleetManagePlateNumber: String(truck.plate_number || "").trim() || "Not recorded",
+    fleetManageOperationalState: fleetOperationalLabel(truck),
+    fleetManageGps: fleetTrackingLabel(truck),
+    fleetManageAssignable: fleetAssignmentLabel(truck),
+    fleetManageConditionReason: reason || "Not recorded"
+  };
+
+  Object.entries(values).forEach(([id, value]) => {
+    const element = document.getElementById(id);
+    if (element) element.textContent = value;
+  });
+
+  if (conditionBadge) {
+    conditionBadge.className = `fleet-badge condition ${condition || "unknown"}`;
+    conditionBadge.textContent = fleetConditionLabel(condition);
+  }
+
+  if (reasonWrap) {
+    reasonWrap.classList.toggle("hidden", !reason);
+  }
+
+  fleetOpenModal("fleetManageModal", "fleetManageEditBtn", trigger);
+  return true;
+}
+
+function openFleetEditTruckModal(truckId, trigger = null) {
+  const truck = fleetFindTruckById(truckId);
+
+  if (!truck) {
+    fleetNotify("The selected fleet truck is no longer available. Refresh and try again.", "error");
+    return false;
+  }
+
+  fleetSelectedEditTruck = truck;
+
+  const truckCode = document.getElementById("fleetEditTruckCode");
+  const truckName = document.getElementById("fleetEditTruckName");
+  const plateNumber = document.getElementById("fleetEditPlateNumber");
+
+  if (truckCode) truckCode.value = String(truck.truck_code || "").trim();
+  if (truckName) truckName.value = String(truck.truck_name || "").trim();
+  if (plateNumber) plateNumber.value = String(truck.plate_number || "").trim();
+
+  fleetSetFormFeedback("fleetEditTruckFeedback", "");
+  fleetOpenModal("fleetEditTruckModal", "fleetEditTruckCode", trigger);
+  return true;
+}
+
+async function updateFleetTruckDetails(event) {
+  event?.preventDefault?.();
+
+  if (!fleetSelectedEditTruck) {
+    fleetSetFormFeedback("fleetEditTruckFeedback", "Select a fleet truck first.");
+    return false;
+  }
+
+  const payload = {
+    truck_code: document.getElementById("fleetEditTruckCode")?.value.trim() || "",
+    truck_name: document.getElementById("fleetEditTruckName")?.value.trim() || "",
+    plate_number: document.getElementById("fleetEditPlateNumber")?.value.trim() || null
+  };
+
+  const validation = fleetValidateTruckDetails(payload);
+  if (!validation.valid) {
+    fleetSetFormFeedback("fleetEditTruckFeedback", validation.message);
+    return false;
+  }
+
+  const submitButton = document.getElementById("fleetEditTruckSubmitBtn");
+  if (submitButton) submitButton.disabled = true;
+  fleetSetFormFeedback("fleetEditTruckFeedback", "");
+
+  try {
+    await fleetRequest(getFleetTruckApiUrl(fleetSelectedEditTruck.id), {
+      method: "PATCH",
+      body: JSON.stringify(payload)
+    });
+
+    fleetCloseModal("fleetEditTruckModal");
+    fleetCloseModal("fleetManageModal");
+    fleetSelectedEditTruck = null;
+    fleetSelectedManageTruck = null;
+
+    await refreshFleetMonitoring({ announce: false });
+    fleetNotify("Fleet truck details updated successfully.");
+    return true;
+  } catch (error) {
+    const message = fleetErrorMessage(error, "Unable to update the fleet truck details.");
+    fleetSetFormFeedback("fleetEditTruckFeedback", message);
+    fleetNotify(message, "error");
+    return false;
+  } finally {
+    if (submitButton) submitButton.disabled = false;
+  }
+}
+
+function openFleetConditionModal(truckId, trigger = null) {
+  const truck = fleetFindTruckById(truckId);
   if (!truck) {
     fleetNotify("The selected fleet truck is no longer available. Refresh and try again.", "error");
     return false;
@@ -656,13 +794,34 @@ function bindFleetMonitoringActions() {
     openAddTruckModal(event.currentTarget);
   });
   document.getElementById("fleetTableBody")?.addEventListener("click", (event) => {
-    const conditionButton = event.target.closest("[data-fleet-change-condition]");
-    if (conditionButton) {
-      openFleetConditionModal(conditionButton.dataset.fleetChangeCondition, conditionButton);
+    const manageButton = event.target.closest("[data-fleet-manage]");
+    if (manageButton) {
+      openFleetManageModal(manageButton.dataset.fleetManage, manageButton);
       return;
     }
+
     if (event.target.closest("[data-fleet-retry]")) void refreshFleetMonitoring();
   });
+
+  document.getElementById("fleetManageEditBtn")?.addEventListener("click", () => {
+    if (!fleetSelectedManageTruck) return;
+    const truckId = fleetSelectedManageTruck.id;
+    const returnFocus = fleetLastModalTrigger;
+    fleetCloseModal("fleetManageModal");
+    fleetSelectedManageTruck = null;
+    openFleetEditTruckModal(truckId, returnFocus);
+  });
+
+  document.getElementById("fleetManageConditionBtn")?.addEventListener("click", () => {
+    if (!fleetSelectedManageTruck) return;
+    const truckId = fleetSelectedManageTruck.id;
+    const returnFocus = fleetLastModalTrigger;
+    fleetCloseModal("fleetManageModal");
+    fleetSelectedManageTruck = null;
+    openFleetConditionModal(truckId, returnFocus);
+  });
+
+  document.getElementById("fleetEditTruckForm")?.addEventListener("submit", updateFleetTruckDetails);
 
   document.getElementById("fleetInitialCondition")?.addEventListener("change", () => {
     fleetToggleReasonField("fleetInitialCondition", "fleetInitialReasonField", "fleetInitialReason");
@@ -673,6 +832,20 @@ function bindFleetMonitoringActions() {
   document.getElementById("fleetAddTruckForm")?.addEventListener("submit", submitFleetTruck);
   document.getElementById("fleetConditionForm")?.addEventListener("submit", updateFleetCondition);
 
+  ["fleetManageOverlay", "fleetManageCloseBtn"].forEach((id) => {
+    document.getElementById(id)?.addEventListener("click", () => {
+      fleetCloseModal("fleetManageModal");
+      fleetSelectedManageTruck = null;
+    });
+  });
+
+  ["fleetEditTruckOverlay", "fleetEditTruckCloseBtn", "fleetEditTruckCancelBtn"].forEach((id) => {
+    document.getElementById(id)?.addEventListener("click", () => {
+      fleetCloseModal("fleetEditTruckModal");
+      fleetSelectedEditTruck = null;
+    });
+  });
+
   ["fleetAddTruckOverlay", "fleetAddTruckCloseBtn"].forEach((id) => {
     document.getElementById(id)?.addEventListener("click", () => fleetCloseModal("fleetAddTruckModal"));
   });
@@ -681,8 +854,16 @@ function bindFleetMonitoringActions() {
   });
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
-    if (!document.getElementById("fleetConditionModal")?.classList.contains("hidden")) {
+
+    if (!document.getElementById("fleetEditTruckModal")?.classList.contains("hidden")) {
+      fleetCloseModal("fleetEditTruckModal");
+      fleetSelectedEditTruck = null;
+    } else if (!document.getElementById("fleetConditionModal")?.classList.contains("hidden")) {
       fleetCloseModal("fleetConditionModal");
+      fleetSelectedConditionTruck = null;
+    } else if (!document.getElementById("fleetManageModal")?.classList.contains("hidden")) {
+      fleetCloseModal("fleetManageModal");
+      fleetSelectedManageTruck = null;
     } else if (!document.getElementById("fleetAddTruckModal")?.classList.contains("hidden")) {
       fleetCloseModal("fleetAddTruckModal");
     } else if (fleetModalIsOpen("fleetOverviewModal")) {
@@ -715,6 +896,9 @@ if (typeof window !== "undefined") {
   window.renderFleetTable = renderFleetTable;
   window.openAddTruckModal = openAddTruckModal;
   window.submitFleetTruck = submitFleetTruck;
+  window.openFleetManageModal = openFleetManageModal;
+  window.openFleetEditTruckModal = openFleetEditTruckModal;
+  window.updateFleetTruckDetails = updateFleetTruckDetails;
   window.openFleetConditionModal = openFleetConditionModal;
   window.updateFleetCondition = updateFleetCondition;
   window.openFleetOverviewParentModal = openFleetOverviewParentModal;
@@ -738,6 +922,7 @@ if (typeof module !== "undefined" && module.exports) {
     fleetAssignmentLabel,
     fleetRequiresReason,
     fleetValidateTruck,
+    fleetValidateTruckDetails,
     fleetValidateCondition,
     fleetTableRowsHtml,
     renderFleetSummary,
@@ -748,6 +933,7 @@ if (typeof module !== "undefined" && module.exports) {
     loadFleetTrucks,
     refreshFleetMonitoring,
     submitFleetTruck,
+    updateFleetTruckDetails,
     updateFleetCondition
   };
 }

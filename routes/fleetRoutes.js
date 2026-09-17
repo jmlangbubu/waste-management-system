@@ -15,6 +15,7 @@ router.use(requireCsrf);
 router.get("/trucks", fleetController.listTrucks);
 router.get("/summary", fleetController.getSummary);
 router.post("/trucks", fleetController.createTruck);
+router.patch("/trucks/:id", fleetController.updateTruckDetails);
 router.patch("/trucks/:id/condition", fleetController.updateCondition);
 
 module.exports = router;

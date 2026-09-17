@@ -663,6 +663,152 @@ class FleetService {
     });
   }
 
+  async updateTruckDetails(truckId, payload = {}, actor = {}) {
+    const id = requiredId(truckId);
+    authenticatedActorId(actor);
+
+    const truckCode = cleanText(payload.truck_code, "truck_code", 100, {
+      required: true,
+      code: "FLEET_TRUCK_CODE_REQUIRED"
+    });
+    const truckName = cleanText(payload.truck_name, "truck_name", 150, {
+      required: true,
+      code: "FLEET_TRUCK_NAME_REQUIRED"
+    });
+    const plateNumber = cleanText(payload.plate_number, "plate_number", 50);
+
+    const [rows] = await this.query(
+      `
+        SELECT
+          id,
+          truck_code,
+          truck_name,
+          plate_number,
+          fleet_condition,
+          condition_reason,
+          DATE_FORMAT(condition_updated_at, '%Y-%m-%d %H:%i:%s')
+            AS condition_updated_at,
+          DATE_FORMAT(created_at, '%Y-%m-%d %H:%i:%s') AS created_at,
+          DATE_FORMAT(updated_at, '%Y-%m-%d %H:%i:%s') AS updated_at
+        FROM fleet_trucks
+        WHERE id = ?
+        LIMIT 1
+      `,
+      [id]
+    );
+
+    if (!rows.length) {
+      throw new FleetServiceError(
+        "Fleet truck not found",
+        404,
+        "FLEET_TRUCK_NOT_FOUND"
+      );
+    }
+
+    const currentTruck = rows[0];
+
+    const [duplicates] = await this.query(
+      `
+        SELECT id, truck_code, plate_number
+        FROM fleet_trucks
+        WHERE id <> ?
+          AND (
+            truck_code = ?
+            OR (? IS NOT NULL AND plate_number = ?)
+          )
+        LIMIT 1
+      `,
+      [id, truckCode, plateNumber, plateNumber]
+    );
+
+    if (duplicates.length) {
+      if (plateNumber && duplicates[0].plate_number === plateNumber) {
+        throw new FleetServiceError(
+          "A fleet truck with this plate number already exists",
+          409,
+          "FLEET_PLATE_DUPLICATE"
+        );
+      }
+
+      throw new FleetServiceError(
+        "A fleet truck with this truck code already exists",
+        409,
+        "FLEET_TRUCK_CODE_DUPLICATE"
+      );
+    }
+
+    const currentTruckCode = String(currentTruck.truck_code || "").trim();
+    const truckCodeChanged = truckCode !== currentTruckCode;
+
+    if (truckCodeChanged) {
+      const [[activeDispatchRows], [activeTrackingRows], [activePlanRows]] =
+        await Promise.all([
+          this.query(
+            `
+              SELECT id
+              FROM dispatch_tickets
+              WHERE truck_id = ?
+                AND status IN ('dispatched', 'in_progress', 'returning_to_wmo')
+              LIMIT 1
+            `,
+            [currentTruckCode]
+          ),
+          this.query(
+            `
+              SELECT id
+              FROM truck_tracking_sessions
+              WHERE truck_id = ?
+                AND session_status = 'active'
+              LIMIT 1
+            `,
+            [currentTruckCode]
+          ),
+          this.query(
+            `
+              SELECT id
+              FROM dispatch_plans
+              WHERE fleet_truck_id = ?
+                AND status IN ('planned', 'activated')
+              LIMIT 1
+            `,
+            [id]
+          )
+        ]);
+
+      if (
+        activeDispatchRows.length ||
+        activeTrackingRows.length ||
+        activePlanRows.length
+      ) {
+        throw new FleetServiceError(
+          "Truck code cannot be changed while the truck has an active or planned operation",
+          409,
+          "FLEET_TRUCK_CODE_IN_USE"
+        );
+      }
+    }
+
+    await this.query(
+      `
+        UPDATE fleet_trucks
+        SET truck_code = ?,
+            truck_name = ?,
+            plate_number = ?,
+            updated_at = NOW(3)
+        WHERE id = ?
+      `,
+      [truckCode, truckName, plateNumber, id]
+    );
+
+    return baseFleetTruck({
+      ...currentTruck,
+      truck_code: truckCode,
+      truck_name: truckName,
+      plate_number: plateNumber,
+      updated_at: formatManilaDateTime(this.now().getTime())
+    });
+  }
+
   async updateCondition(truckId, payload = {}, actor = {}) {
     const id = requiredId(truckId);
     const actorId = authenticatedActorId(actor);

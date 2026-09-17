@@ -52,6 +52,22 @@ exports.createTruck = async (req, res) => {
   }
 };
 
+exports.updateTruckDetails = async (req, res) => {
+  try {
+    return res.status(200).json({
+      success: true,
+      message: "Fleet truck details updated successfully",
+      data: await fleetService.updateTruckDetails(
+        req.params.id,
+        req.body || {},
+        req.user
+      )
+    });
+  } catch (error) {
+    return sendFleetError(res, error, "update fleet truck details");
+  }
+};
+
 exports.updateCondition = async (req, res) => {
   try {
     return res.status(200).json({

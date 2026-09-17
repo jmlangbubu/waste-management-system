@@ -90,7 +90,8 @@ function testFleetRowsKeepStatusDimensionsSeparate() {
   assert.match(html, /Active \/ On Dispatch/);
   assert.match(html, />Online</);
   assert.match(html, />No</);
-  assert.match(html, /Change Condition/);
+  assert.match(html, />Manage</);
+  assert.doesNotMatch(html, /Change Condition/);
   assert.equal(fleetConditionLabel("out_of_service"), "Out of Service");
   assert.equal(fleetOperationalLabel({ operational_state_key: "returning_to_wmo" }), "Returning to WMO");
   assert.equal(fleetGpsLabel("stale"), "Stale");
@@ -213,7 +214,8 @@ function testMarkupScriptOrderAndModalSafety() {
   assert.match(navigationSource, /document\.documentElement\.classList\.remove\("fleet-modal-open"\)/);
   assert.match(fleetSource, /getElementById\("fleetRefreshBtn"\)[\s\S]*refreshFleetMonitoring/);
   assert.match(fleetSource, /getElementById\("fleetAddTruckBtn"\)[\s\S]*openAddTruckModal/);
-  assert.match(fleetSource, /getElementById\("fleetTableBody"\)[\s\S]*data-fleet-change-condition/);
+  assert.match(fleetSource, /getElementById\("fleetTableBody"\)[\s\S]*data-fleet-manage/);
+  assert.doesNotMatch(fleetSource, /data-fleet-change-condition/);
 }
 
 testEmptyFleetAndZeroSummary();
