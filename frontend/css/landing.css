@@ -2801,3 +2801,202 @@ a {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* =========================================================
+   APPOINTMENT STATUS RESULT MODAL
+   Keeps the checker compact and opens successful results
+   in a focused modal instead of extending the page.
+========================================================= */
+
+.status-result-area:empty {
+  display: none;
+}
+
+.status-result-area {
+  grid-column: 1 / -1;
+}
+
+.status-check-feedback {
+  margin-top: 4px;
+  border-radius: 14px;
+  font-size: 0.9rem;
+}
+
+.appointment-status-modal-dialog {
+  width: min(760px, calc(100% - 28px));
+  max-width: 760px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.appointment-status-modal {
+  overflow: hidden;
+  border: 1px solid rgba(220, 232, 220, 0.95);
+  border-radius: 28px;
+  background: #ffffff;
+  box-shadow: 0 28px 80px rgba(15, 39, 27, 0.20);
+}
+
+.appointment-status-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 22px;
+  padding: 26px 28px 22px;
+  border-bottom: 1px solid rgba(220, 232, 220, 0.88);
+  background:
+    radial-gradient(circle at 88% 5%, rgba(47, 138, 52, 0.10), transparent 34%),
+    linear-gradient(135deg, #ffffff, #f7fbf8);
+}
+
+.appointment-status-modal-eyebrow {
+  display: inline-block;
+  margin-bottom: 7px;
+  color: var(--wmo-green);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.appointment-status-modal-header h2 {
+  margin: 0;
+  color: var(--wmo-dark);
+  font-size: 1.55rem;
+  font-weight: 920;
+  letter-spacing: -0.035em;
+}
+
+.appointment-status-modal-header p {
+  margin: 6px 0 0;
+  color: var(--wmo-muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.appointment-status-modal-close {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.appointment-status-modal-body {
+  padding: 26px 28px 28px;
+  background: #ffffff;
+}
+
+.appointment-status-modal-loading {
+  padding: 18px;
+  border-radius: 16px;
+  color: var(--wmo-muted);
+  background: var(--wmo-soft-2);
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+.appointment-status-modal-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 20px;
+  border: 1px solid rgba(220, 232, 220, 0.95);
+  border-radius: 20px;
+  background: linear-gradient(135deg, #f8fcf9, #ffffff);
+}
+
+.appointment-status-modal-summary > div {
+  min-width: 0;
+}
+
+.appointment-status-summary-label {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--wmo-muted);
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.appointment-status-modal-summary strong {
+  display: block;
+  overflow-wrap: anywhere;
+  color: var(--wmo-dark);
+  font-size: 1.08rem;
+  font-weight: 900;
+}
+
+.appointment-status-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.appointment-status-detail-item {
+  min-width: 0;
+  padding: 15px 16px;
+  border: 1px solid #e6eee8;
+  border-radius: 17px;
+  background: #ffffff;
+}
+
+.appointment-status-detail-item span {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--wmo-muted);
+  font-size: 0.74rem;
+  font-weight: 850;
+}
+
+.appointment-status-detail-item strong {
+  display: block;
+  overflow-wrap: anywhere;
+  color: #17231c;
+  font-size: 0.94rem;
+  font-weight: 780;
+  line-height: 1.45;
+}
+
+#appointmentStatusModal .status-pill {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+@media (max-width: 575.98px) {
+  .appointment-status-modal-dialog {
+    width: calc(100% - 20px);
+    margin: 10px auto;
+  }
+
+  .appointment-status-modal {
+    border-radius: 22px;
+  }
+
+  .appointment-status-modal-header {
+    padding: 22px 20px 18px;
+  }
+
+  .appointment-status-modal-header h2 {
+    font-size: 1.35rem;
+  }
+
+  .appointment-status-modal-body {
+    padding: 20px;
+  }
+
+  .appointment-status-modal-summary {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 16px;
+  }
+
+  .appointment-status-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  #appointmentStatusModal .status-pill {
+    align-self: flex-start;
+  }
+}
