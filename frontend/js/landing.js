@@ -458,6 +458,15 @@ function setupAppointmentStatusChecker() {
   const checkStatusForm = document.getElementById("checkAppointmentStatusForm");
   const statusResult = document.getElementById("appointmentStatusResult");
   const statusContactInput = document.getElementById("statusContact");
+  const checkStatusBtn = document.getElementById("checkAppointmentStatusBtn");
+  const statusModalEl = document.getElementById("appointmentStatusModal");
+  const statusModalBody = document.getElementById("appointmentStatusModalBody");
+
+  let statusModalInstance = null;
+
+  if (statusModalEl && window.bootstrap) {
+    statusModalInstance = bootstrap.Modal.getOrCreateInstance(statusModalEl);
+  }
 
   if (statusContactInput) {
     statusContactInput.addEventListener("input", function () {
@@ -468,6 +477,17 @@ function setupAppointmentStatusChecker() {
   }
 
   if (!checkStatusForm || !statusResult) return;
+
+  function setCheckButtonLoading(isLoading) {
+    if (!checkStatusBtn) return;
+
+    checkStatusBtn.disabled = isLoading;
+    checkStatusBtn.textContent = isLoading ? "Checking..." : "Check Status";
+  }
+
+  function clearStatusMessage() {
+    statusResult.innerHTML = "";
+  }
 
   checkStatusForm.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -504,11 +524,15 @@ function setupAppointmentStatusChecker() {
     const apiUrl = getAppointmentCheckStatusApiUrl();
 
     if (!apiUrl) {
-      renderStatusMessage("API is not configured yet. Please check js/config.js or APP_CONFIG.API_BASE_URL.", "danger");
+      renderStatusMessage(
+        "API is not configured yet. Please check js/config.js or APP_CONFIG.API_BASE_URL.",
+        "danger"
+      );
       return;
     }
 
-    renderStatusMessage("Checking appointment status...", "info");
+    clearStatusMessage();
+    setCheckButtonLoading(true);
 
     try {
       const response = await fetch(apiUrl, {
@@ -523,85 +547,98 @@ function setupAppointmentStatusChecker() {
         })
       });
 
-      const data = await response.json();
+      const rawText = await response.text();
+
+      let data = {};
+      try {
+        data = rawText ? JSON.parse(rawText) : {};
+      } catch {
+        console.error("Invalid appointment status response:", rawText);
+        renderStatusMessage("Server returned an invalid response.", "danger");
+        return;
+      }
 
       if (!response.ok || !data.success) {
         renderStatusMessage(data.message || "Appointment not found.", "danger");
         return;
       }
 
+      clearStatusMessage();
       renderAppointmentStatus(data.appointment);
     } catch (error) {
       console.error("Check appointment status error:", error);
       renderStatusMessage("Unable to check status. Please try again.", "danger");
+    } finally {
+      setCheckButtonLoading(false);
     }
   });
 
   function renderStatusMessage(message, type = "info") {
     statusResult.innerHTML = `
-      <div class="alert alert-${type}">
+      <div class="alert alert-${escapeLandingHtml(type)} status-check-feedback mb-0" role="alert">
         ${escapeLandingHtml(message)}
       </div>
     `;
   }
 
   function renderAppointmentStatus(app) {
-    if (!app) return;
+    if (!app || !statusModalBody) return;
 
     const status = formatLandingStatus(app.status);
     const statusClass = String(app.status || "pending").toLowerCase();
 
-    statusResult.innerHTML = `
-      <div class="status-result-card">
-        <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
-          <div>
-            <h3 class="h5 mb-1">Appointment Status</h3>
-            <p class="text-secondary mb-0">Latest appointment update from WMO.</p>
-          </div>
-
-          <span class="status-pill ${escapeLandingHtml(statusClass)}">
-            ${escapeLandingHtml(status)}
-          </span>
+    statusModalBody.innerHTML = `
+      <div class="appointment-status-modal-summary">
+        <div>
+          <span class="appointment-status-summary-label">Reference Code</span>
+          <strong>${escapeLandingHtml(app.appointment_code || "-")}</strong>
         </div>
 
-        <div class="row g-3">
-          <div class="col-md-6">
-            <strong>Reference Code</strong>
-            <p>${escapeLandingHtml(app.appointment_code || "-")}</p>
-          </div>
+        <span class="status-pill ${escapeLandingHtml(statusClass)}">
+          ${escapeLandingHtml(status)}
+        </span>
+      </div>
 
-          <div class="col-md-6">
-            <strong>Name</strong>
-            <p>${escapeLandingHtml(app.full_name || "-")}</p>
-          </div>
+      <div class="appointment-status-detail-grid">
+        <div class="appointment-status-detail-item">
+          <span>Name</span>
+          <strong>${escapeLandingHtml(app.full_name || "-")}</strong>
+        </div>
 
-          <div class="col-md-6">
-            <strong>Barangay</strong>
-            <p>${escapeLandingHtml(app.barangay || "-")}</p>
-          </div>
+        <div class="appointment-status-detail-item">
+          <span>Barangay</span>
+          <strong>${escapeLandingHtml(app.barangay || "-")}</strong>
+        </div>
 
-          <div class="col-md-6">
-            <strong>Purpose</strong>
-            <p>${escapeLandingHtml(app.purpose || "-")}</p>
-          </div>
+        <div class="appointment-status-detail-item">
+          <span>Purpose</span>
+          <strong>${escapeLandingHtml(app.purpose || "-")}</strong>
+        </div>
 
-          <div class="col-md-6">
-            <strong>Appointment Date</strong>
-            <p>${formatLandingDateTime(app.preferred_date)}</p>
-          </div>
+        <div class="appointment-status-detail-item">
+          <span>Appointment Date</span>
+          <strong>${escapeLandingHtml(formatLandingDateTime(app.preferred_date))}</strong>
+        </div>
 
-          <div class="col-md-6">
-            <strong>Handled By</strong>
-            <p>${escapeLandingHtml(app.assigned_to || "Not yet assigned")}</p>
-          </div>
+        <div class="appointment-status-detail-item">
+          <span>Handled By</span>
+          <strong>${escapeLandingHtml(app.assigned_to || "Not yet assigned")}</strong>
+        </div>
 
-          <div class="col-12">
-            <strong>Last Updated</strong>
-            <p>${formatLandingDateTime(app.updated_at)}</p>
-          </div>
+        <div class="appointment-status-detail-item">
+          <span>Last Updated</span>
+          <strong>${escapeLandingHtml(formatLandingDateTime(app.updated_at))}</strong>
         </div>
       </div>
     `;
+
+    if (statusModalInstance) {
+      statusModalInstance.show();
+    } else if (statusModalEl) {
+      statusModalEl.classList.add("show");
+      statusModalEl.style.display = "block";
+      statusModalEl.removeAttribute("aria-hidden");
+    }
   }
 }
 

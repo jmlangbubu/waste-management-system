@@ -458,15 +458,51 @@
             />
           </div>
 
-          <button type="submit" class="btn btn-wmo">
+          <button type="submit" class="btn btn-wmo" id="checkAppointmentStatusBtn">
             Check Status
           </button>
         </form>
 
-        <div id="appointmentStatusResult" class="status-result-area"></div>
+        <div id="appointmentStatusResult" class="status-result-area" aria-live="polite"></div>
       </div>
     </div>
   </section>
+
+  <!-- =========================
+       APPOINTMENT STATUS MODAL
+  ========================== -->
+  <div
+    class="modal fade"
+    id="appointmentStatusModal"
+    tabindex="-1"
+    aria-hidden="true"
+    aria-labelledby="appointmentStatusModalTitle"
+  >
+    <div class="modal-dialog modal-dialog-centered modal-lg appointment-status-modal-dialog">
+      <div class="modal-content appointment-status-modal">
+        <div class="appointment-status-modal-header">
+          <div>
+            <span class="appointment-status-modal-eyebrow">Appointment Tracker</span>
+            <h2 id="appointmentStatusModalTitle">Appointment Status</h2>
+            <p>Latest appointment update from the Waste Management Office.</p>
+          </div>
+
+          <button
+            type="button"
+            class="btn-close appointment-status-modal-close"
+            data-bs-dismiss="modal"
+            aria-label="Close">
+          </button>
+        </div>
+
+        <div class="appointment-status-modal-body" id="appointmentStatusModalBody">
+          <div class="appointment-status-modal-loading">
+            Loading appointment details...
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- =========================
        FOOTER
