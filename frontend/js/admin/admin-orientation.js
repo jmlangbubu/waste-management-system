@@ -26,6 +26,11 @@ function getOrientationRawLifecycleStatus(item) {
   );
 }
 
+function isSwmOrientationPurpose(item) {
+  return String(item?.purpose || item?.waste_type || "").trim() ===
+    "SWM Orientation & Clearance";
+}
+
 function isRejectedOrCancelledOrientationRecord(item) {
   const appointmentStatus = getOrientationAppointmentStatus(item);
   const lifecycleStatus = getOrientationRawLifecycleStatus(item);
@@ -60,6 +65,7 @@ function isApprovedOrientationAppointment(item) {
 
 function isOrientationAllowedForDashboard(item) {
   return (
+    isSwmOrientationPurpose(item) &&
     isApprovedOrientationAppointment(item) &&
     !isRejectedOrCancelledOrientationRecord(item)
   );
@@ -1035,3 +1041,4 @@ window.renderUpcomingOrientation = renderUpcomingOrientation;
 window.getActiveOrientationRecords = getActiveOrientationRecords;
 window.getUpcomingOrientationRecords = getUpcomingOrientationRecords;
 window.isOrientationAllowedForDashboard = isOrientationAllowedForDashboard;
+window.isSwmOrientationPurpose = isSwmOrientationPurpose;
