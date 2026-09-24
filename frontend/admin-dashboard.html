@@ -73,9 +73,9 @@
       <span>Waste Records</span>
     </button>
 
-    <button class="nav-btn" data-section="appointmentsSection" type="button" aria-label="Appointments" title="Appointments">
+    <button class="nav-btn" data-section="appointmentsSection" type="button" aria-label="Services" title="Services">
       <i data-lucide="calendar-days"></i>
-      <span>Appointments</span>
+      <span>Services</span>
     </button>
 
     <button class="nav-btn" data-section="complaintsSection" type="button" aria-label="Complaints" title="Complaints">
@@ -707,13 +707,6 @@
 
       <!-- APPOINTMENTS -->
       <section id="appointmentsSection" class="content-section">
-        <div class="appointments-workspace-heading">
-          <div>
-            <h2>WMO Service Appointments</h2>
-            <p>Manage service requests, schedules, orientation activities, and completed appointments.</p>
-          </div>
-        </div>
-
         <div class="appointments-workspace-tabs" role="tablist" aria-label="Appointment workspace views">
           <button
             type="button"
@@ -763,7 +756,7 @@
             <div class="page-card-header appointment-header">
               <div>
                 <h3>Active Requests</h3>
-                <p>Review pending appointment requests and decide whether to accept or reject them.</p>
+                <p>Review incoming service requests and manage appointment decisions.</p>
               </div>
             </div>
 
@@ -806,8 +799,8 @@
             <div class="page-card">
               <div class="page-card-header">
                 <div>
-                  <h3>Orientation Management</h3>
-                  <p>Manage the QR, exam, and completion lifecycle for SWM Orientation &amp; Clearance appointments.</p>
+                  <h3>Orientation Queue</h3>
+                  <p>Manage QR-based orientation, exam progress, and completion.</p>
                 </div>
 
                 <div class="orientation-header-actions">
@@ -836,32 +829,41 @@
           aria-labelledby="appointmentsHistoryTab"
           hidden
         >
-          <div class="appointments-history-grid">
-            <article class="appointments-history-card">
-              <span class="appointments-history-icon" aria-hidden="true">
-                <i data-lucide="calendar-check-2"></i>
-              </span>
+          <div class="page-card">
+            <div class="page-card-header appointment-header">
               <div>
-                <h3>Appointment History</h3>
-                <p>Review completed, rejected, cancelled, and past WMO service requests.</p>
+                <h3>Service History</h3>
+                <p>View completed, cancelled, and past service records.</p>
               </div>
-              <button type="button" class="view-all-btn small" id="openAppointmentHistoryBtn">
-                Open Appointment History
-              </button>
-            </article>
+            </div>
 
-            <article class="appointments-history-card">
-              <span class="appointments-history-icon" aria-hidden="true">
-                <i data-lucide="graduation-cap"></i>
-              </span>
-              <div>
-                <h3>Orientation Report</h3>
-                <p>Review orientation attendance, quiz scores, completion, and certificate records.</p>
-              </div>
-              <button type="button" class="view-all-btn small" id="openOrientationHistoryBtn">
-                Open Orientation Report
-              </button>
-            </article>
+            <div class="appointments-history-grid">
+              <article class="appointments-history-card">
+                <span class="appointments-history-icon" aria-hidden="true">
+                  <i data-lucide="calendar-check-2"></i>
+                </span>
+                <div>
+                  <h3>Appointment History</h3>
+                  <p>Review completed, rejected, cancelled, and past WMO service requests.</p>
+                </div>
+                <button type="button" class="view-all-btn small" id="openAppointmentHistoryBtn">
+                  Open Appointment History
+                </button>
+              </article>
+
+              <article class="appointments-history-card">
+                <span class="appointments-history-icon" aria-hidden="true">
+                  <i data-lucide="graduation-cap"></i>
+                </span>
+                <div>
+                  <h3>Orientation Report</h3>
+                  <p>Review orientation attendance, quiz scores, completion, and certificate records.</p>
+                </div>
+                <button type="button" class="view-all-btn small" id="openOrientationHistoryBtn">
+                  Open Orientation Report
+                </button>
+              </article>
+            </div>
           </div>
         </div>
       </section>
