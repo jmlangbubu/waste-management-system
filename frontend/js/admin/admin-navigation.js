@@ -17,8 +17,7 @@ function setPageTitleFromSection(sectionId) {
   const titleMap = {
     [SECTION_IDS.dashboard]: "Dashboard Overview",
     [SECTION_IDS.records]: "Waste Records",
-    [SECTION_IDS.appointments]: "Appointments",
-    [SECTION_IDS.orientation]: "Orientation",
+    [SECTION_IDS.appointments]: "WMO Service Appointments",
     [SECTION_IDS.complaints]: "Complaints",
     [SECTION_IDS.tracking]: "Live Truck Tracking",
     [SECTION_IDS.userManagement]: "User Management"
@@ -26,9 +25,12 @@ function setPageTitleFromSection(sectionId) {
 
   pageTitle.textContent = titleMap[sectionId] || "Admin Panel";
   if (pageSubtitle) {
-    pageSubtitle.textContent = sectionId === SECTION_IDS.tracking
-      ? "Monitor active trucks and plan collection routes."
-      : "Centralized monitoring and administration panel.";
+    const subtitleMap = {
+      [SECTION_IDS.appointments]: "Manage service requests, schedules, orientation activities, and completed appointments.",
+      [SECTION_IDS.tracking]: "Monitor active trucks and plan collection routes."
+    };
+
+    pageSubtitle.textContent = subtitleMap[sectionId] || "Centralized monitoring and administration panel.";
   }
 }
 
@@ -489,11 +491,11 @@ function openSection(sectionId) {
     notificationsSeen = true;
     const notificationCount = document.getElementById("notificationCount");
     if (notificationCount) notificationCount.textContent = "0";
-  }
 
-  if (sectionId === SECTION_IDS.orientation) {
-    if (typeof loadOrientationAppointments === "function") {
-      loadOrientationAppointments();
+    if (typeof setAppointmentsWorkspaceTab === "function") {
+      setAppointmentsWorkspaceTab("active");
+    } else if (typeof loadAppointments === "function") {
+      loadAppointments();
     }
   }
 

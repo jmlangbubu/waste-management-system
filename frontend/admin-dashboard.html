@@ -92,11 +92,6 @@
   <div class="sidebar-nav-group sidebar-nav-group-management">
     <div class="sidebar-section-label">Management</div>
 
-    <button class="nav-btn" data-section="orientationSection" type="button" aria-label="Orientation" title="Orientation">
-      <i data-lucide="graduation-cap"></i>
-      <span>Orientation</span>
-    </button>
-
     <button id="navUserManagement" class="nav-btn" data-section="userManagementSection" type="button" aria-label="User Management" title="User Management">
       <i data-lucide="users"></i>
       <span>User Management</span>
@@ -712,79 +707,164 @@
 
       <!-- APPOINTMENTS -->
       <section id="appointmentsSection" class="content-section">
-        <div class="page-card">
-          <div class="page-card-header appointment-header">
-            <div>
-              <h2>Active Appointments</h2>
-             <p>Review pending appointment requests and decide whether to accept or reject them.</p>
+        <div class="appointments-workspace-heading">
+          <div>
+            <h2>WMO Service Appointments</h2>
+            <p>Manage service requests, schedules, orientation activities, and completed appointments.</p>
+          </div>
+        </div>
+
+        <div class="appointments-workspace-tabs" role="tablist" aria-label="Appointment workspace views">
+          <button
+            type="button"
+            class="appointments-workspace-tab active"
+            id="appointmentsActiveTab"
+            data-appointments-tab="active"
+            role="tab"
+            aria-selected="true"
+            aria-controls="appointmentsActivePanel"
+          >
+            Active Requests
+          </button>
+          <button
+            type="button"
+            class="appointments-workspace-tab"
+            id="appointmentsOrientationTab"
+            data-appointments-tab="orientation"
+            role="tab"
+            aria-selected="false"
+            aria-controls="appointmentsOrientationPanel"
+            tabindex="-1"
+          >
+            Orientation
+          </button>
+          <button
+            type="button"
+            class="appointments-workspace-tab"
+            id="appointmentsHistoryTab"
+            data-appointments-tab="history"
+            role="tab"
+            aria-selected="false"
+            aria-controls="appointmentsHistoryPanel"
+            tabindex="-1"
+          >
+            History
+          </button>
+        </div>
+
+        <div
+          class="appointments-workspace-panel active"
+          id="appointmentsActivePanel"
+          data-appointments-panel="active"
+          role="tabpanel"
+          aria-labelledby="appointmentsActiveTab"
+        >
+          <div class="page-card">
+            <div class="page-card-header appointment-header">
+              <div>
+                <h3>Active Requests</h3>
+                <p>Review pending appointment requests and decide whether to accept or reject them.</p>
+              </div>
             </div>
 
-            <div class="appointment-toolbar">
-              <button type="button" class="view-all-btn small" id="openAppointmentHistoryBtn">
-                View History
-              </button>
+            <div class="table-shell">
+             <table class="appointments-table">
+                <thead>
+                  <tr>
+                    <th>Reference Code</th>
+                    <th>Name</th>
+                    <th>Barangay</th>
+                    <th>Contact</th>
+                    <th>Email Address</th>
+                    <th>Purpose</th>
+                    <th>Date</th>
+                    <th>Status</th>
+                    <th>Assigned Personnel</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="appointmentsTableBody">
+                  <tr>
+                    <td colspan="10" class="loading-state">Loading active appointments...</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
+        </div>
 
-          <div class="table-shell">
-           <table class="appointments-table">
-              <thead>
-                <tr>
-                  <th>Reference Code</th>
-                  <th>Name</th>
-                  <th>Barangay</th>
-                  <th>Contact</th>
-                  <th>Email Address</th>
-                  <th>Purpose</th>
-                  <th>Date</th>
-                  <th>Status</th>
-                  <th>Assigned Personnel</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody id="appointmentsTableBody">
-                <tr>
-                  <td colspan="10" class="loading-state">Loading active appointments...</td>
-                </tr>
-              </tbody>
-            </table>
+        <div
+          class="appointments-workspace-panel"
+          id="appointmentsOrientationPanel"
+          data-appointments-panel="orientation"
+          role="tabpanel"
+          aria-labelledby="appointmentsOrientationTab"
+          hidden
+        >
+          <!-- Existing Orientation module relocated into the Appointments workspace. -->
+          <div id="orientationSection">
+            <div class="page-card">
+              <div class="page-card-header">
+                <div>
+                  <h3>Orientation Management</h3>
+                  <p>Manage the QR, exam, and completion lifecycle for SWM Orientation &amp; Clearance appointments.</p>
+                </div>
+
+                <div class="orientation-header-actions">
+                  <button type="button" class="view-all-btn small" id="openUpcomingOrientationBtn">
+                    Upcoming Orientation
+                  </button>
+                </div>
+              </div>
+
+              <div class="orientation-active-wrap">
+                <h3 class="orientation-active-title">Active Orientation</h3>
+
+                <div id="orientationCardList" class="orientation-card-list">
+                  <div class="empty-state">Loading orientation records...</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div
+          class="appointments-workspace-panel"
+          id="appointmentsHistoryPanel"
+          data-appointments-panel="history"
+          role="tabpanel"
+          aria-labelledby="appointmentsHistoryTab"
+          hidden
+        >
+          <div class="appointments-history-grid">
+            <article class="appointments-history-card">
+              <span class="appointments-history-icon" aria-hidden="true">
+                <i data-lucide="calendar-check-2"></i>
+              </span>
+              <div>
+                <h3>Appointment History</h3>
+                <p>Review completed, rejected, cancelled, and past WMO service requests.</p>
+              </div>
+              <button type="button" class="view-all-btn small" id="openAppointmentHistoryBtn">
+                Open Appointment History
+              </button>
+            </article>
+
+            <article class="appointments-history-card">
+              <span class="appointments-history-icon" aria-hidden="true">
+                <i data-lucide="graduation-cap"></i>
+              </span>
+              <div>
+                <h3>Orientation Report</h3>
+                <p>Review orientation attendance, quiz scores, completion, and certificate records.</p>
+              </div>
+              <button type="button" class="view-all-btn small" id="openOrientationHistoryBtn">
+                Open Orientation Report
+              </button>
+            </article>
           </div>
         </div>
       </section>
-
-      <!-- ORIENTATION -->
-<section id="orientationSection" class="content-section">
-  <div class="page-card">
-    
-    <!-- HEADER -->
-    <div class="page-card-header">
-      <div>
-        <h2>Orientation Management</h2>
-        <p>Manage orientation lifecycle (QR → Exam → Completion).</p>
-      </div>
-
-      <div class="orientation-header-actions">
-        <button type="button" class="view-all-btn small" id="openUpcomingOrientationBtn">
-          Upcoming Orientation
-        </button>
-
-        <button type="button" class="view-all-btn small" id="openOrientationHistoryBtn">
-          View Orientation Report
-        </button>
-      </div>
-    </div>
-
-    <!-- ACTIVE ORIENTATION ONLY -->
-    <div class="orientation-active-wrap">
-      <h3 class="orientation-active-title">Active Orientation</h3>
-
-      <div id="orientationCardList" class="orientation-card-list">
-        <div class="empty-state">Loading orientation records...</div>
-      </div>
-    </div>
-
-  </div>
-</section>
 
       <!-- BARANGAY COMPLAINTS -->
 <section id="barangayComplaintsSection" class="content-section">

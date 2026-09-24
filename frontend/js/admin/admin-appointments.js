@@ -1033,9 +1033,90 @@ async function handleCancel(id) {
   }
 }
 
+const APPOINTMENTS_WORKSPACE_TABS = new Set([
+  "active",
+  "orientation",
+  "history"
+]);
+
+async function refreshAppointmentsWorkspaceTab(tabName) {
+  if (tabName === "orientation") {
+    if (typeof loadOrientationAppointments === "function") {
+      await loadOrientationAppointments();
+    }
+    return;
+  }
+
+  if (tabName === "history") {
+    const refreshTasks = [loadAppointments()];
+
+    if (typeof loadOrientationAppointments === "function") {
+      refreshTasks.push(loadOrientationAppointments());
+    }
+
+    await Promise.all(refreshTasks);
+    return;
+  }
+
+  await loadAppointments();
+}
+
+async function setAppointmentsWorkspaceTab(tabName = "active", options = {}) {
+  const normalizedTab = APPOINTMENTS_WORKSPACE_TABS.has(tabName)
+    ? tabName
+    : "active";
+  const shouldRefresh = options.refresh !== false;
+
+  document.querySelectorAll("[data-appointments-tab]").forEach((button) => {
+    const isActive = button.dataset.appointmentsTab === normalizedTab;
+    button.classList.toggle("active", isActive);
+    button.setAttribute("aria-selected", String(isActive));
+    button.tabIndex = isActive ? 0 : -1;
+  });
+
+  document.querySelectorAll("[data-appointments-panel]").forEach((panel) => {
+    const isActive = panel.dataset.appointmentsPanel === normalizedTab;
+    panel.classList.toggle("active", isActive);
+    panel.hidden = !isActive;
+  });
+
+  if (shouldRefresh) {
+    await refreshAppointmentsWorkspaceTab(normalizedTab);
+  }
+}
+
+function setupAppointmentsWorkspaceTabs() {
+  const tabs = Array.from(document.querySelectorAll("[data-appointments-tab]"));
+  if (!tabs.length) return;
+
+  tabs.forEach((button, index) => {
+    if (button.dataset.appointmentsTabBound === "true") return;
+
+    button.dataset.appointmentsTabBound = "true";
+    button.addEventListener("click", () => {
+      setAppointmentsWorkspaceTab(button.dataset.appointmentsTab);
+    });
+
+    button.addEventListener("keydown", (event) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+
+      event.preventDefault();
+      const direction = event.key === "ArrowRight" ? 1 : -1;
+      const targetIndex = (index + direction + tabs.length) % tabs.length;
+      const target = tabs[targetIndex];
+
+      target.focus();
+      setAppointmentsWorkspaceTab(target.dataset.appointmentsTab);
+    });
+  });
+
+  setAppointmentsWorkspaceTab("active", { refresh: false });
+}
+
 function initializeAppointments() {
   mountAppointmentModalsToBody();
   ensureAppointmentHistorySearchBar();
+  setupAppointmentsWorkspaceTabs();
   const openBtn = document.getElementById("openAppointmentHistoryBtn");
   const closeBtn = document.getElementById("closeAppointmentHistoryBtn");
   const overlay = document.getElementById("historyModalOverlay");
@@ -1061,6 +1142,8 @@ window.handleAppointmentDecision = handleAppointmentDecision;
 window.handleReschedule = handleReschedule;
 window.handleCancel = handleCancel;
 window.confirmRescheduleAppointment = confirmRescheduleAppointment;
+window.setAppointmentsWorkspaceTab = setAppointmentsWorkspaceTab;
+window.setupAppointmentsWorkspaceTabs = setupAppointmentsWorkspaceTabs;
 
 /* =========================================================
    APPOINTMENT CUSTOM DROPDOWN UI - FULL INTEGRATED
