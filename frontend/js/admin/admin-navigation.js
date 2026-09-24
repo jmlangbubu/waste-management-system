@@ -17,7 +17,7 @@ function setPageTitleFromSection(sectionId) {
   const titleMap = {
     [SECTION_IDS.dashboard]: "Dashboard Overview",
     [SECTION_IDS.records]: "Waste Records",
-    [SECTION_IDS.appointments]: "WMO Service Appointments",
+    [SECTION_IDS.appointments]: "WMO Services",
     [SECTION_IDS.complaints]: "Complaints",
     [SECTION_IDS.tracking]: "Live Truck Tracking",
     [SECTION_IDS.userManagement]: "User Management"
@@ -26,7 +26,7 @@ function setPageTitleFromSection(sectionId) {
   pageTitle.textContent = titleMap[sectionId] || "Admin Panel";
   if (pageSubtitle) {
     const subtitleMap = {
-      [SECTION_IDS.appointments]: "Manage service requests, schedules, orientation activities, and completed appointments.",
+      [SECTION_IDS.appointments]: "Manage service requests, schedules, orientation activities, and completed records.",
       [SECTION_IDS.tracking]: "Monitor active trucks and plan collection routes."
     };
 
