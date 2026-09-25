@@ -1496,6 +1496,10 @@
             <button type="button" class="fleet-button secondary" id="fleetRefreshBtn" aria-label="Refresh truck operations">
               Refresh
             </button>
+            <button type="button" class="fleet-button secondary fleet-issues-trigger" id="fleetVehicleIssuesBtn">
+              Vehicle Issues
+              <span id="fleetVehicleIssuesCount" class="fleet-issues-count" aria-label="0 open vehicle issues">0</span>
+            </button>
             <button type="button" class="fleet-button primary" id="fleetAddTruckBtn">
               Add Truck
             </button>
@@ -1819,6 +1823,19 @@
           <span>Condition Reason</span>
           <p id="fleetManageConditionReason">-</p>
         </div>
+
+        <section id="fleetManageVehicleIssue" class="fleet-manage-issue hidden" aria-labelledby="fleetManageVehicleIssueTitle">
+          <div>
+            <span class="fleet-manage-eyebrow">Latest unresolved report</span>
+            <strong id="fleetManageVehicleIssueTitle">Vehicle Issue</strong>
+            <p id="fleetManageVehicleIssueSummary">-</p>
+          </div>
+          <div class="fleet-manage-issue-meta">
+            <span id="fleetManageVehicleIssueSeverity" class="fleet-issue-badge severity">-</span>
+            <span id="fleetManageVehicleIssueStatus" class="fleet-issue-badge status">-</span>
+            <button type="button" class="fleet-row-action" id="fleetManageVehicleIssueBtn">View Issue</button>
+          </div>
+        </section>
       </div>
 
       <div class="fleet-manage-actions">
@@ -1828,6 +1845,121 @@
         <button type="button" class="fleet-button secondary" id="fleetManageConditionBtn">
           Change Condition
         </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- VEHICLE ISSUE QUEUE -->
+<div id="fleetVehicleIssuesModal" class="custom-modal fleet-modal fleet-vehicle-issues-modal hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="fleetVehicleIssuesTitle">
+  <div class="custom-modal-overlay" id="fleetVehicleIssuesOverlay"></div>
+  <div class="custom-modal-content fleet-modal-content fleet-vehicle-issues-content">
+    <div class="custom-modal-header">
+      <div>
+        <span class="fleet-overview-eyebrow">Fleet review queue</span>
+        <h3 id="fleetVehicleIssuesTitle">Vehicle Issues</h3>
+        <p>Review driver-reported concerns and record the WMO Fleet decision.</p>
+      </div>
+      <button type="button" class="modal-close-btn" id="fleetVehicleIssuesCloseBtn" aria-label="Close vehicle issues">&times;</button>
+    </div>
+    <div class="custom-modal-body fleet-vehicle-issues-body">
+      <div class="fleet-issue-filters" aria-label="Vehicle issue filters">
+        <label class="fleet-form-field">
+          <span>Status</span>
+          <select id="fleetVehicleIssueStatusFilter">
+            <option value="open" selected>Open</option>
+            <option value="submitted">Submitted</option>
+            <option value="under_review">Under Review</option>
+            <option value="resolved">Resolved</option>
+            <option value="all">All</option>
+          </select>
+        </label>
+        <label class="fleet-form-field">
+          <span>Severity</span>
+          <select id="fleetVehicleIssueSeverityFilter">
+            <option value="all" selected>All</option>
+            <option value="critical">Critical</option>
+            <option value="moderate">Moderate</option>
+            <option value="low">Low</option>
+          </select>
+        </label>
+        <button type="button" class="fleet-button secondary" id="fleetVehicleIssuesRefreshBtn">Refresh Issues</button>
+      </div>
+      <div id="fleetVehicleIssuesStatus" class="fleet-status-message hidden" role="status" aria-live="polite"></div>
+      <div class="fleet-issue-table-shell">
+        <table class="fleet-issue-table">
+          <thead>
+            <tr>
+              <th>Severity</th>
+              <th>Truck</th>
+              <th>Issue</th>
+              <th>Reported By</th>
+              <th>Reported At</th>
+              <th>Status</th>
+              <th>View</th>
+            </tr>
+          </thead>
+          <tbody id="fleetVehicleIssuesTableBody">
+            <tr><td colspan="7" class="fleet-table-state">Loading vehicle issues...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- VEHICLE ISSUE DETAIL / RESOLUTION -->
+<div id="fleetVehicleIssueDetailModal" class="custom-modal fleet-modal fleet-vehicle-issue-detail-modal hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="fleetVehicleIssueDetailTitle">
+  <div class="custom-modal-overlay" id="fleetVehicleIssueDetailOverlay"></div>
+  <div class="custom-modal-content fleet-modal-content fleet-vehicle-issue-detail-content">
+    <div class="custom-modal-header">
+      <div>
+        <span class="fleet-overview-eyebrow">Vehicle issue review</span>
+        <h3 id="fleetVehicleIssueDetailTitle">Vehicle Issue Details</h3>
+        <p id="fleetVehicleIssueDetailSubtitle">Loading report...</p>
+      </div>
+      <button type="button" class="modal-close-btn" id="fleetVehicleIssueDetailCloseBtn" aria-label="Close vehicle issue details">&times;</button>
+    </div>
+    <div class="custom-modal-body fleet-vehicle-issue-detail-body">
+      <div id="fleetVehicleIssueDetailStatus" class="fleet-status-message hidden" role="status" aria-live="polite"></div>
+      <div id="fleetVehicleIssueDetailBody" class="fleet-issue-detail-sections">
+        <div class="fleet-issue-loading">Loading vehicle issue details...</div>
+      </div>
+
+      <div id="fleetVehicleIssueMutationControls" class="fleet-issue-mutation-controls hidden">
+        <div class="fleet-issue-review-action">
+          <div>
+            <strong>Review status</strong>
+            <p>Mark a newly submitted report as under review before or while deciding its resolution.</p>
+          </div>
+          <button type="button" class="fleet-button secondary" id="fleetVehicleIssueReviewBtn">Mark Under Review</button>
+        </div>
+
+        <form id="fleetVehicleIssueResolutionForm" class="fleet-issue-resolution-form" novalidate>
+          <div>
+            <span class="fleet-manage-eyebrow">Resolution</span>
+            <h4>Record Fleet Decision</h4>
+            <p>Vehicle Issue status is recorded separately from the truck's operational state.</p>
+          </div>
+          <label class="fleet-form-field">
+            <span>Resolution Action <b aria-hidden="true">*</b></span>
+            <select id="fleetVehicleIssueResolutionAction" required>
+              <option value="">Choose an action</option>
+              <option value="continue_operation">Continue Operation</option>
+              <option value="set_for_maintenance">Set For Maintenance</option>
+              <option value="set_out_of_service">Set Out of Service</option>
+            </select>
+          </label>
+          <label class="fleet-form-field" id="fleetVehicleIssueResolutionNotesField">
+            <span>Resolution Notes <b id="fleetVehicleIssueResolutionNotesRequired" class="hidden" aria-hidden="true">*</b></span>
+            <textarea id="fleetVehicleIssueResolutionNotes" maxlength="1000" rows="4" placeholder="Record the reason and follow-up action."></textarea>
+          </label>
+          <p id="fleetVehicleIssueResolutionImpact" class="fleet-issue-resolution-impact">Choose a resolution action to review its effect.</p>
+          <div id="fleetVehicleIssueResolutionFeedback" class="fleet-form-feedback hidden" role="alert"></div>
+          <div class="fleet-form-actions">
+            <button type="submit" class="fleet-button primary" id="fleetVehicleIssueResolveBtn">Resolve Vehicle Issue</button>
+          </div>
+        </form>
       </div>
     </div>
   </div>
