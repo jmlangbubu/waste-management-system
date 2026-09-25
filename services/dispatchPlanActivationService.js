@@ -199,7 +199,20 @@ function assignmentActivationState(plan, today) {
   return { can_activate: true, activation_reason_code: null };
 }
 
-function normalizeAssignment(plan, stops, today) {
+function normalizeLatestVehicleIssue(issue) {
+  if (!issue || issue.id === null || issue.id === undefined) return null;
+  return {
+    id: Number(issue.id),
+    severity: issue.severity || null,
+    report_status: issue.report_status || null,
+    issue_category: issue.issue_category || null,
+    resolution_action: issue.resolution_action || null,
+    created_at: issue.created_at || null,
+    resolved_at: issue.resolved_at || null
+  };
+}
+
+function normalizeAssignment(plan, stops, today, latestVehicleIssue = null) {
   if (!plan) return null;
   return {
     id: Number(plan.id),
@@ -214,6 +227,9 @@ function normalizeAssignment(plan, stops, today) {
     route_description: plan.route_description || null,
     scheduled_start: plan.scheduled_start_at || null,
     expected_return: plan.expected_return_at || null,
+    fleet_condition: plan.fleet_condition || null,
+    condition_reason: plan.condition_reason || null,
+    latest_vehicle_issue: normalizeLatestVehicleIssue(latestVehicleIssue),
     stops,
     ...assignmentActivationState(plan, today),
     linked_dispatch_ticket_id: plan.activated_dispatch_ticket_id === null
@@ -357,6 +373,7 @@ class DispatchPlanActivationService {
           linked_dt.status AS linked_dispatch_ticket_status,
           ft.truck_code,
           ft.fleet_condition,
+          ft.condition_reason,
           (SELECT COUNT(*) FROM dispatch_plan_stops dps_count
             WHERE dps_count.dispatch_plan_id = dp.id) AS stop_count,
           EXISTS(
@@ -438,6 +455,7 @@ class DispatchPlanActivationService {
 
     const selectedPlans = [...plansById.values()];
     const stopsByPlan = new Map();
+    const latestIssueByTruck = new Map();
     if (selectedPlans.length) {
       const ids = selectedPlans.map((plan) => Number(plan.id));
       const [stopRows] = await this.query(
@@ -470,12 +488,59 @@ class DispatchPlanActivationService {
           expected_arrival: stop.expected_arrival || null
         });
       }
+
+      const truckIds = [...new Set(
+        selectedPlans.map((plan) => Number(plan.fleet_truck_id))
+      )];
+      const [issueRows] = await this.query(
+        `
+          SELECT
+            ranked.id,
+            ranked.fleet_truck_id,
+            ranked.severity,
+            ranked.report_status,
+            ranked.issue_category,
+            ranked.resolution_action,
+            DATE_FORMAT(ranked.created_at, '%Y-%m-%d %H:%i:%s.%f') AS created_at,
+            DATE_FORMAT(ranked.resolved_at, '%Y-%m-%d %H:%i:%s.%f') AS resolved_at
+          FROM (
+            SELECT
+              vir.id,
+              vir.fleet_truck_id,
+              vir.severity,
+              vir.report_status,
+              vir.issue_category,
+              vir.resolution_action,
+              vir.created_at,
+              vir.resolved_at,
+              ROW_NUMBER() OVER (
+                PARTITION BY vir.fleet_truck_id
+                ORDER BY
+                  CASE
+                    WHEN vir.report_status IN ('submitted', 'under_review') THEN 0
+                    ELSE 1
+                  END ASC,
+                  vir.created_at DESC,
+                  vir.id DESC
+              ) AS issue_rank
+            FROM vehicle_issue_reports vir
+            WHERE vir.fleet_truck_id IN (${truckIds.map(() => "?").join(", ")})
+          ) ranked
+          WHERE ranked.issue_rank = 1
+          ORDER BY ranked.fleet_truck_id ASC
+        `,
+        truckIds
+      );
+      for (const issue of issueRows) {
+        latestIssueByTruck.set(Number(issue.fleet_truck_id), issue);
+      }
     }
 
     const normalizeSelectedPlan = (plan) => normalizeAssignment(
       plan,
       plan ? stopsByPlan.get(Number(plan.id)) || [] : [],
-      today
+      today,
+      plan ? latestIssueByTruck.get(Number(plan.fleet_truck_id)) || null : null
     );
 
     return {
@@ -1105,4 +1170,5 @@ module.exports.validateActivationActionId = validateActivationActionId;
 module.exports.manilaDateTime = manilaDateTime;
 module.exports.nextCalendarDate = nextCalendarDate;
 module.exports.assignmentActivationState = assignmentActivationState;
+module.exports.normalizeLatestVehicleIssue = normalizeLatestVehicleIssue;
 module.exports.normalizeActivationError = normalizeActivationError;
