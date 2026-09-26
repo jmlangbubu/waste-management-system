@@ -550,6 +550,445 @@ body > .fleet-modal .custom-modal-body {
   }
 }
 
+/* =========================================================
+   VEHICLE ISSUE REVIEW
+   ========================================================= */
+
+.fleet-issues-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fleet-issues-count {
+  display: inline-flex;
+  min-width: 24px;
+  min-height: 24px;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #dfeae4;
+  color: #385147;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.fleet-issues-count.has-open-issues {
+  background: #fee2e0;
+  color: #922820;
+}
+
+.fleet-manage-issue {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px;
+  border: 1px solid #edc89c;
+  border-radius: var(--wmo-radius-md);
+  background: #fff9f0;
+}
+
+.fleet-manage-issue > div:first-child {
+  min-width: 0;
+}
+
+.fleet-manage-issue strong,
+.fleet-manage-issue p {
+  display: block;
+  margin: 0;
+}
+
+.fleet-manage-issue strong {
+  color: var(--wmo-ink);
+  font-size: 14px;
+}
+
+.fleet-manage-issue p {
+  margin-top: 4px;
+  color: var(--wmo-text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.fleet-manage-issue-meta {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+}
+
+body > #fleetVehicleIssuesModal.custom-modal:not(.hidden) {
+  z-index: calc(var(--wmo-z-modal) + 50) !important;
+}
+
+body > #fleetVehicleIssueDetailModal.custom-modal:not(.hidden) {
+  z-index: calc(var(--wmo-z-modal) + 60) !important;
+}
+
+.fleet-vehicle-issues-content {
+  width: min(1120px, calc(100vw - 40px)) !important;
+  max-width: 1120px !important;
+  max-height: calc(100dvh - 40px) !important;
+  overflow: hidden !important;
+}
+
+.fleet-vehicle-issue-detail-content {
+  width: min(920px, calc(100vw - 40px)) !important;
+  max-width: 920px !important;
+  max-height: calc(100dvh - 40px) !important;
+  overflow: hidden !important;
+}
+
+.fleet-vehicle-issues-body,
+.fleet-vehicle-issue-detail-body {
+  max-height: calc(100dvh - 150px) !important;
+  overflow-y: auto !important;
+}
+
+.fleet-issue-filters {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) minmax(180px, 240px) auto;
+  align-items: end;
+  gap: 12px;
+}
+
+.fleet-issue-filters .fleet-form-field > span,
+.fleet-issue-resolution-form .fleet-form-field > span {
+  display: block;
+  margin-bottom: 7px;
+  color: #30453c;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.fleet-issue-table-shell {
+  width: 100%;
+  margin-top: 16px;
+  overflow-x: auto;
+  border: 1px solid var(--wmo-border);
+  border-radius: var(--wmo-radius-lg);
+  background: var(--wmo-surface);
+  -webkit-overflow-scrolling: touch;
+}
+
+.fleet-issue-table {
+  width: 100%;
+  min-width: 940px;
+  border-collapse: collapse;
+}
+
+.fleet-issue-table th,
+.fleet-issue-table td {
+  padding: 12px 13px;
+  border-bottom: 1px solid #e6eee9;
+  color: #263a32;
+  font-size: 12px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.fleet-issue-table th {
+  background: #f4f8f6;
+  color: #44564e;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.fleet-issue-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.fleet-issue-description {
+  display: -webkit-box;
+  max-width: 260px;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.fleet-issue-badge {
+  display: inline-flex;
+  min-height: 25px;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 9px;
+  border: 1px solid #cddbd3;
+  border-radius: 999px;
+  background: #f5f8f6;
+  color: #405149;
+  font-size: 10px;
+  font-weight: 850;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.fleet-issue-badge.severity.low,
+.fleet-issue-badge.status.resolved {
+  border-color: #acd5bf;
+  background: #edf9f1;
+  color: #17613d;
+}
+
+.fleet-issue-badge.severity.moderate,
+.fleet-issue-badge.status.under_review {
+  border-color: #edc89c;
+  background: var(--wmo-warning-soft);
+  color: #8a3c08;
+}
+
+.fleet-issue-badge.severity.critical,
+.fleet-issue-badge.status.submitted {
+  border-color: #e7b8b4;
+  background: #fff2f1;
+  color: #8f211a;
+}
+
+.fleet-issue-detail-sections {
+  display: grid;
+  gap: 14px;
+}
+
+.fleet-issue-detail-section {
+  padding: 16px;
+  border: 1px solid var(--wmo-border);
+  border-radius: var(--wmo-radius-lg);
+  background: #ffffff;
+}
+
+.fleet-issue-section-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 13px;
+}
+
+.fleet-issue-section-heading > span {
+  display: inline-flex;
+  width: 29px;
+  height: 29px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: #eaf4ef;
+  color: #205d43;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.fleet-issue-section-heading h4,
+.fleet-issue-section-heading p,
+.fleet-issue-resolution-form h4,
+.fleet-issue-resolution-form p,
+.fleet-issue-review-action p {
+  margin: 0;
+}
+
+.fleet-issue-section-heading h4,
+.fleet-issue-resolution-form h4 {
+  color: var(--wmo-ink);
+  font-size: 15px;
+}
+
+.fleet-issue-section-heading p,
+.fleet-issue-resolution-form > div:first-child p,
+.fleet-issue-review-action p {
+  margin-top: 3px;
+  color: var(--wmo-text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.fleet-issue-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin: 0;
+}
+
+.fleet-issue-detail-grid > div {
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid #e3ebe6;
+  border-radius: var(--wmo-radius-md);
+  background: #f9fbfa;
+}
+
+.fleet-issue-detail-grid .fleet-issue-detail-wide {
+  grid-column: 1 / -1;
+}
+
+.fleet-issue-detail-grid dt {
+  margin-bottom: 5px;
+  color: var(--wmo-text-muted);
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+}
+
+.fleet-issue-detail-grid dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--wmo-ink);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.fleet-issue-evidence {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.7fr) minmax(0, 1.3fr);
+  gap: 12px;
+}
+
+.fleet-issue-photo-link,
+.fleet-issue-no-photo {
+  min-height: 150px;
+  border: 1px solid #dce7e1;
+  border-radius: var(--wmo-radius-md);
+  background: #f5f8f6;
+}
+
+.fleet-issue-photo-link {
+  position: relative;
+  display: block;
+  overflow: hidden;
+}
+
+.fleet-issue-photo-link img {
+  width: 100%;
+  height: 180px;
+  object-fit: cover;
+}
+
+.fleet-issue-photo-link span {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: rgba(17, 47, 36, 0.86);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.fleet-issue-no-photo,
+.fleet-issue-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  color: var(--wmo-text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.fleet-issue-operation-warning {
+  padding: 12px 14px;
+  border: 1px solid #edc89c;
+  border-radius: var(--wmo-radius-md);
+  background: var(--wmo-warning-soft);
+  color: #7c3f0d;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.45;
+}
+
+.fleet-issue-mutation-controls {
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.fleet-issue-review-action,
+.fleet-issue-resolution-form {
+  border: 1px solid #d8e5de;
+  border-radius: var(--wmo-radius-lg);
+  background: #f8fbf9;
+}
+
+.fleet-issue-review-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px;
+}
+
+.fleet-issue-resolution-form {
+  display: grid;
+  gap: 13px;
+  padding: 16px;
+}
+
+.fleet-issue-resolution-impact {
+  padding: 10px 12px;
+  border-left: 3px solid var(--wmo-secondary);
+  background: #edf7f2;
+  color: #285440;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.fleet-issue-resolution-summary {
+  border-color: #b9d9c8;
+  background: #f7fcf9;
+}
+
+@media (min-width: 993px) {
+  body > #fleetVehicleIssuesModal.custom-modal > .fleet-vehicle-issues-content {
+    width: min(1120px, calc(100vw - var(--fleet-modal-sidebar-offset) - 40px)) !important;
+    max-width: calc(100vw - var(--fleet-modal-sidebar-offset) - 40px) !important;
+  }
+
+  body > #fleetVehicleIssueDetailModal.custom-modal > .fleet-vehicle-issue-detail-content {
+    width: min(920px, calc(100vw - var(--fleet-modal-sidebar-offset) - 40px)) !important;
+    max-width: calc(100vw - var(--fleet-modal-sidebar-offset) - 40px) !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .fleet-overview-actions {
+    flex-wrap: wrap;
+  }
+
+  .fleet-issue-filters,
+  .fleet-issue-evidence,
+  .fleet-issue-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .fleet-issue-detail-grid .fleet-issue-detail-wide {
+    grid-column: auto;
+  }
+
+  .fleet-issue-filters .fleet-button {
+    width: 100%;
+  }
+
+  .fleet-vehicle-issues-content,
+  .fleet-vehicle-issue-detail-content {
+    width: calc(100vw - 24px) !important;
+    max-width: calc(100vw - 24px) !important;
+    max-height: calc(100dvh - 24px) !important;
+  }
+
+  .fleet-manage-issue,
+  .fleet-manage-issue-meta,
+  .fleet-issue-review-action {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
 /* Fleet workspace parent modal. Child action dialogs remain body-level portals. */
 #fleetOverviewModal.custom-modal {
   z-index: var(--wmo-z-modal);

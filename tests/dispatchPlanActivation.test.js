@@ -22,6 +22,7 @@ const {
   isEligibleEnforcer,
   manilaDateTime,
   nextCalendarDate,
+  normalizeLatestVehicleIssue,
   validateActivationActionId
 } = require("../services/dispatchPlanActivationService");
 Module._load = originalModuleLoad;
@@ -34,9 +35,10 @@ const read = (relativePath) => fs.readFileSync(
 );
 
 class AssignmentPool {
-  constructor(planRows, stopRows) {
+  constructor(planRows, stopRows, issueRows = []) {
     this.planRows = planRows;
     this.stopRows = stopRows;
+    this.issueRows = issueRows;
     this.queries = [];
   }
 
@@ -44,6 +46,9 @@ class AssignmentPool {
     this.queries.push({ sql, parameters });
     if (/FROM dispatch_plan_stops\s+WHERE dispatch_plan_id IN/i.test(sql)) {
       return [this.stopRows];
+    }
+    if (/FROM vehicle_issue_reports vir/i.test(sql)) {
+      return [this.issueRows];
     }
     return [this.planRows];
   }
@@ -77,11 +82,26 @@ function planRow(overrides = {}) {
     activated_tracking_session_id: null,
     truck_code: "SYNTH-TRUCK-44",
     fleet_condition: "available",
+    condition_reason: null,
     stop_count: 2,
     has_active_truck_session: 0,
     has_active_enforcer_session: 0,
     has_truck_ticket_conflict: 0,
     has_enforcer_ticket_conflict: 0,
+    ...overrides
+  };
+}
+
+function issueRow(overrides = {}) {
+  return {
+    id: 701,
+    fleet_truck_id: 44,
+    severity: "critical",
+    report_status: "under_review",
+    issue_category: "engine_overheating",
+    resolution_action: null,
+    created_at: "2026-08-31 07:10:00.000000",
+    resolved_at: null,
     ...overrides
   };
 }
@@ -188,8 +208,17 @@ test("assignment lookup uses authenticated identity and ignores arbitrary author
     now: () => new Date("2026-08-31T00:00:00.000Z")
   });
   await service.listAssignments(eligibleUser({ user_id: 999, enforcer_id: 999 }));
-  assert.deepEqual(pool.queries[0].parameters.slice(-3), [
+  const nonTerminalStatuses = [
+    "prepared",
+    "dispatched",
+    "in_progress",
+    "returning_to_wmo"
+  ];
+  assert.deepEqual(pool.queries[0].parameters, [
+    ...nonTerminalStatuses,
+    ...nonTerminalStatuses,
     77,
+    ...nonTerminalStatuses,
     "2026-08-31",
     "2026-09-01"
   ]);
@@ -206,7 +235,8 @@ test("activated today remains visible with linked IDs and is read-only", async (
     planRow({
       status: "activated",
       activated_dispatch_ticket_id: 901,
-      activated_tracking_session_id: 902
+      activated_tracking_session_id: 902,
+      linked_dispatch_ticket_status: "in_progress"
     })
   ], [stopRow(501, 1, "First")]);
   const service = new DispatchPlanActivationService(pool, {
@@ -221,6 +251,176 @@ test("activated today remains visible with linked IDs and is read-only", async (
     result.today_assignment.activation_reason_code,
     "DISPATCH_PLAN_ALREADY_ACTIVATED"
   );
+});
+
+test("assignment response returns authoritative Fleet condition and nullable reason", async () => {
+  for (const [fleetCondition, conditionReason] of [
+    ["available", null],
+    ["for_maintenance", "Inspect the brake system."],
+    ["out_of_service", "Keep the vehicle parked."]
+  ]) {
+    const pool = new AssignmentPool([
+      planRow({ fleet_condition: fleetCondition, condition_reason: conditionReason })
+    ], []);
+    const service = new DispatchPlanActivationService(pool, {
+      now: () => new Date("2026-08-31T00:00:00.000Z")
+    });
+    const assignment = (await service.listAssignments(eligibleUser())).today_assignment;
+    assert.equal(assignment.fleet_condition, fleetCondition);
+    assert.equal(assignment.condition_reason, conditionReason);
+  }
+});
+
+test("cross-day active assignment remains current with Fleet condition and latest issue", async () => {
+  for (const [fleetCondition, conditionReason] of [
+    ["for_maintenance", "Inspect the brake system."],
+    ["out_of_service", "Keep the vehicle parked."]
+  ]) {
+    const pool = new AssignmentPool([
+      planRow({
+        operational_date: "2026-08-30",
+        status: "activated",
+        fleet_condition: fleetCondition,
+        condition_reason: conditionReason,
+        activated_dispatch_ticket_id: 901,
+        activated_tracking_session_id: 902,
+        linked_dispatch_ticket_status: "in_progress"
+      })
+    ], [stopRow(501, 1, "First")], [issueRow({
+      assistant_answers: "private",
+      latitude: 6.1,
+      longitude: 125.1,
+      image_url: "/uploads/private.jpg",
+      reviewed_by_web_user_id: 5
+    })]);
+    const service = new DispatchPlanActivationService(pool, {
+      now: () => new Date("2026-08-31T00:00:00.000Z")
+    });
+    const result = await service.listAssignments(eligibleUser());
+    const assignment = result.current_assignment;
+    assert.equal(assignment.id, 501);
+    assert.equal(assignment.operational_date, "2026-08-30");
+    assert.equal(assignment.fleet_condition, fleetCondition);
+    assert.equal(assignment.condition_reason, conditionReason);
+    assert.equal(assignment.linked_dispatch_ticket_id, 901);
+    assert.equal(assignment.linked_tracking_session_id, 902);
+    assert.equal(assignment.linked_dispatch_ticket_status, "in_progress");
+    assert.equal(assignment.route_name, "Synthetic Route");
+    assert.deepEqual(assignment.stops.map((stop) => stop.location_name), ["First"]);
+    assert.deepEqual(assignment.latest_vehicle_issue, normalizeLatestVehicleIssue(issueRow()));
+    assert.doesNotMatch(
+      JSON.stringify(assignment.latest_vehicle_issue),
+      /assistant_answers|latitude|longitude|image_url|reviewed_by_web_user_id/
+    );
+    assert.equal(result.today_assignment, null);
+  }
+});
+
+test("terminal prior-day assignment is not retained as current", async () => {
+  const pool = new AssignmentPool([
+    planRow({
+      operational_date: "2026-08-30",
+      status: "activated",
+      activated_dispatch_ticket_id: 901,
+      activated_tracking_session_id: 902,
+      linked_dispatch_ticket_status: "completed"
+    })
+  ], [stopRow(501, 1, "First")], [issueRow()]);
+  const service = new DispatchPlanActivationService(pool, {
+    now: () => new Date("2026-08-31T00:00:00.000Z")
+  });
+  const result = await service.listAssignments(eligibleUser());
+  assert.equal(result.current_assignment, null);
+  assert.equal(result.today_assignment, null);
+});
+
+test("latest Vehicle Issue exposes only the approved compact projection", async () => {
+  const issue = issueRow({
+    assistant_answers: "private",
+    latitude: 6.1,
+    longitude: 125.1,
+    image_url: "/uploads/private.jpg",
+    reviewed_by_web_user_id: 5,
+    resolution_notes: "private notes"
+  });
+  const pool = new AssignmentPool([planRow()], [], [issue]);
+  const service = new DispatchPlanActivationService(pool, {
+    now: () => new Date("2026-08-31T00:00:00.000Z")
+  });
+  const assignment = (await service.listAssignments(eligibleUser())).today_assignment;
+  assert.deepEqual(assignment.latest_vehicle_issue, {
+    id: 701,
+    severity: "critical",
+    report_status: "under_review",
+    issue_category: "engine_overheating",
+    resolution_action: null,
+    created_at: "2026-08-31 07:10:00.000000",
+    resolved_at: null
+  });
+  const serialized = JSON.stringify(assignment.latest_vehicle_issue);
+  for (const forbidden of [
+    "assistant_answers",
+    "latitude",
+    "longitude",
+    "accuracy_meters",
+    "location_recorded_at",
+    "image_url",
+    "reviewed_by_web_user_id",
+    "resolution_notes"
+  ]) {
+    assert.equal(serialized.includes(forbidden), false, forbidden);
+  }
+});
+
+test("latest Vehicle Issue query prioritizes newest unresolved then newest overall", async () => {
+  const pool = new AssignmentPool([planRow()], [], [issueRow()]);
+  const service = new DispatchPlanActivationService(pool, {
+    now: () => new Date("2026-08-31T00:00:00.000Z")
+  });
+  await service.listAssignments(eligibleUser());
+  const issueQuery = pool.queries.find(({ sql }) => /FROM vehicle_issue_reports vir/i.test(sql));
+  assert.ok(issueQuery);
+  assert.match(issueQuery.sql, /PARTITION BY vir\.fleet_truck_id/);
+  assert.match(issueQuery.sql, /report_status IN \('submitted', 'under_review'\)[\s\S]*THEN 0/);
+  assert.match(issueQuery.sql, /vir\.created_at DESC,[\s\S]*vir\.id DESC/);
+  assert.match(issueQuery.sql, /WHERE ranked\.issue_rank = 1/);
+  assert.deepEqual(issueQuery.parameters, [44]);
+});
+
+test("no Vehicle Issue returns null and tomorrow assignment remains compatible", async () => {
+  const tomorrow = planRow({
+    id: 502,
+    operational_date: "2026-09-01",
+    fleet_condition: "for_maintenance",
+    condition_reason: null
+  });
+  const pool = new AssignmentPool([planRow(), tomorrow], []);
+  const service = new DispatchPlanActivationService(pool, {
+    now: () => new Date("2026-08-31T00:00:00.000Z")
+  });
+  const result = await service.listAssignments(eligibleUser());
+  assert.equal(result.today_assignment.latest_vehicle_issue, null);
+  assert.equal(result.tomorrow_assignment.id, 502);
+  assert.equal(result.tomorrow_assignment.fleet_condition, "for_maintenance");
+  assert.equal(result.tomorrow_assignment.condition_reason, null);
+  assert.equal(result.tomorrow_assignment.can_activate, false);
+});
+
+test("latest Vehicle Issue normalizer preserves resolved issue metadata", () => {
+  assert.deepEqual(normalizeLatestVehicleIssue(issueRow({
+    report_status: "resolved",
+    resolution_action: "set_for_maintenance",
+    resolved_at: "2026-08-31 08:00:00.000000"
+  })), {
+    id: 701,
+    severity: "critical",
+    report_status: "resolved",
+    issue_category: "engine_overheating",
+    resolution_action: "set_for_maintenance",
+    created_at: "2026-08-31 07:10:00.000000",
+    resolved_at: "2026-08-31 08:00:00.000000"
+  });
+  assert.equal(normalizeLatestVehicleIssue(null), null);
 });
 
 test("cancelled assignment remains safe and read-only", () => {
@@ -255,6 +455,13 @@ test("truck and operational conflicts make a planned today assignment read-only"
   assert.equal(
     assignmentActivationState(
       planRow({ fleet_condition: "for_maintenance" }),
+      "2026-08-31"
+    ).activation_reason_code,
+    "DISPATCH_PLAN_TRUCK_UNAVAILABLE"
+  );
+  assert.equal(
+    assignmentActivationState(
+      planRow({ fleet_condition: "out_of_service" }),
       "2026-08-31"
     ).activation_reason_code,
     "DISPATCH_PLAN_TRUCK_UNAVAILABLE"

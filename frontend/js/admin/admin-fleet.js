@@ -49,6 +49,46 @@ const FLEET_EMPTY_SUMMARY = Object.freeze({
   out_of_service: 0
 });
 
+const VEHICLE_ISSUE_SEVERITY_LABELS = Object.freeze({
+  low: "Low",
+  moderate: "Moderate",
+  critical: "Critical"
+});
+
+const VEHICLE_ISSUE_STATUS_LABELS = Object.freeze({
+  submitted: "Submitted",
+  under_review: "Under Review",
+  resolved: "Resolved"
+});
+
+const VEHICLE_ISSUE_CATEGORY_LABELS = Object.freeze({
+  engine_overheating: "Engine / Overheating",
+  brakes: "Brakes",
+  tires: "Tires",
+  steering: "Steering",
+  electrical_battery: "Electrical / Battery",
+  lights: "Lights",
+  noise_vibration: "Unusual Noise / Vibration",
+  other: "Other"
+});
+
+const VEHICLE_ISSUE_RESOLUTION_LABELS = Object.freeze({
+  continue_operation: "Continue Operation",
+  set_for_maintenance: "Set For Maintenance",
+  set_out_of_service: "Set Out of Service"
+});
+
+const VEHICLE_ISSUE_OPEN_STATUSES = new Set(["submitted", "under_review"]);
+const VEHICLE_ISSUE_CONDITION_ACTIONS = new Set([
+  "set_for_maintenance",
+  "set_out_of_service"
+]);
+const FLEET_ACTIVE_OPERATION_KEYS = new Set([
+  "active_dispatch",
+  "returning_to_wmo",
+  "tracking_awaiting_dispatch"
+]);
+
 let fleetTrucksCache = [];
 let fleetSummaryCache = { ...FLEET_EMPTY_SUMMARY };
 let fleetHasLoadedTrucks = false;
@@ -58,12 +98,19 @@ let fleetSelectedEditTruck = null;
 let fleetLastModalTrigger = null;
 let fleetParentModalTrigger = null;
 let fleetRefreshInProgress = false;
+let fleetVehicleIssuesCache = [];
+let fleetVehicleIssuesLoaded = false;
+let fleetVehicleIssueSelected = null;
+let fleetVehicleIssuesTrigger = null;
+let fleetVehicleIssueDetailTrigger = null;
 
 const FLEET_CHILD_MODAL_IDS = Object.freeze([
   "fleetAddTruckModal",
   "fleetManageModal",
   "fleetEditTruckModal",
-  "fleetConditionModal"
+  "fleetConditionModal",
+  "fleetVehicleIssuesModal",
+  "fleetVehicleIssueDetailModal"
 ]);
 
 function fleetEscape(value) {
@@ -73,6 +120,68 @@ function fleetEscape(value) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+function fleetVehicleIssueSeverityLabel(severity) {
+  const key = String(severity || "").trim().toLowerCase();
+  return VEHICLE_ISSUE_SEVERITY_LABELS[key] || "Not recorded";
+}
+
+function fleetVehicleIssueStatusLabel(status) {
+  const key = String(status || "").trim().toLowerCase();
+  return VEHICLE_ISSUE_STATUS_LABELS[key] || "Not recorded";
+}
+
+function fleetVehicleIssueCategoryLabel(category) {
+  const key = String(category || "").trim().toLowerCase();
+  return VEHICLE_ISSUE_CATEGORY_LABELS[key] || "Other";
+}
+
+function fleetVehicleIssueResolutionLabel(action) {
+  const key = String(action || "").trim().toLowerCase();
+  return VEHICLE_ISSUE_RESOLUTION_LABELS[key] || "Not recorded";
+}
+
+function fleetVehicleIssueIsOpen(report = {}) {
+  return VEHICLE_ISSUE_OPEN_STATUSES.has(
+    String(report.report_status || "").trim().toLowerCase()
+  );
+}
+
+function fleetVehicleIssueResolutionRequiresNotes(action) {
+  return VEHICLE_ISSUE_CONDITION_ACTIONS.has(
+    String(action || "").trim().toLowerCase()
+  );
+}
+
+function fleetValidateVehicleIssueResolution(payload = {}) {
+  const action = String(payload.resolution_action || "").trim().toLowerCase();
+  const notes = String(payload.resolution_notes || "").trim();
+  if (!Object.prototype.hasOwnProperty.call(VEHICLE_ISSUE_RESOLUTION_LABELS, action)) {
+    return { valid: false, message: "Select a valid resolution action." };
+  }
+  if (fleetVehicleIssueResolutionRequiresNotes(action) && !notes) {
+    return { valid: false, message: "Resolution notes are required for this Fleet condition change." };
+  }
+  return { valid: true, message: "" };
+}
+
+function fleetVehicleIssueDate(value) {
+  if (!value) return "Not recorded";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString("en-PH", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
+}
+
+function fleetVehicleIssueSafeImageUrl(value) {
+  const url = String(value || "").trim();
+  return /^(https?:\/\/|\/(?!\/))/i.test(url) ? url : "";
 }
 
 function fleetCount(value) {
@@ -301,6 +410,178 @@ function fleetTableRowsHtml(trucks = []) {
   }).join("");
 }
 
+function fleetVehicleIssueFilteredReports(reports = [], filters = {}) {
+  const status = String(filters.status || "open").trim().toLowerCase();
+  const severity = String(filters.severity || "all").trim().toLowerCase();
+  return (Array.isArray(reports) ? reports : []).filter((report) => {
+    const reportStatus = String(report.report_status || "").trim().toLowerCase();
+    const reportSeverity = String(report.severity || "").trim().toLowerCase();
+    const statusMatches = status === "all"
+      || (status === "open" && VEHICLE_ISSUE_OPEN_STATUSES.has(reportStatus))
+      || reportStatus === status;
+    const severityMatches = severity === "all" || reportSeverity === severity;
+    return statusMatches && severityMatches;
+  });
+}
+
+function fleetLatestOpenIssueForTruck(truckId, reports = fleetVehicleIssuesCache) {
+  const id = Number(truckId);
+  if (!Number.isInteger(id) || id <= 0) return null;
+  return (Array.isArray(reports) ? reports : []).find((report) => (
+    Number(report.fleet_truck_id) === id && fleetVehicleIssueIsOpen(report)
+  )) || null;
+}
+
+function fleetVehicleIssueRowsHtml(reports = [], filters = {}) {
+  const filtered = fleetVehicleIssueFilteredReports(reports, filters);
+  if (!filtered.length) {
+    return `
+      <tr>
+        <td colspan="7" class="fleet-table-state fleet-empty-state">
+          <strong>No vehicle issues match these filters.</strong>
+          <span>Try another status or severity.</span>
+        </td>
+      </tr>`;
+  }
+
+  return filtered.map((report) => {
+    const reportId = Number(report.id);
+    const severity = String(report.severity || "").trim().toLowerCase();
+    const status = String(report.report_status || "").trim().toLowerCase();
+    const truckCode = String(report.truck_code_snapshot || "").trim() || "Not recorded";
+    const truckName = String(report.truck_name_snapshot || "").trim();
+    const reporter = String(report.reported_by_name_snapshot || "").trim() || "Not recorded";
+    const description = String(report.description || "").trim() || "No description provided";
+    return `
+      <tr>
+        <td><span class="fleet-issue-badge severity ${fleetEscape(severity)}">${fleetEscape(fleetVehicleIssueSeverityLabel(severity))}</span></td>
+        <td>
+          <strong class="fleet-truck-code">${fleetEscape(truckCode)}</strong>
+          ${truckName ? `<small class="fleet-cell-note">${fleetEscape(truckName)}</small>` : ""}
+        </td>
+        <td>
+          <strong>${fleetEscape(fleetVehicleIssueCategoryLabel(report.issue_category))}</strong>
+          <small class="fleet-cell-note fleet-issue-description">${fleetEscape(description)}</small>
+        </td>
+        <td>${fleetEscape(reporter)}</td>
+        <td>${fleetEscape(fleetVehicleIssueDate(report.created_at))}</td>
+        <td><span class="fleet-issue-badge status ${fleetEscape(status)}">${fleetEscape(fleetVehicleIssueStatusLabel(status))}</span></td>
+        <td>
+          <button type="button" class="fleet-row-action" data-vehicle-issue-view="${fleetEscape(Number.isInteger(reportId) && reportId > 0 ? reportId : "")}" ${Number.isInteger(reportId) && reportId > 0 ? "" : "disabled"}>View</button>
+        </td>
+      </tr>`;
+  }).join("");
+}
+
+function fleetVehicleIssueHasActiveOperation(report = {}) {
+  const truck = fleetFindTruckById(report.fleet_truck_id);
+  const key = String(truck?.operational_state_key || "").trim().toLowerCase();
+  return FLEET_ACTIVE_OPERATION_KEYS.has(key);
+}
+
+function fleetVehicleIssueDetailHtml(report = {}) {
+  const severity = String(report.severity || "").trim().toLowerCase();
+  const status = String(report.report_status || "").trim().toLowerCase();
+  const condition = String(report.current_fleet_condition || "").trim().toLowerCase();
+  const description = String(report.description || "").trim() || "Not provided";
+  const possibleConcern = String(report.possible_concern || "").trim() || "Not recorded";
+  const recommendedAction = String(report.recommended_action || "").trim() || "Not recorded";
+  const imageUrl = fleetVehicleIssueSafeImageUrl(report.image_url);
+  const latitude = Number(report.latitude);
+  const longitude = Number(report.longitude);
+  const accuracy = Number(report.accuracy_meters);
+  const hasCoordinates = report.latitude !== null
+    && report.latitude !== undefined
+    && report.longitude !== null
+    && report.longitude !== undefined
+    && Number.isFinite(latitude)
+    && Number.isFinite(longitude);
+  const hasAccuracy = report.accuracy_meters !== null
+    && report.accuracy_meters !== undefined
+    && Number.isFinite(accuracy);
+  const isResolved = status === "resolved";
+  const currentTruck = fleetFindTruckById(report.fleet_truck_id);
+  const activeWarning = fleetVehicleIssueHasActiveOperation(report)
+    ? `<div class="fleet-issue-operation-warning" role="note">Updating the Fleet condition does not automatically end the current active operation.</div>`
+    : "";
+
+  return `
+    ${activeWarning}
+    <section class="fleet-issue-detail-section">
+      <div class="fleet-issue-section-heading"><span>01</span><div><h4>Truck Information</h4><p>Current Fleet information is shown separately from this report's status.</p></div></div>
+      <dl class="fleet-issue-detail-grid">
+        <div><dt>Truck Code</dt><dd>${fleetEscape(String(report.truck_code_snapshot || "").trim() || "Not recorded")}</dd></div>
+        <div><dt>Truck Name</dt><dd>${fleetEscape(String(report.truck_name_snapshot || "").trim() || "Not recorded")}</dd></div>
+        <div><dt>Current Fleet Condition</dt><dd><span class="fleet-badge condition ${fleetEscape(condition || "unknown")}">${fleetEscape(fleetConditionLabel(condition))}</span></dd></div>
+        <div><dt>Current Operational State</dt><dd>${fleetEscape(currentTruck ? fleetOperationalLabel(currentTruck) : "Not available")}</dd></div>
+        <div><dt>Condition Reason</dt><dd>${fleetEscape(String(report.current_condition_reason || "").trim() || "Not recorded")}</dd></div>
+      </dl>
+    </section>
+
+    <section class="fleet-issue-detail-section">
+      <div class="fleet-issue-section-heading"><span>02</span><div><h4>Report Information</h4><p>Submission and review lifecycle.</p></div></div>
+      <dl class="fleet-issue-detail-grid">
+        <div><dt>Report ID</dt><dd>#${fleetEscape(report.id || "Not recorded")}</dd></div>
+        <div><dt>Reported By</dt><dd>${fleetEscape(String(report.reported_by_name_snapshot || "").trim() || "Not recorded")}</dd></div>
+        <div><dt>Reported At</dt><dd>${fleetEscape(fleetVehicleIssueDate(report.created_at))}</dd></div>
+        <div><dt>Vehicle Issue Status</dt><dd><span class="fleet-issue-badge status ${fleetEscape(status)}">${fleetEscape(fleetVehicleIssueStatusLabel(status))}</span></dd></div>
+        <div><dt>Reviewed By</dt><dd>${fleetEscape(String(report.reviewed_by_name || "").trim() || "Not recorded")}</dd></div>
+        <div><dt>Reviewed At</dt><dd>${fleetEscape(fleetVehicleIssueDate(report.reviewed_at))}</dd></div>
+      </dl>
+    </section>
+
+    <section class="fleet-issue-detail-section">
+      <div class="fleet-issue-section-heading"><span>03</span><div><h4>Issue</h4><p>Driver-provided concern and rules-based severity.</p></div></div>
+      <dl class="fleet-issue-detail-grid">
+        <div><dt>Category</dt><dd>${fleetEscape(fleetVehicleIssueCategoryLabel(report.issue_category))}</dd></div>
+        <div><dt>Severity</dt><dd><span class="fleet-issue-badge severity ${fleetEscape(severity)}">${fleetEscape(fleetVehicleIssueSeverityLabel(severity))}</span></dd></div>
+        <div class="fleet-issue-detail-wide"><dt>Description</dt><dd>${fleetEscape(description)}</dd></div>
+      </dl>
+    </section>
+
+    <section class="fleet-issue-detail-section">
+      <div class="fleet-issue-section-heading"><span>04</span><div><h4>Vehicle Assistant Assessment</h4><p>Deterministic safety guidance recorded with the report.</p></div></div>
+      <dl class="fleet-issue-detail-grid">
+        <div class="fleet-issue-detail-wide"><dt>Possible Concern</dt><dd>${fleetEscape(possibleConcern)}</dd></div>
+        <div class="fleet-issue-detail-wide"><dt>Recommended Action</dt><dd>${fleetEscape(recommendedAction)}</dd></div>
+        <div><dt>Ruleset Version</dt><dd>${fleetEscape(String(report.assistant_ruleset_version || "").trim() || "Not recorded")}</dd></div>
+      </dl>
+    </section>
+
+    <section class="fleet-issue-detail-section">
+      <div class="fleet-issue-section-heading"><span>05</span><div><h4>Evidence</h4><p>Optional photo and GPS evidence captured by the reporting device.</p></div></div>
+      <div class="fleet-issue-evidence">
+        ${imageUrl ? `<a href="${fleetEscape(imageUrl)}" target="_blank" rel="noopener noreferrer" class="fleet-issue-photo-link"><img src="${fleetEscape(imageUrl)}" alt="Vehicle issue report evidence"><span>Open full photo</span></a>` : `<div class="fleet-issue-no-photo">No photo was attached.</div>`}
+        <dl class="fleet-issue-detail-grid">
+          <div class="fleet-issue-detail-wide"><dt>GPS Coordinates</dt><dd>${hasCoordinates ? `${fleetEscape(latitude.toFixed(6))}, ${fleetEscape(longitude.toFixed(6))}` : "Not recorded"}</dd></div>
+          <div><dt>Accuracy</dt><dd>${hasAccuracy ? `${fleetEscape(accuracy.toFixed(1))} m` : "Not recorded"}</dd></div>
+          <div><dt>Location Recorded At</dt><dd>${fleetEscape(fleetVehicleIssueDate(report.location_recorded_at))}</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <section class="fleet-issue-detail-section">
+      <div class="fleet-issue-section-heading"><span>06</span><div><h4>Operation References</h4><p>References are evidence links only and do not change dispatch or tracking state.</p></div></div>
+      <dl class="fleet-issue-detail-grid fleet-issue-reference-grid">
+        <div><dt>Dispatch Plan</dt><dd>${report.dispatch_plan_id ? `#${fleetEscape(report.dispatch_plan_id)}` : "Not recorded"}</dd></div>
+        <div><dt>Dispatch Ticket</dt><dd>${report.dispatch_ticket_id ? `#${fleetEscape(report.dispatch_ticket_id)}` : "Not recorded"}</dd></div>
+        <div><dt>Tracking Session</dt><dd>${report.tracking_session_id ? `#${fleetEscape(report.tracking_session_id)}` : "Not recorded"}</dd></div>
+      </dl>
+    </section>
+
+    ${isResolved ? `
+      <section class="fleet-issue-detail-section fleet-issue-resolution-summary">
+        <div class="fleet-issue-section-heading"><span>07</span><div><h4>Resolution</h4><p>This resolved report is read-only.</p></div></div>
+        <dl class="fleet-issue-detail-grid">
+          <div><dt>Action</dt><dd>${fleetEscape(fleetVehicleIssueResolutionLabel(report.resolution_action))}</dd></div>
+          <div><dt>Resolved By</dt><dd>${fleetEscape(String(report.resolved_by_name || "").trim() || "Not recorded")}</dd></div>
+          <div><dt>Resolved At</dt><dd>${fleetEscape(fleetVehicleIssueDate(report.resolved_at))}</dd></div>
+          <div class="fleet-issue-detail-wide"><dt>Resolution Notes</dt><dd>${fleetEscape(String(report.resolution_notes || "").trim() || "No resolution notes recorded")}</dd></div>
+        </dl>
+      </section>` : ""}
+  `;
+}
+
 function renderFleetSummary(summary = {}) {
   fleetSummaryCache = {
     total: fleetCount(summary.total),
@@ -326,6 +607,71 @@ function renderFleetTable(trucks = []) {
   const tbody = document.getElementById("fleetTableBody");
   if (!tbody) return;
   tbody.innerHTML = fleetTableRowsHtml(trucks);
+}
+
+function fleetVehicleIssueCurrentFilters() {
+  return {
+    status: document.getElementById("fleetVehicleIssueStatusFilter")?.value || "open",
+    severity: document.getElementById("fleetVehicleIssueSeverityFilter")?.value || "all"
+  };
+}
+
+function renderFleetVehicleIssueCount(reports = fleetVehicleIssuesCache) {
+  const count = (Array.isArray(reports) ? reports : []).filter(fleetVehicleIssueIsOpen).length;
+  const element = document.getElementById("fleetVehicleIssuesCount");
+  if (!element) return count;
+  element.textContent = String(count);
+  element.setAttribute("aria-label", `${count} open vehicle ${count === 1 ? "issue" : "issues"}`);
+  element.classList.toggle("has-open-issues", count > 0);
+  return count;
+}
+
+function renderFleetVehicleIssueTable() {
+  const tbody = document.getElementById("fleetVehicleIssuesTableBody");
+  if (!tbody) return;
+  tbody.innerHTML = fleetVehicleIssueRowsHtml(
+    fleetVehicleIssuesCache,
+    fleetVehicleIssueCurrentFilters()
+  );
+}
+
+function fleetSetVehicleIssueStatus(message = "", type = "status") {
+  const element = document.getElementById("fleetVehicleIssuesStatus");
+  if (!element) return;
+  const text = String(message || "").trim();
+  element.textContent = text;
+  element.classList.toggle("hidden", !text);
+  element.classList.toggle("error", type === "error");
+}
+
+function renderFleetManageLatestIssue(truck = fleetSelectedManageTruck) {
+  const panel = document.getElementById("fleetManageVehicleIssue");
+  if (!panel) return null;
+  const report = truck ? fleetLatestOpenIssueForTruck(truck.id) : null;
+  panel.classList.toggle("hidden", !report);
+  if (!report) {
+    panel.removeAttribute("data-report-id");
+    return null;
+  }
+
+  panel.dataset.reportId = String(report.id);
+  const summary = document.getElementById("fleetManageVehicleIssueSummary");
+  const severity = document.getElementById("fleetManageVehicleIssueSeverity");
+  const status = document.getElementById("fleetManageVehicleIssueStatus");
+  if (summary) {
+    summary.textContent = `${fleetVehicleIssueCategoryLabel(report.issue_category)} · ${fleetVehicleIssueDate(report.created_at)}`;
+  }
+  if (severity) {
+    const key = String(report.severity || "").trim().toLowerCase();
+    severity.className = `fleet-issue-badge severity ${key}`;
+    severity.textContent = fleetVehicleIssueSeverityLabel(key);
+  }
+  if (status) {
+    const key = String(report.report_status || "").trim().toLowerCase();
+    status.className = `fleet-issue-badge status ${key}`;
+    status.textContent = fleetVehicleIssueStatusLabel(key);
+  }
+  return report;
 }
 
 function fleetSetStatus(message = "", type = "status") {
@@ -394,6 +740,17 @@ async function loadFleetTrucks() {
   return fleetTrucksCache;
 }
 
+async function loadVehicleIssues() {
+  const reports = await fleetRequest(getVehicleIssuesApiUrl({ limit: 200 }));
+  fleetVehicleIssuesCache = Array.isArray(reports) ? reports : [];
+  fleetVehicleIssuesLoaded = true;
+  renderFleetVehicleIssueCount();
+  renderFleetVehicleIssueTable();
+  if (fleetSelectedManageTruck) renderFleetManageLatestIssue(fleetSelectedManageTruck);
+  fleetSetVehicleIssueStatus("");
+  return fleetVehicleIssuesCache;
+}
+
 async function refreshFleetMonitoring(options = {}) {
   if (fleetRefreshInProgress) return;
   fleetRefreshInProgress = true;
@@ -408,10 +765,21 @@ async function refreshFleetMonitoring(options = {}) {
   fleetSetStatus(options.announce === false ? "" : "Refreshing fleet overview...");
 
   try {
+    const vehicleIssuesPromise = loadVehicleIssues().catch((error) => {
+      renderFleetVehicleIssueCount([]);
+      if (fleetModalIsOpen("fleetVehicleIssuesModal")) {
+        fleetSetVehicleIssueStatus(
+          fleetErrorMessage(error, "Vehicle issues could not be loaded."),
+          "error"
+        );
+      }
+      return null;
+    });
     const [summaryResult, trucksResult] = await Promise.allSettled([
       loadFleetSummary(),
       loadFleetTrucks()
     ]);
+    await vehicleIssuesPromise;
     const failures = [summaryResult, trucksResult].filter((result) => result.status === "rejected");
     if (!failures.length) {
       fleetSetStatus("");
@@ -433,6 +801,202 @@ async function refreshFleetMonitoring(options = {}) {
   } finally {
     fleetRefreshInProgress = false;
     if (refreshButton) refreshButton.disabled = false;
+  }
+}
+
+function fleetSetVehicleIssueDetailStatus(message = "", type = "status") {
+  const element = document.getElementById("fleetVehicleIssueDetailStatus");
+  if (!element) return;
+  const text = String(message || "").trim();
+  element.textContent = text;
+  element.classList.toggle("hidden", !text);
+  element.classList.toggle("error", type === "error");
+}
+
+function fleetUpdateVehicleIssueResolutionGuidance() {
+  const action = document.getElementById("fleetVehicleIssueResolutionAction")?.value || "";
+  const notes = document.getElementById("fleetVehicleIssueResolutionNotes");
+  const requiredMark = document.getElementById("fleetVehicleIssueResolutionNotesRequired");
+  const impact = document.getElementById("fleetVehicleIssueResolutionImpact");
+  const requiresNotes = fleetVehicleIssueResolutionRequiresNotes(action);
+  if (notes) {
+    notes.required = requiresNotes;
+    notes.setAttribute("aria-required", String(requiresNotes));
+  }
+  requiredMark?.classList.toggle("hidden", !requiresNotes);
+  if (!impact) return;
+  const messages = {
+    continue_operation: "The report will be resolved without changing the current Fleet condition.",
+    set_for_maintenance: "The backend will resolve the report and set the Fleet condition to For Maintenance.",
+    set_out_of_service: "The backend will resolve the report and set the Fleet condition to Out of Service."
+  };
+  impact.textContent = messages[action] || "Choose a resolution action to review its effect.";
+}
+
+function renderFleetVehicleIssueDetail(report = {}) {
+  fleetVehicleIssueSelected = report;
+  const body = document.getElementById("fleetVehicleIssueDetailBody");
+  const subtitle = document.getElementById("fleetVehicleIssueDetailSubtitle");
+  const controls = document.getElementById("fleetVehicleIssueMutationControls");
+  const reviewAction = document.querySelector("#fleetVehicleIssueMutationControls .fleet-issue-review-action");
+  const resolutionForm = document.getElementById("fleetVehicleIssueResolutionForm");
+  const status = String(report.report_status || "").trim().toLowerCase();
+  const unresolved = VEHICLE_ISSUE_OPEN_STATUSES.has(status);
+
+  if (body) body.innerHTML = fleetVehicleIssueDetailHtml(report);
+  if (subtitle) {
+    subtitle.textContent = `Report #${report.id || "-"} · ${String(report.truck_code_snapshot || "Not recorded")}`;
+  }
+  controls?.classList.toggle("hidden", !unresolved);
+  reviewAction?.classList.toggle("hidden", status !== "submitted");
+  if (resolutionForm && unresolved) resolutionForm.reset();
+  fleetUpdateVehicleIssueResolutionGuidance();
+  fleetSetFormFeedback("fleetVehicleIssueResolutionFeedback", "");
+  fleetSetVehicleIssueDetailStatus("");
+}
+
+async function openFleetVehicleIssuesModal(trigger = null) {
+  fleetVehicleIssuesTrigger = trigger?.currentTarget || trigger || document.activeElement;
+  fleetOpenModal("fleetVehicleIssuesModal", "fleetVehicleIssueStatusFilter", fleetVehicleIssuesTrigger);
+  if (!fleetVehicleIssuesLoaded) {
+    const tbody = document.getElementById("fleetVehicleIssuesTableBody");
+    if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="fleet-table-state">Loading vehicle issues...</td></tr>';
+  } else {
+    renderFleetVehicleIssueTable();
+  }
+  fleetSetVehicleIssueStatus("Refreshing vehicle issues...");
+  try {
+    await loadVehicleIssues();
+  } catch (error) {
+    fleetSetVehicleIssueStatus(
+      fleetErrorMessage(error, "Vehicle issues could not be loaded."),
+      "error"
+    );
+  }
+}
+
+function closeFleetVehicleIssuesModal() {
+  if (fleetModalIsOpen("fleetVehicleIssueDetailModal")) return false;
+  fleetCloseModal("fleetVehicleIssuesModal");
+  fleetVehicleIssuesTrigger?.focus?.();
+  fleetVehicleIssuesTrigger = null;
+  return true;
+}
+
+async function openFleetVehicleIssueDetail(reportId, trigger = null) {
+  const id = Number(reportId);
+  if (!Number.isInteger(id) || id <= 0) return false;
+  fleetVehicleIssueDetailTrigger = trigger || document.activeElement;
+  fleetOpenModal("fleetVehicleIssueDetailModal", "fleetVehicleIssueDetailCloseBtn", fleetVehicleIssueDetailTrigger);
+  fleetVehicleIssueSelected = null;
+  const body = document.getElementById("fleetVehicleIssueDetailBody");
+  const controls = document.getElementById("fleetVehicleIssueMutationControls");
+  const subtitle = document.getElementById("fleetVehicleIssueDetailSubtitle");
+  if (body) body.innerHTML = '<div class="fleet-issue-loading">Loading vehicle issue details...</div>';
+  if (subtitle) subtitle.textContent = `Report #${id}`;
+  controls?.classList.add("hidden");
+  fleetSetVehicleIssueDetailStatus("");
+  try {
+    const report = await fleetRequest(getVehicleIssueApiUrl(id));
+    renderFleetVehicleIssueDetail(report || {});
+    return true;
+  } catch (error) {
+    fleetSetVehicleIssueDetailStatus(
+      fleetErrorMessage(error, "Vehicle issue details could not be loaded."),
+      "error"
+    );
+    if (body) body.innerHTML = '<div class="fleet-issue-loading">Unable to display this vehicle issue.</div>';
+    return false;
+  }
+}
+
+function closeFleetVehicleIssueDetailModal() {
+  fleetCloseModal("fleetVehicleIssueDetailModal");
+  fleetVehicleIssueSelected = null;
+  fleetVehicleIssueDetailTrigger?.focus?.();
+  fleetVehicleIssueDetailTrigger = null;
+}
+
+async function markFleetVehicleIssueUnderReview() {
+  if (!fleetVehicleIssueSelected) return false;
+  if (String(fleetVehicleIssueSelected.report_status || "").toLowerCase() !== "submitted") {
+    fleetSetVehicleIssueDetailStatus("Only submitted reports can be marked under review.", "error");
+    return false;
+  }
+  const button = document.getElementById("fleetVehicleIssueReviewBtn");
+  if (button) button.disabled = true;
+  fleetSetVehicleIssueDetailStatus("");
+  let report;
+  try {
+    report = await fleetRequest(getVehicleIssueReviewApiUrl(fleetVehicleIssueSelected.id), {
+      method: "PATCH"
+    });
+  } catch (error) {
+    const message = fleetErrorMessage(error, "Unable to mark the vehicle issue under review.");
+    fleetSetVehicleIssueDetailStatus(message, "error");
+    fleetNotify(message, "error");
+    if (button) button.disabled = false;
+    return false;
+  }
+
+  renderFleetVehicleIssueDetail(report || fleetVehicleIssueSelected);
+  fleetNotify("Vehicle issue marked under review.");
+  try {
+    await loadVehicleIssues();
+  } catch (error) {
+    fleetSetVehicleIssueDetailStatus(
+      "Review saved, but the Vehicle Issues list could not be refreshed. Refresh the queue to retry.",
+      "error"
+    );
+  } finally {
+    if (button) button.disabled = false;
+  }
+  return true;
+}
+
+async function resolveFleetVehicleIssue(event) {
+  event?.preventDefault?.();
+  if (!fleetVehicleIssueSelected || !fleetVehicleIssueIsOpen(fleetVehicleIssueSelected)) {
+    fleetSetFormFeedback("fleetVehicleIssueResolutionFeedback", "This report is already resolved.");
+    return false;
+  }
+  const payload = {
+    resolution_action: document.getElementById("fleetVehicleIssueResolutionAction")?.value || "",
+    resolution_notes: document.getElementById("fleetVehicleIssueResolutionNotes")?.value.trim() || null
+  };
+  const validation = fleetValidateVehicleIssueResolution(payload);
+  if (!validation.valid) {
+    fleetSetFormFeedback("fleetVehicleIssueResolutionFeedback", validation.message);
+    return false;
+  }
+
+  const label = fleetVehicleIssueResolutionLabel(payload.resolution_action);
+  const confirmation = payload.resolution_action === "continue_operation"
+    ? "Resolve this report and continue the operation without changing the Fleet condition?"
+    : `Resolve this report and apply the Fleet condition action: ${label}?`;
+  if (typeof window !== "undefined" && typeof window.confirm === "function" && !window.confirm(confirmation)) {
+    return false;
+  }
+
+  const button = document.getElementById("fleetVehicleIssueResolveBtn");
+  if (button) button.disabled = true;
+  fleetSetFormFeedback("fleetVehicleIssueResolutionFeedback", "");
+  try {
+    const report = await fleetRequest(getVehicleIssueResolveApiUrl(fleetVehicleIssueSelected.id), {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+    await refreshFleetMonitoring({ announce: false });
+    renderFleetVehicleIssueDetail(report || fleetVehicleIssueSelected);
+    fleetNotify("Vehicle issue resolved successfully.");
+    return true;
+  } catch (error) {
+    const message = fleetErrorMessage(error, "Unable to resolve the vehicle issue.");
+    fleetSetFormFeedback("fleetVehicleIssueResolutionFeedback", message);
+    fleetNotify(message, "error");
+    return false;
+  } finally {
+    if (button) button.disabled = false;
   }
 }
 
@@ -532,6 +1096,9 @@ function closeFleetModalsForNavigation() {
   fleetSelectedManageTruck = null;
   fleetSelectedEditTruck = null;
   fleetSelectedConditionTruck = null;
+  fleetVehicleIssueSelected = null;
+  fleetVehicleIssuesTrigger = null;
+  fleetVehicleIssueDetailTrigger = null;
   fleetLastModalTrigger = null;
   fleetParentModalTrigger = null;
   fleetSyncModalScrollLock();
@@ -636,6 +1203,8 @@ function openFleetManageModal(truckId, trigger = null) {
   if (reasonWrap) {
     reasonWrap.classList.toggle("hidden", !reason);
   }
+
+  renderFleetManageLatestIssue(truck);
 
   fleetOpenModal("fleetManageModal", "fleetManageEditBtn", trigger);
   return true;
@@ -793,6 +1362,27 @@ function bindFleetMonitoringActions() {
   document.getElementById("fleetAddTruckBtn")?.addEventListener("click", (event) => {
     openAddTruckModal(event.currentTarget);
   });
+  document.getElementById("fleetVehicleIssuesBtn")?.addEventListener("click", (event) => {
+    void openFleetVehicleIssuesModal(event.currentTarget);
+  });
+  document.getElementById("fleetVehicleIssuesRefreshBtn")?.addEventListener("click", async () => {
+    fleetSetVehicleIssueStatus("Refreshing vehicle issues...");
+    try {
+      await loadVehicleIssues();
+    } catch (error) {
+      fleetSetVehicleIssueStatus(
+        fleetErrorMessage(error, "Vehicle issues could not be loaded."),
+        "error"
+      );
+    }
+  });
+  ["fleetVehicleIssueStatusFilter", "fleetVehicleIssueSeverityFilter"].forEach((id) => {
+    document.getElementById(id)?.addEventListener("change", renderFleetVehicleIssueTable);
+  });
+  document.getElementById("fleetVehicleIssuesTableBody")?.addEventListener("click", (event) => {
+    const viewButton = event.target.closest("[data-vehicle-issue-view]");
+    if (viewButton) void openFleetVehicleIssueDetail(viewButton.dataset.vehicleIssueView, viewButton);
+  });
   document.getElementById("fleetTableBody")?.addEventListener("click", (event) => {
     const manageButton = event.target.closest("[data-fleet-manage]");
     if (manageButton) {
@@ -821,6 +1411,27 @@ function bindFleetMonitoringActions() {
     openFleetConditionModal(truckId, returnFocus);
   });
 
+  document.getElementById("fleetManageVehicleIssueBtn")?.addEventListener("click", (event) => {
+    const reportId = document.getElementById("fleetManageVehicleIssue")?.dataset.reportId;
+    if (!reportId) return;
+    const returnFocus = fleetLastModalTrigger;
+    fleetCloseModal("fleetManageModal");
+    fleetSelectedManageTruck = null;
+    void openFleetVehicleIssueDetail(reportId, returnFocus || event.currentTarget);
+  });
+
+  document.getElementById("fleetVehicleIssueReviewBtn")?.addEventListener("click", () => {
+    void markFleetVehicleIssueUnderReview();
+  });
+  document.getElementById("fleetVehicleIssueResolutionAction")?.addEventListener(
+    "change",
+    fleetUpdateVehicleIssueResolutionGuidance
+  );
+  document.getElementById("fleetVehicleIssueResolutionForm")?.addEventListener(
+    "submit",
+    resolveFleetVehicleIssue
+  );
+
   document.getElementById("fleetEditTruckForm")?.addEventListener("submit", updateFleetTruckDetails);
 
   document.getElementById("fleetInitialCondition")?.addEventListener("change", () => {
@@ -839,6 +1450,13 @@ function bindFleetMonitoringActions() {
     });
   });
 
+  ["fleetVehicleIssuesOverlay", "fleetVehicleIssuesCloseBtn"].forEach((id) => {
+    document.getElementById(id)?.addEventListener("click", closeFleetVehicleIssuesModal);
+  });
+  ["fleetVehicleIssueDetailOverlay", "fleetVehicleIssueDetailCloseBtn"].forEach((id) => {
+    document.getElementById(id)?.addEventListener("click", closeFleetVehicleIssueDetailModal);
+  });
+
   ["fleetEditTruckOverlay", "fleetEditTruckCloseBtn", "fleetEditTruckCancelBtn"].forEach((id) => {
     document.getElementById(id)?.addEventListener("click", () => {
       fleetCloseModal("fleetEditTruckModal");
@@ -855,7 +1473,11 @@ function bindFleetMonitoringActions() {
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
 
-    if (!document.getElementById("fleetEditTruckModal")?.classList.contains("hidden")) {
+    if (!document.getElementById("fleetVehicleIssueDetailModal")?.classList.contains("hidden")) {
+      closeFleetVehicleIssueDetailModal();
+    } else if (!document.getElementById("fleetVehicleIssuesModal")?.classList.contains("hidden")) {
+      closeFleetVehicleIssuesModal();
+    } else if (!document.getElementById("fleetEditTruckModal")?.classList.contains("hidden")) {
       fleetCloseModal("fleetEditTruckModal");
       fleetSelectedEditTruck = null;
     } else if (!document.getElementById("fleetConditionModal")?.classList.contains("hidden")) {
@@ -892,6 +1514,7 @@ if (typeof window !== "undefined") {
   window.initializeFleetMonitoring = initializeFleetMonitoring;
   window.loadFleetSummary = loadFleetSummary;
   window.loadFleetTrucks = loadFleetTrucks;
+  window.loadVehicleIssues = loadVehicleIssues;
   window.renderFleetSummary = renderFleetSummary;
   window.renderFleetTable = renderFleetTable;
   window.openAddTruckModal = openAddTruckModal;
@@ -901,6 +1524,10 @@ if (typeof window !== "undefined") {
   window.updateFleetTruckDetails = updateFleetTruckDetails;
   window.openFleetConditionModal = openFleetConditionModal;
   window.updateFleetCondition = updateFleetCondition;
+  window.openFleetVehicleIssuesModal = openFleetVehicleIssuesModal;
+  window.openFleetVehicleIssueDetail = openFleetVehicleIssueDetail;
+  window.markFleetVehicleIssueUnderReview = markFleetVehicleIssueUnderReview;
+  window.resolveFleetVehicleIssue = resolveFleetVehicleIssue;
   window.openFleetOverviewParentModal = openFleetOverviewParentModal;
   window.closeFleetOverviewParentModal = closeFleetOverviewParentModal;
   window.closeFleetModalsForNavigation = closeFleetModalsForNavigation;
@@ -913,6 +1540,9 @@ if (typeof module !== "undefined" && module.exports) {
     FLEET_GPS_LABELS,
     FLEET_TRACKING_LABELS,
     FLEET_ASSIGNMENT_LABELS,
+    VEHICLE_ISSUE_SEVERITY_LABELS,
+    VEHICLE_ISSUE_STATUS_LABELS,
+    VEHICLE_ISSUE_RESOLUTION_LABELS,
     fleetConditionLabel,
     fleetOperationalLabel,
     fleetGpsLabel,
@@ -924,6 +1554,17 @@ if (typeof module !== "undefined" && module.exports) {
     fleetValidateTruck,
     fleetValidateTruckDetails,
     fleetValidateCondition,
+    fleetVehicleIssueSeverityLabel,
+    fleetVehicleIssueStatusLabel,
+    fleetVehicleIssueCategoryLabel,
+    fleetVehicleIssueResolutionLabel,
+    fleetVehicleIssueIsOpen,
+    fleetVehicleIssueResolutionRequiresNotes,
+    fleetValidateVehicleIssueResolution,
+    fleetVehicleIssueFilteredReports,
+    fleetLatestOpenIssueForTruck,
+    fleetVehicleIssueRowsHtml,
+    fleetVehicleIssueDetailHtml,
     fleetTableRowsHtml,
     renderFleetSummary,
     renderFleetTable,

@@ -182,6 +182,28 @@ function getFleetTruckConditionApiUrl(truckId) {
   return `${getFleetTruckApiUrl(truckId)}/condition`;
 }
 
+function getVehicleIssuesApiUrl(filters = {}) {
+  const parameters = new URLSearchParams();
+  if (filters.report_status) parameters.set("report_status", filters.report_status);
+  if (filters.severity) parameters.set("severity", filters.severity);
+  if (filters.fleet_truck_id) parameters.set("fleet_truck_id", filters.fleet_truck_id);
+  if (filters.limit) parameters.set("limit", String(filters.limit));
+  const query = parameters.toString();
+  return `${getAppApiBase()}/vehicle-issues${query ? `?${query}` : ""}`;
+}
+
+function getVehicleIssueApiUrl(reportId) {
+  return `${getAppApiBase()}/vehicle-issues/${encodeURIComponent(reportId)}`;
+}
+
+function getVehicleIssueReviewApiUrl(reportId) {
+  return `${getVehicleIssueApiUrl(reportId)}/review`;
+}
+
+function getVehicleIssueResolveApiUrl(reportId) {
+  return `${getVehicleIssueApiUrl(reportId)}/resolve`;
+}
+
 // =========================
 // DISPATCH
 // =========================
@@ -288,6 +310,10 @@ window.getFleetTrucksApiUrl = getFleetTrucksApiUrl;
 window.getFleetTruckApiUrl = getFleetTruckApiUrl;
 window.getFleetSummaryApiUrl = getFleetSummaryApiUrl;
 window.getFleetTruckConditionApiUrl = getFleetTruckConditionApiUrl;
+window.getVehicleIssuesApiUrl = getVehicleIssuesApiUrl;
+window.getVehicleIssueApiUrl = getVehicleIssueApiUrl;
+window.getVehicleIssueReviewApiUrl = getVehicleIssueReviewApiUrl;
+window.getVehicleIssueResolveApiUrl = getVehicleIssueResolveApiUrl;
 
 // =========================
 // COMPLAINTS

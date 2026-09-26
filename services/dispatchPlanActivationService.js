@@ -199,7 +199,20 @@ function assignmentActivationState(plan, today) {
   return { can_activate: true, activation_reason_code: null };
 }
 
-function normalizeAssignment(plan, stops, today) {
+function normalizeLatestVehicleIssue(issue) {
+  if (!issue || issue.id === null || issue.id === undefined) return null;
+  return {
+    id: Number(issue.id),
+    severity: issue.severity || null,
+    report_status: issue.report_status || null,
+    issue_category: issue.issue_category || null,
+    resolution_action: issue.resolution_action || null,
+    created_at: issue.created_at || null,
+    resolved_at: issue.resolved_at || null
+  };
+}
+
+function normalizeAssignment(plan, stops, today, latestVehicleIssue = null) {
   if (!plan) return null;
   return {
     id: Number(plan.id),
@@ -214,11 +227,15 @@ function normalizeAssignment(plan, stops, today) {
     route_description: plan.route_description || null,
     scheduled_start: plan.scheduled_start_at || null,
     expected_return: plan.expected_return_at || null,
+    fleet_condition: plan.fleet_condition || null,
+    condition_reason: plan.condition_reason || null,
+    latest_vehicle_issue: normalizeLatestVehicleIssue(latestVehicleIssue),
     stops,
     ...assignmentActivationState(plan, today),
     linked_dispatch_ticket_id: plan.activated_dispatch_ticket_id === null
       ? null
       : Number(plan.activated_dispatch_ticket_id),
+    linked_dispatch_ticket_status: plan.linked_dispatch_ticket_status || null,
     linked_tracking_session_id: plan.activated_tracking_session_id === null
       ? null
       : Number(plan.activated_tracking_session_id)
@@ -353,8 +370,10 @@ class DispatchPlanActivationService {
           DATE_FORMAT(dp.expected_return_at, '%Y-%m-%d %H:%i:%s') AS expected_return_at,
           dp.activated_dispatch_ticket_id,
           dp.activated_tracking_session_id,
+          linked_dt.status AS linked_dispatch_ticket_status,
           ft.truck_code,
           ft.fleet_condition,
+          ft.condition_reason,
           (SELECT COUNT(*) FROM dispatch_plan_stops dps_count
             WHERE dps_count.dispatch_plan_id = dp.id) AS stop_count,
           EXISTS(
@@ -381,29 +400,62 @@ class DispatchPlanActivationService {
           ) AS has_enforcer_ticket_conflict
         FROM dispatch_plans dp
         INNER JOIN fleet_trucks ft ON ft.id = dp.fleet_truck_id
+        LEFT JOIN dispatch_tickets linked_dt
+          ON linked_dt.id = dp.activated_dispatch_ticket_id
         WHERE dp.assigned_enforcer_user_id = ?
-          AND dp.operational_date IN (?, ?)
+          AND (
+            (
+              dp.status = 'activated'
+              AND linked_dt.status IN (${statusPlaceholders})
+            )
+            OR (
+              dp.status = 'planned'
+              AND dp.operational_date IN (?, ?)
+            )
+          )
         ORDER BY
-          dp.operational_date ASC,
-          CASE dp.status
-            WHEN 'activated' THEN 0
-            WHEN 'planned' THEN 1
-            ELSE 2
-          END ASC,
+          CASE WHEN dp.status = 'activated' THEN 0 ELSE 1 END ASC,
+          dp.operational_date DESC,
           dp.id DESC
       `,
-      [...statuses, ...statuses, userId, today, tomorrow]
+      [
+        ...statuses,
+        ...statuses,
+        userId,
+        ...statuses,
+        today,
+        tomorrow
+      ]
     );
+
+    const activeAssignments = rows.filter((row) => (
+      row.status === "activated" &&
+      statuses.includes(String(row.linked_dispatch_ticket_status || "").trim().toLowerCase())
+    ));
+    const currentActivePlan = activeAssignments.length ? activeAssignments[0] : null;
 
     const selected = new Map();
     for (const row of rows) {
+      if (row.status !== "planned") continue;
       if (!selected.has(row.operational_date)) {
         selected.set(row.operational_date, row);
       }
     }
 
-    const selectedPlans = [...selected.values()];
+    const activeTodayPlan = currentActivePlan && currentActivePlan.operational_date === today
+      ? currentActivePlan
+      : null;
+    const todayPlan = activeTodayPlan || selected.get(today) || null;
+    const tomorrowPlan = selected.get(tomorrow) || null;
+    const currentPlan = currentActivePlan || todayPlan;
+    const plansById = new Map();
+    for (const plan of [currentPlan, todayPlan, tomorrowPlan]) {
+      if (plan) plansById.set(Number(plan.id), plan);
+    }
+
+    const selectedPlans = [...plansById.values()];
     const stopsByPlan = new Map();
+    const latestIssueByTruck = new Map();
     if (selectedPlans.length) {
       const ids = selectedPlans.map((plan) => Number(plan.id));
       const [stopRows] = await this.query(
@@ -436,23 +488,68 @@ class DispatchPlanActivationService {
           expected_arrival: stop.expected_arrival || null
         });
       }
+
+      const truckIds = [...new Set(
+        selectedPlans.map((plan) => Number(plan.fleet_truck_id))
+      )];
+      const [issueRows] = await this.query(
+        `
+          SELECT
+            ranked.id,
+            ranked.fleet_truck_id,
+            ranked.severity,
+            ranked.report_status,
+            ranked.issue_category,
+            ranked.resolution_action,
+            DATE_FORMAT(ranked.created_at, '%Y-%m-%d %H:%i:%s.%f') AS created_at,
+            DATE_FORMAT(ranked.resolved_at, '%Y-%m-%d %H:%i:%s.%f') AS resolved_at
+          FROM (
+            SELECT
+              vir.id,
+              vir.fleet_truck_id,
+              vir.severity,
+              vir.report_status,
+              vir.issue_category,
+              vir.resolution_action,
+              vir.created_at,
+              vir.resolved_at,
+              ROW_NUMBER() OVER (
+                PARTITION BY vir.fleet_truck_id
+                ORDER BY
+                  CASE
+                    WHEN vir.report_status IN ('submitted', 'under_review') THEN 0
+                    ELSE 1
+                  END ASC,
+                  vir.created_at DESC,
+                  vir.id DESC
+              ) AS issue_rank
+            FROM vehicle_issue_reports vir
+            WHERE vir.fleet_truck_id IN (${truckIds.map(() => "?").join(", ")})
+          ) ranked
+          WHERE ranked.issue_rank = 1
+          ORDER BY ranked.fleet_truck_id ASC
+        `,
+        truckIds
+      );
+      for (const issue of issueRows) {
+        latestIssueByTruck.set(Number(issue.fleet_truck_id), issue);
+      }
     }
 
-    const assignmentFor = (date) => {
-      const plan = selected.get(date);
-      return normalizeAssignment(
-        plan,
-        plan ? stopsByPlan.get(Number(plan.id)) || [] : [],
-        today
-      );
-    };
+    const normalizeSelectedPlan = (plan) => normalizeAssignment(
+      plan,
+      plan ? stopsByPlan.get(Number(plan.id)) || [] : [],
+      today,
+      plan ? latestIssueByTruck.get(Number(plan.fleet_truck_id)) || null : null
+    );
 
     return {
       server_date: today,
       server_time: manilaDateTime(now),
       time_zone: MANILA_TIME_ZONE,
-      today_assignment: assignmentFor(today),
-      tomorrow_assignment: assignmentFor(tomorrow)
+      current_assignment: normalizeSelectedPlan(currentPlan),
+      today_assignment: normalizeSelectedPlan(todayPlan),
+      tomorrow_assignment: normalizeSelectedPlan(tomorrowPlan)
     };
   }
 
@@ -1073,4 +1170,5 @@ module.exports.validateActivationActionId = validateActivationActionId;
 module.exports.manilaDateTime = manilaDateTime;
 module.exports.nextCalendarDate = nextCalendarDate;
 module.exports.assignmentActivationState = assignmentActivationState;
+module.exports.normalizeLatestVehicleIssue = normalizeLatestVehicleIssue;
 module.exports.normalizeActivationError = normalizeActivationError;
