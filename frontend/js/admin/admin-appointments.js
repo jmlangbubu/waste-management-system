@@ -37,6 +37,14 @@ function isOrientationCompletedForAppointmentModule(app = {}) {
   );
 }
 
+function getOrientationAppointmentHistoryStatus(app = {}) {
+  if (!isSwmOrientationAppointmentRecord(app)) return app.status;
+  const orientationStatus = normalizeAppointmentLifecycleValue(app.orientation_status);
+  if (["no_show", "no-show", "noshow"].includes(orientationStatus)) return "no_show";
+  if (["incomplete_orientation", "incomplete"].includes(orientationStatus)) return "incomplete";
+  return isOrientationCompletedForAppointmentModule(app) ? "completed" : app.status;
+}
+
 function getVisibleActiveAppointments(records = []) {
   return (Array.isArray(records) ? records : []).filter((app) => {
     return !isOrientationCompletedForAppointmentModule(app);
@@ -48,7 +56,7 @@ function getAppointmentHistoryWithCompletedOrientation(activeRecords = [], histo
     .filter((app) => isOrientationCompletedForAppointmentModule(app))
     .map((app) => ({
       ...app,
-      status: "completed"
+      status: getOrientationAppointmentHistoryStatus(app)
     }));
 
   const combined = [
@@ -552,6 +560,14 @@ function renderStatusBadge(status) {
     return `<span class="status-badge resolved">Completed</span>`;
   }
 
+  if (normalized === "no_show") {
+    return `<span class="status-badge rejected">Did Not Attend</span>`;
+  }
+
+  if (normalized === "incomplete") {
+    return `<span class="status-badge rejected">Incomplete</span>`;
+  }
+
   return `<span class="status-badge pending">Pending</span>`;
 }
 
@@ -870,7 +886,7 @@ function renderAppointmentHistory(history = [], preserveSearch = false) {
         <td>${escapeHtml(displayEmail)}</td>
         <td>${escapeHtml(displayPurpose)}</td>
         <td>${formatDateTimeDisplay(displayDate)}</td>
-        <td>${renderStatusBadge(isOrientationCompletedForAppointmentModule(app) ? "completed" : app.status)}</td>
+        <td>${renderStatusBadge(getOrientationAppointmentHistoryStatus(app))}</td>
         <td>${escapeHtml(displayAssigned)}</td>
         <td>${formatDate(app.updated_at || app.created_at)}</td>
       </tr>

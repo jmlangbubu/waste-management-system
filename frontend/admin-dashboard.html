@@ -805,26 +805,15 @@
 
               </div>
 
-              <div class="orientation-active-wrap">
-                <h3 class="orientation-active-title">Active Orientation</h3>
-
-                <div id="orientationCardList" class="orientation-card-list">
-                  <div class="empty-state">Loading orientation records...</div>
-                </div>
-              </div>
-
-              <div class="orientation-upcoming-wrap">
-                <h3>Upcoming Orientations</h3>
-                <div class="table-shell orientation-upcoming-table-shell">
-                  <table class="orientation-history-table">
-                    <thead>
-                      <tr><th>Name</th><th>Barangay</th><th>Scheduled Date</th><th>Purpose</th><th>Status</th><th>Action</th></tr>
-                    </thead>
-                    <tbody id="upcomingOrientationTableBody">
-                      <tr><td colspan="6">Loading upcoming orientations...</td></tr>
-                    </tbody>
-                  </table>
-                </div>
+              <div class="table-shell orientation-queue-table-shell">
+                <table class="orientation-history-table">
+                  <thead>
+                    <tr><th>Name</th><th>Barangay</th><th>Scheduled Date</th><th>Purpose</th><th>Status</th><th>Action</th></tr>
+                  </thead>
+                  <tbody id="orientationQueueTableBody">
+                    <tr><td colspan="6">Loading orientation records...</td></tr>
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
@@ -3111,6 +3100,8 @@
           <tr>
             <th>Name</th>
             <th>Barangay</th>
+            <th>Scheduled Date</th>
+            <th>Purpose</th>
             <th>Date Started</th>
             <th>Date Completed</th>
             <th>Score</th>
@@ -3120,7 +3111,7 @@
 
         <tbody id="orientationHistoryTableBody">
           <tr>
-            <td colspan="6" class="loading-state">
+            <td colspan="8" class="loading-state">
               Loading orientation history...
             </td>
           </tr>

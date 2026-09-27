@@ -102,16 +102,24 @@
   color: #075985;
 }
 
-.orientation-upcoming-wrap {
-  margin-top: 32px;
-}
-
-.orientation-upcoming-table-shell {
+.orientation-queue-table-shell {
   overflow-x: auto;
 }
 
-.orientation-upcoming-table-shell table {
-  min-width: 780px;
+.orientation-queue-table-shell table {
+  min-width: 900px;
+}
+
+.orientation-queue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 220px;
+}
+
+.orientation-queue-table-shell .empty-state {
+  text-align: center;
+  padding: 24px;
 }
 
 .orientation-table-action {

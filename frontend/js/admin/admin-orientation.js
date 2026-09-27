@@ -71,69 +71,27 @@ function isOrientationAllowedForDashboard(item) {
   );
 }
 
-function isOrientationStartedOrCompleted(item) {
-  const lifecycleStatus = getOrientationRawLifecycleStatus(item);
-
-  return Boolean(
-    item?.orientation_started_at ||
-    item?.orientation_completed_at ||
-    lifecycleStatus === "pending_orientation" ||
-    lifecycleStatus === "failed_orientation" ||
-    lifecycleStatus === "ready_for_retake" ||
-    lifecycleStatus === "completed_orientation"
-  );
-}
-
-function getActiveOrientationRecords(records) {
+function getOrientationQueueRecords(records) {
   const safeRecords = Array.isArray(records) ? records : [];
 
   return safeRecords.filter((item) => {
     if (!isOrientationAllowedForDashboard(item)) return false;
     const lifecycleStatus = getOrientationLifecycleStatus(item);
-
-    if (lifecycleStatus === "failed_orientation" || lifecycleStatus === "ready_for_retake") {
-      return true;
-    }
-
-    if (!isOrientationToday(item)) return false;
-
-    return (
-      lifecycleStatus === "approved" ||
-      lifecycleStatus === "pending_orientation"
-    );
-  });
-}
-
-function getUpcomingOrientationRecords(records) {
-  const safeRecords = Array.isArray(records) ? records : [];
-
-  return safeRecords.filter((item) => {
-    if (!isOrientationAllowedForDashboard(item)) return false;
-    if (!isOrientationUpcoming(item)) return false;
-    if (isOrientationStartedOrCompleted(item)) return false;
-
-    const lifecycleStatus = getOrientationLifecycleStatus(item);
-
-    return lifecycleStatus === "approved";
+    return ["approved", "pending_orientation", "failed_orientation", "ready_for_retake"].includes(lifecycleStatus);
   });
 }
 
 
 async function loadOrientationAppointments() {
-  const cardList = document.getElementById("orientationCardList");
+  const queueBody = document.getElementById("orientationQueueTableBody");
   const historyBody = document.getElementById("orientationHistoryTableBody");
-  const upcomingBody = document.getElementById("upcomingOrientationTableBody");
 
-  if (!cardList) return;
+  if (!queueBody) return;
 
-  cardList.innerHTML = `<div class="empty-state">Loading orientation records...</div>`;
+  queueBody.innerHTML = `<tr><td colspan="6">Loading orientation records...</td></tr>`;
 
   if (historyBody) {
-    historyBody.innerHTML = `<tr><td colspan="6">Loading history...</td></tr>`;
-  }
-
-  if (upcomingBody) {
-    upcomingBody.innerHTML = `<tr><td colspan="6">Loading upcoming orientations...</td></tr>`;
+    historyBody.innerHTML = `<tr><td colspan="8">Loading history...</td></tr>`;
   }
 
   try {
@@ -159,134 +117,56 @@ async function loadOrientationAppointments() {
     orientationAppointments = (Array.isArray(data.appointments) ? data.appointments : [])
       .map((item) => ({ ...item, purpose: item.purpose || "SWM Orientation & Clearance" }));
 
-    /*
-      Correct orientation flow:
-      - Pending appointment: Appointments tab only
-      - Approved + today: Active Orientation
-      - Approved + future date: Upcoming Orientations section
-      - Rejected/cancelled: hidden from Orientation
-      - Completed/no show/incomplete: Orientation Report
-    */
-    const active = getActiveOrientationRecords(orientationAppointments);
-    const upcoming = getUpcomingOrientationRecords(orientationAppointments);
+    const queue = getOrientationQueueRecords(orientationAppointments);
     const history = sortOrientationHistoryNewestFirst(
       orientationAppointments.filter((item) => {
         return isOrientationHistoryRecord(item);
       })
     );
 
-    renderActiveOrientation(active);
-    renderUpcomingOrientation(upcoming);
+    renderOrientationQueue(queue);
     renderOrientationHistory(history);
   } catch (error) {
     console.error("Error loading orientation appointments:", error);
-    cardList.innerHTML = `<div class="empty-state">Failed to load orientation data.</div>`;
+    queueBody.innerHTML = `<tr><td colspan="6" class="empty-state">Failed to load orientation data.</td></tr>`;
 
     if (historyBody) {
-      historyBody.innerHTML = `<tr><td colspan="6">Failed to load history.</td></tr>`;
-    }
-
-    if (upcomingBody) {
-      upcomingBody.innerHTML = `<tr><td colspan="6">Failed to load upcoming orientations.</td></tr>`;
+      historyBody.innerHTML = `<tr><td colspan="8">Failed to load history.</td></tr>`;
     }
   }
 }
 
-function renderActiveOrientation(records) {
-  const cardList = document.getElementById("orientationCardList");
-  if (!cardList) return;
-
-  if (!Array.isArray(records) || !records.length) {
-    cardList.innerHTML = `<div class="empty-state">No active orientation records for today.</div>`;
-    return;
-  }
-
-  cardList.innerHTML = records.map((item) => {
-    const status = getOrientationLifecycleStatus(item);
-
-    return `
-      <div class="orientation-card">
-        <div class="orientation-card-head">
-          <div class="orientation-icon">🏢</div>
-
-          <span class="orientation-status ${getOrientationStatusClass(item)}">
-            ${getOrientationStatusLabel(item)}
-          </span>
-
-          <button type="button" class="orientation-menu-btn">⋮</button>
-        </div>
-
-        <div class="orientation-card-body">
-          <h3>${escapeHtml(item.full_name || "-")}</h3>
-
-          <div class="orientation-date">
-            📅 ${escapeHtml(formatSimpleDate(item.preferred_date))}
-          </div>
-
-          <div class="orientation-info">
-            <span>Barangay</span>
-            <strong>${escapeHtml(item.barangay || "-")}</strong>
-          </div>
-
-          <div class="orientation-info">
-            <span>Type</span>
-            <strong>SWM Orientation &amp; Clearance</strong>
-          </div>
-
-          ${item.orientation_started_at ? `<div class="orientation-info"><span>Started</span><strong>${escapeHtml(formatSimpleDate(item.orientation_started_at))}</strong></div>` : ""}
-        </div>
-
-        <div class="orientation-card-actions">
-          <button type="button" class="orientation-qr-btn" data-id="${item.id}" ${status === "failed_orientation" ? "disabled" : ""}>
-            <span>📲 Open QR Code</span>
-            <b>›</b>
-          </button>
-
-          <button
-            type="button"
-            class="orientation-web-btn"
-            data-id="${item.id}"
-            ${status === "completed_orientation" || status === "no_show" || status === "incomplete_orientation" || status === "failed_orientation" ? "disabled" : ""}
-          >
-            <span>🖥️ Take Web Exam</span>
-            <b>›</b>
-          </button>
-
-          ${status === "failed_orientation" ? `<button type="button" class="orientation-retake-btn" data-id="${item.id}">Allow Retake</button>` : ""}
-          ${status === "failed_orientation" || status === "ready_for_retake" ? `<button type="button" class="orientation-incomplete-btn" data-id="${item.id}">Mark as Incomplete</button>` : ""}
-        </div>
-      </div>
-    `;
-  }).join("");
-}
-
-function renderUpcomingOrientation(records) {
-  const tableBody = document.getElementById("upcomingOrientationTableBody");
+function renderOrientationQueue(records) {
+  const tableBody = document.getElementById("orientationQueueTableBody");
   if (!tableBody) return;
 
   if (!Array.isArray(records) || !records.length) {
-    tableBody.innerHTML = `
-      <tr>
-        <td colspan="6">No approved upcoming orientation schedules.</td>
-      </tr>
-    `;
+    tableBody.innerHTML = `<tr><td colspan="6" class="empty-state">No orientation records available.</td></tr>`;
     return;
   }
 
-  tableBody.innerHTML = records.map((item) => `
-    <tr>
-      <td>${escapeHtml(item.full_name || "-")}</td>
-      <td>${escapeHtml(item.barangay || "-")}</td>
-      <td>${escapeHtml(formatSimpleDate(item.preferred_date))}</td>
-      <td>SWM Orientation &amp; Clearance</td>
-      <td>
-        <span class="orientation-status status-upcoming">
-          Upcoming
-        </span>
-      </td>
-      <td><button type="button" class="orientation-qr-btn orientation-table-action" data-id="${item.id}">Open QR Code</button></td>
-    </tr>
-  `).join("");
+  tableBody.innerHTML = records.map((item) => {
+    const status = getOrientationLifecycleStatus(item);
+    const showQr = status === "approved" || status === "pending_orientation" || status === "ready_for_retake";
+    const showWebExam = (status === "pending_orientation" || status === "ready_for_retake" ||
+      (status === "approved" && !isOrientationUpcoming(item)));
+
+    return `
+      <tr>
+        <td>${escapeHtml(item.full_name || "-")}</td>
+        <td>${escapeHtml(item.barangay || "-")}</td>
+        <td>${escapeHtml(formatSimpleDate(item.preferred_date))}</td>
+        <td>SWM Orientation &amp; Clearance</td>
+        <td><span class="orientation-status ${getOrientationStatusClass(item)}">${getOrientationStatusLabel(item)}</span></td>
+        <td><div class="orientation-queue-actions">
+          ${showQr ? `<button type="button" class="orientation-qr-btn orientation-table-action" data-id="${item.id}">Open QR Code</button>` : ""}
+          ${showWebExam ? `<button type="button" class="orientation-web-btn orientation-table-action" data-id="${item.id}">Take Web Exam</button>` : ""}
+          ${status === "failed_orientation" ? `<button type="button" class="orientation-retake-btn orientation-table-action" data-id="${item.id}">Allow Retake</button>` : ""}
+          ${status === "failed_orientation" || status === "ready_for_retake" ? `<button type="button" class="orientation-incomplete-btn orientation-table-action" data-id="${item.id}">Mark as Incomplete</button>` : ""}
+        </div></td>
+      </tr>
+    `;
+  }).join("");
 }
 
 function parseOrientationSortTime(value) {
@@ -409,7 +289,7 @@ function ensureOrientationHistoryReportLayoutStyles() {
 
     #orientationHistoryModal table {
       width: 100% !important;
-      min-width: 880px !important;
+      min-width: 1120px !important;
       border-collapse: collapse !important;
       table-layout: fixed !important;
     }
@@ -437,33 +317,21 @@ function ensureOrientationHistoryReportLayoutStyles() {
     }
 
     #orientationHistoryModal thead th:nth-child(1),
-    #orientationHistoryModal tbody td:nth-child(1) {
-      width: 22% !important;
-    }
-
+    #orientationHistoryModal tbody td:nth-child(1) { width: 16% !important; }
     #orientationHistoryModal thead th:nth-child(2),
-    #orientationHistoryModal tbody td:nth-child(2) {
-      width: 14% !important;
-    }
-
+    #orientationHistoryModal tbody td:nth-child(2) { width: 11% !important; }
     #orientationHistoryModal thead th:nth-child(3),
-    #orientationHistoryModal tbody td:nth-child(3),
+    #orientationHistoryModal tbody td:nth-child(3) { width: 12% !important; }
     #orientationHistoryModal thead th:nth-child(4),
-    #orientationHistoryModal tbody td:nth-child(4) {
-      width: 15% !important;
-    }
-
+    #orientationHistoryModal tbody td:nth-child(4) { width: 18% !important; }
     #orientationHistoryModal thead th:nth-child(5),
-    #orientationHistoryModal tbody td:nth-child(5) {
-      width: 10% !important;
-      text-align: center !important;
-    }
-
+    #orientationHistoryModal tbody td:nth-child(5) { width: 12% !important; }
     #orientationHistoryModal thead th:nth-child(6),
-    #orientationHistoryModal tbody td:nth-child(6) {
-      width: 18% !important;
-      text-align: center !important;
-    }
+    #orientationHistoryModal tbody td:nth-child(6) { width: 12% !important; }
+    #orientationHistoryModal thead th:nth-child(7),
+    #orientationHistoryModal tbody td:nth-child(7) { width: 7% !important; text-align: center !important; }
+    #orientationHistoryModal thead th:nth-child(8),
+    #orientationHistoryModal tbody td:nth-child(8) { width: 12% !important; text-align: center !important; }
 
     #orientationHistoryModal .orientation-status {
       display: inline-flex !important;
@@ -518,7 +386,7 @@ function renderOrientationHistory(records) {
   if (!tableBody) return;
 
   if (!Array.isArray(records) || !records.length) {
-    tableBody.innerHTML = `<tr><td colspan="6">No orientation history records yet.</td></tr>`;
+    tableBody.innerHTML = `<tr><td colspan="8">No orientation history records yet.</td></tr>`;
     return;
   }
 
@@ -531,10 +399,9 @@ function renderOrientationHistory(records) {
         ? formatOrientationScore(item.orientation_score)
         : "-";
 
-    const startedDate =
-      item.orientation_started_at
-        ? formatSimpleDate(item.orientation_started_at)
-        : formatSimpleDate(item.preferred_date);
+    const startedDate = item.orientation_started_at
+      ? formatSimpleDate(item.orientation_started_at)
+      : "-";
 
     const completedDate =
       lifecycleStatus === "completed_orientation" || lifecycleStatus === "incomplete_orientation"
@@ -545,6 +412,8 @@ function renderOrientationHistory(records) {
       <tr>
         <td>${escapeHtml(item.full_name || "-")}</td>
         <td>${escapeHtml(item.barangay || "-")}</td>
+        <td>${escapeHtml(formatSimpleDate(item.preferred_date))}</td>
+        <td>${escapeHtml(item.purpose || "SWM Orientation & Clearance")}</td>
         <td>${escapeHtml(startedDate)}</td>
         <td>${escapeHtml(completedDate)}</td>
         <td>${escapeHtml(score)}</td>
@@ -852,20 +721,7 @@ function getOrientationLifecycleStatus(item) {
     return status;
   }
 
-  if (isOrientationPastDue(item)) {
-    /*
-      Past approved/pending records should no longer stay in Active Orientation.
-      If the user started but did not complete, mark as Incomplete.
-      If the user did not start/take the orientation, mark as No Show.
-    */
-    if (item?.orientation_started_at) {
-      return "incomplete_orientation";
-    }
-
-    return "no_show";
-  }
-
-  if (status === "pending_orientation") {
+  if (status === "pending_orientation" || item?.orientation_started_at) {
     return "pending_orientation";
   }
 
@@ -888,19 +744,6 @@ function isOrientationHistoryRecord(item) {
   );
 }
 
-function isOrientationToday(item) {
-  const dateValue = item?.preferred_date;
-  if (!dateValue) return false;
-
-  const scheduledDate = parseOrientationDateOnly(dateValue);
-  if (!scheduledDate) return false;
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  return scheduledDate.getTime() === today.getTime();
-}
-
 function isOrientationUpcoming(item) {
   const dateValue = item?.preferred_date;
   if (!dateValue) return false;
@@ -912,19 +755,6 @@ function isOrientationUpcoming(item) {
   today.setHours(0, 0, 0, 0);
 
   return scheduledDate > today;
-}
-
-function isOrientationPastDue(item) {
-  const dateValue = item?.preferred_date;
-  if (!dateValue) return false;
-
-  const scheduledDate = parseOrientationDateOnly(dateValue);
-  if (!scheduledDate) return false;
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  return scheduledDate < today;
 }
 
 function parseOrientationDateOnly(dateValue) {
@@ -963,7 +793,7 @@ function getOrientationStatusLabel(item) {
   if (lifecycleStatus === "failed_orientation") return "Failed – Retake Required";
   if (lifecycleStatus === "ready_for_retake") return "Ready for Retake";
   if (lifecycleStatus === "completed_orientation") return "Completed";
-  if (lifecycleStatus === "no_show") return "No Show";
+  if (lifecycleStatus === "no_show") return "Did Not Attend";
   if (lifecycleStatus === "incomplete_orientation") return "Incomplete";
   if (lifecycleStatus === "cancelled_orientation") return "Cancelled";
 
@@ -1053,8 +883,7 @@ window.openOrientationWebExam = openOrientationWebExam;
 window.openOrientationHistoryModal = openOrientationHistoryModal;
 window.closeOrientationHistoryModal = closeOrientationHistoryModal;
 
-window.renderUpcomingOrientation = renderUpcomingOrientation;
-window.getActiveOrientationRecords = getActiveOrientationRecords;
-window.getUpcomingOrientationRecords = getUpcomingOrientationRecords;
+window.renderOrientationQueue = renderOrientationQueue;
+window.getOrientationQueueRecords = getOrientationQueueRecords;
 window.isOrientationAllowedForDashboard = isOrientationAllowedForDashboard;
 window.isSwmOrientationPurpose = isSwmOrientationPurpose;
