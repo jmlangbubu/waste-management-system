@@ -38,6 +38,7 @@ const quizQuestions = [
 
 let verifiedOrientationData = null;
 let latestScore = 0;
+let quizSubmissionInFlight = false;
 
 function getApiBase() {
   if (window.APP_CONFIG && window.APP_CONFIG.API_BASE_URL) {
@@ -126,37 +127,95 @@ function calculateQuizScore() {
   return score;
 }
 
-function startQuiz() {
-  hideElement("participantPanel");
-  showElement("quizPanel");
-  renderQuizQuestions();
-}
-
-function submitQuiz() {
-  latestScore = calculateQuizScore();
-
-  hideElement("quizPanel");
-  showElement("quizResultPanel");
-
-  const resultText = document.getElementById("quizResultText");
-  const retryBtn = document.getElementById("btnRetryQuiz");
-
-  if (latestScore >= 4) {
-    resultText.textContent = `Passed! Your score is ${latestScore} out of ${quizQuestions.length}.`;
-    hideElement("btnRetryQuiz");
-    showElement("certificatePanel");
-  } else {
-    resultText.textContent = `Failed. Your score is ${latestScore} out of ${quizQuestions.length}. Passing score is 4.`;
-    retryBtn.classList.remove("hidden");
-    hideElement("certificatePanel");
+async function startQuiz() {
+  const token = getTokenFromUrl();
+  const button = document.getElementById("btnStartQuiz");
+  if (button) button.disabled = true;
+  try {
+    const response = await fetch(`${getApiBase()}/appointments/orientation/start/${encodeURIComponent(token)}`, {
+      method: "PUT",
+      headers: { Accept: "application/json" }
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) throw new Error(data.message || "Unable to start the exam.");
+    hideElement("participantPanel");
+    hideElement("quizErrorState");
+    showElement("quizPanel");
+    renderQuizQuestions();
+  } catch (error) {
+    const errorState = document.getElementById("quizErrorState");
+    errorState.textContent = error.message || "Unable to start the exam.";
+    showElement("quizErrorState");
+  } finally {
+    if (button) button.disabled = false;
   }
 }
 
-function retryQuiz() {
-  hideElement("quizResultPanel");
-  hideElement("certificatePanel");
-  showElement("quizPanel");
-  renderQuizQuestions();
+async function submitQuiz() {
+  if (quizSubmissionInFlight) return;
+  latestScore = calculateQuizScore();
+  const answers = quizQuestions.map((_, index) =>
+    document.querySelector(`input[name="question_${index}"]:checked`)?.value || null);
+  const submitButton = document.getElementById("btnSubmitQuiz");
+  const resultText = document.getElementById("quizResultText");
+  const retryBtn = document.getElementById("btnRetryQuiz");
+  quizSubmissionInFlight = true;
+  if (submitButton) submitButton.disabled = true;
+  try {
+    const response = await fetch(
+      `${getApiBase()}/appointments/orientation/complete/${encodeURIComponent(getTokenFromUrl())}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ score: latestScore, total_questions: quizQuestions.length, answers })
+      }
+    );
+    const data = await response.json();
+    if (!response.ok || !data.success) throw new Error(data.message || "Unable to save the exam result.");
+    hideElement("quizPanel");
+    hideElement("quizErrorState");
+    showElement("quizResultPanel");
+    if (data.passed && data.certificate_eligible) {
+      resultText.textContent = `Passed! Your score is ${data.score} out of ${quizQuestions.length}.`;
+      hideElement("btnRetryQuiz");
+      showElement("certificatePanel");
+    } else {
+      resultText.textContent = `Failed. Your score is ${data.score} out of ${quizQuestions.length}. Ask WMO to allow a retake before trying again.`;
+      retryBtn.textContent = "Check Retake Authorization";
+      showElement("btnRetryQuiz");
+      hideElement("certificatePanel");
+    }
+  } catch (error) {
+    const errorState = document.getElementById("quizErrorState");
+    errorState.textContent = error.message || "Unable to save the exam result.";
+    showElement("quizErrorState");
+  } finally {
+    quizSubmissionInFlight = false;
+    if (submitButton) submitButton.disabled = false;
+  }
+}
+
+async function retryQuiz() {
+  const resultText = document.getElementById("quizResultText");
+  try {
+    const state = await verifyOrientationToken(getTokenFromUrl());
+    if (!state.can_take_quiz || state.orientation_status !== "ready_for_retake") {
+      resultText.textContent = "A retake has not yet been authorized by WMO.";
+      return;
+    }
+    const response = await fetch(
+      `${getApiBase()}/appointments/orientation/start/${encodeURIComponent(getTokenFromUrl())}`,
+      { method: "PUT", headers: { Accept: "application/json" } }
+    );
+    const data = await response.json();
+    if (!response.ok || !data.success) throw new Error(data.message || "Unable to restart the exam.");
+    hideElement("quizResultPanel");
+    hideElement("certificatePanel");
+    showElement("quizPanel");
+    renderQuizQuestions();
+  } catch (error) {
+    resultText.textContent = error.message || "Unable to check retake authorization.";
+  }
 }
 
 function printCertificate() {
@@ -180,7 +239,14 @@ async function initializeWebOrientationQuiz() {
     populateParticipantDetails(verifiedOrientationData, token);
 
     hideElement("quizLoadingState");
-    showElement("participantPanel");
+    if (verifiedOrientationData.can_take_quiz) {
+      showElement("participantPanel");
+    } else {
+      errorState.textContent = verifiedOrientationData.orientation_status === "failed_orientation"
+        ? "A retake must be authorized by WMO before this exam can continue. Refresh after authorization."
+        : "This orientation is no longer available for an exam.";
+      showElement("quizErrorState");
+    }
   } catch (error) {
     hideElement("quizLoadingState");
     errorState.textContent = error.message || "Failed to verify orientation token.";

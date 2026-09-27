@@ -78,6 +78,8 @@ function isOrientationStartedOrCompleted(item) {
     item?.orientation_started_at ||
     item?.orientation_completed_at ||
     lifecycleStatus === "pending_orientation" ||
+    lifecycleStatus === "failed_orientation" ||
+    lifecycleStatus === "ready_for_retake" ||
     lifecycleStatus === "completed_orientation"
   );
 }
@@ -87,9 +89,13 @@ function getActiveOrientationRecords(records) {
 
   return safeRecords.filter((item) => {
     if (!isOrientationAllowedForDashboard(item)) return false;
-    if (!isOrientationToday(item)) return false;
-
     const lifecycleStatus = getOrientationLifecycleStatus(item);
+
+    if (lifecycleStatus === "failed_orientation" || lifecycleStatus === "ready_for_retake") {
+      return true;
+    }
+
+    if (!isOrientationToday(item)) return false;
 
     return (
       lifecycleStatus === "approved" ||
@@ -127,7 +133,7 @@ async function loadOrientationAppointments() {
   }
 
   if (upcomingBody) {
-    upcomingBody.innerHTML = `<tr><td colspan="5">Loading upcoming orientations...</td></tr>`;
+    upcomingBody.innerHTML = `<tr><td colspan="6">Loading upcoming orientations...</td></tr>`;
   }
 
   try {
@@ -149,13 +155,15 @@ async function loadOrientationAppointments() {
       throw new Error(data.message || "Failed to load orientation appointments.");
     }
 
-    orientationAppointments = Array.isArray(data.appointments) ? data.appointments : [];
+    // The dedicated endpoint itself filters to this exact purpose.
+    orientationAppointments = (Array.isArray(data.appointments) ? data.appointments : [])
+      .map((item) => ({ ...item, purpose: item.purpose || "SWM Orientation & Clearance" }));
 
     /*
       Correct orientation flow:
       - Pending appointment: Appointments tab only
       - Approved + today: Active Orientation
-      - Approved + future date: Upcoming Orientation
+      - Approved + future date: Upcoming Orientations section
       - Rejected/cancelled: hidden from Orientation
       - Completed/no show/incomplete: Orientation Report
     */
@@ -179,7 +187,7 @@ async function loadOrientationAppointments() {
     }
 
     if (upcomingBody) {
-      upcomingBody.innerHTML = `<tr><td colspan="5">Failed to load upcoming orientations.</td></tr>`;
+      upcomingBody.innerHTML = `<tr><td colspan="6">Failed to load upcoming orientations.</td></tr>`;
     }
   }
 }
@@ -222,12 +230,14 @@ function renderActiveOrientation(records) {
 
           <div class="orientation-info">
             <span>Type</span>
-            <strong>SWM Orientation</strong>
+            <strong>SWM Orientation &amp; Clearance</strong>
           </div>
+
+          ${item.orientation_started_at ? `<div class="orientation-info"><span>Started</span><strong>${escapeHtml(formatSimpleDate(item.orientation_started_at))}</strong></div>` : ""}
         </div>
 
         <div class="orientation-card-actions">
-          <button type="button" class="orientation-qr-btn" data-id="${item.id}">
+          <button type="button" class="orientation-qr-btn" data-id="${item.id}" ${status === "failed_orientation" ? "disabled" : ""}>
             <span>📲 Open QR Code</span>
             <b>›</b>
           </button>
@@ -236,11 +246,14 @@ function renderActiveOrientation(records) {
             type="button"
             class="orientation-web-btn"
             data-id="${item.id}"
-            ${status === "pending_orientation" || status === "completed_orientation" || status === "no_show" || status === "incomplete_orientation" ? "disabled" : ""}
+            ${status === "completed_orientation" || status === "no_show" || status === "incomplete_orientation" || status === "failed_orientation" ? "disabled" : ""}
           >
             <span>🖥️ Take Web Exam</span>
             <b>›</b>
           </button>
+
+          ${status === "failed_orientation" ? `<button type="button" class="orientation-retake-btn" data-id="${item.id}">Allow Retake</button>` : ""}
+          ${status === "failed_orientation" || status === "ready_for_retake" ? `<button type="button" class="orientation-incomplete-btn" data-id="${item.id}">Mark as Incomplete</button>` : ""}
         </div>
       </div>
     `;
@@ -254,7 +267,7 @@ function renderUpcomingOrientation(records) {
   if (!Array.isArray(records) || !records.length) {
     tableBody.innerHTML = `
       <tr>
-        <td colspan="5">No approved upcoming orientation schedules.</td>
+        <td colspan="6">No approved upcoming orientation schedules.</td>
       </tr>
     `;
     return;
@@ -265,12 +278,13 @@ function renderUpcomingOrientation(records) {
       <td>${escapeHtml(item.full_name || "-")}</td>
       <td>${escapeHtml(item.barangay || "-")}</td>
       <td>${escapeHtml(formatSimpleDate(item.preferred_date))}</td>
-      <td>SWM Orientation</td>
+      <td>SWM Orientation &amp; Clearance</td>
       <td>
-        <span class="orientation-status status-approved">
-          Approved
+        <span class="orientation-status status-upcoming">
+          Upcoming
         </span>
       </td>
+      <td><button type="button" class="orientation-qr-btn orientation-table-action" data-id="${item.id}">Open QR Code</button></td>
     </tr>
   `).join("");
 }
@@ -513,7 +527,7 @@ function renderOrientationHistory(records) {
   tableBody.innerHTML = sortedRecords.map((item) => {
     const lifecycleStatus = getOrientationLifecycleStatus(item);
     const score =
-      lifecycleStatus === "completed_orientation"
+      lifecycleStatus === "completed_orientation" || lifecycleStatus === "incomplete_orientation"
         ? formatOrientationScore(item.orientation_score)
         : "-";
 
@@ -523,7 +537,7 @@ function renderOrientationHistory(records) {
         : formatSimpleDate(item.preferred_date);
 
     const completedDate =
-      lifecycleStatus === "completed_orientation"
+      lifecycleStatus === "completed_orientation" || lifecycleStatus === "incomplete_orientation"
         ? formatSimpleDate(item.orientation_completed_at)
         : "-";
 
@@ -752,45 +766,6 @@ function setupOrientationQrModal() {
 }
 
 /* =========================
-   UPCOMING ORIENTATION MODAL
-========================= */
-
-function openUpcomingOrientationModal() {
-  const modal = document.getElementById("upcomingOrientationModal");
-
-  if (!modal) {
-    console.error("upcomingOrientationModal not found in HTML.");
-    showToast("Upcoming orientation modal is missing in HTML.", "error");
-    return;
-  }
-
-  const upcoming = getUpcomingOrientationRecords(orientationAppointments);
-
-  renderUpcomingOrientation(upcoming);
-  modal.classList.remove("hidden");
-}
-
-function closeUpcomingOrientationModal() {
-  const modal = document.getElementById("upcomingOrientationModal");
-  if (modal) modal.classList.add("hidden");
-}
-
-function setupUpcomingOrientationModal() {
-  const openBtn = document.getElementById("openUpcomingOrientationBtn");
-  const closeBtn = document.getElementById("closeUpcomingOrientationBtn");
-  const overlay = document.getElementById("upcomingOrientationOverlay");
-
-  if (openBtn) {
-    openBtn.onclick = openUpcomingOrientationModal;
-  } else {
-    console.warn("openUpcomingOrientationBtn not found.");
-  }
-
-  if (closeBtn) closeBtn.onclick = closeUpcomingOrientationModal;
-  if (overlay) overlay.onclick = closeUpcomingOrientationModal;
-}
-
-/* =========================
    HISTORY MODAL
 ========================= */
 
@@ -852,6 +827,14 @@ function getOrientationLifecycleStatus(item) {
 
   const status = getOrientationRawLifecycleStatus(item);
 
+  if (
+    status === "incomplete" ||
+    status === "incomplete_orientation" ||
+    status === "expired_orientation"
+  ) {
+    return "incomplete_orientation";
+  }
+
   if (status === "completed_orientation" || item?.orientation_completed_at) {
     return "completed_orientation";
   }
@@ -865,12 +848,8 @@ function getOrientationLifecycleStatus(item) {
     return "no_show";
   }
 
-  if (
-    status === "incomplete" ||
-    status === "incomplete_orientation" ||
-    status === "expired_orientation"
-  ) {
-    return "incomplete_orientation";
+  if (status === "failed_orientation" || status === "ready_for_retake") {
+    return status;
   }
 
   if (isOrientationPastDue(item)) {
@@ -898,7 +877,7 @@ function isOrientationHistoryRecord(item) {
     Rejected/cancelled appointments belong to Appointment History,
     not Orientation Report.
   */
-  if (!isOrientationAllowedForDashboard(item)) return false;
+  if (!isSwmOrientationPurpose(item) || isRejectedOrCancelledOrientationRecord(item)) return false;
 
   const lifecycleStatus = getOrientationLifecycleStatus(item);
 
@@ -980,25 +959,46 @@ function formatOrientationScore(score) {
 function getOrientationStatusLabel(item) {
   const lifecycleStatus = getOrientationLifecycleStatus(item);
 
-  if (lifecycleStatus === "pending_orientation") return "Taking Quiz";
+  if (lifecycleStatus === "pending_orientation") return "Orientation in Progress";
+  if (lifecycleStatus === "failed_orientation") return "Failed – Retake Required";
+  if (lifecycleStatus === "ready_for_retake") return "Ready for Retake";
   if (lifecycleStatus === "completed_orientation") return "Completed";
   if (lifecycleStatus === "no_show") return "No Show";
   if (lifecycleStatus === "incomplete_orientation") return "Incomplete";
   if (lifecycleStatus === "cancelled_orientation") return "Cancelled";
 
-  return "Approved";
+  return isOrientationUpcoming(item) ? "Upcoming" : "Pending Orientation";
 }
 
 function getOrientationStatusClass(item) {
   const lifecycleStatus = getOrientationLifecycleStatus(item);
 
   if (lifecycleStatus === "pending_orientation") return "status-pending";
+  if (lifecycleStatus === "failed_orientation") return "status-failed";
+  if (lifecycleStatus === "ready_for_retake") return "status-retake-ready";
   if (lifecycleStatus === "completed_orientation") return "status-completed";
   if (lifecycleStatus === "no_show") return "status-no-show";
   if (lifecycleStatus === "incomplete_orientation") return "status-incomplete";
   if (lifecycleStatus === "cancelled_orientation") return "status-cancelled";
 
-  return "status-approved";
+  return isOrientationUpcoming(item) ? "status-upcoming" : "status-approved";
+}
+
+async function postOrientationWorkflowAction(url, successMessage) {
+  try {
+    const response = await webAdminFetch(url, {
+      method: "POST",
+      headers: { Accept: "application/json" }
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || "Orientation action failed.");
+    }
+    showToast(successMessage, "success");
+    await loadOrientationAppointments();
+  } catch (error) {
+    showToast(error.message || "Orientation action failed.", "error");
+  }
 }
 
 /* =========================
@@ -1006,6 +1006,25 @@ function getOrientationStatusClass(item) {
 ========================= */
 
 document.addEventListener("click", (event) => {
+  const retakeBtn = event.target.closest(".orientation-retake-btn");
+  if (retakeBtn) {
+    postOrientationWorkflowAction(
+      getOrientationAllowRetakeApiUrl(retakeBtn.dataset.id),
+      "Retake authorized."
+    );
+    return;
+  }
+
+  const incompleteBtn = event.target.closest(".orientation-incomplete-btn");
+  if (incompleteBtn) {
+    if (!window.confirm("Mark this orientation as incomplete? The participant will no longer continue the current orientation attempt.")) return;
+    postOrientationWorkflowAction(
+      getOrientationMarkIncompleteApiUrl(incompleteBtn.dataset.id),
+      "Orientation marked incomplete."
+    );
+    return;
+  }
+
   const qrBtn = event.target.closest(".orientation-qr-btn");
   if (qrBtn) {
     viewOrientationQr(qrBtn.dataset.id);
@@ -1021,7 +1040,6 @@ document.addEventListener("click", (event) => {
 document.addEventListener("DOMContentLoaded", () => {
   setupOrientationQrModal();
   setupOrientationHistoryModal();
-  setupUpcomingOrientationModal();
 });
 
 /* =========================
@@ -1034,8 +1052,6 @@ window.viewOrientationQr = viewOrientationQr;
 window.openOrientationWebExam = openOrientationWebExam;
 window.openOrientationHistoryModal = openOrientationHistoryModal;
 window.closeOrientationHistoryModal = closeOrientationHistoryModal;
-window.openUpcomingOrientationModal = openUpcomingOrientationModal;
-window.closeUpcomingOrientationModal = closeUpcomingOrientationModal;
 
 window.renderUpcomingOrientation = renderUpcomingOrientation;
 window.getActiveOrientationRecords = getActiveOrientationRecords;

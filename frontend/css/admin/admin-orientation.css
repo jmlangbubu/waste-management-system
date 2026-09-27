@@ -97,9 +97,46 @@
   color: #15803d;
 }
 
+.status-upcoming {
+  background: #e0f2fe;
+  color: #075985;
+}
+
+.orientation-upcoming-wrap {
+  margin-top: 32px;
+}
+
+.orientation-upcoming-table-shell {
+  overflow-x: auto;
+}
+
+.orientation-upcoming-table-shell table {
+  min-width: 780px;
+}
+
+.orientation-table-action {
+  border: 1px solid #bbf7d0;
+  border-radius: 10px;
+  background: #f0fdf4;
+  color: #087a2c;
+  padding: 8px 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
 .status-pending {
   background: #fef3c7;
   color: #92400e;
+}
+
+.status-failed {
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.status-retake-ready {
+  background: #e0f2fe;
+  color: #075985;
 }
 
 .status-completed {
@@ -185,6 +222,19 @@
 .orientation-card-actions button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.orientation-card-actions .orientation-retake-btn {
+  justify-content: center;
+  background: #dcfce7;
+  color: #166534;
+}
+
+.orientation-card-actions .orientation-incomplete-btn {
+  justify-content: center;
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #475569;
 }
 
 .orientation-card-list .empty-state {

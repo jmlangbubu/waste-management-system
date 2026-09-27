@@ -3,6 +3,18 @@ const router = express.Router();
 const db = require("../config/db");
 const { Resend } = require("resend");
 const resend = new Resend(process.env.RESEND_API_KEY);
+const { requireWebAuth, requireWebRole, requireCsrf } = require("../middleware/webSessionAuth");
+const {
+  ORIENTATION_PURPOSE,
+  normalizeOrientationStatus,
+  getOrientationQuizResult,
+  canTakeOrientationQuiz
+} = require("../utils/orientationWorkflow");
+const requireOrientationWebMutation = [
+  requireWebAuth,
+  requireWebRole("super_admin", "personnel"),
+  requireCsrf
+];
 
 console.log("appointmentRoutes loaded");
 
@@ -425,6 +437,10 @@ router.get("/history", (req, res) => {
       preferred_date,
       CASE
         WHEN purpose = 'SWM Orientation & Clearance'
+          AND LOWER(TRIM(COALESCE(orientation_status, ''))) IN
+            ('incomplete_orientation', 'incomplete')
+        THEN 'incomplete'
+        WHEN purpose = 'SWM Orientation & Clearance'
           AND (
             LOWER(TRIM(COALESCE(orientation_status, ''))) IN (
               'completed_orientation',
@@ -457,6 +473,11 @@ router.get("/history", (req, res) => {
       OR (
         LOWER(TRIM(status)) IN ('approved', 'rescheduled')
         AND preferred_date < CURDATE()
+        AND NOT (
+          purpose = 'SWM Orientation & Clearance'
+          AND LOWER(TRIM(COALESCE(orientation_status, ''))) IN
+            ('failed_orientation', 'ready_for_retake')
+        )
       )
       OR (
         purpose = 'SWM Orientation & Clearance'
@@ -504,6 +525,7 @@ router.get("/orientation", (req, res) => {
     id,
     full_name,
     barangay,
+    purpose,
     preferred_date,
     status,
     assigned_to,
@@ -539,6 +561,93 @@ router.get("/orientation", (req, res) => {
 });
 
 /* =========================================
+   ORIENTATION WORKFLOW ACTIONS (WMO WEB)
+========================================= */
+function loadOrientationForWebAction(id, res, callback) {
+  if (!/^\d+$/.test(String(id || "")) || Number(id) < 1) {
+    return res.status(400).json({ success: false, message: "Valid appointment ID is required" });
+  }
+
+  db.query(
+    `SELECT id, purpose, status, orientation_status, orientation_score
+     FROM appointments WHERE id = ? AND purpose = ? LIMIT 1`,
+    [id, ORIENTATION_PURPOSE],
+    (error, rows) => {
+      if (error) {
+        console.error("orientation workflow lookup error:", error);
+        return res.status(500).json({ success: false, message: "Failed to load orientation record" });
+      }
+      if (!rows || !rows.length) {
+        return res.status(404).json({ success: false, message: "Orientation record not found" });
+      }
+      return callback(rows[0]);
+    }
+  );
+}
+
+router.post("/orientation/:id/allow-retake", requireOrientationWebMutation, (req, res) => {
+  loadOrientationForWebAction(req.params.id, res, (record) => {
+    const current = normalizeOrientationStatus(record.orientation_status);
+    if (current === "ready_for_retake") {
+      return res.json({ success: true, orientation_status: current, changed: false });
+    }
+    if (current !== "failed_orientation" || String(record.status).toLowerCase() !== "approved") {
+      return res.status(409).json({ success: false, message: "This orientation cannot be reopened" });
+    }
+
+    db.query(
+      `UPDATE appointments SET orientation_status = 'ready_for_retake', updated_at = NOW()
+       WHERE id = ? AND purpose = ? AND status = 'approved'
+         AND orientation_status = 'failed_orientation'`,
+      [record.id, ORIENTATION_PURPOSE],
+      (error, result) => {
+        if (error) {
+          console.error("allow orientation retake error:", error);
+          return res.status(500).json({ success: false, message: "Failed to allow retake" });
+        }
+        if (!result?.affectedRows) {
+          return res.status(409).json({ success: false, message: "Orientation state changed; refresh and retry" });
+        }
+        return res.json({ success: true, orientation_status: "ready_for_retake", changed: true });
+      }
+    );
+  });
+});
+
+router.post("/orientation/:id/mark-incomplete", requireOrientationWebMutation, (req, res) => {
+  loadOrientationForWebAction(req.params.id, res, (record) => {
+    const current = normalizeOrientationStatus(record.orientation_status);
+    if (current === "incomplete_orientation") {
+      return res.json({ success: true, orientation_status: current, changed: false });
+    }
+    if (!canTakeOrientationQuiz(current) && current !== "failed_orientation") {
+      return res.status(409).json({ success: false, message: "This orientation cannot be marked incomplete" });
+    }
+    if (String(record.status).toLowerCase() !== "approved") {
+      return res.status(409).json({ success: false, message: "Only approved orientation may be marked incomplete" });
+    }
+
+    db.query(
+      `UPDATE appointments SET orientation_status = 'incomplete_orientation',
+         orientation_completed = 0, orientation_completed_at = NOW(), updated_at = NOW()
+       WHERE id = ? AND purpose = ? AND status = 'approved'
+         AND COALESCE(orientation_status, 'approved') = ?`,
+      [record.id, ORIENTATION_PURPOSE, current],
+      (error, result) => {
+        if (error) {
+          console.error("mark orientation incomplete error:", error);
+          return res.status(500).json({ success: false, message: "Failed to mark orientation incomplete" });
+        }
+        if (!result?.affectedRows) {
+          return res.status(409).json({ success: false, message: "Orientation state changed; refresh and retry" });
+        }
+        return res.json({ success: true, orientation_status: "incomplete_orientation", changed: true });
+      }
+    );
+  });
+});
+
+/* =========================================
    VERIFY ORIENTATION TOKEN
    For mobile QR scan verification
 ========================================= */
@@ -566,6 +675,8 @@ router.get("/orientation/verify/:token", (req, res) => {
       orientation_token,
       orientation_qr_status,
       orientation_completed,
+      orientation_status,
+      orientation_score,
       created_at,
       updated_at
     FROM appointments
@@ -621,7 +732,10 @@ router.get("/orientation/verify/:token", (req, res) => {
         assigned_to: record.assigned_to,
         orientation_token: record.orientation_token,
         orientation_qr_status: record.orientation_qr_status,
-        orientation_completed: record.orientation_completed
+        orientation_completed: record.orientation_completed,
+        orientation_status: normalizeOrientationStatus(record.orientation_status),
+        orientation_score: record.orientation_score,
+        can_take_quiz: canTakeOrientationQuiz(record.orientation_status)
       }
     });
   });
@@ -1306,11 +1420,14 @@ router.put("/orientation/start/:token", (req, res) => {
     UPDATE appointments
     SET
       orientation_status = 'pending_orientation',
-      orientation_started_at = NOW()
-    WHERE orientation_token = ?
+      orientation_started_at = COALESCE(orientation_started_at, NOW()),
+      updated_at = NOW()
+    WHERE orientation_token = ? AND purpose = ? AND status = 'approved'
+      AND COALESCE(orientation_status, 'approved') IN
+        ('approved', 'pending_orientation', 'ready_for_retake')
   `;
 
-  db.query(sql, [token], (err, result) => {
+  db.query(sql, [token, ORIENTATION_PURPOSE], (err, result) => {
     if (err) {
       console.error("start orientation error:", err);
       return res.status(500).json({
@@ -1319,9 +1436,14 @@ router.put("/orientation/start/:token", (req, res) => {
       });
     }
 
+    if (!result?.affectedRows) {
+      return res.status(409).json({ success: false, message: "Orientation is not available to start" });
+    }
+
     return res.json({
       success: true,
-      message: "Orientation started"
+      message: "Orientation started",
+      orientation_status: "pending_orientation"
     });
   });
 });
@@ -1331,40 +1453,96 @@ router.put("/orientation/start/:token", (req, res) => {
 ========================================= */
 router.put("/orientation/complete/:token", (req, res) => {
   const { token } = req.params;
-  const { score } = req.body;
+  const resultValue = getOrientationQuizResult(req.body?.score, req.body?.total_questions, req.body?.answers);
+  if (!resultValue) {
+    return res.status(400).json({ success: false, message: "A valid quiz score and question total are required" });
+  }
 
-  const sql = `
-    UPDATE appointments
-    SET
-      status = 'completed',
-      orientation_completed = 1,
-      orientation_status = 'completed_orientation',
-      orientation_completed_at = NOW(),
-      orientation_score = ?,
-      updated_at = NOW()
-    WHERE orientation_token = ?
-  `;
+  db.query(
+    `SELECT id, purpose, status, orientation_status, orientation_score
+     FROM appointments WHERE orientation_token = ? LIMIT 1`,
+    [token],
+    (lookupError, rows) => {
+      if (lookupError) {
+        console.error("orientation result lookup error:", lookupError);
+        return res.status(500).json({ success: false, message: "Failed to load orientation record" });
+      }
+      if (!rows?.length || rows[0].purpose !== ORIENTATION_PURPOSE) {
+        return res.status(404).json({ success: false, message: "Orientation record not found" });
+      }
+      const record = rows[0];
+      const current = normalizeOrientationStatus(record.orientation_status);
+      if (current === "completed_orientation" && resultValue.passed &&
+          Number(record.orientation_score) === resultValue.score) {
+        return res.json({
+          success: true,
+          passed: true,
+          score: resultValue.score,
+          total_questions: resultValue.totalQuestions,
+          orientation_status: current,
+          certificate_eligible: true,
+          changed: false
+        });
+      }
+      if (current === "failed_orientation" && !resultValue.passed &&
+          Number(record.orientation_score) === resultValue.score) {
+        return res.json({
+          success: true,
+          passed: false,
+          score: resultValue.score,
+          total_questions: resultValue.totalQuestions,
+          orientation_status: current,
+          certificate_eligible: false,
+          changed: false
+        });
+      }
+      if (String(record.status).toLowerCase() !== "approved" || !canTakeOrientationQuiz(current)) {
+        return res.status(409).json({ success: false, message: "Orientation is not available for a quiz attempt" });
+      }
 
-  db.query(sql, [score || null, token], (err, result) => {
-    if (err) {
-      console.error("complete orientation error:", err);
-      return res.status(500).json({
-        success: false,
-        message: "Failed to complete orientation"
+      const nextStatus = resultValue.passed ? "completed_orientation" : "failed_orientation";
+      const sql = resultValue.passed
+        ? `UPDATE appointments SET status = 'completed', orientation_completed = 1,
+             orientation_status = 'completed_orientation', orientation_completed_at = NOW(),
+             orientation_score = ?, updated_at = NOW()
+           WHERE id = ? AND purpose = ? AND status = 'approved'
+             AND COALESCE(orientation_status, 'approved') = ?`
+        : `UPDATE appointments SET orientation_completed = 0,
+             orientation_status = 'failed_orientation', orientation_completed_at = NULL,
+             orientation_score = ?, updated_at = NOW()
+           WHERE id = ? AND purpose = ? AND status = 'approved'
+             AND COALESCE(orientation_status, 'approved') = ?`;
+
+      db.query(sql, [resultValue.score, record.id, ORIENTATION_PURPOSE, current], (err, result) => {
+        if (err) {
+          console.error("submit orientation result error:", err);
+          return res.status(500).json({
+            success: false,
+            message: "Failed to save orientation result"
+          });
+        }
+
+        if (!result || result.affectedRows === 0) {
+          return res.status(409).json({
+            success: false,
+            message: "Orientation state changed; refresh and retry"
+          });
+        }
+
+        return res.json({
+          success: true,
+          passed: resultValue.passed,
+          score: resultValue.score,
+          total_questions: resultValue.totalQuestions,
+          orientation_status: nextStatus,
+          certificate_eligible: resultValue.passed,
+          changed: true,
+          message: resultValue.passed
+            ? "Orientation completed and moved to appointment history"
+            : "Quiz attempt recorded; retake requires WMO authorization"
+        });
       });
     }
-
-    if (!result || result.affectedRows === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Orientation record not found"
-      });
-    }
-
-    return res.json({
-      success: true,
-      message: "Orientation completed and moved to appointment history"
-    });
-  });
+  );
 });
 module.exports = router;

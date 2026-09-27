@@ -1960,23 +1960,14 @@ body {
    FINAL ADMIN OVERRIDES PATCH
    Put at the VERY BOTTOM of css/admin/admin-overrides.css
    Purpose:
-   - Upcoming Orientation button/modal support
    - Better orientation responsive cards
    - Real mobile/tablet layout stabilization
-   - Unified modal behavior including upcomingOrientationModal
+   - Unified modal behavior
 ========================================================= */
 
 /* ===============================
    ORIENTATION HEADER + STATUS FIX
 ================================ */
-
-.orientation-header-actions {
-  display: flex !important;
-  align-items: center !important;
-  justify-content: flex-end !important;
-  gap: 12px !important;
-  flex-wrap: wrap !important;
-}
 
 .orientation-active-wrap {
   margin-top: 20px !important;
@@ -2012,51 +2003,6 @@ body {
 .orientation-status.status-cancelled {
   background: #f1f5f9 !important;
   color: #475569 !important;
-}
-
-/* Upcoming orientation modal is also a history modal */
-#upcomingOrientationModal.history-modal {
-  position: fixed !important;
-  inset: 0 !important;
-  z-index: 99990 !important;
-}
-
-#upcomingOrientationModal .history-modal-overlay {
-  position: fixed !important;
-  inset: 0 !important;
-  background: rgba(15, 23, 42, 0.55) !important;
-  backdrop-filter: blur(5px) !important;
-}
-
-#upcomingOrientationModal .history-modal-content {
-  position: fixed !important;
-  top: 50% !important;
-  left: calc(260px + ((100vw - 260px) / 2)) !important;
-  transform: translate(-50%, -50%) !important;
-  width: min(980px, calc(100vw - 330px)) !important;
-  max-width: none !important;
-  max-height: 84vh !important;
-  overflow: hidden !important;
-  background: #ffffff !important;
-  border-radius: 24px !important;
-  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28) !important;
-}
-
-#upcomingOrientationModal .history-modal-header {
-  display: grid !important;
-  grid-template-columns: minmax(0, 1fr) 44px !important;
-  align-items: start !important;
-  gap: 14px !important;
-  padding: 22px 24px !important;
-  border-bottom: 1px solid #e5e7eb !important;
-}
-
-#upcomingOrientationModal .table-shell {
-  margin: 22px 24px 24px !important;
-  max-height: 58vh !important;
-  overflow: auto !important;
-  border: 1px solid #e5e7eb !important;
-  border-radius: 18px !important;
 }
 
 /* ===============================
@@ -2146,8 +2092,7 @@ body {
 
   .history-modal .history-modal-content,
   .custom-modal .custom-modal-content,
-  .qr-modal .qr-modal-content,
-  #upcomingOrientationModal .history-modal-content {
+  .qr-modal .qr-modal-content {
     left: 50% !important;
     width: min(980px, calc(100vw - 32px)) !important;
     max-width: calc(100vw - 32px) !important;
@@ -2438,7 +2383,6 @@ body {
   #complaintHistoryModal.history-modal:not(.hidden),
   #deactivatedAccountsModal.history-modal:not(.hidden),
   #orientationHistoryModal.history-modal:not(.hidden),
-  #upcomingOrientationModal.history-modal:not(.hidden),
   #editUserModal.history-modal:not(.hidden),
   #truckAnalyticsModal.history-modal:not(.hidden),
   #rescheduleAppointmentModal.custom-modal:not(.hidden),
@@ -2464,7 +2408,6 @@ body {
   #complaintHistoryModal .history-modal-content,
   #deactivatedAccountsModal .history-modal-content,
   #orientationHistoryModal .history-modal-content,
-  #upcomingOrientationModal .history-modal-content,
   #editUserModal .history-modal-content,
   #truckAnalyticsModal .history-modal-content,
   #rescheduleAppointmentModal .custom-modal-content,
@@ -2493,8 +2436,7 @@ body {
   .history-modal-header,
   .custom-modal-header,
   .qr-header,
-  .report-header,
-  #upcomingOrientationModal .history-modal-header {
+  .report-header {
     display: grid !important;
     grid-template-columns: minmax(0, 1fr) 44px !important;
     align-items: start !important;
@@ -2529,8 +2471,7 @@ body {
   }
 
   .history-modal-content .table-shell,
-  .custom-modal-content .table-shell,
-  #upcomingOrientationModal .table-shell {
+  .custom-modal-content .table-shell {
     width: calc(100% - 28px) !important;
     max-width: calc(100% - 28px) !important;
     margin: 14px auto 18px !important;
@@ -2616,10 +2557,9 @@ body {
 }
 
 /* =========================================================
-   FINAL ORIENTATION BUTTON ALIGNMENT + UPCOMING COLOR FIX
+   ORIENTATION HEADER ALIGNMENT
    Purpose:
-   - Keep Upcoming Orientation and View Orientation Report close together
-   - Give Upcoming Orientation a separate blue schedule color
+   - Keep the Orientation Report action aligned with the header
    - Keep mobile/tablet responsive
 ========================================================= */
 
@@ -2664,21 +2604,6 @@ body {
   font-weight: 800 !important;
 }
 
-/* Upcoming Orientation = scheduled/future color */
-#openUpcomingOrientationBtn {
-  background: #eef6ff !important;
-  border: 1px solid #bfdbfe !important;
-  color: #1d4ed8 !important;
-  box-shadow: 0 12px 26px rgba(37, 99, 235, 0.08) !important;
-}
-
-#openUpcomingOrientationBtn:hover {
-  background: #dbeafe !important;
-  border-color: #93c5fd !important;
-  color: #1e40af !important;
-  transform: translateY(-1px) !important;
-}
-
 /* Report stays green */
 #openOrientationHistoryBtn {
   background: #ecfdf3 !important;
@@ -2692,13 +2617,6 @@ body {
   border-color: #86efac !important;
   color: #065f46 !important;
   transform: translateY(-1px) !important;
-}
-
-/* Upcoming modal status scheduled color */
-#upcomingOrientationModal .orientation-status.status-approved {
-  background: #eef6ff !important;
-  color: #1d4ed8 !important;
-  border: 1px solid #bfdbfe !important;
 }
 
 /* Tablet: keep buttons together but allow wrapping if screen is tight */

@@ -803,11 +803,6 @@
                   <p>Manage QR-based orientation, exam progress, and completion.</p>
                 </div>
 
-                <div class="orientation-header-actions">
-                  <button type="button" class="view-all-btn small" id="openUpcomingOrientationBtn">
-                    Upcoming Orientation
-                  </button>
-                </div>
               </div>
 
               <div class="orientation-active-wrap">
@@ -815,6 +810,20 @@
 
                 <div id="orientationCardList" class="orientation-card-list">
                   <div class="empty-state">Loading orientation records...</div>
+                </div>
+              </div>
+
+              <div class="orientation-upcoming-wrap">
+                <h3>Upcoming Orientations</h3>
+                <div class="table-shell orientation-upcoming-table-shell">
+                  <table class="orientation-history-table">
+                    <thead>
+                      <tr><th>Name</th><th>Barangay</th><th>Scheduled Date</th><th>Purpose</th><th>Status</th><th>Action</th></tr>
+                    </thead>
+                    <tbody id="upcomingOrientationTableBody">
+                      <tr><td colspan="6">Loading upcoming orientations...</td></tr>
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>
@@ -3083,43 +3092,6 @@
   </div>
 </div>
 
-<div id="upcomingOrientationModal" class="history-modal hidden">
-  <div class="history-modal-overlay" id="upcomingOrientationOverlay"></div>
-
-  <div class="history-modal-content">
-    <div class="history-modal-header">
-      <div>
-        <h2>Upcoming Orientation</h2>
-        <p>Approved orientation schedules that are not active yet.</p>
-      </div>
-
-      <button type="button" class="history-close-btn" id="closeUpcomingOrientationBtn">✕</button>
-    </div>
-
-    <div class="table-shell">
-      <table class="orientation-history-table">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Barangay</th>
-            <th>Scheduled Date</th>
-            <th>Type</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-
-        <tbody id="upcomingOrientationTableBody">
-          <tr>
-            <td colspan="5" class="loading-state">
-              Loading upcoming orientation schedules...
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-</div>
-
 <div id="orientationHistoryModal" class="history-modal hidden">
   <div class="history-modal-overlay" id="orientationHistoryOverlay"></div>
 
@@ -3127,7 +3099,7 @@
     <div class="history-modal-header">
       <div>
         <h2>Orientation History / Report</h2>
-        <p>Completed SWM orientation records.</p>
+        <p>Completed, incomplete, and other terminal SWM orientation records.</p>
       </div>
 
       <button type="button" class="history-close-btn" id="closeOrientationHistoryBtn">✕</button>
