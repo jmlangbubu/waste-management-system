@@ -239,7 +239,7 @@ router.post("/", (req, res) => {
     });
   }
 
-  ensureCertificatesTable((tableErr) => {
+  const persistEligibleCertificate = () => ensureCertificatesTable((tableErr) => {
     if (tableErr) {
       console.error("Certificate table check error:", tableErr);
       return res.status(500).json({
@@ -350,6 +350,25 @@ router.post("/", (req, res) => {
       }
     );
   });
+
+  // An orientation-linked certificate may only be saved after the server recorded a pass.
+  if (!orientationToken) return persistEligibleCertificate();
+  db.query(
+    `SELECT purpose, orientation_status FROM appointments
+     WHERE orientation_token = ? LIMIT 1`,
+    [orientationToken],
+    (lookupError, rows) => {
+      if (lookupError) {
+        console.error("Certificate orientation eligibility lookup error:", lookupError);
+        return res.status(500).json({ success: false, message: "Failed to verify orientation completion." });
+      }
+      if (!rows?.length || rows[0].purpose !== "SWM Orientation & Clearance" ||
+          String(rows[0].orientation_status || "").toLowerCase() !== "completed_orientation") {
+        return res.status(403).json({ success: false, message: "Orientation has not been completed after a passing exam." });
+      }
+      return persistEligibleCertificate();
+    }
+  );
 });
 
 function reloadCertificateById(id, res, message) {

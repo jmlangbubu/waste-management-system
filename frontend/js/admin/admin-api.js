@@ -126,6 +126,14 @@ function getOrientationAppointmentsApiUrl() {
   return `${getAppApiBase()}/appointments/orientation`;
 }
 
+function getOrientationAllowRetakeApiUrl(id) {
+  return `${getOrientationAppointmentsApiUrl()}/${encodeURIComponent(id)}/allow-retake`;
+}
+
+function getOrientationMarkIncompleteApiUrl(id) {
+  return `${getOrientationAppointmentsApiUrl()}/${encodeURIComponent(id)}/mark-incomplete`;
+}
+
 function getGenerateOrientationQrApiUrl(id) {
   return `${getAppApiBase()}/appointments/${id}/generate-orientation-qr`;
 }
