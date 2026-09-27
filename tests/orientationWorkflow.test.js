@@ -10,6 +10,8 @@ const routes = [];
 const record = {
   id: 17,
   purpose: "SWM Orientation & Clearance",
+  preferred_date: "2026-09-27",
+  created_at: "2026-09-26 14:00:00",
   status: "approved",
   orientation_status: "pending_orientation",
   orientation_score: null,
@@ -20,10 +22,13 @@ const record = {
 };
 let role = "personnel";
 let updates = 0;
+let databaseToday = "2026-09-27";
+let reconciliationSql = "";
 
 function reset(state = "pending_orientation") {
   Object.assign(record, {
-    status: "approved", orientation_status: state, orientation_score: null,
+    status: "approved", purpose: "SWM Orientation & Clearance", preferred_date: databaseToday,
+    orientation_status: state, orientation_score: null,
     orientation_started_at: null, orientation_completed_at: null,
     orientation_completed: 0
   });
@@ -35,11 +40,26 @@ const db = {
   query(sql, params, callback) {
     if (typeof params === "function") { callback = params; params = []; }
     if (/^\s*SELECT/i.test(sql)) {
+      if (sql.includes("WHERE purpose = 'SWM Orientation & Clearance'")) {
+        return callback(null, [{ ...record }]);
+      }
       return callback(null, sql.includes("orientation_token = ?")
         ? (params[0] === record.orientation_token ? [{ ...record }] : [])
         : (Number(params[0]) === record.id ? [{ ...record }] : []));
     }
     if (!/^\s*UPDATE appointments/i.test(sql)) throw new Error(`Unexpected query: ${sql}`);
+    if (sql.includes("orientation_status = 'no_show'")) {
+      reconciliationSql = sql;
+      const eligible = params[0] === record.purpose && record.status === "approved" &&
+        record.preferred_date < databaseToday && record.orientation_started_at == null &&
+        record.orientation_completed_at == null && !record.orientation_completed &&
+        [null, "", "approved"].includes(record.orientation_status);
+      if (eligible) {
+        record.orientation_status = "no_show";
+        updates += 1;
+      }
+      return callback(null, { affectedRows: eligible ? 1 : 0 });
+    }
     let eligible = false;
     if (sql.includes("orientation_token = ?")) {
       eligible = params[0] === record.orientation_token && record.status === "approved" &&
@@ -246,6 +266,90 @@ test("appointment History distinguishes incomplete and excludes still-active fai
   assert.match(historyQuery, /THEN 'incomplete'/);
   assert.match(historyQuery, /'failed_orientation', 'ready_for_retake'/);
   assert.match(historyQuery, /'completed_orientation'/);
+  assert.match(historyQuery, /THEN 'no_show'/);
+});
+
+test("past calendar date reconciles only approved never-started Orientation and is idempotent", async () => {
+  reset("approved");
+  record.preferred_date = "2026-09-26";
+  record.created_at = "2026-09-26 23:59:00";
+  const first = await invoke("get", "/orientation");
+  assert.equal(first.statusCode, 200);
+  assert.equal(record.orientation_status, "no_show");
+  assert.equal(updates, 1);
+  await invoke("get", "/orientation");
+  assert.equal(updates, 1);
+  assert.match(reconciliationSql, /preferred_date\s*<\s*CURDATE\(\)/);
+  assert.match(reconciliationSql, /orientation_started_at IS NULL/);
+  assert.match(reconciliationSql, /orientation_completed_at IS NULL/);
+  assert.match(reconciliationSql, /COALESCE\(orientation_completed, 0\) = 0/);
+  assert.match(reconciliationSql, /orientation_status.*'approved'/s);
+  assert.doesNotMatch(reconciliationSql, /created_at|INTERVAL\s+24\s+HOUR/i);
+  assert.equal((await invoke("put", "/orientation/start/:token")).statusCode, 409);
+});
+
+test("same-day and future scheduled Orientation do not expire, regardless of approval time", async () => {
+  for (const preferredDate of ["2026-09-27", "2026-09-28"]) {
+    reset("approved");
+    record.preferred_date = preferredDate;
+    record.created_at = "2026-09-26 00:01:00";
+    await invoke("get", "/orientation");
+    assert.equal(record.orientation_status, "approved");
+    assert.equal(updates, 0);
+  }
+});
+
+test("started, failed, ready, completed and incomplete records never become no-show", async () => {
+  const states = ["pending_orientation", "failed_orientation", "ready_for_retake", "completed_orientation", "incomplete_orientation", "no_show"];
+  for (const state of states) {
+    reset(state);
+    record.preferred_date = "2026-09-26";
+    await invoke("get", "/orientation");
+    assert.equal(record.orientation_status, state);
+    assert.equal(updates, 0);
+  }
+  reset("approved");
+  record.preferred_date = "2026-09-26";
+  record.orientation_started_at = "2026-09-26 09:00:00";
+  await invoke("get", "/orientation");
+  assert.equal(record.orientation_status, "approved");
+  assert.equal(updates, 0);
+});
+
+test("only approved SWM records without completion evidence are eligible", async () => {
+  const exclusions = [
+    { status: "pending" },
+    { purpose: "Accreditation" },
+    { orientation_completed: 1 },
+    { orientation_completed_at: "2026-09-26 10:00:00" }
+  ];
+  for (const exclusion of exclusions) {
+    reset("approved");
+    record.preferred_date = "2026-09-26";
+    Object.assign(record, exclusion);
+    await invoke("get", "/orientation");
+    assert.equal(record.orientation_status, "approved");
+    assert.equal(updates, 0);
+  }
+});
+
+test("token verification and start reconcile overdue never-started records before acting", async () => {
+  reset("approved");
+  record.preferred_date = "2026-09-26";
+  const verification = await invoke("get", "/orientation/verify/:token");
+  assert.equal(verification.body.data.orientation_status, "no_show");
+  assert.equal(verification.body.data.can_take_quiz, false);
+  assert.equal((await invoke("put", "/orientation/start/:token")).statusCode, 409);
+  assert.equal(updates, 1);
+});
+
+test("overdue QR and WMO actions cannot revive a reconciled no-show", async () => {
+  reset("approved");
+  record.preferred_date = "2026-09-26";
+  assert.equal((await invoke("post", "/:id/generate-orientation-qr")).statusCode, 409);
+  assert.equal(record.orientation_status, "no_show");
+  assert.equal((await invoke("post", "/orientation/:id/mark-incomplete")).statusCode, 409);
+  assert.equal(updates, 1);
 });
 
 test("server Web answer key stays aligned with the existing five-question exam", () => {

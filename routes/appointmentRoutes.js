@@ -18,6 +18,29 @@ const requireOrientationWebMutation = [
 
 console.log("appointmentRoutes loaded");
 
+// Reconcile attendance on the database's calendar date, not a rolling timer.
+function reconcileOverdueOrientationNoShows(req, res, next) {
+  db.query(
+    `UPDATE appointments
+     SET orientation_status = 'no_show', updated_at = NOW()
+     WHERE purpose = ?
+       AND LOWER(TRIM(status)) = 'approved'
+       AND preferred_date < CURDATE()
+       AND orientation_started_at IS NULL
+       AND orientation_completed_at IS NULL
+       AND COALESCE(orientation_completed, 0) = 0
+       AND LOWER(COALESCE(NULLIF(TRIM(orientation_status), ''), 'approved')) = 'approved'`,
+    [ORIENTATION_PURPOSE],
+    (error) => {
+      if (error) {
+        console.error("orientation no-show reconciliation error:", error);
+        return res.status(500).json({ success: false, message: "Failed to reconcile orientation attendance" });
+      }
+      return next();
+    }
+  );
+}
+
 function generateAppointmentCode(appointmentId) {
   return `APT-${String(appointmentId).padStart(6, "0")}`;
 }
@@ -356,7 +379,7 @@ router.get("/", (req, res) => {
 /* =========================================
    GET ACTIVE APPOINTMENTS
 ========================================= */
-router.get("/active", (req, res) => {
+router.get("/active", reconcileOverdueOrientationNoShows, (req, res) => {
   const sql = `
     SELECT
       id,
@@ -424,7 +447,7 @@ router.get("/active", (req, res) => {
 /* =========================================
    GET APPOINTMENT HISTORY
 ========================================= */
-router.get("/history", (req, res) => {
+router.get("/history", reconcileOverdueOrientationNoShows, (req, res) => {
   const sql = `
     SELECT
       id,
@@ -436,6 +459,9 @@ router.get("/history", (req, res) => {
       purpose,
       preferred_date,
       CASE
+        WHEN purpose = 'SWM Orientation & Clearance'
+          AND LOWER(TRIM(COALESCE(orientation_status, ''))) IN ('no_show', 'no-show', 'noshow')
+        THEN 'no_show'
         WHEN purpose = 'SWM Orientation & Clearance'
           AND LOWER(TRIM(COALESCE(orientation_status, ''))) IN
             ('incomplete_orientation', 'incomplete')
@@ -519,7 +545,7 @@ router.get("/history", (req, res) => {
    GET ORIENTATION APPOINTMENTS
    Approved orientation records only
 ========================================= */
-router.get("/orientation", (req, res) => {
+router.get("/orientation", reconcileOverdueOrientationNoShows, (req, res) => {
   const sql = `
   SELECT
     id,
@@ -585,7 +611,7 @@ function loadOrientationForWebAction(id, res, callback) {
   );
 }
 
-router.post("/orientation/:id/allow-retake", requireOrientationWebMutation, (req, res) => {
+router.post("/orientation/:id/allow-retake", requireOrientationWebMutation, reconcileOverdueOrientationNoShows, (req, res) => {
   loadOrientationForWebAction(req.params.id, res, (record) => {
     const current = normalizeOrientationStatus(record.orientation_status);
     if (current === "ready_for_retake") {
@@ -614,7 +640,7 @@ router.post("/orientation/:id/allow-retake", requireOrientationWebMutation, (req
   });
 });
 
-router.post("/orientation/:id/mark-incomplete", requireOrientationWebMutation, (req, res) => {
+router.post("/orientation/:id/mark-incomplete", requireOrientationWebMutation, reconcileOverdueOrientationNoShows, (req, res) => {
   loadOrientationForWebAction(req.params.id, res, (record) => {
     const current = normalizeOrientationStatus(record.orientation_status);
     if (current === "incomplete_orientation") {
@@ -651,7 +677,7 @@ router.post("/orientation/:id/mark-incomplete", requireOrientationWebMutation, (
    VERIFY ORIENTATION TOKEN
    For mobile QR scan verification
 ========================================= */
-router.get("/orientation/verify/:token", (req, res) => {
+router.get("/orientation/verify/:token", reconcileOverdueOrientationNoShows, (req, res) => {
   const { token } = req.params;
 
   if (!token || !String(token).trim()) {
@@ -744,7 +770,7 @@ router.get("/orientation/verify/:token", (req, res) => {
 /* =========================================
    GENERATE ORIENTATION QR TOKEN
 ========================================= */
-router.post("/:id/generate-orientation-qr", (req, res) => {
+router.post("/:id/generate-orientation-qr", reconcileOverdueOrientationNoShows, (req, res) => {
   const { id } = req.params;
 
   const checkSql = `
@@ -755,6 +781,7 @@ router.post("/:id/generate-orientation-qr", (req, res) => {
       purpose,
       preferred_date,
       status,
+      orientation_status,
       orientation_token,
       orientation_qr_status,
       orientation_completed
@@ -797,6 +824,10 @@ router.post("/:id/generate-orientation-qr", (req, res) => {
         success: false,
         message: "Only approved orientation appointments can generate a QR"
       });
+    }
+
+    if (!canTakeOrientationQuiz(appointment.orientation_status)) {
+      return res.status(409).json({ success: false, message: "Orientation is not available for a QR" });
     }
 
     const tokenToUse = existingOrientationToken || generateOrientationToken(id);
@@ -1413,7 +1444,7 @@ router.get("/:id/orientation-qr-image", (req, res) => {
 /* =========================================
    START ORIENTATION (QR SCAN)
 ========================================= */
-router.put("/orientation/start/:token", (req, res) => {
+router.put("/orientation/start/:token", reconcileOverdueOrientationNoShows, (req, res) => {
   const { token } = req.params;
 
   const sql = `
@@ -1451,7 +1482,7 @@ router.put("/orientation/start/:token", (req, res) => {
 /* =========================================
    COMPLETE ORIENTATION (QUIZ DONE)
 ========================================= */
-router.put("/orientation/complete/:token", (req, res) => {
+router.put("/orientation/complete/:token", reconcileOverdueOrientationNoShows, (req, res) => {
   const { token } = req.params;
   const resultValue = getOrientationQuizResult(req.body?.score, req.body?.total_questions, req.body?.answers);
   if (!resultValue) {
