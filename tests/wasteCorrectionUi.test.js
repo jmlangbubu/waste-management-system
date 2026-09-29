@@ -42,6 +42,11 @@ test("Clerk and Super Admin can request only when no active proposal exists", ()
   }
 });
 
+test("correction subtotal inputs use the DECIMAL(10,2) maximum", () => {
+  assert.match(source, /<input type="number" name="\$\{key\}" min="0" max="99999999\.99" step="0\.01"/);
+  assert.doesNotMatch(source, /max="9999999999\.99"/);
+});
+
 test("approved payload is read-only and only Clerk or Super Admin sees Apply", () => {
   for (const role of ["super_admin", "clerk_admin", "division_admin", "supervisor", "personnel"]) {
     const { context, nodes } = fixture(role);

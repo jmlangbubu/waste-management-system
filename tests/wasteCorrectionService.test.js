@@ -172,6 +172,59 @@ test("request stores server snapshots, requires reason and real allowed change, 
   assert.equal(f.state.record.grand_total, "320.00");
 });
 
+test("DECIMAL(10,2) maximum subtotal and grand total can be requested and applied", async () => {
+  const f = fixture();
+  for (const field of ["biodegradable_subtotal", "recyclable_subtotal", "residual_subtotal", "special_subtotal", "grand_total"]) {
+    f.state.record[field] = "0.00";
+  }
+  const request = await f.service.request(11, actors.clerk_admin, {
+    reason: "Correct the measured amount",
+    proposedChanges: { biodegradable_subtotal: "99999999.99" }
+  });
+  assert.equal(request.proposed_values.biodegradable_subtotal, "99999999.99");
+  assert.equal(request.proposed_values.grand_total, "99999999.99");
+  await f.service.review(request.id, actors.supervisor, { decision: "approve" });
+  const applied = await f.service.apply(request.id, actors.clerk_admin, {});
+  assert.equal(applied.applied_values.grand_total, "99999999.99");
+  assert.equal(f.state.record.grand_total, "99999999.99");
+  assert.equal(f.state.requests[0].status, "applied");
+  assert.equal(f.state.audits[0].new_values.grand_total, "99999999.99");
+});
+
+test("DECIMAL(10,2) rejects a subtotal above 99999999.99", async () => {
+  const f = fixture();
+  await assert.rejects(f.service.request(11, actors.clerk_admin, {
+    reason: "Out-of-range correction",
+    proposedChanges: { biodegradable_subtotal: "100000000.00" }
+  }), { statusCode: 400 });
+  assert.equal(f.state.requests.length, 0);
+  assert.equal(f.state.record.grand_total, "320.00");
+});
+
+test("individually valid subtotals cannot create an overflowing grand total", async () => {
+  const f = fixture();
+  await assert.rejects(f.service.request(11, actors.clerk_admin, {
+    reason: "Combined values exceed the column limit",
+    proposedChanges: { biodegradable_subtotal: "50000000.00", recyclable_subtotal: "50000000.00" }
+  }), { statusCode: 400, message: /grand total exceeds/ });
+  assert.equal(f.state.requests.length, 0);
+  assert.equal(f.state.record.grand_total, "320.00");
+  assert.equal(f.state.audits.length, 0);
+
+  const approved = await requestedAndApproved(f);
+  f.state.requests[0].proposed_values = JSON.stringify({
+    ...JSON.parse(f.state.requests[0].proposed_values),
+    biodegradable_subtotal: "50000000.00",
+    recyclable_subtotal: "50000000.00",
+    grand_total: "99999999.99"
+  });
+  await assert.rejects(f.service.apply(approved.id, actors.clerk_admin, {}),
+    { statusCode: 400, message: /grand total exceeds/ });
+  assert.equal(f.state.record.grand_total, "320.00");
+  assert.equal(f.state.requests[0].status, "approved");
+  assert.equal(f.state.audits.length, 0);
+});
+
 test("pending and approved requests block duplicates; rejected and applied history does not", async () => {
   const f = fixture();
   const first = await f.service.request(11, actors.clerk_admin, proposal);

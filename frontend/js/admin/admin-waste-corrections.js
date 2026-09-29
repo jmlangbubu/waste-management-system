@@ -113,7 +113,7 @@ function openWasteCorrectionRequest() {
     `<strong>Current official values for record #${correctionEscape(record.id)}</strong><p>Grand Total: ${correctionEscape(correctionAmount(record.grand_total))} kg</p>`;
   document.getElementById("wasteCorrectionInputs").innerHTML = WASTE_CORRECTION_FIELDS.map(([key, label]) => `
     <label>${correctionEscape(label)} (kg)
-      <input type="number" name="${key}" min="0" max="9999999999.99" step="0.01"
+      <input type="number" name="${key}" min="0" max="99999999.99" step="0.01"
         value="${correctionEscape(correctionAmount(record[key]))}" required>
     </label>`).join("");
   document.getElementById("wasteCorrectionReason").value = "";

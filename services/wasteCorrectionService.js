@@ -7,7 +7,7 @@ const CATEGORY_FIELDS = Object.freeze([
 const SNAPSHOT_FIELDS = Object.freeze([...CATEGORY_FIELDS, "grand_total"]);
 const ACTIVE_STATUSES = Object.freeze(["pending", "approved"]);
 const REQUEST_STATUSES = new Set(["pending", "approved", "rejected", "applied", "cancelled"]);
-const MAX_CENTS = 999999999999;
+const MAX_CENTS = 9999999999;
 const { hasWebCapability } = require("../config/webRoleCapabilities");
 
 class WasteCorrectionError extends Error {
