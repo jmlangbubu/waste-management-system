@@ -2,13 +2,14 @@ const express = require("express");
 const bcrypt = require("bcrypt");
 const db = require("../config/db");
 const webSessionService = require("../services/webSessionService");
+const { getWebCapabilities } = require("../config/webRoleCapabilities");
 const {
   SESSION_COOKIE_NAME,
   getCookieValue,
   setSessionCookies,
   clearSessionCookies,
   requireWebAuth,
-  requireWebRole,
+  requireWebCapability,
   requireCsrf
 } = require("../middleware/webSessionAuth");
 
@@ -182,6 +183,7 @@ router.get("/session", requireWebAuth, (req, res) => {
       division_name: divisionName,
       divisionName
     },
+    capabilities: getWebCapabilities(req.user.role),
     expires_at: req.webSession?.expiresAt || null
   });
 });
@@ -203,8 +205,7 @@ router.post("/logout", requireWebAuth, requireCsrf, async (req, res) => {
 
 router.post(
   "/create-user",
-  requireWebAuth,
-  requireWebRole("super_admin"),
+  requireWebCapability("users.manage"),
   requireCsrf,
   (req, res) => {
     const {

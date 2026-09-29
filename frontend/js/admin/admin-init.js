@@ -34,24 +34,38 @@ document.addEventListener("DOMContentLoaded", async () => {
     setupDashboardRangeFilters?.();
     setupCategoryRangeFilters?.();
 
-    // Tracking module
-    safeRun(initializeFleetMonitoring, "initializeFleetMonitoring");
-    safeRun(initializeTruckMap, "initializeTruckMap");
-    safeRun(setupDispatchModule, "setupDispatchModule");
-    safeRun(setupDispatchPlansModule, "setupDispatchPlansModule");
-    safeRun(startTrackingAutoRefresh, "startTrackingAutoRefresh");
-    await safeRun(loadTrackingReports, "loadTrackingReports");
+    // Existing operational modules retain their super_admin/personnel scope.
+    if (hasWebCapability(currentUser, "fleet.view")) {
+      safeRun(initializeFleetMonitoring, "initializeFleetMonitoring");
+    }
+    if (hasWebCapability(currentUser, "dispatch.view")) {
+      safeRun(setupDispatchModule, "setupDispatchModule");
+      safeRun(setupDispatchPlansModule, "setupDispatchPlansModule");
+    }
+    if (hasWebCapability(currentUser, "tracking.view")) {
+      safeRun(initializeTruckMap, "initializeTruckMap");
+      safeRun(startTrackingAutoRefresh, "startTrackingAutoRefresh");
+      await safeRun(loadTrackingReports, "loadTrackingReports");
+    }
 
-    await safeRun(loadRecords, "loadRecords");
-    await safeRun(loadAppointments, "loadAppointments");
+    if (hasWebCapability(currentUser, "waste.view")) {
+      await safeRun(loadRecords, "loadRecords");
+    }
+    if (hasWebCapability(currentUser, "appointments.view")) {
+      await safeRun(loadAppointments, "loadAppointments");
+    }
     if (isSuperAdmin(currentUser)) {
       await safeRun(loadPersonnel, "loadPersonnel");
       await safeRun(loadWebUsers, "loadWebUsers");
     }
-    await safeRun(loadMonitoringPreview, "loadMonitoringPreview");
+    if (hasWebCapability(currentUser, "orientation.view")) {
+      await safeRun(loadMonitoringPreview, "loadMonitoringPreview");
+    }
 
-    await safeRun(() => loadNotifications(false), "loadNotifications");
-    safeRun(startNotificationPolling, "startNotificationPolling");
+    if (hasWebCapability(currentUser, "notifications.view")) {
+      await safeRun(() => loadNotifications(false), "loadNotifications");
+      safeRun(startNotificationPolling, "startNotificationPolling");
+    }
 
     safeRun(initializeDashboardData, "initializeDashboardData");
     safeRun(() => renderDashboardRecentRecords(validatedWasteRecords), "renderDashboardRecentRecords");

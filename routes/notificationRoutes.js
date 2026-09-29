@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const notificationController = require("../controllers/notificationController");
+const { requireWebCapability, requireCsrf } = require("../middleware/webSessionAuth");
 
 /*
   Existing WMO/web notification routes are preserved.
@@ -33,12 +34,12 @@ router.patch("/citizen/:id/read", notificationController.markCitizenNotification
 ========================= */
 
 // GET ALL
-router.get("/", notificationController.getNotifications);
+router.get("/", requireWebCapability("notifications.view"), notificationController.getNotifications);
 
 // DELETE SINGLE
-router.delete("/:id", notificationController.deleteNotification);
+router.delete("/:id", requireWebCapability("notifications.manage"), requireCsrf, notificationController.deleteNotification);
 
 // CLEAR ALL
-router.delete("/", notificationController.clearAllNotifications);
+router.delete("/", requireWebCapability("notifications.manage"), requireCsrf, notificationController.clearAllNotifications);
 
 module.exports = router;
