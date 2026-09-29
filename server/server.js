@@ -102,6 +102,7 @@ const fleetRoutes = require("../routes/fleetRoutes");
 const vehicleIssueRoutes = require("../routes/vehicleIssueRoutes");
 const notificationRoutes = require("../routes/notificationRoutes");
 const complaintRoutes = require("../routes/complaintRoutes");
+const { createCitizenAssistantRouter } = require("../routes/citizenAssistantRoutes");
 const certificateRoutes = require("../routes/certificateRoutes");
 const invoiceRoutes = require("../routes/invoiceRoutes");
 const dispatchMonitorService = require("../services/dispatchMonitorService");
@@ -274,6 +275,7 @@ app.use("/api/fleet", fleetRoutes);
 app.use("/api/vehicle-issues", vehicleIssueRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/complaints", complaintRoutes);
+app.use("/api/citizen-assistant", createCitizenAssistantRouter());
 app.use("/api/certificates", certificateRoutes);
 app.use("/api/invoices", invoiceRoutes);
 
