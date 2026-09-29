@@ -7,20 +7,23 @@ const ROLE_CAPABILITIES = Object.freeze({
     "dashboard.view", "waste.view", "complaints.view", "appointments.view",
     "orientation.view", "tracking.view", "fleet.view", "dispatch.view",
     "calendar.view", "incoming_documents.view",
-    "notifications.view", "notifications.manage", "users.manage"
+    "notifications.view", "notifications.manage", "users.manage",
+    "waste.correction.view", "waste.correction.request",
+    "waste.correction.review", "waste.correction.apply"
   ]),
   clerk_admin: Object.freeze([
     "dashboard.view", "waste.view", "complaints.view", "appointments.view",
     "orientation.view", "calendar.view", "incoming_documents.view",
-    "notifications.view", "notifications.manage"
+    "notifications.view", "notifications.manage",
+    "waste.correction.view", "waste.correction.request", "waste.correction.apply"
   ]),
   division_admin: Object.freeze([
     "dashboard.view", "waste.view", "complaints.view",
-    "notifications.view"
+    "notifications.view", "waste.correction.view"
   ]),
   supervisor: Object.freeze([
     "dashboard.view", "waste.view", "complaints.view",
-    "notifications.view"
+    "notifications.view", "waste.correction.view", "waste.correction.review"
   ]),
   personnel: Object.freeze([
     "dashboard.view", "tracking.view", "fleet.view", "dispatch.view",

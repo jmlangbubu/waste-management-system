@@ -1,0 +1,67 @@
+.waste-correction-button,
+.waste-correction-panel button,
+.waste-correction-panel-header button {
+  border: 0;
+  border-radius: 9px;
+  background: #17634d;
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  padding: 9px 13px;
+}
+
+.waste-correction-button:disabled,
+.waste-correction-panel button:disabled { opacity: .6; cursor: wait; }
+
+.waste-correction-queue,
+.waste-correction-panel {
+  background: #f6faf8;
+  border: 1px solid #cbded4;
+  border-radius: 12px;
+  margin: 16px 0;
+  padding: 16px;
+}
+
+.waste-correction-panel { margin: 0 20px 20px; }
+.waste-correction-panel[hidden], .waste-correction-queue[hidden] { display: none !important; }
+
+.waste-correction-panel-header,
+.waste-correction-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.waste-correction-panel h3,
+.waste-correction-queue h3 { margin: 0; }
+
+.waste-correction-actions { justify-content: flex-start; margin-top: 12px; }
+.waste-correction-card { background: #fff; border: 1px solid #dae6df; border-radius: 10px; margin: 12px 0; padding: 14px; }
+.waste-correction-card p { margin: 6px 0; }
+.waste-correction-comparison { display: grid; gap: 6px; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 12px 0; }
+.waste-correction-comparison span { overflow-wrap: anywhere; }
+.waste-correction-comparison .changed { color: #17634d; font-weight: 700; }
+.waste-correction-muted { color: #52657f; font-size: 13px; }
+.waste-correction-error { color: #a32020; font-weight: 600; }
+
+.waste-correction-modal { max-width: 720px; max-height: min(85vh, 800px); overflow: auto; }
+.waste-correction-form, .waste-correction-history { display: grid; gap: 12px; padding: 18px; }
+.waste-correction-form label { color: #253f38; font-weight: 700; }
+.waste-correction-fields { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.waste-correction-fields label { display: grid; gap: 5px; }
+.waste-correction-form input,
+.waste-correction-form textarea { border: 1px solid #abc8b8; border-radius: 8px; font: inherit; padding: 9px; width: 100%; }
+.waste-correction-original { background: #edf5f0; border-radius: 8px; padding: 10px; }
+
+@media (max-width: 600px) {
+  .waste-correction-fields { grid-template-columns: 1fr; }
+  .waste-correction-comparison { grid-template-columns: 1fr; }
+  .waste-correction-panel { margin: 0 10px 10px; }
+}
+
+@media print {
+  .waste-correction-panel, .waste-correction-queue, .waste-correction-modal { display: none !important; }
+}
