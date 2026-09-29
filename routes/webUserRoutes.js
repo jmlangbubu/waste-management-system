@@ -4,8 +4,7 @@ const db = require("../config/db");
 const bcrypt = require("bcrypt");
 const webSessionService = require("../services/webSessionService");
 const {
-    requireWebAuth,
-    requireWebRole,
+    requireWebCapability,
     requireCsrf
 } = require("../middleware/webSessionAuth");
 
@@ -85,8 +84,7 @@ async function revokeWebSessionsAfterSecurityChange(userId, action) {
     }
 }
 
-router.use(requireWebAuth);
-router.use(requireWebRole("super_admin"));
+router.use(requireWebCapability("users.manage"));
 router.use(requireCsrf);
 
 

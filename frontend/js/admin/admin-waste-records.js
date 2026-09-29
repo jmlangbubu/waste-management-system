@@ -66,7 +66,7 @@ function getStatusBadgeClass(status) {
 async function loadRecords() {
   try {
     const apiBase = getWasteApiBase();
-    const response = await fetch(`${apiBase}/waste/validated-records`);
+    const response = await webAdminFetch(`${apiBase}/waste/web/validated-records`);
     const rawText = await response.text();
         let result = {};
 

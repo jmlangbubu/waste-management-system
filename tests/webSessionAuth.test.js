@@ -927,6 +927,8 @@ test("current-session endpoint succeeds for middleware-provided identity", () =>
   assert.equal(res.statusCode, 200);
   assert.equal(res.body.user.username, "operator");
   assert.equal(res.body.user.status, "active");
+  assert.ok(res.body.capabilities.includes("tracking.view"));
+  assert.equal(res.body.capabilities.includes("users.manage"), false);
   assert.equal(Object.prototype.hasOwnProperty.call(res.body.user, "password"), false);
 });
 
@@ -993,8 +995,7 @@ test("client-supplied dispatch actor identity is overwritten", async () => {
 
 test("Web User Management is super-admin-only and CSRF-protected", () => {
   const source = read("routes/webUserRoutes.js");
-  assert.match(source, /router\.use\(requireWebAuth\)/);
-  assert.match(source, /router\.use\(requireWebRole\("super_admin"\)\)/);
+  assert.match(source, /router\.use\(requireWebCapability\("users\.manage"\)\)/);
   assert.match(source, /router\.use\(requireCsrf\)/);
   assert.match(source, /req\.user\.id/);
 });

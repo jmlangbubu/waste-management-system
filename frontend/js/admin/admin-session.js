@@ -36,7 +36,7 @@ function normalizeRole(role) {
     .replace(/\s+/g, "_");
 }
 
-function normalizeCurrentUser(user) {
+function normalizeCurrentUser(user, capabilities = []) {
   if (!user) return null;
 
   return {
@@ -44,7 +44,10 @@ function normalizeCurrentUser(user) {
     fullName: user.fullName || user.full_name || "",
     username: user.username || "",
     role: normalizeRole(user.role || ""),
-    divisionName: user.divisionName || user.division_name || ""
+    divisionName: user.divisionName || user.division_name || "",
+    capabilities: Array.isArray(capabilities)
+      ? capabilities.filter((capability) => typeof capability === "string")
+      : []
   };
 }
 
@@ -131,31 +134,28 @@ function setSidebarBrand(user) {
 }
 
 function isSuperAdmin(user) {
-  return user && normalizeRole(user.role) === "super_admin";
+  return hasWebCapability(user, "users.manage");
+}
+
+function hasWebCapability(user, capability) {
+  return Boolean(user && Array.isArray(user.capabilities) && user.capabilities.includes(capability));
 }
 
 function isAdminRole(user) {
-  if (!user) return false;
-
-  return [
-    "super_admin",
-    "head_admin",
-    "admin",
-    "division_admin",
-    "personnel",
-    "supervisor",
-    "clerk_admin"
-  ].includes(normalizeRole(user.role));
+  return hasWebCapability(user, "dashboard.view");
 }
 
 function canAccessSection(user, sectionId) {
-  if (!user) return false;
-
-  if (sectionId === SECTION_IDS.userManagement) {
-    return isSuperAdmin(user);
-  }
-
-  return Object.values(SECTION_IDS).includes(sectionId);
+  const sectionCapabilities = {
+    [SECTION_IDS.dashboard]: "dashboard.view",
+    [SECTION_IDS.records]: "waste.view",
+    [SECTION_IDS.appointments]: "appointments.view",
+    [SECTION_IDS.orientation]: "orientation.view",
+    [SECTION_IDS.complaints]: "complaints.view",
+    [SECTION_IDS.tracking]: "tracking.view",
+    [SECTION_IDS.userManagement]: "users.manage"
+  };
+  return hasWebCapability(user, sectionCapabilities[sectionId]);
 }
 
 function forceHideElement(element) {
@@ -194,7 +194,7 @@ async function initializeSession() {
       return false;
     }
 
-    currentUser = normalizeCurrentUser(payload.user);
+    currentUser = normalizeCurrentUser(payload.user, payload.capabilities);
   } catch (error) {
     console.warn("Web Admin session validation failed:", error.code || error.name);
     redirectToLogin();
@@ -209,7 +209,7 @@ async function initializeSession() {
   localStorage.setItem("webUser", JSON.stringify(currentUser));
 
   setUserHeaderInfo(currentUser);
-  setUserManagementVisibility(currentUser);
+  setModuleNavigationVisibility(currentUser);
   guardRestrictedActiveSection(currentUser);
   window.__webAdminSessionReady = true;
   document.documentElement.classList.remove("web-session-pending");
@@ -269,23 +269,40 @@ function setUserManagementVisibility(user) {
   if (superAdminContent) superAdminContent.classList.add("hidden");
 }
 
-function guardRestrictedActiveSection(user) {
-  const userManagementSection = document.getElementById("userManagementSection");
-  const dashboardSection = document.getElementById("dashboardSection");
+function setModuleNavigationVisibility(user) {
+  document.querySelectorAll(".nav-btn[data-section]").forEach((button) => {
+    const allowed = canAccessSection(user, button.getAttribute("data-section"));
+    if (allowed) forceShowElement(button);
+    else forceHideElement(button);
+  });
 
-  if (!userManagementSection || isSuperAdmin(user)) return;
-
-  if (userManagementSection.classList.contains("active")) {
-    userManagementSection.classList.remove("active");
-
-    if (dashboardSection) {
-      dashboardSection.classList.add("active");
-    }
-
-    if (typeof openSection === "function") {
-      openSection("dashboardSection");
-    }
+  const otherActions = [
+    ["openCalendarActivitiesBtn", "calendar.view"],
+    ["openIncomingInvoiceBtn", "incoming_documents.view"]
+  ];
+  otherActions.forEach(([id, capability]) => {
+    const button = document.getElementById(id);
+    if (hasWebCapability(user, capability)) forceShowElement(button);
+    else forceHideElement(button);
+  });
+  const otherGroup = document.getElementById("sidebarOtherGroup");
+  if (otherActions.some(([, capability]) => hasWebCapability(user, capability))) {
+    forceShowElement(otherGroup);
+  } else {
+    forceHideElement(otherGroup);
   }
+
+  setUserManagementVisibility(user);
+}
+
+function guardRestrictedActiveSection(user) {
+  document.querySelectorAll(".content-section.active").forEach((section) => {
+    if (canAccessSection(user, section.id)) return;
+    section.classList.remove("active");
+    if (canAccessSection(user, SECTION_IDS.dashboard) && typeof openSection === "function") {
+      openSection(SECTION_IDS.dashboard);
+    }
+  });
 }
 
 // =========================
@@ -301,6 +318,7 @@ window.getUserRoleLabel = getUserRoleLabel;
 window.getSidebarBrandByRole = getSidebarBrandByRole;
 window.setSidebarBrand = setSidebarBrand;
 window.isSuperAdmin = isSuperAdmin;
+window.hasWebCapability = hasWebCapability;
 window.isAdminRole = isAdminRole;
 window.canAccessSection = canAccessSection;
 window.forceHideElement = forceHideElement;
@@ -308,4 +326,5 @@ window.forceShowElement = forceShowElement;
 window.initializeSession = initializeSession;
 window.setUserHeaderInfo = setUserHeaderInfo;
 window.setUserManagementVisibility = setUserManagementVisibility;
+window.setModuleNavigationVisibility = setModuleNavigationVisibility;
 window.guardRestrictedActiveSection = guardRestrictedActiveSection;

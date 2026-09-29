@@ -4,6 +4,7 @@ const {
   hashOpaqueToken,
   normalizeWebRole
 } = require("../services/webSessionService");
+const { hasWebCapability } = require("../config/webRoleCapabilities");
 
 const SESSION_COOKIE_NAME = "wmo_admin_session";
 const CSRF_COOKIE_NAME = "wmo_admin_csrf";
@@ -164,6 +165,24 @@ function requireWebRole(...roles) {
   };
 }
 
+function requireWebCapability(capability) {
+  // Express accepts this middleware array on routes and at router.use().
+  // Authentication always runs before authorization, even on a standalone route.
+  return [requireWebAuth, (req, res, next) => {
+    if (!req.user) {
+      return sendAuthError(res, 401, "Web Admin authentication is required.", "WEB_SESSION_REQUIRED");
+    }
+    if (!hasWebCapability(req.user.role, capability)) {
+      return sendAuthError(
+        res, 403,
+        "This Web Admin account is not authorized for this operation.",
+        "WEB_CAPABILITY_FORBIDDEN"
+      );
+    }
+    return next();
+  }];
+}
+
 function requireCsrf(req, res, next) {
   if (SAFE_METHODS.has(String(req.method || "").toUpperCase())) return next();
   if (!req.user || !req.webSession?.csrfTokenHash) {
@@ -208,5 +227,6 @@ module.exports = {
   buildRequireWebAuth,
   requireWebAuth,
   requireWebRole,
+  requireWebCapability,
   requireCsrf
 };

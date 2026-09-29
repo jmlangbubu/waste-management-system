@@ -479,7 +479,9 @@ function openSection(sectionId) {
 
   if (!canAccessSection(currentUser, sectionId)) {
     closeAllAdminModalsOnNavigation();
-    showSection(SECTION_IDS.dashboard);
+    if (canAccessSection(currentUser, SECTION_IDS.dashboard)) {
+      showSection(SECTION_IDS.dashboard);
+    }
     closeMobileSidebar();
     return;
   }

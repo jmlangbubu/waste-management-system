@@ -717,7 +717,7 @@ async function fetchNotificationListFromUrl(url, source = "") {
   if (!url) return [];
 
   try {
-    const res = await fetch(url, {
+    const res = await webAdminFetch(url, {
       headers: {
         Accept: "application/json"
       }

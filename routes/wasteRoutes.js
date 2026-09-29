@@ -5,6 +5,7 @@ const fs = require("fs");
 const db = require("../config/db");
 const { analyzeWaste } = require("../services/wasteAnalysisService");
 const wasteController = require("../controllers/wasteController");
+const { requireWebCapability } = require("../middleware/webSessionAuth");
 
 /* =========================================
    SCAN IMAGE STORAGE HELPERS
@@ -547,6 +548,8 @@ function buildEmergencyResult(detectedObject = "", mlKitLabels = []) {
 /* =========================================
    VALIDATED WASTE RECORDS (NEW SYSTEM)
 ========================================= */
+// Web-only read boundary. The legacy route below remains unchanged for Android.
+router.get("/web/validated-records", requireWebCapability("waste.view"), wasteController.getValidatedWasteRecords);
 router.get("/validated-records", wasteController.getValidatedWasteRecords);
 router.post("/validated-records", wasteController.createValidatedWasteRecord);
 
