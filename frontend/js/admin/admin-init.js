@@ -17,6 +17,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     setupWasteBreakdownModal?.();
     setupValidationDetailsModal?.();
     setupWasteRecordValidationButtons?.();
+    setupWasteCorrectionUi?.();
 
     initializeAppointments?.();
 

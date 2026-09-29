@@ -5,7 +5,8 @@ const fs = require("fs");
 const db = require("../config/db");
 const { analyzeWaste } = require("../services/wasteAnalysisService");
 const wasteController = require("../controllers/wasteController");
-const { requireWebCapability } = require("../middleware/webSessionAuth");
+const wasteCorrectionController = require("../controllers/wasteCorrectionController");
+const { requireWebCapability, requireCsrf } = require("../middleware/webSessionAuth");
 
 /* =========================================
    SCAN IMAGE STORAGE HELPERS
@@ -550,6 +551,12 @@ function buildEmergencyResult(detectedObject = "", mlKitLabels = []) {
 ========================================= */
 // Web-only read boundary. The legacy route below remains unchanged for Android.
 router.get("/web/validated-records", requireWebCapability("waste.view"), wasteController.getValidatedWasteRecords);
+router.get("/web/correction-requests", requireWebCapability("waste.correction.view"), wasteCorrectionController.listCorrections);
+router.get("/web/validated-records/:id/correction-history", requireWebCapability("waste.correction.view"), wasteCorrectionController.getCorrectionHistory);
+router.post("/web/validated-records/:id/correction-requests", requireWebCapability("waste.correction.request"), requireCsrf, wasteCorrectionController.requestCorrection);
+router.patch("/web/correction-requests/:requestId/review", requireWebCapability("waste.correction.review"), requireCsrf, wasteCorrectionController.reviewCorrection);
+router.post("/web/correction-requests/:requestId/cancel", requireWebCapability("waste.correction.request"), requireCsrf, wasteCorrectionController.cancelCorrection);
+router.post("/web/correction-requests/:requestId/apply", requireWebCapability("waste.correction.apply"), requireCsrf, wasteCorrectionController.applyCorrection);
 router.get("/validated-records", wasteController.getValidatedWasteRecords);
 router.post("/validated-records", wasteController.createValidatedWasteRecord);
 

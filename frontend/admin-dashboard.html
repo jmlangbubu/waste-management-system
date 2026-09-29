@@ -19,6 +19,7 @@
 <link rel="stylesheet" href="css/admin/admin-users.css">
 <link rel="stylesheet" href="css/admin/admin-orientation.css">
 <link rel="stylesheet" href="css/admin/admin-waste-records.css">
+<link rel="stylesheet" href="css/admin/admin-waste-corrections.css">
 <link rel="stylesheet" href="css/admin/admin-complaints.css">
 <link rel="stylesheet" href="css/admin/admin-profile.css">
 <link rel="stylesheet" href="css/admin/admin-dispatch.css">
@@ -600,7 +601,17 @@
               <h2>Waste Records</h2>
               <p>Validated waste records submitted by the field workflow.</p>
             </div>
+            <button type="button" id="wasteCorrectionQueueBtn" class="waste-correction-button" hidden>Correction Requests</button>
           </div>
+
+          <section id="wasteCorrectionQueuePanel" class="waste-correction-queue" hidden aria-label="Correction Requests">
+            <div class="waste-correction-panel-header">
+              <h3>Correction Requests</h3>
+              <button type="button" id="closeWasteCorrectionQueueBtn" aria-label="Close correction requests">Close</button>
+            </div>
+            <p>Review pending proposals and monitor approved, rejected, cancelled, and applied corrections.</p>
+            <div id="wasteCorrectionQueueContent" role="status"></div>
+          </section>
 
           <div class="filter-bar">
 
@@ -2490,6 +2501,70 @@
           <div id="reportFooterValidator"></div>
         </div>
       </div>
+      <section id="wasteCorrectionPanel" class="waste-correction-panel" hidden aria-label="Validated record corrections"></section>
+    </div>
+  </div>
+
+  <div id="wasteCorrectionRequestModal" class="custom-modal hidden" role="dialog" aria-modal="true" aria-labelledby="wasteCorrectionRequestTitle">
+    <div id="wasteCorrectionRequestOverlay" class="custom-modal-overlay"></div>
+    <div class="custom-modal-content waste-correction-modal">
+      <div class="custom-modal-header">
+        <div><h3 id="wasteCorrectionRequestTitle">Request Correction</h3><p>Official totals change only after review and approval.</p></div>
+        <button type="button" id="closeWasteCorrectionRequestBtn" class="modal-close-btn" aria-label="Close correction request">&times;</button>
+      </div>
+      <form id="wasteCorrectionRequestForm" class="waste-correction-form">
+        <div id="wasteCorrectionOriginalValues" class="waste-correction-original"></div>
+        <div id="wasteCorrectionInputs" class="waste-correction-fields"></div>
+        <label for="wasteCorrectionReason">Correction reason <span aria-hidden="true">*</span></label>
+        <textarea id="wasteCorrectionReason" maxlength="1000" required rows="3" placeholder="Explain why the official subtotals need correction."></textarea>
+        <p id="wasteCorrectionRequestError" class="waste-correction-error" role="alert" hidden></p>
+        <button type="submit" class="waste-correction-button">Submit for Supervisor Review</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="wasteCorrectionReviewModal" class="custom-modal hidden" role="dialog" aria-modal="true" aria-labelledby="wasteCorrectionReviewTitle">
+    <div id="wasteCorrectionReviewOverlay" class="custom-modal-overlay"></div>
+    <div class="custom-modal-content waste-correction-modal">
+      <div class="custom-modal-header">
+        <div><h3 id="wasteCorrectionReviewTitle">Review Correction</h3><p>Compare the exact original and proposed values.</p></div>
+        <button type="button" id="closeWasteCorrectionReviewBtn" class="modal-close-btn" aria-label="Close correction review">&times;</button>
+      </div>
+      <form id="wasteCorrectionReviewForm" class="waste-correction-form">
+        <div id="wasteCorrectionReviewComparison"></div>
+        <label for="wasteCorrectionDecisionReason">Decision reason <span id="wasteCorrectionDecisionRequired">(required for rejection)</span></label>
+        <textarea id="wasteCorrectionDecisionReason" maxlength="1000" rows="3"></textarea>
+        <p id="wasteCorrectionReviewError" class="waste-correction-error" role="alert" hidden></p>
+        <button type="submit" id="wasteCorrectionReviewSubmit" class="waste-correction-button">Confirm Review</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="wasteCorrectionCancelModal" class="custom-modal hidden" role="dialog" aria-modal="true" aria-labelledby="wasteCorrectionCancelTitle">
+    <div id="wasteCorrectionCancelOverlay" class="custom-modal-overlay"></div>
+    <div class="custom-modal-content waste-correction-modal">
+      <div class="custom-modal-header">
+        <div><h3 id="wasteCorrectionCancelTitle">Cancel Correction</h3><p>The request remains in history; no official Waste Record values change.</p></div>
+        <button type="button" id="closeWasteCorrectionCancelBtn" class="modal-close-btn" aria-label="Close correction cancellation">&times;</button>
+      </div>
+      <form id="wasteCorrectionCancelForm" class="waste-correction-form">
+        <p id="wasteCorrectionCancelSummary"></p>
+        <label for="wasteCorrectionCancelReason">Cancellation reason <span aria-hidden="true">*</span></label>
+        <textarea id="wasteCorrectionCancelReason" maxlength="1000" required rows="3" placeholder="Explain why this request should be withdrawn."></textarea>
+        <p id="wasteCorrectionCancelError" class="waste-correction-error" role="alert" hidden></p>
+        <button type="submit" class="waste-correction-button">Confirm Cancellation</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="wasteCorrectionHistoryModal" class="custom-modal hidden" role="dialog" aria-modal="true" aria-labelledby="wasteCorrectionHistoryTitle">
+    <div id="wasteCorrectionHistoryOverlay" class="custom-modal-overlay"></div>
+    <div class="custom-modal-content waste-correction-modal">
+      <div class="custom-modal-header">
+        <div><h3 id="wasteCorrectionHistoryTitle">Correction History</h3><p>Requests and immutable applied-value audits.</p></div>
+        <button type="button" id="closeWasteCorrectionHistoryBtn" class="modal-close-btn" aria-label="Close correction history">&times;</button>
+      </div>
+      <div id="wasteCorrectionHistoryContent" class="waste-correction-history" role="status"></div>
     </div>
   </div>
 
@@ -3572,6 +3647,7 @@
 <script src="js/admin/admin-navigation.js"></script>
 <script src="js/admin/admin-notifications.js"></script>
 <script src="js/admin/admin-waste-records.js"></script>
+<script src="js/admin/admin-waste-corrections.js"></script>
 <script src="js/admin/admin-dashboard-analytics.js"></script>
 <script src="js/admin/admin-dashboard-palette.js"></script>
 <script src="js/admin/admin-complaints.js"></script>

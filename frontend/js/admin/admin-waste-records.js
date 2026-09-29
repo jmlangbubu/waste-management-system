@@ -406,19 +406,19 @@ function openWasteBreakdownModal(record, categoryKey, categoryLabel) {
   const source = getRecordDisplayName(record);
 
   title.textContent = `${categoryLabel} Breakdown`;
-  subtitle.textContent = "Detailed waste inputs from raw payload";
+  subtitle.textContent = "Original submitted detail; corrected official subtotals are shown above.";
   sourceName.textContent = source;
   categoryName.textContent = categoryLabel;
 
   if (!payload || typeof payload !== "object") {
-    subtotalValue.textContent = "0 kg";
+    subtotalValue.textContent = formatKg(record[`${categoryKey}_subtotal`]);
     list.innerHTML = `<div class="breakdown-empty">No detailed data available for this category.</div>`;
     modal.classList.remove("hidden");
     return;
   }
 
-  const subtotal = toNumber(payload.subtotal);
-  subtotalValue.textContent = formatKg(subtotal);
+  // raw_payload remains original evidence; the normalized subtotal is official.
+  subtotalValue.textContent = formatKg(record[`${categoryKey}_subtotal`]);
 
   const detailEntries = Object.entries(payload).filter(([key]) => key !== "subtotal");
 
@@ -660,6 +660,7 @@ function openValidationDetailsModal(record) {
   ]);
 
   modal.classList.remove("hidden");
+  if (typeof showWasteCorrectionPanel === "function") showWasteCorrectionPanel(record);
 }
 
 function closeValidationDetailsModal() {
