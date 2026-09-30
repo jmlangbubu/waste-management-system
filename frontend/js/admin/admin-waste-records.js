@@ -664,6 +664,7 @@ function openValidationDetailsModal(record) {
 }
 
 function closeValidationDetailsModal() {
+  closeAdminStackedChildren("validationDetailsModal");
   const modal = document.getElementById("validationDetailsModal");
   if (modal) {
     modal.classList.add("hidden");

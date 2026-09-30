@@ -605,6 +605,7 @@ function openIncomingInvoiceModal() {
 }
 
 function closeIncomingInvoiceModal() {
+  closeAdminStackedChildren("incomingInvoiceModal");
   const modal = document.getElementById("incomingInvoiceModal");
   if (modal) modal.classList.add("hidden");
 }
