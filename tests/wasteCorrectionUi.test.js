@@ -114,3 +114,66 @@ test("UI uses webAdminFetch and sends no replacement values on apply", () => {
     assert.equal((html.match(new RegExp(`id="${id}"`, "g")) || []).length, 1, id);
   }
 });
+
+test("Correction Requests opens as a modal, closes cleanly, and reopens", async () => {
+  const html = fs.readFileSync(path.join(__dirname, "../frontend/admin-dashboard.html"), "utf8");
+  const css = fs.readFileSync(path.join(__dirname, "../frontend/css/admin/admin-waste-corrections.css"), "utf8");
+  assert.match(html, /id="wasteCorrectionQueuePanel" class="custom-modal waste-correction-queue-modal hidden"/);
+  assert.match(html, /id="wasteCorrectionQueueOverlay" class="custom-modal-overlay"/);
+  assert.match(html, /id="wasteCorrectionQueueContent" role="status">No correction requests yet\./);
+  assert.ok(html.indexOf('id="wasteCorrectionQueuePanel"') > html.indexOf('id="validationDetailsModal"'));
+  assert.match(html, /id="wasteCorrectionReviewModal"[^>]*data-modal-parent="wasteCorrectionQueuePanel"/);
+  assert.match(css, /body:has\(#wasteCorrectionQueuePanel:not\(\.hidden\)\) \{ overflow: hidden; \}/);
+
+  const handlers = {};
+  const hiddenClasses = new Set(["hidden"]);
+  const attributes = {};
+  const button = { hidden: true, addEventListener(type, handler) { handlers.open = handler; } };
+  const queue = {
+    classList: {
+      contains(name) { return hiddenClasses.has(name); },
+      add(name) { hiddenClasses.add(name); },
+      remove(name) { hiddenClasses.delete(name); }
+    },
+    setAttribute(name, value) { attributes[name] = value; }
+  };
+  const closeButton = { addEventListener(type, handler) { handlers.close = handler; } };
+  const overlay = { addEventListener(type, handler) { handlers.backdrop = handler; } };
+  const content = { textContent: "", addEventListener() {} };
+  const nodes = {
+    wasteCorrectionQueueBtn: button,
+    wasteCorrectionQueuePanel: queue,
+    closeWasteCorrectionQueueBtn: closeButton,
+    wasteCorrectionQueueOverlay: overlay,
+    wasteCorrectionQueueContent: content
+  };
+  const closedChildren = [];
+  const context = {
+    window: {}, document: { getElementById(id) { return nodes[id] || null; } },
+    currentUser: { id: 1, role: "super_admin", capabilities: getWebCapabilities("super_admin") },
+    hasWebCapability(user, capability) { return user.capabilities.includes(capability); },
+    closeAdminStackedChildren(id) { closedChildren.push(id); },
+    getWasteApiBase() { return "/api"; },
+    async webAdminFetch() { return { ok: true, async json() { return { data: [] }; } }; }
+  };
+  vm.createContext(context);
+  vm.runInContext(source, context);
+  context.setupWasteCorrectionUi();
+  assert.equal(button.hidden, false);
+
+  handlers.open();
+  assert.equal(hiddenClasses.has("hidden"), false);
+  assert.equal(attributes["aria-hidden"], "false");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(content.textContent, "No correction requests yet.");
+
+  handlers.close();
+  assert.equal(hiddenClasses.has("hidden"), true);
+  assert.equal(attributes["aria-hidden"], "true");
+  assert.deepEqual(closedChildren, ["wasteCorrectionQueuePanel"]);
+
+  handlers.open();
+  assert.equal(hiddenClasses.has("hidden"), false);
+  handlers.backdrop();
+  assert.equal(hiddenClasses.has("hidden"), true);
+});

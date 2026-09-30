@@ -14,7 +14,6 @@
 .waste-correction-button:disabled,
 .waste-correction-panel button:disabled { opacity: .6; cursor: wait; }
 
-.waste-correction-queue,
 .waste-correction-panel {
   background: #f6faf8;
   border: 1px solid #cbded4;
@@ -24,7 +23,31 @@
 }
 
 .waste-correction-panel { margin: 0 20px 20px; }
-.waste-correction-panel[hidden], .waste-correction-queue[hidden] { display: none !important; }
+.waste-correction-panel[hidden] { display: none !important; }
+
+html:has(#wasteCorrectionQueuePanel:not(.hidden)),
+body:has(#wasteCorrectionQueuePanel:not(.hidden)) { overflow: hidden; }
+
+#wasteCorrectionQueuePanel.custom-modal:not(.hidden) {
+  /* Match the existing elevated parent modals; review stays above on the stacked-child layer. */
+  align-items: center !important;
+  z-index: 2147483000 !important;
+}
+
+#wasteCorrectionQueuePanel .waste-correction-queue-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(860px, calc(100vw - 40px));
+  max-width: 860px;
+  max-height: min(85dvh, 800px);
+}
+
+#wasteCorrectionQueuePanel .custom-modal-body {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+}
 
 .waste-correction-panel-header,
 .waste-correction-actions {
@@ -35,8 +58,7 @@
   justify-content: space-between;
 }
 
-.waste-correction-panel h3,
-.waste-correction-queue h3 { margin: 0; }
+.waste-correction-panel h3 { margin: 0; }
 
 .waste-correction-actions { justify-content: flex-start; margin-top: 12px; }
 .waste-correction-card { background: #fff; border: 1px solid #dae6df; border-radius: 10px; margin: 12px 0; padding: 14px; }
@@ -56,12 +78,29 @@
 .waste-correction-form textarea { border: 1px solid #abc8b8; border-radius: 8px; font: inherit; padding: 9px; width: 100%; }
 .waste-correction-original { background: #edf5f0; border-radius: 8px; padding: 10px; }
 
+@media (max-width: 1200px) {
+  #wasteCorrectionQueuePanel .waste-correction-queue-dialog {
+    left: auto !important;
+    right: auto !important;
+    transform: none !important;
+    width: min(860px, calc(100vw - 32px)) !important;
+    min-width: 0 !important;
+    max-width: calc(100vw - 32px) !important;
+    overflow: hidden !important;
+  }
+}
+
 @media (max-width: 600px) {
   .waste-correction-fields { grid-template-columns: 1fr; }
   .waste-correction-comparison { grid-template-columns: 1fr; }
   .waste-correction-panel { margin: 0 10px 10px; }
+  #wasteCorrectionQueuePanel .waste-correction-queue-dialog {
+    width: calc(100vw - 24px) !important;
+    max-width: calc(100vw - 24px) !important;
+    max-height: calc(100dvh - 24px);
+  }
 }
 
 @media print {
-  .waste-correction-panel, .waste-correction-queue, .waste-correction-modal { display: none !important; }
+  .waste-correction-panel, #wasteCorrectionQueuePanel, .waste-correction-modal { display: none !important; }
 }
