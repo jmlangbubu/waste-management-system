@@ -769,136 +769,325 @@ function generateWasteSummaryReport(records) {
   const totalRes = records.reduce((sum, r) => sum + toNumber(r.residual_subtotal), 0);
   const totalSpecial = records.reduce((sum, r) => sum + toNumber(r.special_subtotal), 0);
   const grandTotal = records.reduce((sum, r) => sum + toNumber(r.grand_total), 0);
+  const generatedAt = new Date().toLocaleString("en-PH");
+  const logoUrl = new URL("images/logo.jpg", window.location.href).href;
 
   const reportWindow = window.open("", "_blank");
 
   reportWindow.document.write(`
-    <html>
+    <!DOCTYPE html>
+    <html lang="en">
       <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>Waste Summary Report</title>
         <style>
+          @page {
+            size: A4 landscape;
+            margin: 10mm;
+          }
+
+          * { box-sizing: border-box; }
+
+          html {
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+
           body {
             font-family: Arial, sans-serif;
-            padding: 32px;
-            color: #111827;
+            margin: 0;
+            background: #edf2ef;
+            color: #1f2937;
+            line-height: 1.35;
+          }
+
+          .report-toolbar {
+            max-width: 1120px;
+            margin: 20px auto 10px;
+            text-align: right;
+          }
+
+          .report-sheet {
+            width: calc(100% - 32px);
+            max-width: 1120px;
+            margin: 0 auto 24px;
+            padding: 26px 30px 22px;
+            background: #fff;
+            box-shadow: 0 8px 28px rgba(15, 23, 42, 0.12);
+          }
+
+          .report-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding-bottom: 11px;
+            border-bottom: 2px solid #2d7048;
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
+
+          .report-logo {
+            width: 48px;
+            height: 48px;
+            object-fit: contain;
+            flex: none;
+          }
+
+          .office-name {
+            font-size: 14px;
+            font-weight: 700;
+            color: #1f5137;
+          }
+
+          .office-location {
+            margin-top: 2px;
+            font-size: 11px;
+            color: #64748b;
           }
 
           h1 {
-            margin-bottom: 4px;
+            margin: 0 0 0 auto;
+            color: #1f5137;
+            font-size: 19px;
+            line-height: 1.1;
+            letter-spacing: 0.04em;
+            text-align: right;
           }
 
-          .muted {
+          .report-meta {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 8px 14px;
+            margin: 12px 0 14px;
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
+
+          .meta-item span,
+          .card span {
+            display: block;
             color: #64748b;
-            margin-bottom: 24px;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+          }
+
+          .meta-item strong {
+            display: block;
+            margin-top: 2px;
+            font-size: 12px;
+            font-weight: 700;
           }
 
           .summary {
             display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 12px;
-            margin: 24px 0;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 8px;
+            margin: 0 0 14px;
+            break-inside: avoid;
+            page-break-inside: avoid;
           }
 
           .card {
-            border: 1px solid #e5e7eb;
-            border-radius: 12px;
-            padding: 16px;
-          }
-
-          .card span {
-            display: block;
-            color: #64748b;
-            font-size: 13px;
+            min-width: 0;
+            border: 1px solid #dce5df;
+            border-radius: 6px;
+            padding: 9px 10px;
+            background: #fbfdfb;
           }
 
           .card strong {
-            font-size: 22px;
+            display: block;
+            margin-top: 4px;
+            color: #1f2937;
+            font-size: 16px;
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+          }
+
+          .card.grand-total {
+            border-color: #a7cbb2;
+            background: #eaf5ed;
+          }
+
+          .card.grand-total strong {
+            color: #175a36;
+          }
+
+          .table-wrap {
+            width: 100%;
+            overflow-x: auto;
           }
 
           table {
             width: 100%;
             border-collapse: collapse;
-            margin-top: 20px;
+            table-layout: fixed;
+            min-width: 960px;
           }
 
           th, td {
-            border: 1px solid #e5e7eb;
-            padding: 10px;
-            font-size: 13px;
+            border: 1px solid #d8e0da;
+            padding: 6px 5px;
+            font-size: 12px;
             text-align: left;
+            vertical-align: top;
+            overflow-wrap: anywhere;
           }
 
           th {
-            background: #f8fafc;
+            background: #edf3ef;
+            color: #294b37;
+            font-size: 11px;
+            font-weight: 700;
+          }
+
+          .numeric {
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+          }
+
+          th:last-child,
+          td:last-child {
+            background: #f2f8f3;
+            font-weight: 700;
+          }
+
+          thead { display: table-header-group; }
+          tfoot { display: table-footer-group; }
+
+          tr {
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
+
+          .report-footer {
+            margin-top: 12px;
+            padding-top: 8px;
+            border-top: 1px solid #d8e0da;
+            color: #64748b;
+            font-size: 10px;
+            text-align: center;
+            break-inside: avoid;
+            page-break-inside: avoid;
           }
 
           .print-btn {
-            margin-bottom: 20px;
-            padding: 10px 16px;
+            padding: 9px 15px;
             border: 0;
-            border-radius: 8px;
+            border-radius: 6px;
             background: #15803d;
             color: white;
+            font-size: 13px;
             font-weight: 700;
             cursor: pointer;
           }
 
           @media print {
-            .print-btn {
-              display: none;
+            body { background: #fff; }
+
+            .report-sheet {
+              width: 100%;
+              max-width: none;
+              margin: 0;
+              padding: 0;
+              box-shadow: none;
             }
+
+            .table-wrap { overflow: visible; }
+            table { min-width: 0; }
+
+            th, td {
+              padding: 4pt 3.5pt;
+              font-size: 8.5pt;
+            }
+
+            th { font-size: 8pt; }
+
+            .print-btn {
+              display: none !important;
+            }
+
+            .report-toolbar { display: none !important; }
           }
         </style>
       </head>
 
       <body>
-        <button class="print-btn" onclick="window.print()">Print Report</button>
-
-        <h1>Waste Summary Report</h1>
-        <div class="muted">
-          Barangay: <strong>${escapeHtml(barangay)}</strong><br>
-          Period: <strong>${escapeHtml(month)} ${escapeHtml(year)}</strong><br>
-          Records Found: <strong>${records.length}</strong>
+        <div class="report-toolbar">
+          <button class="print-btn" onclick="window.print()">Print Report</button>
         </div>
+        <main class="report-sheet">
+          <header class="report-header">
+            <img class="report-logo" src="${escapeHtml(logoUrl)}" alt="Waste Management Office logo">
+            <div>
+              <div class="office-name">Waste Management Office</div>
+              <div class="office-location">General Santos City</div>
+            </div>
+            <h1>WASTE SUMMARY REPORT</h1>
+          </header>
 
-        <div class="summary">
-          <div class="card"><span>Biodegradable</span><strong>${formatNumber(totalBio)} kg</strong></div>
-          <div class="card"><span>Recyclable</span><strong>${formatNumber(totalRec)} kg</strong></div>
-          <div class="card"><span>Residual</span><strong>${formatNumber(totalRes)} kg</strong></div>
-          <div class="card"><span>Special Waste</span><strong>${formatNumber(totalSpecial)} kg</strong></div>
-          <div class="card"><span>Grand Total</span><strong>${formatNumber(grandTotal)} kg</strong></div>
-        </div>
+          <section class="report-meta" aria-label="Report details">
+            <div class="meta-item"><span>Barangay</span><strong>${escapeHtml(barangay)}</strong></div>
+            <div class="meta-item"><span>Period</span><strong>${escapeHtml(month)} ${escapeHtml(year)}</strong></div>
+            <div class="meta-item"><span>Records Found</span><strong>${records.length}</strong></div>
+            <div class="meta-item"><span>Generated</span><strong>${escapeHtml(generatedAt)}</strong></div>
+          </section>
 
-        <table>
-          <thead>
-            <tr>
-              <th>Control No.</th>
-              <th>Name</th>
-              <th>Type</th>
-              <th>Period</th>
-              <th>Biodegradable</th>
-              <th>Recyclable</th>
-              <th>Residual</th>
-              <th>Special</th>
-              <th>Grand Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${records.map((record, index) => `
+          <section class="summary" aria-label="Waste totals">
+            <div class="card"><span>Biodegradable</span><strong>${formatNumber(totalBio)} kg</strong></div>
+            <div class="card"><span>Recyclable</span><strong>${formatNumber(totalRec)} kg</strong></div>
+            <div class="card"><span>Residual</span><strong>${formatNumber(totalRes)} kg</strong></div>
+            <div class="card"><span>Special Waste</span><strong>${formatNumber(totalSpecial)} kg</strong></div>
+            <div class="card grand-total"><span>Grand Total</span><strong>${formatNumber(grandTotal)} kg</strong></div>
+          </section>
+
+          <div class="table-wrap">
+            <table>
+              <colgroup>
+                <col style="width: 7%"><col style="width: 17%"><col style="width: 11%">
+                <col style="width: 17%"><col style="width: 9%"><col style="width: 9%">
+                <col style="width: 9%"><col style="width: 9%"><col style="width: 12%">
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>Control No.</th>
+                  <th>Name</th>
+                  <th>Type</th>
+                  <th>Period</th>
+                  <th class="numeric">Biodegradable</th>
+                  <th class="numeric">Recyclable</th>
+                  <th class="numeric">Residual</th>
+                  <th class="numeric">Special</th>
+                  <th class="numeric">Grand Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${records.map((record, index) => `
               <tr>
                 <td>${String(index + 1).padStart(2, "0")}</td>
                 <td>${escapeHtml(getRecordDisplayName(record))}</td>
                 <td>${escapeHtml(getRecordType(record))}</td>
                 <td>${escapeHtml(formatPeriod(record.period_from, record.period_to))}</td>
-                <td>${escapeHtml(formatKg(record.biodegradable_subtotal))}</td>
-                <td>${escapeHtml(formatKg(record.recyclable_subtotal))}</td>
-                <td>${escapeHtml(formatKg(record.residual_subtotal))}</td>
-                <td>${escapeHtml(formatKg(record.special_subtotal))}</td>
-                <td>${escapeHtml(formatKg(record.grand_total))}</td>
+                <td class="numeric">${escapeHtml(formatKg(record.biodegradable_subtotal))}</td>
+                <td class="numeric">${escapeHtml(formatKg(record.recyclable_subtotal))}</td>
+                <td class="numeric">${escapeHtml(formatKg(record.residual_subtotal))}</td>
+                <td class="numeric">${escapeHtml(formatKg(record.special_subtotal))}</td>
+                <td class="numeric">${escapeHtml(formatKg(record.grand_total))}</td>
               </tr>
-            `).join("")}
-          </tbody>
-        </table>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+
+          <footer class="report-footer">
+            System-generated Waste Summary Report<br>
+            Waste Management Office — General Santos City
+          </footer>
+        </main>
       </body>
     </html>
   `);
