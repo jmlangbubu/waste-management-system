@@ -12,6 +12,20 @@ function createCitizenAssistantRouter({
     next();
   });
 
+  router.get("/dashboard-summary", async (req, res) => {
+    try {
+      // The session, never a client-supplied barangay or user ID, owns this summary.
+      const response = await assistantService.getDashboardSummary({ userId: Number(req.mobileUser.id) });
+      return res.status(200).json(response);
+    } catch (error) {
+      if (error instanceof CitizenAssistantError) {
+        return res.status(error.statusCode).json({ success: false, message: error.message, code: error.code });
+      }
+      console.warn("[Citizen Dashboard] Summary failed:", error.code || "UNKNOWN_ERROR");
+      return res.status(500).json({ success: false, message: "Barangay waste data is temporarily unavailable." });
+    }
+  });
+
   router.post("/ask", async (req, res) => {
     const { message, userId } = req.body || {};
     if (typeof message !== "string" || !message.trim() || message.length > 2000) {

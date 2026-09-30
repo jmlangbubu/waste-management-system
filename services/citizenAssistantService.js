@@ -34,7 +34,7 @@ function queryReadOnly(connection, sql, parameters = []) {
   });
 }
 
-function buildWasteAggregateSql(columnSet) {
+function buildWasteAggregateSql(columnSet, strictBarangayScope = false) {
   if (!columnSet.has("barangay_name")) {
     throw new CitizenAssistantError(
       "Validated barangay waste data is unavailable.", 503, "ASSISTANT_BARANGAY_COLUMN_UNAVAILABLE"
@@ -61,7 +61,9 @@ function buildWasteAggregateSql(columnSet) {
     filters.push("LOWER(TRIM(validation_status)) = 'validated'");
   }
   if (columnSet.has("entry_type")) {
-    filters.push("(entry_type IS NULL OR LOWER(TRIM(entry_type)) = 'barangay')");
+    filters.push(strictBarangayScope
+      ? "LOWER(TRIM(entry_type)) = 'barangay'"
+      : "(entry_type IS NULL OR LOWER(TRIM(entry_type)) = 'barangay')");
   }
   return `SELECT ${selections.join(", ")} FROM validated_waste_records WHERE ${filters.join(" AND ")}`;
 }
@@ -88,8 +90,7 @@ function formatTotalAnswer(language, barangay, category, amount) {
 }
 
 function createCitizenAssistantService(connection = require("../config/db")) {
-  async function ask({ message, userId }) {
-    const interpretation = recognizeCitizenQuestion(message);
+  async function loadCitizen(userId) {
     const userRows = await queryReadOnly(connection,
       "SELECT id, role, mobile_role, status, barangay FROM users WHERE id = ? LIMIT 1", [userId]);
     const user = userRows[0];
@@ -100,6 +101,68 @@ function createCitizenAssistantService(connection = require("../config/db")) {
       || String(user.status || "active").trim().toLowerCase() !== "active") {
       throw new CitizenAssistantError("Citizen account is unavailable.", 403, "ASSISTANT_CITIZEN_REQUIRED");
     }
+    return user;
+  }
+
+  async function loadValidatedTotals(user, strictBarangayScope = false) {
+    const barangay = String(user.barangay || "").trim();
+    const barangayKey = normalizeBarangayKey(barangay);
+    if (!barangayKey) {
+      throw new CitizenAssistantError(
+        "Citizen barangay is not set.", 422, "ASSISTANT_BARANGAY_REQUIRED"
+      );
+    }
+    const columns = await queryReadOnly(connection, "SHOW COLUMNS FROM validated_waste_records");
+    const columnSet = new Set(columns.map((column) => String(column.Field || "").trim()));
+    if (strictBarangayScope && ["validation_status", "entry_type", "grand_total",
+      ...Object.values(CATEGORY_COLUMNS).map(([column]) => column)]
+      .some((column) => !columnSet.has(column))) {
+      throw new CitizenAssistantError(
+        "Validated barangay waste totals are unavailable.", 503, "DASHBOARD_TOTALS_UNAVAILABLE"
+      );
+    }
+    const sql = buildWasteAggregateSql(columnSet, strictBarangayScope);
+    const rows = await queryReadOnly(connection, sql, [barangayKey]);
+    const aggregate = rows[0] || {};
+    const recordCount = Number(aggregate.recordCount || 0);
+    const data = { barangay, recordCount };
+    if (recordCount > 0) {
+      if (Object.hasOwn(aggregate, "totalKg")) {
+        const totalKg = finiteKg(aggregate.totalKg);
+        if (totalKg !== null) data.totalKg = totalKg;
+      }
+      for (const [, [column, alias]] of Object.entries(CATEGORY_COLUMNS)) {
+        if (!columnSet.has(column)) continue;
+        const value = finiteKg(aggregate[alias]);
+        if (value !== null) data[alias] = value;
+      }
+    }
+    return data;
+  }
+
+  async function getDashboardSummary({ userId }) {
+    const user = await loadCitizen(userId);
+    const data = await loadValidatedTotals(user, true);
+    const requiredTotals = ["totalKg", ...Object.values(CATEGORY_COLUMNS).map(([, alias]) => alias)];
+    if (data.recordCount > 0 && requiredTotals.some((key) => !Object.hasOwn(data, key))) {
+      throw new CitizenAssistantError(
+        "Validated barangay waste totals are unavailable.", 503, "DASHBOARD_TOTALS_UNAVAILABLE"
+      );
+    }
+    return {
+      success: true,
+      data: {
+        ...data,
+        ...Object.fromEntries(requiredTotals
+          .filter((key) => !Object.hasOwn(data, key))
+          .map((key) => [key, 0]))
+      }
+    };
+  }
+
+  async function ask({ message, userId }) {
+    const interpretation = recognizeCitizenQuestion(message);
+    const user = await loadCitizen(userId);
 
     const result = {
       success: true,
@@ -112,35 +175,13 @@ function createCitizenAssistantService(connection = require("../config/db")) {
 
     if (!interpretation.requiresValidatedWasteRecords) return result;
 
-    const barangay = String(user.barangay || "").trim();
-    const barangayKey = normalizeBarangayKey(barangay);
-    if (!barangayKey) {
-      throw new CitizenAssistantError(
-        "Citizen barangay is not set.", 422, "ASSISTANT_BARANGAY_REQUIRED"
-      );
-    }
-    const columns = await queryReadOnly(connection, "SHOW COLUMNS FROM validated_waste_records");
-    const columnSet = new Set(columns.map((column) => String(column.Field || "").trim()));
-    const sql = buildWasteAggregateSql(columnSet);
-    const rows = await queryReadOnly(connection, sql, [barangayKey]);
-    const aggregate = rows[0] || {};
-    const recordCount = Number(aggregate.recordCount || 0);
-    result.data = { barangay, recordCount };
+    result.data = await loadValidatedTotals(user);
+    const { barangay, recordCount } = result.data;
 
     if (recordCount === 0) {
       result.answer = knowledge.noRecords[result.language];
       return result;
     }
-    if (Object.hasOwn(aggregate, "totalKg")) {
-      const totalKg = finiteKg(aggregate.totalKg);
-      if (totalKg !== null) result.data.totalKg = totalKg;
-    }
-    for (const [, [column, alias]] of Object.entries(CATEGORY_COLUMNS)) {
-      if (!columnSet.has(column)) continue;
-      const value = finiteKg(aggregate[alias]);
-      if (value !== null) result.data[alias] = value;
-    }
-
     const requested = interpretation.category
       ? CATEGORY_COLUMNS[interpretation.category]?.[1]
       : "totalKg";
@@ -154,7 +195,7 @@ function createCitizenAssistantService(connection = require("../config/db")) {
     return result;
   }
 
-  return { ask };
+  return { ask, getDashboardSummary };
 }
 
 module.exports = {

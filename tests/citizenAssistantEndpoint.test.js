@@ -7,6 +7,7 @@ const {
   createCitizenAssistantService
 } = require("../services/citizenAssistantService");
 const { createCitizenAssistantRouter } = require("../routes/citizenAssistantRoutes");
+const { buildRequireMobileSession } = require("../middleware/mobileSessionAuth");
 
 const columns = [
   "barangay_name", "entry_type", "validation_status", "grand_total",
@@ -222,5 +223,79 @@ test("POST route returns a trusted answer and no-store header", async () => {
     const body = await response.json();
     assert.equal(body.data.barangay, "Brgy. Bula");
     assert.equal(body.data.recyclableKg, 3.5);
+  });
+});
+
+async function withDashboardServer(database, callback) {
+  const app = express();
+  const authenticate = buildRequireMobileSession({
+    async authenticateMobileSession(token) {
+      if (token === "e".repeat(43)) {
+        throw { statusCode: 401, code: "MOBILE_SESSION_INVALID", message: "Mobile authentication is required." };
+      }
+      return { id: 1, user: { id: 7 }, deviceId: "test", expiresAt: "2099-01-01" };
+    }
+  });
+  app.use("/api/citizen-assistant", createCitizenAssistantRouter({
+    assistantService: createCitizenAssistantService(database), authenticate
+  }));
+  const server = http.createServer(app);
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const url = `http://127.0.0.1:${server.address().port}/api/citizen-assistant/dashboard-summary`;
+  try { await callback(url); } finally { await new Promise((resolve) => server.close(resolve)); }
+}
+
+test("dashboard summary requires a valid mobile Bearer session", async () => {
+  const database = fakeDatabase();
+  await withDashboardServer(database, async (url) => {
+    const missing = await fetch(url);
+    assert.equal(missing.status, 401);
+    assert.equal((await missing.json()).code, "MOBILE_SESSION_REQUIRED");
+    const expired = await fetch(url, { headers: { Authorization: `Bearer ${"e".repeat(43)}` } });
+    assert.equal(expired.status, 401);
+    assert.equal((await expired.json()).code, "MOBILE_SESSION_INVALID");
+  });
+  assert.equal(database.queries.length, 0);
+});
+
+test("dashboard summary uses only the authenticated citizen's barangay and validated records", async () => {
+  const database = fakeDatabase();
+  await withDashboardServer(database, async (url) => {
+    const response = await fetch(`${url}?barangay=Wrong&userId=999`, {
+      headers: { Authorization: `Bearer ${"v".repeat(43)}` }
+    });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.deepEqual((await response.json()).data, {
+      barangay: "Brgy. Bula", recordCount: 2, totalKg: 12.5,
+      biodegradableKg: 4, recyclableKg: 3.5, residualKg: 4, specialKg: 1
+    });
+  });
+  assert.deepEqual(database.queries[0].parameters, [7]);
+  assert.deepEqual(database.queries[2].parameters, ["bula"]);
+  assert.match(database.queries[2].sql, /FROM validated_waste_records/);
+  assert.match(database.queries[2].sql, /validation_status/);
+  assert.match(database.queries[2].sql, /LOWER\(TRIM\(entry_type\)\) = 'barangay'/);
+  assert.doesNotMatch(database.queries[2].sql, /pending_waste_records/);
+});
+
+test("dashboard summary distinguishes zero validated records from missing barangay or columns", async () => {
+  await withDashboardServer(fakeDatabase({ totals: { recordCount: 0 } }), async (url) => {
+    const response = await fetch(url, { headers: { Authorization: `Bearer ${"v".repeat(43)}` } });
+    assert.equal(response.status, 200);
+    assert.deepEqual((await response.json()).data, {
+      barangay: "Brgy. Bula", recordCount: 0, totalKg: 0,
+      biodegradableKg: 0, recyclableKg: 0, residualKg: 0, specialKg: 0
+    });
+  });
+  await withDashboardServer(fakeDatabase({ user: { id: 7, role: "citizen", status: "active", barangay: null } }), async (url) => {
+    const response = await fetch(url, { headers: { Authorization: `Bearer ${"v".repeat(43)}` } });
+    assert.equal(response.status, 422);
+    assert.equal((await response.json()).code, "ASSISTANT_BARANGAY_REQUIRED");
+  });
+  await withDashboardServer(fakeDatabase({ fields: ["barangay_name", "grand_total"], totals: { recordCount: 1, totalKg: 2 } }), async (url) => {
+    const response = await fetch(url, { headers: { Authorization: `Bearer ${"v".repeat(43)}` } });
+    assert.equal(response.status, 503);
+    assert.equal((await response.json()).code, "DASHBOARD_TOTALS_UNAVAILABLE");
   });
 });
