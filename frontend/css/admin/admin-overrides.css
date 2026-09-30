@@ -5536,7 +5536,7 @@ body {
 #invoiceTrackingModal #invoiceTrackingOverlay {
   position: fixed !important;
   inset: 0 !important;
-  z-index: 100501 !important;
+  z-index: 1 !important;
 
   background: rgba(15, 23, 42, 0.58) !important;
   backdrop-filter: blur(6px) !important;
@@ -5545,7 +5545,7 @@ body {
 #invoiceTrackingModal .invoice-tracking-content,
 #invoiceTrackingModal .custom-modal-content {
   position: relative !important;
-  z-index: 100502 !important;
+  z-index: 2 !important;
 
   top: auto !important;
   left: auto !important;
@@ -13912,4 +13912,29 @@ body #sidebarOtherMenu.sidebar-other-menu-portal.open:not(.hidden) {
 #dashboardSection #wasteCategoryChart .hazardous {
   --bar-color: #8b5cf6 !important;
   accent-color: #8b5cf6 !important;
+}
+
+/* The existing elevated invoice layer is 2147483000. Keep child roots one
+   layer above it (and above Validation Details at desktop/tablet widths). */
+:root {
+  --wmo-z-modal-stacked-child: 2147483001;
+}
+
+:is(#wasteCorrectionRequestModal, #wasteCorrectionHistoryModal,
+    #wasteCorrectionReviewModal, #wasteCorrectionCancelModal,
+    #invoiceTrackingModal).modal-stack-child:not(.hidden) {
+  z-index: var(--wmo-z-modal-stacked-child) !important;
+}
+
+@media (max-width: 1200px) {
+  /* The legacy tablet rule gives every modal content left: 50%, but these
+     flex-centered child roots must position their boxes relative to the root. */
+  .modal-stack-child .waste-correction-modal {
+    left: auto !important;
+    right: auto !important;
+    transform: none !important;
+    width: min(720px, calc(100vw - 32px)) !important;
+    min-width: 0 !important;
+    max-width: calc(100vw - 32px) !important;
+  }
 }

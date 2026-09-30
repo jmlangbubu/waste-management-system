@@ -574,11 +574,15 @@ function populateInvoiceAssignmentDropdowns() {
 
 async function openInvoiceTrackingModal(invoiceId) {
   const modal = document.getElementById("invoiceTrackingModal");
+  const parent = document.getElementById("incomingInvoiceModal");
+  const openedFromParent = parent && !parent.classList.contains("hidden");
 
   if (!modal) return;
 
   try {
     const data = await invoiceFetchJson(getInvoiceApiUrl(`/${invoiceId}`));
+    // A parent close during the request must not reopen an orphaned child.
+    if (openedFromParent && parent.classList.contains("hidden")) return;
     const invoice = data.invoice;
 
     if (!invoice) return;

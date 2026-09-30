@@ -50,6 +50,12 @@ function showSection(sectionId) {
 // GLOBAL MODAL CLEANUP
 // =========================
 
+function closeAdminStackedChildren(parentId) {
+  document.querySelectorAll(".modal-stack-child").forEach((modal) => {
+    if (modal.dataset.modalParent === parentId) modal.classList.add("hidden");
+  });
+}
+
 function closeAllAdminModalsOnNavigation() {
   const modalSelectors = [
     ".custom-modal",
