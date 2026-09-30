@@ -601,17 +601,8 @@
               <h2>Waste Records</h2>
               <p>Validated waste records submitted by the field workflow.</p>
             </div>
-            <button type="button" id="wasteCorrectionQueueBtn" class="waste-correction-button" hidden>Correction Requests</button>
+            <button type="button" id="wasteCorrectionQueueBtn" class="waste-correction-button" aria-haspopup="dialog" aria-controls="wasteCorrectionQueuePanel" hidden>Correction Requests</button>
           </div>
-
-          <section id="wasteCorrectionQueuePanel" class="waste-correction-queue" hidden aria-label="Correction Requests">
-            <div class="waste-correction-panel-header">
-              <h3>Correction Requests</h3>
-              <button type="button" id="closeWasteCorrectionQueueBtn" aria-label="Close correction requests">Close</button>
-            </div>
-            <p>Review pending proposals and monitor approved, rejected, cancelled, and applied corrections.</p>
-            <div id="wasteCorrectionQueueContent" role="status"></div>
-          </section>
 
           <div class="filter-bar">
 
@@ -2505,6 +2496,22 @@
     </div>
   </div>
 
+  <div id="wasteCorrectionQueuePanel" class="custom-modal waste-correction-queue-modal hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="wasteCorrectionQueueTitle" aria-describedby="wasteCorrectionQueueDescription">
+    <div id="wasteCorrectionQueueOverlay" class="custom-modal-overlay"></div>
+    <div class="custom-modal-content waste-correction-queue-dialog">
+      <div class="custom-modal-header">
+        <div>
+          <h3 id="wasteCorrectionQueueTitle">Correction Requests</h3>
+          <p id="wasteCorrectionQueueDescription">Review pending proposals and monitor approved, rejected, cancelled, and applied corrections.</p>
+        </div>
+        <button type="button" id="closeWasteCorrectionQueueBtn" class="modal-close-btn" aria-label="Close correction requests">&times;</button>
+      </div>
+      <div class="custom-modal-body">
+        <div id="wasteCorrectionQueueContent" role="status">No correction requests yet.</div>
+      </div>
+    </div>
+  </div>
+
   <div id="wasteCorrectionRequestModal" class="custom-modal modal-stack-child hidden" data-modal-parent="validationDetailsModal" role="dialog" aria-modal="true" aria-labelledby="wasteCorrectionRequestTitle">
     <div id="wasteCorrectionRequestOverlay" class="custom-modal-overlay"></div>
     <div class="custom-modal-content waste-correction-modal">
@@ -2523,7 +2530,7 @@
     </div>
   </div>
 
-  <div id="wasteCorrectionReviewModal" class="custom-modal modal-stack-child hidden" data-modal-parent="validationDetailsModal" role="dialog" aria-modal="true" aria-labelledby="wasteCorrectionReviewTitle">
+  <div id="wasteCorrectionReviewModal" class="custom-modal modal-stack-child hidden" data-modal-parent="wasteCorrectionQueuePanel" role="dialog" aria-modal="true" aria-labelledby="wasteCorrectionReviewTitle">
     <div id="wasteCorrectionReviewOverlay" class="custom-modal-overlay"></div>
     <div class="custom-modal-content waste-correction-modal">
       <div class="custom-modal-header">

@@ -65,6 +65,20 @@ function closeWasteCorrectionModal(id) {
   document.getElementById(id)?.classList.add("hidden");
 }
 
+function isWasteCorrectionQueueOpen() {
+  const queue = document.getElementById("wasteCorrectionQueuePanel");
+  return !!queue && !queue.classList.contains("hidden");
+}
+
+function closeWasteCorrectionQueue() {
+  if (typeof closeAdminStackedChildren === "function") {
+    closeAdminStackedChildren("wasteCorrectionQueuePanel");
+  }
+  const queue = document.getElementById("wasteCorrectionQueuePanel");
+  queue?.classList.add("hidden");
+  queue?.setAttribute("aria-hidden", "true");
+}
+
 function renderWasteCorrectionPanel(record, data) {
   const panel = document.getElementById("wasteCorrectionPanel");
   if (!panel || !canUseWasteCorrection("view")) return;
@@ -139,7 +153,7 @@ async function submitWasteCorrectionRequest(event) {
     });
     closeWasteCorrectionModal("wasteCorrectionRequestModal");
     await showWasteCorrectionPanel(activeWasteCorrectionRecord);
-    if (!document.getElementById("wasteCorrectionQueuePanel").hidden) await loadWasteCorrectionQueue();
+    if (isWasteCorrectionQueueOpen()) await loadWasteCorrectionQueue();
   } catch (error) {
     setWasteCorrectionError("wasteCorrectionRequestError", error);
   } finally {
@@ -236,7 +250,7 @@ async function applyApprovedWasteCorrection(requestId, button) {
     closeValidationDetailsModal();
     activeWasteCorrectionRecord = null;
     await loadRecords();
-    if (!document.getElementById("wasteCorrectionQueuePanel").hidden) await loadWasteCorrectionQueue();
+    if (isWasteCorrectionQueueOpen()) await loadWasteCorrectionQueue();
   } catch (error) {
     setWasteCorrectionError("wasteCorrectionPanelError", error);
   } finally {
@@ -271,7 +285,7 @@ async function submitWasteCorrectionCancel(event) {
     });
     closeWasteCorrectionModal("wasteCorrectionCancelModal");
     if (activeWasteCorrectionRecord) await showWasteCorrectionPanel(activeWasteCorrectionRecord);
-    if (!document.getElementById("wasteCorrectionQueuePanel").hidden) await loadWasteCorrectionQueue();
+    if (isWasteCorrectionQueueOpen()) await loadWasteCorrectionQueue();
   } catch (error) {
     setWasteCorrectionError("wasteCorrectionCancelError", error);
   } finally {
@@ -322,10 +336,12 @@ function setupWasteCorrectionUi() {
   if (!canUseWasteCorrection("view")) return;
 
   queueButton.addEventListener("click", () => {
-    queuePanel.hidden = !queuePanel.hidden;
-    if (!queuePanel.hidden) loadWasteCorrectionQueue();
+    queuePanel.classList.remove("hidden");
+    queuePanel.setAttribute("aria-hidden", "false");
+    loadWasteCorrectionQueue();
   });
-  document.getElementById("closeWasteCorrectionQueueBtn")?.addEventListener("click", () => { queuePanel.hidden = true; });
+  document.getElementById("closeWasteCorrectionQueueBtn")?.addEventListener("click", closeWasteCorrectionQueue);
+  document.getElementById("wasteCorrectionQueueOverlay")?.addEventListener("click", closeWasteCorrectionQueue);
   document.getElementById("wasteCorrectionQueueContent")?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-review-request-id]");
     if (button) openWasteCorrectionReview(button.dataset.reviewRequestId, button.dataset.reviewDecision);
