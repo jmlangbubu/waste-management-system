@@ -1,87 +1,576 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="Official Waste Management Office Android app download and installation guide." />
-  <title>Download WMO Mobile App | Waste Management Office</title>
-  <link rel="stylesheet" href="/css/landing.css" />
-  <link rel="stylesheet" href="/css/download-app.css" />
-  <script src="/js/download-app.js" defer></script>
-</head>
-<body class="download-page">
-  <header class="download-site-header">
-    <div class="download-site-header-inner">
-      <a class="download-brand" href="/" aria-label="Waste Management Office public portal">
-        <img src="/images/logo.jpg" alt="" width="50" height="50" />
-        <span>
-          <strong>Waste Management Office</strong>
-          <small>General Santos City Digital Public Portal</small>
-        </span>
-      </a>
-      <a class="download-back-link" href="/">Back to Public Portal</a>
-    </div>
-  </header>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Stay connected to General Santos City waste services with the official WMO Android app. Download, explore citizen features, and find installation guidance."
+    />
+    <title>Download WMO Mobile App | Waste Management Office</title>
+    <link rel="stylesheet" href="/css/download-app.css" />
+    <script src="/js/download-app.js" defer></script>
+  </head>
+  <body class="download-page">
+    <a class="download-skip-link" href="#mainContent">Skip to content</a>
+    <svg
+      class="download-icon-definitions"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
+      <defs>
+        <symbol id="icon-download" viewBox="0 0 24 24">
+          <path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4" />
+        </symbol>
+        <symbol id="icon-arrow" viewBox="0 0 24 24">
+          <path d="m14 6-6 6 6 6M8 12h12" />
+        </symbol>
+        <symbol id="icon-chart" viewBox="0 0 24 24">
+          <path d="M4 20V10m8 10V4m8 16v-7M2 20h20" />
+        </symbol>
+        <symbol id="icon-document" viewBox="0 0 24 24">
+          <path d="M14 3H5v18h14V8l-5-5Zm0 0v5h5M8 12h8m-8 4h6" />
+        </symbol>
+        <symbol id="icon-pin" viewBox="0 0 24 24">
+          <path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0Z" />
+          <circle cx="12" cy="10" r="2" />
+        </symbol>
+        <symbol id="icon-scan" viewBox="0 0 24 24">
+          <path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5M7 12h10" />
+          <rect x="8" y="8" width="8" height="8" rx="2" />
+        </symbol>
+        <symbol id="icon-chat" viewBox="0 0 24 24">
+          <path d="M21 11a8 8 0 0 1-8 8H8l-5 3V11a9 9 0 0 1 18 0Z" />
+          <path d="M8 10h8m-8 4h5" />
+        </symbol>
+        <symbol id="icon-home" viewBox="0 0 24 24">
+          <path d="m3 10 9-7 9 7M5 9v12h14V9m-10 12v-7h6v7" />
+        </symbol>
+        <symbol id="icon-leaf" viewBox="0 0 24 24">
+          <path d="M20 3C8 3 3 7 5 15s15 4 15-12ZM4 21l11-12" />
+        </symbol>
+        <symbol id="icon-check" viewBox="0 0 24 24">
+          <path d="m5 12 4 4L19 6" />
+        </symbol>
+        <symbol id="icon-android" viewBox="0 0 24 24">
+          <path
+            d="m7 4-2-2m12 2 2-2M5 10a7 7 0 0 1 14 0v8H5V10ZM2 11v6m20-6v6M8 18v4m8-4v4M5 10h14"
+          />
+          <path d="M9 7h.01M15 7h.01" />
+        </symbol>
+      </defs>
+    </svg>
 
-  <main class="download-shell">
-    <section class="download-intro" aria-labelledby="downloadTitle">
-      <span class="download-eyebrow">WMO MOBILE APP</span>
-      <h1 id="downloadTitle">Official Android Application</h1>
-      <p>Download the official WMO mobile app and keep it up to date with the latest public-service improvements.</p>
-    </section>
+    <header class="download-site-header">
+      <div class="download-container download-site-header-inner">
+        <a
+          class="download-brand"
+          href="/"
+          aria-label="Waste Management Office public portal"
+        >
+          <img
+            src="/images/wmo-logo-new.png"
+            alt="Waste Management Office logo"
+            width="64"
+            height="64"
+          />
+          <span
+            ><strong>Waste Management Office</strong
+            ><small>General Santos City</small></span
+          >
+        </a>
+        <a class="download-back-link" href="/"
+          ><svg class="download-icon" aria-hidden="true">
+            <use href="#icon-arrow" /></svg
+          >Back to Public Portal</a
+        >
+      </div>
+    </header>
 
-    <div class="download-grid">
-      <section class="download-card download-primary-card" aria-labelledby="latestVersionHeading">
-        <span class="download-status" id="downloadStatus">Checking release information</span>
-        <h2 id="latestVersionHeading">Latest Version <span id="versionName">Loading...</span></h2>
-        <p class="download-lead" id="downloadMessage" role="status" aria-live="polite">
-          Checking whether the official APK is ready to download.
-        </p>
-
-        <a class="download-action" id="downloadLink" hidden>Download / Update App</a>
-        <button class="download-action download-action-disabled" id="downloadPending" type="button" disabled>
-          Checking availability...
-        </button>
-        <p class="download-action-note" id="downloadActionNote">
-          Only install the official WMO APK from the link on this page.
-        </p>
-
-        <div class="download-file-details">
-          <h3>APK file information</h3>
-          <dl>
-            <div><dt>Version</dt><dd id="fileVersion">—</dd></div>
-            <div><dt>File size</dt><dd id="fileSize">—</dd></div>
-            <div><dt>Package</dt><dd id="packageName">—</dd></div>
-            <div class="download-checksum-row">
-              <dt>SHA-256 checksum</dt>
-              <dd id="checksum">—</dd>
+    <main id="mainContent">
+      <section class="download-hero" aria-labelledby="downloadTitle">
+        <img
+          class="download-hero-background"
+          src="/images/wmo-app-hero-bg.png"
+          alt=""
+          fetchpriority="high"
+        />
+        <div class="download-container download-hero-inner">
+          <div class="download-hero-copy">
+            <span class="download-eyebrow"
+              ><span class="download-badge-dot"></span>WMO MOBILE APP</span
+            >
+            <h1 id="downloadTitle">
+              Official Android<br /><span>Application</span>
+            </h1>
+            <p class="download-hero-description">
+              Access waste services, complaints, analytics, digital clearance,
+              waste scan, and WMO Assistant in one app.
+            </p>
+            <div class="download-hero-actions">
+              <a class="download-action" id="downloadLink" hidden
+                ><svg class="download-icon" aria-hidden="true">
+                  <use href="#icon-download" /></svg
+                >Download / Update App</a
+              >
+              <button
+                class="download-action download-action-disabled"
+                id="downloadPending"
+                type="button"
+                disabled
+              >
+                Checking availability...
+              </button>
             </div>
-          </dl>
+            <p class="download-official-note">
+              <svg class="download-icon" aria-hidden="true">
+                <use href="#icon-check" /></svg
+              >Official Android app for citizens of General Santos City
+            </p>
+            <div class="download-hero-release">
+              <span
+                >Latest Version:
+                <strong id="heroVersionName">Loading...</strong></span
+              ><span class="download-platform"
+                ><svg class="download-icon" aria-hidden="true">
+                  <use href="#icon-android" /></svg
+                >Android</span
+              >
+            </div>
+            <p
+              class="download-lead"
+              id="downloadMessage"
+              role="status"
+              aria-live="polite"
+            >
+              Checking whether the official APK is ready to download.
+            </p>
+          </div>
+
+          <figure class="download-showcase">
+            <div class="download-phone" aria-hidden="true">
+              <div class="download-phone-camera"></div>
+              <div class="download-phone-screen">
+                <div class="preview-statusbar">
+                  <span>9:41</span><span>▰ ▪ ▰</span>
+                </div>
+                <div class="preview-app-header">
+                  <span class="preview-menu">☰</span>
+                  <div>
+                    <strong>Waste Management Office</strong
+                    ><small>Citizen waste services</small>
+                  </div>
+                  <span class="preview-avatar">C</span>
+                </div>
+                <div class="preview-dashboard">
+                  <div class="preview-greeting">
+                    <span class="preview-label">YOUR CITIZEN DASHBOARD</span
+                    ><strong>Good day, Citizen!</strong>
+                    <p>A cleaner community starts with us.</p>
+                    <span class="preview-barangay"
+                      ><svg class="download-icon"><use href="#icon-pin" /></svg
+                      >My Barangay</span
+                    >
+                  </div>
+                  <div class="preview-assistant">
+                    <span class="preview-assistant-icon"
+                      ><svg class="download-icon"><use href="#icon-chat" /></svg
+                    ></span>
+                    <div>
+                      <span class="preview-label">WMO ASSISTANT</span
+                      ><strong>Here to help you.</strong>
+                      <p>Waste questions? Let's talk.</p>
+                      <span class="preview-button"
+                        >Ask WMO Assistant <span>↗</span></span
+                      >
+                    </div>
+                  </div>
+                  <div class="preview-analytics">
+                    <div class="preview-card-heading">
+                      <svg class="download-icon"><use href="#icon-chart" /></svg
+                      ><strong>Barangay Waste Analytics</strong>
+                    </div>
+                    <span class="preview-label">TOTAL WASTE</span>
+                    <div class="preview-total">
+                      — <small>kg</small><span>Barangay overview</span>
+                    </div>
+                    <div class="preview-category">
+                      <i class="category-bio"></i><span>Biodegradable</span
+                      ><b>—</b>
+                    </div>
+                    <div class="preview-category">
+                      <i class="category-recycle"></i><span>Recyclable</span
+                      ><b>—</b>
+                    </div>
+                    <div class="preview-category">
+                      <i class="category-residual"></i><span>Residual</span
+                      ><b>—</b>
+                    </div>
+                    <div class="preview-category">
+                      <i class="category-special"></i><span>Special Waste</span
+                      ><b>—</b>
+                    </div>
+                  </div>
+                  <div class="preview-services">
+                    <span
+                      ><svg class="download-icon">
+                        <use href="#icon-document" /></svg
+                      >Digital Clearance</span
+                    ><span
+                      ><svg class="download-icon"><use href="#icon-pin" /></svg
+                      >Complaints</span
+                    >
+                  </div>
+                </div>
+                <div class="preview-navigation">
+                  <span class="is-active"
+                    ><svg class="download-icon"><use href="#icon-home" /></svg
+                    >Home</span
+                  ><span
+                    ><svg class="download-icon"><use href="#icon-chart" /></svg
+                    >Analytics</span
+                  ><span
+                    ><svg class="download-icon"><use href="#icon-scan" /></svg
+                    >Waste Scan</span
+                  ><span
+                    ><svg class="download-icon">
+                      <use href="#icon-document" /></svg
+                    >Services</span
+                  >
+                </div>
+                <div class="preview-home-indicator"></div>
+              </div>
+            </div>
+            <figcaption>
+              Illustrative app preview · No live citizen data
+            </figcaption>
+          </figure>
+        </div>
+        <img
+          class="download-wave"
+          src="/images/wmo-app-wave-divider.png"
+          alt=""
+        />
+      </section>
+
+      <section
+        class="download-features download-container"
+        aria-labelledby="featuresHeading"
+      >
+        <div class="download-section-heading">
+          <span class="download-kicker">DESIGNED FOR YOUR EVERYDAY</span>
+          <h2 id="featuresHeading">Core Citizen Features</h2>
+          <p>Explore the key services available in the WMO Mobile App.</p>
+        </div>
+        <div class="download-feature-grid">
+          <article class="download-feature-card">
+            <div class="feature-preview" aria-hidden="true">
+              <div class="mini-app">
+                <div class="mini-heading">
+                  <svg class="download-icon"><use href="#icon-chart" /></svg
+                  >Barangay Waste Analytics
+                </div>
+                <div class="mini-total">
+                  <span>Total Waste</span><strong>— <small>kg</small></strong
+                  ><small>Category breakdown</small>
+                </div>
+                <div class="mini-category category-bio">
+                  <span>Biodegradable</span><i></i>
+                </div>
+                <div class="mini-category category-recycle">
+                  <span>Recyclable</span><i></i>
+                </div>
+                <div class="mini-category category-residual">
+                  <span>Residual</span><i></i>
+                </div>
+                <div class="mini-category category-special">
+                  <span>Special Waste</span><i></i>
+                </div>
+              </div>
+            </div>
+            <div class="feature-content">
+              <span class="feature-icon"
+                ><svg class="download-icon" aria-hidden="true">
+                  <use href="#icon-chart" /></svg
+              ></span>
+              <h3>Barangay Waste Analytics</h3>
+              <p>View live barangay waste data and category breakdown.</p>
+            </div>
+          </article>
+          <article class="download-feature-card">
+            <div class="feature-preview" aria-hidden="true">
+              <div class="mini-app mini-clearance">
+                <div class="mini-heading">Digital Clearance</div>
+                <div class="mini-document">
+                  <svg class="download-icon"><use href="#icon-leaf" /></svg
+                  ><strong>Solid Waste Management<br />Clearance</strong
+                  ><span>WASTE MANAGEMENT OFFICE</span><i></i><i></i><i></i>
+                  <div class="mini-seal">
+                    <svg class="download-icon"><use href="#icon-check" /></svg>
+                  </div>
+                </div>
+                <span class="mini-button">Open Certificate <span>↗</span></span>
+              </div>
+            </div>
+            <div class="feature-content">
+              <span class="feature-icon"
+                ><svg class="download-icon" aria-hidden="true">
+                  <use href="#icon-document" /></svg
+              ></span>
+              <h3>Digital Clearance</h3>
+              <p>Access your Solid Waste Management Clearance digitally.</p>
+            </div>
+          </article>
+          <article class="download-feature-card">
+            <div class="feature-preview" aria-hidden="true">
+              <div class="mini-app">
+                <div class="mini-heading">Report a Complaint</div>
+                <div class="mini-progress">
+                  <b>1</b><i></i><b>2</b><i></i><b>3</b>
+                </div>
+                <div class="mini-field">
+                  <span>Complaint Details</span><i></i><i></i>
+                </div>
+                <div class="mini-upload">
+                  <svg class="download-icon"><use href="#icon-document" /></svg
+                  ><span>Evidence Photo</span
+                  ><small>Attach a clear photo</small>
+                </div>
+                <div class="mini-location">
+                  <svg class="download-icon"><use href="#icon-pin" /></svg
+                  ><span
+                    >Complaint Location<small
+                      >Pin the location on the map</small
+                    ></span
+                  >
+                </div>
+              </div>
+            </div>
+            <div class="feature-content">
+              <span class="feature-icon"
+                ><svg class="download-icon" aria-hidden="true">
+                  <use href="#icon-pin" /></svg
+              ></span>
+              <h3>Report Complaint</h3>
+              <p>
+                Submit concerns with details, evidence photo, and pinned
+                location.
+              </p>
+            </div>
+          </article>
+          <article class="download-feature-card">
+            <div class="feature-preview" aria-hidden="true">
+              <div class="mini-app">
+                <div class="mini-heading">Waste Scan</div>
+                <div class="mini-camera">
+                  <span class="mini-scan-corner"></span
+                  ><svg class="download-icon"><use href="#icon-leaf" /></svg
+                  ><span>Place item here</span>
+                </div>
+                <span class="mini-button"
+                  ><svg class="download-icon"><use href="#icon-scan" /></svg
+                  >Scan Waste</span
+                >
+                <div class="mini-result">
+                  <svg class="download-icon"><use href="#icon-leaf" /></svg
+                  ><span
+                    >Classification guidance<small
+                      >Learn where your waste belongs</small
+                    ></span
+                  >
+                </div>
+              </div>
+            </div>
+            <div class="feature-content">
+              <span class="feature-icon"
+                ><svg class="download-icon" aria-hidden="true">
+                  <use href="#icon-scan" /></svg
+              ></span>
+              <h3>Waste Scan</h3>
+              <p>Scan waste items for fast classification guidance.</p>
+            </div>
+          </article>
+          <article class="download-feature-card">
+            <div class="feature-preview" aria-hidden="true">
+              <div class="mini-app">
+                <div class="mini-heading">
+                  <svg class="download-icon"><use href="#icon-chat" /></svg>WMO
+                  Assistant
+                </div>
+                <div class="mini-conversation">
+                  <span class="mini-assistant-avatar"
+                    ><svg class="download-icon">
+                      <use href="#icon-chat" /></svg></span
+                  ><span>Good day!<br />How can I help you?</span>
+                </div>
+                <small class="mini-quick-label">Quick Questions</small>
+                <div class="mini-chips">
+                  <span>Waste Segregation</span><span>My Barangay Waste</span
+                  ><span>Complaint Help</span><span>Waste Scan Help</span>
+                </div>
+                <div class="mini-input">
+                  <span>Ask WMO Assistant...</span><b>↑</b>
+                </div>
+              </div>
+            </div>
+            <div class="feature-content">
+              <span class="feature-icon"
+                ><svg class="download-icon" aria-hidden="true">
+                  <use href="#icon-chat" /></svg
+              ></span>
+              <h3>WMO Assistant</h3>
+              <p>
+                Ask questions about waste segregation, services, scans, and
+                barangay information.
+              </p>
+            </div>
+          </article>
+        </div>
+        <p class="download-preview-note">
+          Feature previews are illustrative. Your app shows information for your
+          account and barangay.
+        </p>
+      </section>
+
+      <section
+        class="download-release download-container"
+        aria-labelledby="latestVersionHeading"
+      >
+        <div class="download-release-intro">
+          <span class="download-kicker">THE OFFICIAL RELEASE</span>
+          <h2 id="latestVersionHeading">
+            Latest Version <span id="versionName">Loading...</span>
+          </h2>
+          <span class="download-status" id="downloadStatus"
+            >Checking release information</span
+          >
+          <p class="download-action-note" id="downloadActionNote">
+            Only install the official WMO APK from the link on this page.
+          </p>
+        </div>
+        <div class="download-release-card">
+          <div class="download-file-details">
+            <h3>APK file information</h3>
+            <dl>
+              <div>
+                <dt>Version</dt>
+                <dd id="fileVersion">—</dd>
+              </div>
+              <div>
+                <dt>File size</dt>
+                <dd id="fileSize">—</dd>
+              </div>
+              <div>
+                <dt>Package</dt>
+                <dd id="packageName">—</dd>
+              </div>
+              <div class="download-checksum-row">
+                <dt>SHA-256 checksum</dt>
+                <dd id="checksum">—</dd>
+              </div>
+            </dl>
+          </div>
+          <div class="download-release-notes">
+            <h3 id="releaseNotesHeading">Release Notes</h3>
+            <ul class="download-notes" id="releaseNotes">
+              <li>Loading release notes...</li>
+            </ul>
+          </div>
         </div>
       </section>
 
-      <div class="download-side-column">
-        <section class="download-card" aria-labelledby="releaseNotesHeading">
-          <h2 id="releaseNotesHeading">Release Notes</h2>
-          <ul class="download-notes" id="releaseNotes">
-            <li>Loading release notes...</li>
-          </ul>
-        </section>
-
-        <section class="download-card" aria-labelledby="installationHeading">
+      <section
+        class="download-installation download-container"
+        aria-labelledby="installationHeading"
+      >
+        <div class="download-section-heading">
+          <span class="download-kicker">READY IN A FEW STEPS</span>
           <h2 id="installationHeading">Installation Guide</h2>
-          <ol class="download-steps">
-            <li>Tap Download App when the official APK is available.</li>
-            <li>Android or your browser may ask permission to install apps from this source.</li>
-            <li>Allow it only for the browser used to download the official WMO APK.</li>
-            <li>Install or update WMO.</li>
-            <li>Open the application.</li>
-          </ol>
-        </section>
-      </div>
-    </div>
-  </main>
+          <p>Get started with the official WMO Android app.</p>
+        </div>
+        <ol class="download-steps">
+          <li>
+            <span class="download-step-number" aria-hidden="true">1</span>
+            <div>
+              <h3>Download the app</h3>
+              <p>Tap Download / Update App.</p>
+            </div>
+          </li>
+          <li>
+            <span class="download-step-number" aria-hidden="true">2</span>
+            <div>
+              <h3>Check the permission prompt</h3>
+              <p>
+                Android or your browser may ask permission to install apps from
+                this source.
+              </p>
+            </div>
+          </li>
+          <li>
+            <span class="download-step-number" aria-hidden="true">3</span>
+            <div>
+              <h3>Allow your download browser</h3>
+              <p>
+                Allow it only for the browser used to download the official WMO
+                APK.
+              </p>
+            </div>
+          </li>
+          <li>
+            <span class="download-step-number" aria-hidden="true">4</span>
+            <div>
+              <h3>Install or update WMO</h3>
+              <p>
+                Follow the Android installation prompt to install or update WMO.
+              </p>
+            </div>
+          </li>
+          <li>
+            <span class="download-step-number" aria-hidden="true">5</span>
+            <div>
+              <h3>Open the application</h3>
+              <p>Open WMO and connect with citizen services.</p>
+            </div>
+          </li>
+        </ol>
+      </section>
 
-  <footer class="download-footer">Waste Management Office · General Santos City</footer>
-</body>
+      <section
+        class="download-final-cta download-container"
+        aria-labelledby="finalDownloadHeading"
+      >
+        <img
+          class="download-eco-decoration"
+          src="/images/wmo-app-eco-decoration.png"
+          alt=""
+          loading="lazy"
+        />
+        <div class="download-final-copy">
+          <span class="download-kicker">ONE APP. A CLEANER COMMUNITY.</span>
+          <h2 id="finalDownloadHeading">Get the WMO Mobile App Today</h2>
+          <p>
+            Download the official Android application and stay connected with
+            WMO citizen services.
+          </p>
+          <a class="download-action" id="downloadLinkFinal" hidden
+            ><svg class="download-icon" aria-hidden="true">
+              <use href="#icon-download" /></svg
+            >Download / Update App</a
+          ><button
+            class="download-action download-action-disabled"
+            id="downloadPendingFinal"
+            type="button"
+            disabled
+          >
+            Checking availability...
+          </button>
+        </div>
+      </section>
+    </main>
+
+    <footer class="download-footer download-container">
+      <span>Waste Management Office · General Santos City</span
+      ><a href="/">Back to Public Portal <span aria-hidden="true">↗</span></a>
+    </footer>
+  </body>
 </html>

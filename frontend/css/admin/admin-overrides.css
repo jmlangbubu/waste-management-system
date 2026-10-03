@@ -4568,7 +4568,7 @@ body {
    css/admin/admin-overrides.css
 
    Fix:
-   - Prevents images/logo.jpg from expanding over the sidebar
+   - Prevents the WMO logo image from expanding over the sidebar
    - Keeps the logo inside a small rounded square
    - Keeps brand text readable
 ========================================================= */
@@ -13936,5 +13936,38 @@ body #sidebarOtherMenu.sidebar-other-menu-portal.open:not(.hidden) {
     width: min(720px, calc(100vw - 32px)) !important;
     min-width: 0 !important;
     max-width: calc(100vw - 32px) !important;
+  }
+}
+
+/* Preserve the complete WMO wordmark within existing admin logo frames. */
+#dashboardSidebar .sidebar-logo-img[src="/images/wmo-logo-new.png"],
+#validationDetailsModal .report-office-mark img[src="/images/wmo-logo-new.png"] {
+  object-fit: contain !important;
+  object-position: center !important;
+  padding: 0 !important;
+}
+
+#validationDetailsModal .report-header > .report-office-identity:first-child {
+  grid-template-columns: 48px minmax(0, 1fr) !important;
+}
+
+#validationDetailsModal .report-office-mark {
+  width: 48px;
+  height: 48px;
+}
+
+#validationDetailsModal .report-office-mark img[src="/images/wmo-logo-new.png"] {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+@media (max-width: 560px) {
+  #validationDetailsModal .report-header > .report-office-identity:first-child {
+    grid-template-columns: 44px minmax(0, 1fr) !important;
+  }
+
+  #validationDetailsModal .report-office-mark {
+    width: 44px;
+    height: 44px;
   }
 }

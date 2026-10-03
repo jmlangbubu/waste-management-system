@@ -2964,6 +2964,11 @@ a {
   white-space: nowrap;
 }
 
+/* The square WMO asset already includes whitespace around its wordmark. */
+.navbar-custom .logo-box .brand-logo-img[src="/images/wmo-logo-new.png"] {
+  padding: 0;
+}
+
 @media (max-width: 575.98px) {
   .appointment-status-modal-dialog {
     width: calc(100% - 20px);

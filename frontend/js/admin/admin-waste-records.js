@@ -770,7 +770,7 @@ function generateWasteSummaryReport(records) {
   const totalSpecial = records.reduce((sum, r) => sum + toNumber(r.special_subtotal), 0);
   const grandTotal = records.reduce((sum, r) => sum + toNumber(r.grand_total), 0);
   const generatedAt = new Date().toLocaleString("en-PH");
-  const logoUrl = new URL("images/logo.jpg", window.location.href).href;
+  const logoUrl = new URL("/images/wmo-logo-new.png", window.location.href).href;
 
   const reportWindow = window.open("", "_blank");
 
@@ -828,8 +828,8 @@ function generateWasteSummaryReport(records) {
           }
 
           .report-logo {
-            width: 48px;
-            height: 48px;
+            width: 52px;
+            height: 52px;
             object-fit: contain;
             flex: none;
           }
