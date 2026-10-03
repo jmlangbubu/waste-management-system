@@ -1,0 +1,19 @@
+{
+  "latestVersionCode": 2,
+  "latestVersionName": "1.0.1",
+  "minimumSupportedVersionCode": 1,
+  "downloadUrl": "https://wastegensan.com/download/app",
+  "apkUrl": "https://github.com/jmlangbubu/WMO-Mobile-Releases/releases/download/v1.0.1/WMO-1.0.1.apk",
+  "releaseNotes": [
+    "Improved Citizen Dashboard",
+    "Added Barangay Waste Analytics",
+    "Improved Enforcer interface",
+    "Improved tracking stability"
+  ],
+  "publishedAt": "2026-10-03T02:04:22Z",
+  "apk": {
+    "packageName": "com.example.aiwastemanagementsystem",
+    "fileSizeBytes": 61845061,
+    "sha256": "79E58C20D33AC78EB6B7AF5E3A0E8C6DDA2747FE568C181DBBC502EA7652BDFC"
+  }
+}

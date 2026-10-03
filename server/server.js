@@ -103,6 +103,7 @@ const vehicleIssueRoutes = require("../routes/vehicleIssueRoutes");
 const notificationRoutes = require("../routes/notificationRoutes");
 const complaintRoutes = require("../routes/complaintRoutes");
 const { createCitizenAssistantRouter } = require("../routes/citizenAssistantRoutes");
+const { createAppVersionRouter } = require("../routes/appVersionRoutes");
 const certificateRoutes = require("../routes/certificateRoutes");
 const invoiceRoutes = require("../routes/invoiceRoutes");
 const dispatchMonitorService = require("../services/dispatchMonitorService");
@@ -162,6 +163,10 @@ app.use(express.static(FRONTEND_DIR));
 ========================= */
 app.get("/", (req, res) => {
   res.sendFile(path.join(FRONTEND_DIR, "index.html"));
+});
+
+app.get("/download/app", (req, res) => {
+  res.sendFile(path.join(FRONTEND_DIR, "download-app.html"));
 });
 
 app.get("/health", (req, res) => {
@@ -263,6 +268,7 @@ app.get("/api/debug/file-exists", (req, res) => {
    API ROUTES
 ========================= */
 app.use("/api/auth", authRoutes);
+app.use("/api/app-version", createAppVersionRouter());
 app.use("/api/waste", wasteRoutes);
 app.use("/api/web-auth", webAuthRoutes);
 app.use("/api/web-users", webUserRoutes);
