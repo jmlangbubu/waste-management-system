@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Official Waste Management Office Android app download and installation guide." />
+  <title>Download WMO Mobile App | Waste Management Office</title>
+  <link rel="stylesheet" href="/css/landing.css" />
+  <link rel="stylesheet" href="/css/download-app.css" />
+  <script src="/js/download-app.js" defer></script>
+</head>
+<body class="download-page">
+  <header class="download-site-header">
+    <div class="download-site-header-inner">
+      <a class="download-brand" href="/" aria-label="Waste Management Office public portal">
+        <img src="/images/logo.jpg" alt="" width="50" height="50" />
+        <span>
+          <strong>Waste Management Office</strong>
+          <small>General Santos City Digital Public Portal</small>
+        </span>
+      </a>
+      <a class="download-back-link" href="/">Back to Public Portal</a>
+    </div>
+  </header>
+
+  <main class="download-shell">
+    <section class="download-intro" aria-labelledby="downloadTitle">
+      <span class="download-eyebrow">WMO MOBILE APP</span>
+      <h1 id="downloadTitle">Official Android Application</h1>
+      <p>Download the official WMO mobile app and keep it up to date with the latest public-service improvements.</p>
+    </section>
+
+    <div class="download-grid">
+      <section class="download-card download-primary-card" aria-labelledby="latestVersionHeading">
+        <span class="download-status" id="downloadStatus">Checking release information</span>
+        <h2 id="latestVersionHeading">Latest Version <span id="versionName">Loading...</span></h2>
+        <p class="download-lead" id="downloadMessage" role="status" aria-live="polite">
+          Checking whether the official APK is ready to download.
+        </p>
+
+        <a class="download-action" id="downloadLink" hidden>Download / Update App</a>
+        <button class="download-action download-action-disabled" id="downloadPending" type="button" disabled>
+          Checking availability...
+        </button>
+        <p class="download-action-note" id="downloadActionNote">
+          Only install the official WMO APK from the link on this page.
+        </p>
+
+        <div class="download-file-details">
+          <h3>APK file information</h3>
+          <dl>
+            <div><dt>Version</dt><dd id="fileVersion">—</dd></div>
+            <div><dt>File size</dt><dd id="fileSize">—</dd></div>
+            <div><dt>Package</dt><dd id="packageName">—</dd></div>
+            <div class="download-checksum-row">
+              <dt>SHA-256 checksum</dt>
+              <dd id="checksum">—</dd>
+            </div>
+          </dl>
+        </div>
+      </section>
+
+      <div class="download-side-column">
+        <section class="download-card" aria-labelledby="releaseNotesHeading">
+          <h2 id="releaseNotesHeading">Release Notes</h2>
+          <ul class="download-notes" id="releaseNotes">
+            <li>Loading release notes...</li>
+          </ul>
+        </section>
+
+        <section class="download-card" aria-labelledby="installationHeading">
+          <h2 id="installationHeading">Installation Guide</h2>
+          <ol class="download-steps">
+            <li>Tap Download App when the official APK is available.</li>
+            <li>Android or your browser may ask permission to install apps from this source.</li>
+            <li>Allow it only for the browser used to download the official WMO APK.</li>
+            <li>Install or update WMO.</li>
+            <li>Open the application.</li>
+          </ol>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <footer class="download-footer">Waste Management Office · General Santos City</footer>
+</body>
+</html>
