@@ -28,15 +28,31 @@
     }
   }
 
+  function renderDownloadActions(apkUrl, pendingLabel) {
+    for (const [linkId, pendingId] of [
+      ["downloadLink", "downloadPending"],
+      ["downloadLinkFinal", "downloadPendingFinal"]
+    ]) {
+      const link = element(linkId);
+      const pending = element(pendingId);
+      if (apkUrl) {
+        link.href = apkUrl;
+      } else {
+        link.removeAttribute("href");
+      }
+      link.hidden = !apkUrl;
+      pending.hidden = Boolean(apkUrl);
+      if (pendingLabel) pending.textContent = pendingLabel;
+    }
+  }
+
   function showUnavailable() {
     element("downloadStatus").textContent = "Release information unavailable";
     element("downloadStatus").className = "download-status is-error";
     element("versionName").textContent = "Unavailable";
+    element("heroVersionName").textContent = "Unavailable";
     element("downloadMessage").textContent = "Version information is temporarily unavailable.";
-    element("downloadLink").hidden = true;
-    element("downloadLink").removeAttribute("href");
-    element("downloadPending").hidden = false;
-    element("downloadPending").textContent = "Download unavailable";
+    renderDownloadActions(null, "Download unavailable");
     element("downloadActionNote").textContent = "Please try again later.";
     element("fileVersion").textContent = "—";
     element("fileSize").textContent = "—";
@@ -60,6 +76,7 @@
     }
 
     element("versionName").textContent = data.latestVersionName;
+    element("heroVersionName").textContent = data.latestVersionName;
     element("fileVersion").textContent =
       `${data.latestVersionName} (code ${data.latestVersionCode})`;
     element("fileSize").textContent =
@@ -73,10 +90,7 @@
       element("downloadStatus").className = "download-status is-pending";
       element("downloadMessage").textContent =
         "The official Android download is being prepared.";
-      element("downloadLink").hidden = true;
-      element("downloadLink").removeAttribute("href");
-      element("downloadPending").hidden = false;
-      element("downloadPending").textContent = "APK Publishing in Progress";
+      renderDownloadActions(null, "APK Publishing in Progress");
       element("downloadActionNote").textContent =
         "The download button will become available after the public APK is verified.";
       return;
@@ -86,9 +100,7 @@
     element("downloadStatus").className = "download-status";
     element("downloadMessage").textContent =
       "Download or update the official WMO Android application.";
-    element("downloadLink").href = data.apkUrl;
-    element("downloadLink").hidden = false;
-    element("downloadPending").hidden = true;
+    renderDownloadActions(data.apkUrl);
     element("downloadActionNote").textContent =
       "Only install the official WMO APK from the link on this page.";
   }
