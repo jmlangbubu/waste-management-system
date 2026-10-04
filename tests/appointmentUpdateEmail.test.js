@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const Module = require("node:module");
 const path = require("node:path");
 const test = require("node:test");
+const { inspect } = require("node:util");
 const vm = require("node:vm");
 const {
   buildAppointmentUpdateEmail,
@@ -191,6 +192,7 @@ function resetScenario(options = {}) {
     sqlCalls: [],
     messages: [],
     events: [],
+    mailResult: { data: { id: "mock-email-id" }, error: null },
     ...options
   };
 }
@@ -226,7 +228,7 @@ Module._load = function loadWithMocks(request, parent, isMain) {
             scenario.events.push("email");
             scenario.messages.push(message);
             if (scenario.mailError) throw scenario.mailError;
-            return { data: { id: "mock-email" }, error: null };
+            return scenario.mailResult;
           } };
         }
       } };
@@ -273,6 +275,44 @@ function assertSuccess(result) {
   });
 }
 
+async function invokeRescheduleWithLogs(options = {}) {
+  resetScenario(options);
+  const logs = [];
+  const saved = { log: console.log, error: console.error, warn: console.warn };
+  for (const level of Object.keys(saved)) {
+    console[level] = (...args) => logs.push({ level, args });
+  }
+  try {
+    return { result: await invokeReschedule(), logs };
+  } finally {
+    Object.assign(console, saved);
+  }
+}
+
+function logText(logs) {
+  return logs.map(({ level, args }) => `${level} ${args.map((value) =>
+    typeof value === "string" ? value : inspect(value, { depth: null })).join(" ")}`).join("\n");
+}
+
+function assertMailAttemptSucceeded(result) {
+  assertSuccess(result);
+  assert.deepEqual(scenario.events, ["select", "update", "email", "response"]);
+  assert.equal(scenario.sqlCalls.length, 2);
+  assert.equal(scenario.messages.length, 1);
+}
+
+function assertNoPrivateLogs(logs, extra = []) {
+  const output = logText(logs);
+  for (const value of [fixture.email, fixture.full_name, ...extra]) {
+    assert.ok(!output.includes(value), "reschedule email logs must omit private data");
+  }
+}
+
+function assertNoAcceptanceLog(logs) {
+  assert.equal(logs.filter(({ level }) => level === "log").length, 0);
+  assert.doesNotMatch(logText(logs), /\b(?:accepted|sent)\b/i);
+}
+
 test("rescheduling preserves SQL, parameters, response, recipient, and DB-before-email ordering", async () => {
   resetScenario();
   const result = await invokeReschedule();
@@ -288,6 +328,18 @@ test("rescheduling preserves SQL, parameters, response, recipient, and DB-before
   const message = scenario.messages[0];
   assert.equal(message.from, "WMO System <noreply@wastegensan.com>");
   assert.equal(message.to, fixture.email);
+  assert.deepEqual(message, {
+    from: "WMO System <noreply@wastegensan.com>",
+    to: fixture.email,
+    ...buildAppointmentUpdateEmail({
+      fullName: fixture.full_name,
+      oldDate: fixture.preferred_date,
+      newDate: sample.newDate,
+      purpose: fixture.purpose,
+      appointmentCode: fixture.appointment_code,
+      status: "rescheduled"
+    })
+  });
   assert.equal(message.subject, `WMO Appointment Update – ${sample.appointmentCode}`);
   assert.match(message.html, /October 06, 2026, 9:30 AM/);
   assert.match(message.html, /October 07, 2026, 2:30 PM/);
@@ -339,6 +391,88 @@ test("mail delivery failure and absent recipient still preserve the successful u
   assertSuccess(await invokeReschedule());
   assert.deepEqual(scenario.events, ["select", "update", "response"]);
   assert.equal(scenario.messages.length, 0);
+});
+
+test("a returned Resend email ID logs acceptance without claiming delivery or logging the recipient", async () => {
+  const { result, logs } = await invokeRescheduleWithLogs();
+  assertMailAttemptSucceeded(result);
+  assert.deepEqual(logs.map(({ level }) => level), ["log"]);
+  assert.match(logText(logs), /accepted.*Resend/i);
+  assert.match(logText(logs), /mock-email-id/);
+  assert.doesNotMatch(logText(logs), /\b(?:delivered|sent)\b/i);
+  assertNoPrivateLogs(logs);
+});
+
+test("a returned Resend error preserves DB success and never logs acceptance", async () => {
+  const { result, logs } = await invokeRescheduleWithLogs({
+    mailResult: { data: null, error: { message: "mock error" } }
+  });
+  assertMailAttemptSucceeded(result);
+  assert.deepEqual(logs.map(({ level }) => level), ["error"]);
+  assert.match(logText(logs), /rejected|error/i);
+  assertNoAcceptanceLog(logs);
+  assertNoPrivateLogs(logs);
+});
+
+test("a thrown Resend exception preserves DB success and logs only a safe failure", async () => {
+  const { result, logs } = await invokeRescheduleWithLogs({ mailError: new Error("mock exception") });
+  assertMailAttemptSucceeded(result);
+  assert.deepEqual(logs.map(({ level }) => level), ["error"]);
+  assert.match(logText(logs), /exception/i);
+  assertNoAcceptanceLog(logs);
+  assertNoPrivateLogs(logs);
+});
+
+test("empty and no-ID Resend results warn without retries or false acceptance", async () => {
+  for (const mailResult of [undefined, null, {}, { data: null, error: null },
+    { data: {}, error: null }, { data: { id: "" }, error: null }]) {
+    const { result, logs } = await invokeRescheduleWithLogs({ mailResult });
+    assertMailAttemptSucceeded(result);
+    assert.deepEqual(logs.map(({ level }) => level), ["warn"]);
+    assert.match(logText(logs), /no email ID|unexpected|incomplete/i);
+    assertNoAcceptanceLog(logs);
+    assertNoPrivateLogs(logs);
+  }
+});
+
+test("a returned error takes priority over an accompanying Resend email ID", async () => {
+  const { result, logs } = await invokeRescheduleWithLogs({
+    mailResult: { data: { id: "mock-email-id" }, error: { message: "mock error" } }
+  });
+  assertMailAttemptSucceeded(result);
+  assert.deepEqual(logs.map(({ level }) => level), ["error"]);
+  assertNoAcceptanceLog(logs);
+  assert.doesNotMatch(logText(logs), /mock-email-id/);
+  assertNoPrivateLogs(logs);
+});
+
+test("Resend result and exception logs omit private fields, credentials, and unsafe email IDs", async () => {
+  const privateValues = ["09123456789", "re_mock_private_api_key_DO_NOT_LOG",
+    "mock-private-password", "private-provider-detail"];
+  const privateFields = {
+    recipient: fixture.email, fullName: fixture.full_name, phone: privateValues[0],
+    apiKey: privateValues[1], credentials: { password: privateValues[2] },
+    privateDetails: privateValues[3]
+  };
+  const privateMessage = [fixture.email, fixture.full_name, ...privateValues].join(" ");
+  const exception = Object.assign(new Error(privateMessage), privateFields, {
+    name: privateMessage, stack: privateMessage
+  });
+  const cases = [
+    [{ mailResult: { data: { id: "mock-email-id", ...privateFields }, error: null } }, "log"],
+    [{ mailResult: { data: null, error: { message: privateMessage, name: privateMessage,
+      statusCode: privateMessage, ...privateFields } } }, "error"],
+    [{ mailError: exception }, "error"],
+    [{ mailResult: { data: privateFields, error: null } }, "warn"],
+    [{ mailResult: { data: { id: fixture.email, ...privateFields }, error: null } }, "warn"]
+  ];
+  for (const [options, expectedLevel] of cases) {
+    const { result, logs } = await invokeRescheduleWithLogs(options);
+    assertMailAttemptSucceeded(result);
+    assert.deepEqual(logs.map(({ level }) => level), [expectedLevel]);
+    assertNoPrivateLogs(logs, privateValues);
+    if (expectedLevel !== "log") assertNoAcceptanceLog(logs);
+  }
 });
 
 test("the public status page prefills only the reference and leaves verification user-driven", () => {
