@@ -1,6 +1,6 @@
 const PUBLIC_PORTAL_URL = "https://wastegensan.com/";
-const LOGO_URL = new URL("/images/wmo-logo-new.png", PUBLIC_PORTAL_URL).href;
-const HEADER_URL = new URL("/images/wmo-appointment-update-header.png", PUBLIC_PORTAL_URL).href;
+const LOGO_URL = "https://res.cloudinary.com/dcagkcius/image/upload/v1791127246/wmo-logo-new.jpg";
+const HEADER_URL = "https://res.cloudinary.com/dcagkcius/image/upload/v1791127240/wmo-appointment-update-header.png";
 
 function cleanText(value) {
   if (value === null || value === undefined) return "";
