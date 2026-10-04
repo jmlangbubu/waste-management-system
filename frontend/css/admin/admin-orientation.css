@@ -282,6 +282,12 @@
 
 #orientationHistoryModal .history-modal-content {
   position: relative;
+  /* The modal root centers this box; legacy tablet offsets must not shift it. */
+  top: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  left: auto !important;
+  transform: none !important;
   z-index: 2;
   width: min(1050px, 88vw);
   max-height: 84vh;
@@ -290,9 +296,13 @@
   border-radius: 24px;
   padding: 24px;
   box-shadow: 0 30px 100px rgba(15, 23, 42, 0.28);
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
 }
 
 #orientationHistoryModal .history-modal-header {
+  flex: 0 0 auto;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -330,7 +340,45 @@
   background: #e2e8f0;
 }
 
+#orientationHistoryModal .orientation-history-filter-toolbar {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+#orientationHistoryModal .orientation-history-search-input,
+#orientationHistoryModal .orientation-history-barangay-filter {
+  min-width: 0;
+  height: 44px;
+  padding: 0 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #334155;
+  font: inherit;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
+#orientationHistoryModal .orientation-history-search-input {
+  flex: 1 1 260px;
+}
+
+#orientationHistoryModal .orientation-history-barangay-filter {
+  flex: 0 1 230px;
+}
+
+#orientationHistoryModal .orientation-history-search-input:focus-visible,
+#orientationHistoryModal .orientation-history-barangay-filter:focus-visible {
+  outline: 2px solid #15803d;
+  outline-offset: 2px;
+}
+
 #orientationHistoryModal .table-shell {
+  flex: 0 1 auto;
+  min-height: 0;
   max-height: 58vh;
   overflow: auto;
   border: 1px solid #e5e7eb;
@@ -492,6 +540,16 @@
 ========================= */
 
 @media (max-width: 700px) {
+  #orientationHistoryModal .orientation-history-filter-toolbar {
+    flex-direction: column;
+  }
+
+  #orientationHistoryModal .orientation-history-search-input,
+  #orientationHistoryModal .orientation-history-barangay-filter {
+    flex: 0 0 44px;
+    width: 100%;
+  }
+
   #orientationSection .page-card {
     padding: 20px;
   }

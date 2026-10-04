@@ -148,8 +148,6 @@ function renderOrientationQueue(records) {
   tableBody.innerHTML = records.map((item) => {
     const status = getOrientationLifecycleStatus(item);
     const showQr = status === "approved" || status === "pending_orientation" || status === "ready_for_retake";
-    const showWebExam = (status === "pending_orientation" || status === "ready_for_retake" ||
-      (status === "approved" && !isOrientationUpcoming(item)));
 
     return `
       <tr>
@@ -160,7 +158,6 @@ function renderOrientationQueue(records) {
         <td><span class="orientation-status ${getOrientationStatusClass(item)}">${getOrientationStatusLabel(item)}</span></td>
         <td><div class="orientation-queue-actions">
           ${showQr ? `<button type="button" class="orientation-qr-btn orientation-table-action" data-id="${item.id}">Open QR Code</button>` : ""}
-          ${showWebExam ? `<button type="button" class="orientation-web-btn orientation-table-action" data-id="${item.id}">Take Web Exam</button>` : ""}
           ${status === "failed_orientation" ? `<button type="button" class="orientation-retake-btn orientation-table-action" data-id="${item.id}">Allow Retake</button>` : ""}
           ${status === "failed_orientation" || status === "ready_for_retake" ? `<button type="button" class="orientation-incomplete-btn orientation-table-action" data-id="${item.id}">Mark as Incomplete</button>` : ""}
         </div></td>
@@ -317,21 +314,21 @@ function ensureOrientationHistoryReportLayoutStyles() {
     }
 
     #orientationHistoryModal thead th:nth-child(1),
-    #orientationHistoryModal tbody td:nth-child(1) { width: 16% !important; }
+    #orientationHistoryModal tbody td:nth-child(1) { width: 9% !important; }
     #orientationHistoryModal thead th:nth-child(2),
-    #orientationHistoryModal tbody td:nth-child(2) { width: 11% !important; }
+    #orientationHistoryModal tbody td:nth-child(2) { width: 16% !important; }
     #orientationHistoryModal thead th:nth-child(3),
     #orientationHistoryModal tbody td:nth-child(3) { width: 12% !important; }
     #orientationHistoryModal thead th:nth-child(4),
-    #orientationHistoryModal tbody td:nth-child(4) { width: 18% !important; }
+    #orientationHistoryModal tbody td:nth-child(4) { width: 13% !important; }
     #orientationHistoryModal thead th:nth-child(5),
-    #orientationHistoryModal tbody td:nth-child(5) { width: 12% !important; }
+    #orientationHistoryModal tbody td:nth-child(5) { width: 16% !important; }
     #orientationHistoryModal thead th:nth-child(6),
-    #orientationHistoryModal tbody td:nth-child(6) { width: 12% !important; }
+    #orientationHistoryModal tbody td:nth-child(6) { width: 13% !important; }
     #orientationHistoryModal thead th:nth-child(7),
-    #orientationHistoryModal tbody td:nth-child(7) { width: 7% !important; text-align: center !important; }
+    #orientationHistoryModal tbody td:nth-child(7) { width: 13% !important; }
     #orientationHistoryModal thead th:nth-child(8),
-    #orientationHistoryModal tbody td:nth-child(8) { width: 12% !important; text-align: center !important; }
+    #orientationHistoryModal tbody td:nth-child(8) { width: 8% !important; text-align: center !important; }
 
     #orientationHistoryModal .orientation-status {
       display: inline-flex !important;
@@ -379,20 +376,88 @@ function ensureOrientationHistoryReportLayoutStyles() {
   document.head.appendChild(style);
 }
 
+let orientationHistoryRecords = [];
+
+function getOrientationHistoryId(item = {}) {
+  return String(item.id ?? "-");
+}
+
+function normalizeOrientationHistoryFilter(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function filterOrientationHistoryRecords(records, search = "", barangay = "all") {
+  const query = normalizeOrientationHistoryFilter(search);
+  const barangayKey = normalizeOrientationHistoryFilter(barangay);
+
+  return (Array.isArray(records) ? records : []).filter((item) => {
+    const matchesSearch = !query ||
+      normalizeOrientationHistoryFilter(item.id).includes(query) ||
+      normalizeOrientationHistoryFilter(item.full_name).includes(query);
+    const matchesBarangay = !barangayKey || barangayKey === "all" ||
+      normalizeOrientationHistoryFilter(item.barangay) === barangayKey;
+
+    return matchesSearch && matchesBarangay;
+  });
+}
+
+function populateOrientationHistoryBarangayFilter(records) {
+  const select = document.getElementById("orientationHistoryBarangayFilter");
+  if (!select) return;
+
+  const selectedBarangay = normalizeOrientationHistoryFilter(select.value) || "all";
+  const selectedLabel = select.selectedOptions?.[0]?.textContent || select.value;
+  const barangays = new Map();
+
+  for (const item of records) {
+    const label = String(item.barangay ?? "").trim();
+    const key = normalizeOrientationHistoryFilter(label);
+    if (key && !barangays.has(key)) barangays.set(key, label);
+  }
+
+  // Keep an active selection when a refresh no longer contains that barangay.
+  if (selectedBarangay !== "all" && !barangays.has(selectedBarangay)) {
+    barangays.set(selectedBarangay, selectedLabel);
+  }
+
+  const options = [...barangays.entries()].sort((a, b) =>
+    a[1].localeCompare(b[1], undefined, { sensitivity: "base" })
+  );
+
+  select.innerHTML = `<option value="all">All Barangays</option>` + options.map(([key, label]) =>
+    `<option value="${escapeHtml(key)}">${escapeHtml(label)}</option>`
+  ).join("");
+  select.value = selectedBarangay;
+}
+
 function renderOrientationHistory(records) {
   ensureOrientationHistoryReportLayoutStyles();
 
   const tableBody = document.getElementById("orientationHistoryTableBody");
   if (!tableBody) return;
 
-  if (!Array.isArray(records) || !records.length) {
+  orientationHistoryRecords = sortOrientationHistoryNewestFirst(records);
+  populateOrientationHistoryBarangayFilter(orientationHistoryRecords);
+
+  if (!orientationHistoryRecords.length) {
     tableBody.innerHTML = `<tr><td colspan="8">No orientation history records yet.</td></tr>`;
     return;
   }
 
-  const sortedRecords = sortOrientationHistoryNewestFirst(records);
+  const searchInput = document.getElementById("orientationHistorySearchInput");
+  const barangayFilter = document.getElementById("orientationHistoryBarangayFilter");
+  const filteredRecords = filterOrientationHistoryRecords(
+    orientationHistoryRecords,
+    searchInput?.value,
+    barangayFilter?.value
+  );
 
-  tableBody.innerHTML = sortedRecords.map((item) => {
+  if (!filteredRecords.length) {
+    tableBody.innerHTML = `<tr><td colspan="8" class="empty-state">No orientation history records match the current filters.</td></tr>`;
+    return;
+  }
+
+  tableBody.innerHTML = filteredRecords.map((item) => {
     const lifecycleStatus = getOrientationLifecycleStatus(item);
     const score =
       lifecycleStatus === "completed_orientation" || lifecycleStatus === "incomplete_orientation"
@@ -410,6 +475,7 @@ function renderOrientationHistory(records) {
 
     return `
       <tr>
+        <td>${escapeHtml(getOrientationHistoryId(item))}</td>
         <td>${escapeHtml(item.full_name || "-")}</td>
         <td>${escapeHtml(item.barangay || "-")}</td>
         <td>${escapeHtml(formatSimpleDate(item.preferred_date))}</td>
@@ -417,11 +483,6 @@ function renderOrientationHistory(records) {
         <td>${escapeHtml(startedDate)}</td>
         <td>${escapeHtml(completedDate)}</td>
         <td>${escapeHtml(score)}</td>
-        <td>
-          <span class="orientation-status ${getOrientationStatusClass(item)}">
-            ${getOrientationStatusLabel(item)}
-          </span>
-        </td>
       </tr>
     `;
   }).join("");
@@ -659,6 +720,8 @@ function openOrientationHistoryModal() {
 
   renderOrientationHistory(history);
   modal.classList.remove("hidden");
+  const tableScroll = document.querySelector("#orientationHistoryModal .table-shell");
+  if (tableScroll) tableScroll.scrollLeft = 0;
 }
 
 function closeOrientationHistoryModal() {
@@ -670,6 +733,8 @@ function setupOrientationHistoryModal() {
   const openBtn = document.getElementById("openOrientationHistoryBtn");
   const closeBtn = document.getElementById("closeOrientationHistoryBtn");
   const overlay = document.getElementById("orientationHistoryOverlay");
+  const searchInput = document.getElementById("orientationHistorySearchInput");
+  const barangayFilter = document.getElementById("orientationHistoryBarangayFilter");
 
   if (openBtn) {
     openBtn.onclick = openOrientationHistoryModal;
@@ -679,6 +744,8 @@ function setupOrientationHistoryModal() {
 
   if (closeBtn) closeBtn.onclick = closeOrientationHistoryModal;
   if (overlay) overlay.onclick = closeOrientationHistoryModal;
+  if (searchInput) searchInput.oninput = () => renderOrientationHistory(orientationHistoryRecords);
+  if (barangayFilter) barangayFilter.onchange = () => renderOrientationHistory(orientationHistoryRecords);
 }
 
 /* =========================

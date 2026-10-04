@@ -315,7 +315,7 @@ function setupAppointmentForm() {
     purposeSelect.addEventListener("change", function () {
       if (this.value === "Others") {
         notesInput.required = true;
-        notesInput.placeholder = "Please specify your purpose";
+        notesInput.placeholder = "Please specify your service";
       } else {
         notesInput.required = false;
         notesInput.placeholder = "Enter additional details";
@@ -385,7 +385,7 @@ function setupAppointmentForm() {
     }
 
     if (purpose === "Others" && !notes) {
-      showMessage("Please specify your purpose in Additional Notes.");
+      showMessage("Please specify your service in Additional Notes.");
       return;
     }
 
