@@ -835,15 +835,26 @@ if (email) {
       status: "rescheduled"
     };
 
-    await resend.emails.send({
+    const { data, error } = await resend.emails.send({
       from: "WMO System <noreply@wastegensan.com>",
       to: email,
       ...buildAppointmentUpdateEmail(emailDetails)
-    });
+    }) ?? {};
 
-    console.log("Reschedule email sent to:", email);
+    if (error) {
+      // Provider messages may contain recipient details or credentials; log safe metadata only.
+      console.error("Reschedule email rejected by Resend:", {
+        type: "provider_error",
+        statusCode: Number.isInteger(error.statusCode) && error.statusCode >= 400 && error.statusCode <= 599
+          ? error.statusCode : undefined
+      });
+    } else if (typeof data?.id === "string" && /^[A-Za-z0-9-]{1,128}$/.test(data.id)) {
+      console.log("Reschedule email accepted by Resend:", { emailId: data.id });
+    } else {
+      console.warn("Reschedule email returned no email ID or error");
+    }
   } catch (err) {
-    console.error("Resend error:", err);
+    console.error("Resend exception during reschedule email:", { type: "send_exception" });
   }
 }
 
