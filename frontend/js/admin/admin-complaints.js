@@ -3816,6 +3816,7 @@ function ensureComplaintHistoryForwardedColumnHeader() {
   );
 
   const forwardedHeader = document.createElement("th");
+  forwardedHeader.className = "complaint-history-forwarded-column";
   forwardedHeader.textContent = "Forwarded Barangays";
 
   if (assignedHeaderIndex >= 0 && headers[assignedHeaderIndex]) {
@@ -3917,52 +3918,6 @@ function ensureComplaintHistoryForwardedColumnStyles() {
       white-space: nowrap !important;
     }
 
-    #complaintHistoryModal .complaint-history-table {
-      min-width: 1120px !important;
-    }
-
-    @media (min-width: 1280px) {
-      #complaintHistoryModal .complaint-history-table {
-        min-width: 0 !important;
-        width: 100% !important;
-        table-layout: fixed !important;
-      }
-
-      #complaintHistoryModal .complaint-history-table th:nth-child(1),
-      #complaintHistoryModal .complaint-history-table td:nth-child(1) {
-        width: 18% !important;
-      }
-
-      #complaintHistoryModal .complaint-history-table th:nth-child(2),
-      #complaintHistoryModal .complaint-history-table td:nth-child(2) {
-        width: 16% !important;
-      }
-
-      #complaintHistoryModal .complaint-history-table th:nth-child(3),
-      #complaintHistoryModal .complaint-history-table td:nth-child(3) {
-        width: 15% !important;
-      }
-
-      #complaintHistoryModal .complaint-history-table th:nth-child(4),
-      #complaintHistoryModal .complaint-history-table td:nth-child(4) {
-        width: 17% !important;
-      }
-
-      #complaintHistoryModal .complaint-history-table th:nth-child(5),
-      #complaintHistoryModal .complaint-history-table td:nth-child(5) {
-        width: 12% !important;
-      }
-
-      #complaintHistoryModal .complaint-history-table th:nth-child(6),
-      #complaintHistoryModal .complaint-history-table td:nth-child(6) {
-        width: 15% !important;
-      }
-
-      #complaintHistoryModal .complaint-history-table th:nth-child(7),
-      #complaintHistoryModal .complaint-history-table td:nth-child(7) {
-        width: 7% !important;
-      }
-    }
   `;
 
   document.head.appendChild(style);
@@ -4007,6 +3962,7 @@ function getComplaintHistorySearchText(item = {}) {
   const dateLabel = formatDateTimeDisplay(item.rejected_at || item.resolved_at || item.validated_at || item.accepted_at || item.in_progress_at || item.created_at);
 
   return normalizeComplaintHistoryFilterValue([
+    item.id,
     item.subject,
     item.description,
     item.citizen_name,
@@ -4117,7 +4073,7 @@ function ensureComplaintHistoryToolbar() {
           type="text"
           id="complaintHistorySearchInput"
           class="complaint-history-search-input"
-          placeholder="Search complaint history..."
+          placeholder="Search by ID, subject, or citizen..."
           autocomplete="off"
         />
         <button
@@ -4201,7 +4157,7 @@ async function loadComplaintHistory() {
 
   tbody.innerHTML = `
     <tr>
-      <td colspan="6" class="loading-state">Loading complaint history...</td>
+      <td colspan="8" class="loading-state">Loading complaint history...</td>
     </tr>
   `;
 
@@ -4222,7 +4178,7 @@ async function loadComplaintHistory() {
 
     tbody.innerHTML = `
       <tr>
-        <td colspan="6" class="empty-state-cell">Failed to load complaint history.</td>
+        <td colspan="8" class="empty-state-cell">Failed to load complaint history.</td>
       </tr>
     `;
   }
@@ -4247,7 +4203,7 @@ function renderComplaintHistoryTable(records) {
   if (!safeRecords.length) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="7" class="empty-state-cell">No complaint history found.</td>
+        <td colspan="8" class="empty-state-cell">No complaint history found.</td>
       </tr>
     `;
     return;
@@ -4256,7 +4212,7 @@ function renderComplaintHistoryTable(records) {
   if (!filteredRecords.length) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="7" class="empty-state-cell">No complaint history matches your search or barangay filter.</td>
+        <td colspan="8" class="empty-state-cell">No complaint history matches your search or barangay filter.</td>
       </tr>
     `;
     return;
@@ -4264,17 +4220,18 @@ function renderComplaintHistoryTable(records) {
 
   tbody.innerHTML = filteredRecords.map(item => `
     <tr>
-      <td>${escapeHtml(item.subject || "-")}</td>
-      <td>${escapeHtml(item.citizen_name || item.username || "-")}</td>
-      <td>${renderComplaintHistoryAssignedBarangay(item)}</td>
-      <td>${renderComplaintHistoryForwardedBarangays(item)}</td>
-      <td>
+      <td class="complaint-history-id-column">${escapeHtml(item.id ?? "-")}</td>
+      <td class="complaint-history-subject-column">${escapeHtml(item.subject || "-")}</td>
+      <td class="complaint-history-citizen-column">${escapeHtml(item.citizen_name || item.username || "-")}</td>
+      <td class="complaint-history-assigned-column">${renderComplaintHistoryAssignedBarangay(item)}</td>
+      <td class="complaint-history-forwarded-column">${renderComplaintHistoryForwardedBarangays(item)}</td>
+      <td class="complaint-history-status-column">
         <span class="complaint-history-status ${escapeHtml(getComplaintHistoryStatusClass(item.status))}">
           ${escapeHtml(formatComplaintHistoryStatus(item.status))}
         </span>
       </td>
-      <td>${escapeHtml(formatDateTimeDisplay(item.rejected_at || item.resolved_at || item.validated_at || item.accepted_at || item.in_progress_at || item.created_at))}</td>
-      <td>
+      <td class="complaint-history-date-column">${escapeHtml(formatDateTimeDisplay(item.rejected_at || item.resolved_at || item.validated_at || item.accepted_at || item.in_progress_at || item.created_at))}</td>
+      <td class="complaint-history-action-column">
         <button
           type="button"
           class="complaint-history-view-btn"
@@ -4297,6 +4254,8 @@ function openComplaintHistoryModal() {
   requestAnimationFrame(() => {
     applyComplaintModalPosition("complaintHistoryModal");
     prepareComplaintHistoryTableScroll();
+    const tableScroll = document.querySelector("#complaintHistoryModal .complaint-history-table-scroll");
+    if (tableScroll) tableScroll.scrollLeft = 0;
   });
 
   loadComplaintHistory();

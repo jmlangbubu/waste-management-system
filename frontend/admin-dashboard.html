@@ -2898,17 +2898,19 @@
       <table>
         <thead>
           <tr>
-            <th>Subject</th>
-            <th>Citizen</th>
-            <th>Assigned Barangay</th>
-            <th>Status</th>
-            <th>Date</th>
-             <th>Action</th>
+            <th class="complaint-history-id-column">ID No.</th>
+            <th class="complaint-history-subject-column">Subject</th>
+            <th class="complaint-history-citizen-column">Citizen</th>
+            <th class="complaint-history-assigned-column">Assigned Barangay</th>
+            <th class="complaint-history-forwarded-column">Forwarded Barangays</th>
+            <th class="complaint-history-status-column">Status</th>
+            <th class="complaint-history-date-column">Date</th>
+            <th class="complaint-history-action-column">Action</th>
           </tr>
         </thead>
         <tbody id="complaintHistoryTableBody">
           <tr>
-            <td colspan="6" class="loading-state">Loading complaint history...</td>
+            <td colspan="8" class="loading-state">Loading complaint history...</td>
           </tr>
         </tbody>
       </table>
@@ -3176,18 +3178,35 @@
       <button type="button" class="history-close-btn" id="closeOrientationHistoryBtn">✕</button>
     </div>
 
+    <div class="orientation-history-filter-toolbar">
+      <input
+        type="search"
+        id="orientationHistorySearchInput"
+        class="orientation-history-search-input"
+        placeholder="Search by ID or name..."
+        aria-label="Search orientation history by ID or name"
+      />
+      <select
+        id="orientationHistoryBarangayFilter"
+        class="orientation-history-barangay-filter"
+        aria-label="Filter orientation history by barangay"
+      >
+        <option value="all">All Barangays</option>
+      </select>
+    </div>
+
     <div class="table-shell">
       <table class="orientation-history-table">
         <thead>
           <tr>
+            <th>ID No.</th>
             <th>Name</th>
             <th>Barangay</th>
             <th>Scheduled Date</th>
-            <th>Purpose</th>
+            <th>Service</th>
             <th>Date Started</th>
             <th>Date Completed</th>
             <th>Score</th>
-            <th>Status</th>
           </tr>
         </thead>
 

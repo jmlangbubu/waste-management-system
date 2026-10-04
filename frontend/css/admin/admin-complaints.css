@@ -1962,7 +1962,7 @@ body #complaintDetailsModal .complaint-modal-actions {
 #complaintHistoryModal .complaint-history-table-scroll table,
 #complaintHistoryModal table.complaint-history-table {
   width: 100% !important;
-  min-width: 900px !important;
+  min-width: 1280px !important;
   table-layout: fixed !important;
   border-collapse: separate !important;
   border-spacing: 0 !important;
@@ -1988,46 +1988,66 @@ body #complaintDetailsModal .complaint-modal-actions {
   letter-spacing: 0 !important;
 }
 
+/* Semantic columns outrank the legacy positional history overrides. */
+#complaintHistoryModal .complaint-history-table .complaint-history-id-column {
+  width: 90px !important;
+  min-width: 90px !important;
+  max-width: 90px !important;
+  text-align: left !important;
+  white-space: nowrap !important;
+  font-variant-numeric: tabular-nums !important;
+  font-weight: 700 !important;
+}
+
 /* Subject */
-#complaintHistoryModal .complaint-history-table th:nth-child(1),
-#complaintHistoryModal .complaint-history-table td:nth-child(1) {
+#complaintHistoryModal .complaint-history-table .complaint-history-subject-column {
   width: 180px !important;
   min-width: 180px !important;
   max-width: 180px !important;
+  text-align: left !important;
 }
 
 /* Citizen */
-#complaintHistoryModal .complaint-history-table th:nth-child(2),
-#complaintHistoryModal .complaint-history-table td:nth-child(2) {
+#complaintHistoryModal .complaint-history-table .complaint-history-citizen-column {
   width: 170px !important;
   min-width: 170px !important;
   max-width: 170px !important;
 }
 
 /* Assigned Barangay */
-#complaintHistoryModal .complaint-history-table th:nth-child(3),
-#complaintHistoryModal .complaint-history-table td:nth-child(3) {
-  width: 150px !important;
-  min-width: 150px !important;
-  max-width: 150px !important;
+#complaintHistoryModal .complaint-history-table .complaint-history-assigned-column {
+  width: 160px !important;
+  min-width: 160px !important;
+  max-width: 160px !important;
+}
+
+/* Forwarded Barangays */
+#complaintHistoryModal .complaint-history-table .complaint-history-forwarded-column {
+  width: 210px !important;
+  min-width: 210px !important;
+  max-width: 210px !important;
+  text-align: left !important;
+  padding: 14px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
 }
 
 /* Status */
-#complaintHistoryModal .complaint-history-table th:nth-child(4),
-#complaintHistoryModal .complaint-history-table td:nth-child(4) {
+#complaintHistoryModal .complaint-history-table .complaint-history-status-column {
   width: 135px !important;
   min-width: 135px !important;
   max-width: 135px !important;
+  text-align: center !important;
   overflow: visible !important;
   text-overflow: clip !important;
 }
 
 /* Date */
-#complaintHistoryModal .complaint-history-table th:nth-child(5),
-#complaintHistoryModal .complaint-history-table td:nth-child(5) {
+#complaintHistoryModal .complaint-history-table .complaint-history-date-column {
   width: 220px !important;
   min-width: 220px !important;
   max-width: 220px !important;
+  text-align: center !important;
   font-size: 13px !important;
   font-weight: 600 !important;
   color: #1f2937 !important;
@@ -2038,8 +2058,7 @@ body #complaintDetailsModal .complaint-modal-actions {
 }
 
 /* Action */
-#complaintHistoryModal .complaint-history-table th:nth-child(6),
-#complaintHistoryModal .complaint-history-table td:nth-child(6) {
+#complaintHistoryModal .complaint-history-table .complaint-history-action-column {
   width: 110px !important;
   min-width: 110px !important;
   max-width: 110px !important;
@@ -2078,7 +2097,7 @@ body #complaintDetailsModal .complaint-modal-actions {
   #complaintHistoryModal .complaint-history-table,
   #complaintHistoryModal .complaint-history-table-scroll table,
   #complaintHistoryModal table.complaint-history-table {
-    min-width: 900px !important;
+    min-width: 1280px !important;
   }
 
   #complaintHistoryModal .complaint-history-table th,
@@ -2086,8 +2105,7 @@ body #complaintDetailsModal .complaint-modal-actions {
     font-size: 13px !important;
   }
 
-  #complaintHistoryModal .complaint-history-table th:nth-child(5),
-  #complaintHistoryModal .complaint-history-table td:nth-child(5) {
+  #complaintHistoryModal .complaint-history-table .complaint-history-date-column {
     width: 230px !important;
     min-width: 230px !important;
     max-width: 230px !important;
