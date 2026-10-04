@@ -44,8 +44,24 @@ document.addEventListener("DOMContentLoaded", () => {
   setupFeatureShowcase();
   setupAppointmentForm();
   setupAppointmentStatusChecker();
+  prefillAppointmentStatusReference();
   setupScrollRevealAnimations();
 });
+
+function prefillAppointmentStatusReference() {
+  const referenceInput = document.getElementById("statusAppointmentCode");
+  if (!referenceInput || referenceInput.value.trim()) return;
+
+  const reference = new URLSearchParams(window.location.search)
+    .get("appointment_code")?.trim() || "";
+  if (!/^APT-\d{6,20}$/.test(reference)) return;
+
+  referenceInput.value = reference;
+  document.getElementById("appointmentStatusSection")?.scrollIntoView({
+    behavior: "smooth",
+    block: "start"
+  });
+}
 
 /* =========================================================
    INTERACTIVE PHONE FEATURE SHOWCASE
