@@ -130,12 +130,16 @@ test("status URLs allow only valid references and ignore injected destinations a
   }
 });
 
-test("separate official logo and header assets replace old branding without local paths", () => {
+test("separate logo and header use the exact Cloudinary HTTPS assets without local paths", () => {
   const { html } = buildAppointmentUpdateEmail(sample);
-  assert.match(html, /https:\/\/wastegensan\.com\/images\/wmo-logo-new\.png/);
-  assert.match(html, /<img\b[^>]*src="https:\/\/wastegensan\.com\/images\/wmo-logo-new\.png"[^>]*alt="[^"]+"/i);
-  assert.match(html, /https:\/\/wastegensan\.com\/images\/wmo-appointment-update-header\.png/);
-  assert.doesNotMatch(html, /logo\.jpg|localhost|127\.0\.0\.1|file:\/\/|[A-Z]:\\/i);
+  const images = Array.from(html.matchAll(/<img\b[^>]*>/gi), (match) => match[0]);
+  assert.deepEqual(images.map((image) => image.match(/\bsrc="([^"]+)"/i)?.[1]), [
+    "https://res.cloudinary.com/dcagkcius/image/upload/v1791127240/wmo-appointment-update-header.png",
+    "https://res.cloudinary.com/dcagkcius/image/upload/v1791127246/wmo-logo-new.jpg"
+  ]);
+  for (const image of images) assert.match(image, /\balt="[^"]+"/i);
+  assert.doesNotMatch(html, /https:\/\/wastegensan\.com\/images\//i);
+  assert.doesNotMatch(html, /\/images\/logo\.jpg|localhost|127\.0\.0\.1|file:\/\/|[A-Z]:\\/i);
   assert.doesNotMatch(html, /(?:src|background)="\/images\//i);
 });
 
