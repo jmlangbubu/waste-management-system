@@ -81,17 +81,17 @@ test("null APK URL keeps download disabled and shows honest release metadata", a
     ok: true, json: async () => ({ ...manifest, apkUrl: null })
   });
   await ready();
-  assert.equal(nodes.get("versionName").textContent, "1.0.1");
-  assert.equal(nodes.get("heroVersionName").textContent, "1.0.1");
-  assert.equal(nodes.get("fileVersion").textContent, "1.0.1 (code 2)");
-  assert.equal(nodes.get("fileSize").textContent, "61,845,061 bytes");
+  assert.equal(nodes.get("versionName").textContent, "1.0.3");
+  assert.equal(nodes.get("heroVersionName").textContent, "1.0.3");
+  assert.equal(nodes.get("fileVersion").textContent, "1.0.3 (code 4)");
+  assert.equal(nodes.get("fileSize").textContent, "62,505,903 bytes");
   assert.equal(nodes.get("checksum").textContent, manifest.apk.sha256);
   assert.equal(nodes.get("downloadPending").hidden, false);
   assert.equal(nodes.get("downloadPending").textContent, "APK Publishing in Progress");
   assert.equal(nodes.get("downloadLink").hidden, true);
   assert.equal(nodes.get("downloadLink").href, undefined);
   assertDownloadActions(nodes, null, "APK Publishing in Progress");
-  assert.equal(nodes.get("releaseNotes").children.length, 4);
+  assert.equal(nodes.get("releaseNotes").children.length, manifest.releaseNotes.length);
 });
 
 test("API failure clears version details and leaves no download link", async () => {
