@@ -2061,64 +2061,14 @@
   <div id="superAdminContent" class="users-layout">
 
     <header class="user-management-heading">
+      <div>
       <h2>User Management</h2>
       <p>Manage web and mobile accounts.</p>
+      </div>
+      <button type="button" class="user-create-trigger" onclick="openCreateAccountModal()">+ Create Account</button>
     </header>
 
-    <div class="page-card user-create-panel">
-      <div class="page-card-header">
-        <div>
-          <h2>Create Web Account</h2>
-          <p>Only the super admin can create division admin and personnel accounts.</p>
-        </div>
-      </div>
-
-      <form id="createAccountForm" class="account-form">
-        <div class="form-grid">
-          <div class="form-group">
-            <label for="accountPlatform">Platform</label>
-            <select id="accountPlatform" required>
-              <option value="">Select platform</option>
-              <option value="web">Web</option>
-              <option value="mobile">Mobile</option>
-            </select>
-          </div>
-
-          <div class="form-group">
-            <label for="fullName">Full Name</label>
-            <input type="text" id="fullName" placeholder="Enter full name" required />
-          </div>
-
-          <div class="form-group">
-            <label for="newUsername">Username</label>
-            <input type="text" id="newUsername" placeholder="Enter username" required />
-          </div>
-
-          <div class="form-group">
-            <label for="newPassword">Password</label>
-            <input type="password" id="newPassword" placeholder="Enter password" required />
-          </div>
-
-          <div class="form-group" id="roleGroup">
-            <label for="accountRole">Role</label>
-            <select id="accountRole" required>
-              <option value="">Select role</option>
-            </select>
-          </div>
-
-          <div class="form-group" id="assignmentGroup">
-            <label for="assignmentName" id="assignmentLabel">Division Name</label>
-            <input type="text" id="assignmentName" placeholder="Enter division name" />
-          </div>
-        </div>
-
-        <div class="form-actions">
-          <button type="submit" class="create-btn" id="createAccountBtn">Create Account</button>
-        </div>
-
-        <div id="accountMessageBox" class="module-message"></div>
-      </form>
-    </div>
+    <div id="accountPageMessageBox" class="module-message" role="status" hidden></div>
 
     <div class="page-card user-accounts-panel">
       <div class="page-card-header">
@@ -2370,6 +2320,66 @@
   </div>
 
   <!-- DEACTIVATED ACCOUNTS HISTORY MODAL -->
+<div id="createAccountModal" class="history-modal hidden">
+  <div class="history-modal-overlay" onclick="closeCreateAccountModal()"></div>
+  <div class="history-modal-content" role="dialog" aria-modal="true" aria-labelledby="createAccountModalTitle" aria-describedby="createAccountModalDescription" tabindex="-1">
+    <div class="history-modal-header">
+      <div>
+        <h2 id="createAccountModalTitle">Create Account</h2>
+        <p id="createAccountModalDescription">Create a new web or mobile user account.</p>
+      </div>
+      <button type="button" class="history-close-btn" aria-label="Close Create Account" onclick="closeCreateAccountModal()">✕</button>
+    </div>
+    <div class="create-account-modal-body">
+      <form id="createAccountForm" class="account-form">
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="accountPlatform">Platform</label>
+            <select id="accountPlatform" required>
+              <option value="">Select platform</option>
+              <option value="web">Web</option>
+              <option value="mobile">Mobile</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="fullName">Full Name</label>
+            <input type="text" id="fullName" placeholder="Enter full name" required />
+          </div>
+
+          <div class="form-group">
+            <label for="newUsername">Username</label>
+            <input type="text" id="newUsername" placeholder="Enter username" required />
+          </div>
+
+          <div class="form-group">
+            <label for="newPassword">Password</label>
+            <input type="password" id="newPassword" placeholder="Enter password" required />
+          </div>
+
+          <div class="form-group" id="roleGroup">
+            <label for="accountRole">Role</label>
+            <select id="accountRole" required>
+              <option value="">Select role</option>
+            </select>
+          </div>
+
+          <div class="form-group" id="assignmentGroup">
+            <label for="assignmentName" id="assignmentLabel">Division Name</label>
+            <input type="text" id="assignmentName" placeholder="Enter division name" />
+          </div>
+        </div>
+
+        <div id="accountMessageBox" class="module-message" role="status"></div>
+        <div class="form-actions">
+          <button type="button" class="create-account-cancel" onclick="closeCreateAccountModal()">Cancel</button>
+          <button type="submit" class="create-btn" id="createAccountBtn">Create Account</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
 <div id="deactivatedAccountsModal" class="history-modal hidden">
   <div class="history-modal-overlay" onclick="closeDeactivatedAccountsModal()"></div>
 
