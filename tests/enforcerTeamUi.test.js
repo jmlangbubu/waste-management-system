@@ -7,7 +7,7 @@ const source = fs.readFileSync(path.join(root, "frontend/js/admin/admin-users.js
 const html = fs.readFileSync(path.join(root, "frontend/admin-dashboard.html"), "utf8");
 const tests = [];
 const test = (name, run) => tests.push({name, run});
-const teams = [{id:1, team_name:"Team 01", aors:["City Heights","Conel","San Isidro"]}, {id:2,team_name:"Team 02",aors:["Baluan","Buayan","Katangawan","Ligaya"]}];
+const teams = [['City Heights','Conel','San Isidro'],['Baluan','Buayan','Katangawan','Ligaya'],['Dadiangas East'],['Dadiangas North'],['Dadiangas South'],['Dadiangas West'],['Batomelong'],['Mabuhay','Olympog','Tinagacan','Upper Labay'],['Calumpang','Fatima','Siguel','Tambler'],['Bula'],['Lagao'],['Apopong','Labangal','San Jose','Sinawal']].map((aors,i)=>({id:i+1,team_name:'Team '+String(i+1).padStart(2,'0'),aors}));
 function harness() {
   const elements = new Map();
   let active, request, calls = 0, reloads = 0, ok = false;
@@ -41,10 +41,13 @@ test("merged root modal and original form IDs remain unique",()=>{
   for(const id of ["createAccountModal","createAccountForm","accountPlatform","accountRole","assignmentName","createAccountBtn","enforcerAorPreview"]) assert.equal((html.match(new RegExp('id="'+id+'"','g'))||[]).length,1);
   assert(html.indexOf('id="createAccountModal"')>html.indexOf("</main>")); assert(!html.includes("user-create-panel"));
 });
-test("Enforcer uses fetched team options and read-only escaped multiple AOR preview",async()=>{
+test("Enforcer shows twelve AOR groups with internal team ID values and read-only preview",async()=>{
   const h=harness(); await select(h,"mobile","enforcer");
-  assert.equal(h.label.textContent,"Enforcer Team"); assert.equal(h.elements.get("assignmentName").name,"enforcer_team_id");
-  assert(h.elements.get("assignmentName").innerHTML.includes("Team 01"));
+  assert.equal(h.label.textContent,"Assigned AORs"); assert.equal(h.elements.get("assignmentName").name,"enforcer_team_id");
+  const options=h.elements.get("assignmentName").innerHTML;
+  assert(options.includes('Select AOR assignment')); assert.doesNotMatch(options,/Team \d{2}/);
+  assert.equal((options.match(/<option value="\d+">/g)||[]).length,12);
+  teams.forEach(team=>assert(options.includes(`<option value="${team.id}">${team.aors.join(' • ')}</option>`)));
   h.elements.get("assignmentName").value="1"; h.elements.get("assignmentName").onchange();
   assert(!h.elements.get("enforcerAorPreview").hidden);
   for(const aor of teams[0].aors) assert(h.elements.get("enforcerAorPreview").innerHTML.includes(aor));
@@ -79,12 +82,14 @@ for(const [platform,role,value] of [["web","personnel","WMO"],["mobile","baranga
   h.ok=true;await h.elements.get("createAccountForm").submit({preventDefault(){}});assert.equal(h.reloads,1);assert(h.elements.get("createAccountModal").classList.contains("hidden"));assert.equal(h.elements.get("accountPlatform").value,"");assert(h.elements.get("enforcerAorPreview").hidden);
   h.context.openCreateAccountModal();assert.equal(h.elements.get("accountMessageBox").textContent,"");
 });
-test("table renders team and all AORs while legacy Enforcer/Citizen assignments retain fallbacks",()=>{
+test("table and assignment search labels show only AORs while legacy fallbacks remain unchanged",()=>{
   const h=harness();const user={account_source:"mobile",mobile_role:"enforcer",enforcer_team_name:"Team 01",enforcer_aors:teams[0].aors,barangay:"City Heights"};
-  const cell=h.context.renderAccountAssignmentCell(user);assert(cell.includes("<strong>Team 01</strong>"));assert(cell.includes("Conel • San Isidro"));
+  const cell=h.context.renderAccountAssignmentCell(user);assert.equal(cell,'City Heights • Conel • San Isidro');assert(!cell.includes('Team 01'));
+  assert.equal(h.context.getMobileAssignmentLabel(user),'City Heights • Conel • San Isidro');
+  assert.equal(h.context.getMobileAssignmentLabel({...user,enforcer_aors:[]}), 'City Heights');
   assert.equal(h.context.getMobileAssignmentLabel({mobile_role:"enforcer",assigned_source_name:"Bula"}),"Bula");
   assert.equal(h.context.getMobileAssignmentLabel({mobile_role:"citizen",barangay:"Bula"}),"Bula");
   assert.equal(h.context.getAccountEmail({email:"fixture@example.test"}),"fixture@example.test");
-  assert(h.context.renderAccountAssignmentCell({...user,enforcer_team_name:"<script>"}).includes("&lt;script&gt;"));
+  assert.equal(h.context.renderAccountAssignmentCell({...user,enforcer_aors:['<script>']}),'&lt;script&gt;');
 });
 (async()=>{for(const {name,run} of tests){await run();console.log("PASS "+name);}console.log(`Enforcer Team UI: ${tests.length}/${tests.length} PASS`);})().catch(error=>{console.error(error);process.exitCode=1;});

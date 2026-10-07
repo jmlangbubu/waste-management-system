@@ -173,9 +173,9 @@ function getAccountEmail(user = {}) {
 function getMobileAssignmentLabel(user = {}) {
   const role = String(user.mobile_role || user.role || "").toLowerCase().trim();
 
-  if (role === "enforcer" && cleanAccountValue(user.enforcer_team_name)) {
-    return [user.enforcer_team_name, ...(Array.isArray(user.enforcer_aors) ? user.enforcer_aors : [])]
-      .map(cleanAccountValue).filter(Boolean).join(" • ");
+  if (role === "enforcer" && Array.isArray(user.enforcer_aors)) {
+    const aors = user.enforcer_aors.map(cleanAccountValue).filter(Boolean);
+    if (aors.length) return aors.join(" • ");
   }
 
   const barangay = (
@@ -262,12 +262,6 @@ function renderAccountIdentityCell(username, email) {
 }
 
 function renderAccountAssignmentCell(user) {
-  if (getAccountSource(user) === "mobile" &&
-      String(user.mobile_role || user.role).toLowerCase() === "enforcer" &&
-      cleanAccountValue(user.enforcer_team_name)) {
-    const aors = Array.isArray(user.enforcer_aors) ? user.enforcer_aors.map(cleanAccountValue).filter(Boolean) : [];
-    return `<strong>${escapeHtml(user.enforcer_team_name)}</strong><span class="account-subtle-text">${escapeHtml(aors.join(" • "))}</span>`;
-  }
   return escapeHtml(getAccountAssignmentLabel(user));
 }
 
@@ -852,19 +846,19 @@ function setupAccountPlatformForm() {
     }
 
     if (platform === "mobile" && role === "enforcer") {
-      if (assignmentLabel) assignmentLabel.textContent = "Enforcer Team";
+      if (assignmentLabel) assignmentLabel.textContent = "Assigned AORs";
       const select = document.createElement("select");
       select.id = "assignmentName";
       select.name = "enforcer_team_id";
       select.required = true;
       select.disabled = true;
-      select.innerHTML = '<option value="">Loading teams...</option>';
+      select.innerHTML = '<option value="">Loading AOR assignments...</option>';
       replaceAssignmentField(select);
       loadAccountEnforcerTeams().then((teams) => {
         if (getAssignmentField() !== select) return; // Ignore obsolete role/close responses.
         select.disabled = false;
-        select.innerHTML = '<option value="">Select team</option>' + teams.map((team) =>
-          `<option value="${Number(team.id)}">${escapeHtml(team.team_name)}</option>`).join("");
+        select.innerHTML = '<option value="">Select AOR assignment</option>' + teams.map((team) =>
+          `<option value="${Number(team.id)}">${escapeHtml((Array.isArray(team.aors) ? team.aors : []).map(cleanAccountValue).filter(Boolean).join(" • ") || "No AORs assigned")}</option>`).join("");
         select.onchange = () => {
           const team = teams.find((item) => Number(item.id) === Number(select.value));
           if (!preview) return;
@@ -874,7 +868,7 @@ function setupAccountPlatformForm() {
         };
       }).catch((error) => {
         if (getAssignmentField() !== select) return;
-        select.innerHTML = '<option value="">Teams unavailable — switch role to retry</option>';
+        select.innerHTML = '<option value="">AOR assignments unavailable — switch role to retry</option>';
         showAccountMessage(error.message || "Unable to load Enforcer teams.", "error");
       });
       return;
