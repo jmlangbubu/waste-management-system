@@ -1,9 +1,65 @@
 function showAccountMessage(message, type) {
-  const box = document.getElementById("accountMessageBox");
+  const modal = document.getElementById("createAccountModal");
+  const box = document.getElementById(
+    modal && !modal.classList.contains("hidden") ? "accountMessageBox" : "accountPageMessageBox"
+  );
   if (!box) return;
 
   box.textContent = message;
   box.className = `module-message ${type}`;
+  box.hidden = !message;
+}
+
+let createAccountPreviousFocus = null;
+let createAccountPreviousOverflow = "";
+
+function handleCreateAccountModalKeydown(event) {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeCreateAccountModal();
+    return;
+  }
+  if (event.key !== "Tab") return;
+  const controls = Array.from(document.querySelectorAll(
+    '#createAccountModal button:not([disabled]), #createAccountModal input:not([disabled]), #createAccountModal select:not([disabled])'
+  ));
+  const first = controls[0];
+  const last = controls[controls.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last?.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first?.focus();
+  }
+}
+
+function openCreateAccountModal() {
+  const modal = document.getElementById("createAccountModal");
+  if (!modal || !modal.classList.contains("hidden")) return;
+  createAccountPreviousFocus = document.activeElement;
+  createAccountPreviousOverflow = document.body.style.overflow;
+  document.body.style.overflow = "hidden";
+  modal.classList.remove("hidden");
+  document.addEventListener("keydown", handleCreateAccountModalKeydown);
+  document.getElementById("accountPlatform")?.focus();
+}
+
+function closeCreateAccountModal() {
+  const modal = document.getElementById("createAccountModal");
+  if (!modal || modal.classList.contains("hidden")) return;
+  modal.classList.add("hidden");
+  document.body.style.overflow = createAccountPreviousOverflow;
+  document.removeEventListener("keydown", handleCreateAccountModalKeydown);
+  document.getElementById("createAccountForm")?.reset();
+  setupAccountPlatformForm();
+  const message = document.getElementById("accountMessageBox");
+  if (message) {
+    message.textContent = "";
+    message.className = "module-message";
+    message.hidden = true;
+  }
+  createAccountPreviousFocus?.focus();
 }
 
 async function loadWebUsers() {
@@ -882,10 +938,8 @@ function setupCreateAccountForm() {
         return;
       }
 
+      closeCreateAccountModal();
       showAccountMessage(data.message || "Account created successfully.", "success");
-
-      form.reset();
-      setupAccountPlatformForm();
 
       await loadWebUsers();
     } catch (error) {
@@ -905,6 +959,8 @@ function setupCreateAccountForm() {
 ========================= */
 
 window.handleAccountStatusUpdate = handleAccountStatusUpdate;
+window.openCreateAccountModal = openCreateAccountModal;
+window.closeCreateAccountModal = closeCreateAccountModal;
 window.handleDeleteAccount = handleDeleteAccount;
 window.openDeactivatedAccountsModal = openDeactivatedAccountsModal;
 window.closeDeactivatedAccountsModal = closeDeactivatedAccountsModal;
