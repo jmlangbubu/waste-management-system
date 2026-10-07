@@ -355,13 +355,15 @@ router.get("/all-accounts", (req, res) => {
             id,
             full_name,
             username,
+            email,
             role,
             NULL AS division_name,
             status,
             created_at,
             'mobile' AS account_source,
             mobile_role,
-            assigned_source_name
+            assigned_source_name,
+            barangay
         FROM users
     `;
 
