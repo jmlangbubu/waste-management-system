@@ -137,6 +137,37 @@
   min-width: 0;
 }
 
+#createAccountModal .enforcer-aor-preview[hidden] {
+  display: none;
+}
+
+#createAccountModal .enforcer-aor-preview {
+  margin-top: 10px;
+}
+
+#createAccountModal .enforcer-aor-label {
+  display: block;
+  margin-bottom: 6px;
+  color: #60716a;
+  font-size: 12px;
+}
+
+#createAccountModal .enforcer-aor-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+#createAccountModal .enforcer-aor-chips span {
+  padding: 4px 8px;
+  border: 1px solid #dce8e1;
+  border-radius: 999px;
+  background: #f5f9f7;
+  color: #285a48;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
 #createAccountModal label {
   display: block;
   margin-bottom: 6px;
