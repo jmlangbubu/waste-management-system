@@ -2,6 +2,8 @@ const express = require("express");
 const router = express.Router();
 const db = require("../config/db");
 const bcrypt = require("bcrypt");
+const { createEnforcerTeamService, EnforcerTeamError } = require("../services/enforcerTeamService");
+const enforcerTeams = createEnforcerTeamService(db);
 const webSessionService = require("../services/webSessionService");
 const {
     requireWebCapability,
@@ -86,6 +88,30 @@ async function revokeWebSessionsAfterSecurityChange(userId, action) {
 
 router.use(requireWebCapability("users.manage"));
 router.use(requireCsrf);
+
+function sendEnforcerTeamError(res, error) {
+    console.warn("[EnforcerTeams] Request failed:", error.code || "TEAM_VALIDATION_ERROR");
+    const status = error instanceof EnforcerTeamError ? error.statusCode : error.code === "ER_DUP_ENTRY" ? 409 : 500;
+    return res.status(status).json({
+        success: false,
+        message: error instanceof EnforcerTeamError ? error.message : status === 409 ? "Username or team membership already exists" : "Enforcer team operation failed"
+    });
+}
+
+router.get("/enforcer-teams", async (req, res) => {
+    try { return res.json({success: true, teams: await enforcerTeams.listTeams()}); }
+    catch (error) { return sendEnforcerTeamError(res, error); }
+});
+
+router.get("/enforcer-teams/:id", async (req, res) => {
+    try { return res.json({success: true, team: (await enforcerTeams.listTeams(req.params.id))[0]}); }
+    catch (error) { return sendEnforcerTeamError(res, error); }
+});
+
+router.put("/enforcer-teams/:id/members/:userId", async (req, res) => {
+    try { return res.json({success: true, membership: await enforcerTeams.assignMember(req.params.id, req.params.userId)}); }
+    catch (error) { return sendEnforcerTeamError(res, error); }
+});
 
 
 /* =========================================
@@ -209,7 +235,8 @@ router.post("/create-mobile-account", async (req, res) => {
     const cleanAssignedSourceName = cleanText(assigned_source_name);
     const normalizedStatus = status ? cleanText(status).toLowerCase() : "active";
 
-    if (!cleanFullName || !cleanUsername || !cleanPassword || !normalizedMobileRole || !cleanAssignedSourceName) {
+    if (!cleanFullName || !cleanUsername || !cleanPassword || !normalizedMobileRole ||
+        (normalizedMobileRole !== "enforcer" && !cleanAssignedSourceName)) {
         return res.status(400).json({
             success: false,
             message: "Missing required fields"
@@ -228,6 +255,20 @@ router.post("/create-mobile-account", async (req, res) => {
             success: false,
             message: "Invalid account status"
         });
+    }
+
+    if (normalizedMobileRole !== "enforcer" && req.body.enforcer_team_id != null) {
+        return res.status(400).json({success: false, message: "Only Enforcer accounts may select an Enforcer team."});
+    }
+    if (normalizedMobileRole === "enforcer") {
+        try {
+            const hashedPassword = await bcrypt.hash(cleanPassword, 10);
+            const insertedId = await enforcerTeams.createEnforcer({
+                full_name: cleanFullName, username: cleanUsername, hashedPassword,
+                status: normalizedStatus, enforcer_team_id: req.body.enforcer_team_id
+            });
+            return res.status(201).json({success: true, message: "Mobile account created successfully", insertedId});
+        } catch (error) { return sendEnforcerTeamError(res, error); }
     }
 
     const checkSql = `SELECT id FROM users WHERE username = ? LIMIT 1`;
@@ -376,7 +417,7 @@ router.get("/all-accounts", (req, res) => {
             });
         }
 
-        db.query(mobileSql, (mobileErr, mobileResults) => {
+        db.query(mobileSql, async (mobileErr, mobileResults) => {
             if (mobileErr) {
                 console.error("get all accounts mobile error:", mobileErr);
                 return res.status(500).json({
@@ -391,10 +432,9 @@ router.get("/all-accounts", (req, res) => {
                 return dateB - dateA;
             });
 
-            return res.json({
-                success: true,
-                accounts
-            });
+            try {
+                return res.json({success: true, accounts: await enforcerTeams.enrichAccounts(accounts)});
+            } catch (error) { return sendEnforcerTeamError(res, error); }
         });
     });
 });

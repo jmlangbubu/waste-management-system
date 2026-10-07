@@ -173,6 +173,11 @@ function getAccountEmail(user = {}) {
 function getMobileAssignmentLabel(user = {}) {
   const role = String(user.mobile_role || user.role || "").toLowerCase().trim();
 
+  if (role === "enforcer" && cleanAccountValue(user.enforcer_team_name)) {
+    return [user.enforcer_team_name, ...(Array.isArray(user.enforcer_aors) ? user.enforcer_aors : [])]
+      .map(cleanAccountValue).filter(Boolean).join(" • ");
+  }
+
   const barangay = (
     cleanAccountValue(user.assigned_source_name) ||
     cleanAccountValue(user.assigned_barangay) ||
@@ -256,6 +261,16 @@ function renderAccountIdentityCell(username, email) {
   `;
 }
 
+function renderAccountAssignmentCell(user) {
+  if (getAccountSource(user) === "mobile" &&
+      String(user.mobile_role || user.role).toLowerCase() === "enforcer" &&
+      cleanAccountValue(user.enforcer_team_name)) {
+    const aors = Array.isArray(user.enforcer_aors) ? user.enforcer_aors.map(cleanAccountValue).filter(Boolean) : [];
+    return `<strong>${escapeHtml(user.enforcer_team_name)}</strong><span class="account-subtle-text">${escapeHtml(aors.join(" • "))}</span>`;
+  }
+  return escapeHtml(getAccountAssignmentLabel(user));
+}
+
 function renderAccountStatusBadge(status) {
   const normalized = String(status || "pending").toLowerCase().trim();
   const statusLabels = {
@@ -324,7 +339,7 @@ function renderWebUsers(users) {
         <td class="account-identity-cell">${renderAccountIdentityCell(usernameLabel, emailLabel)}</td>
         <td>${renderAccountSourceChip(accountSource)}</td>
         <td>${escapeHtml(roleLabel)}</td>
-        <td>${escapeHtml(assignmentLabel)}</td>
+        <td>${renderAccountAssignmentCell(user)}</td>
         <td>${renderAccountStatusBadge(status)}</td>
         <td>${formatDate(user.created_at || user.createdAt || user.date_created)}</td>
         <td>
@@ -419,7 +434,7 @@ function renderDeactivatedAccountsHistory() {
         <td class="account-identity-cell">${renderAccountIdentityCell(usernameLabel, emailLabel)}</td>
         <td>${renderAccountSourceChip(accountSource)}</td>
         <td>${escapeHtml(roleLabel)}</td>
-        <td>${escapeHtml(assignmentLabel)}</td>
+        <td>${renderAccountAssignmentCell(user)}</td>
         <td>${renderAccountStatusBadge(user.status || "deactivated")}</td>
         <td>${formatDate(user.created_at || user.createdAt || user.date_created)}</td>
         <td>
@@ -693,6 +708,27 @@ async function handleDeleteAccount(source, id) {
   }
 }
 
+let accountEnforcerTeams = null;
+let accountEnforcerTeamsRequest = null;
+
+async function loadAccountEnforcerTeams() {
+  if (accountEnforcerTeams) return accountEnforcerTeams;
+  if (!accountEnforcerTeamsRequest) {
+    accountEnforcerTeamsRequest = (async () => {
+      const response = await webAdminFetch(`${getAppApiBase()}/web-users/enforcer-teams`, {
+        headers: { Accept: "application/json" }
+      });
+      const data = await response.json();
+      if (!response.ok || data.success !== true || !Array.isArray(data.teams)) {
+        throw new Error(data.message || "Unable to load Enforcer teams.");
+      }
+      accountEnforcerTeams = data.teams;
+      return accountEnforcerTeams;
+    })().finally(() => { accountEnforcerTeamsRequest = null; });
+  }
+  return accountEnforcerTeamsRequest;
+}
+
 function setupAccountPlatformForm() {
   const platformEl = document.getElementById("accountPlatform");
   const roleEl = document.getElementById("accountRole");
@@ -803,6 +839,11 @@ function setupAccountPlatformForm() {
   function renderAssignmentField() {
     const platform = platformEl.value;
     const role = roleEl.value;
+    const preview = document.getElementById("enforcerAorPreview");
+    if (preview) {
+      preview.hidden = true;
+      preview.innerHTML = "";
+    }
 
     if (platform === "web") {
       if (assignmentLabel) assignmentLabel.textContent = "Division Name";
@@ -810,7 +851,36 @@ function setupAccountPlatformForm() {
       return;
     }
 
-    if (platform === "mobile" && (role === "enforcer" || role === "barangay")) {
+    if (platform === "mobile" && role === "enforcer") {
+      if (assignmentLabel) assignmentLabel.textContent = "Enforcer Team";
+      const select = document.createElement("select");
+      select.id = "assignmentName";
+      select.name = "enforcer_team_id";
+      select.required = true;
+      select.disabled = true;
+      select.innerHTML = '<option value="">Loading teams...</option>';
+      replaceAssignmentField(select);
+      loadAccountEnforcerTeams().then((teams) => {
+        if (getAssignmentField() !== select) return; // Ignore obsolete role/close responses.
+        select.disabled = false;
+        select.innerHTML = '<option value="">Select team</option>' + teams.map((team) =>
+          `<option value="${Number(team.id)}">${escapeHtml(team.team_name)}</option>`).join("");
+        select.onchange = () => {
+          const team = teams.find((item) => Number(item.id) === Number(select.value));
+          if (!preview) return;
+          preview.hidden = !team;
+          preview.innerHTML = team ? '<span class="enforcer-aor-label">Assigned AORs</span><div class="enforcer-aor-chips">' +
+            (Array.isArray(team.aors) ? team.aors : []).map((aor) => `<span>${escapeHtml(aor)}</span>`).join("") + '</div>' : "";
+        };
+      }).catch((error) => {
+        if (getAssignmentField() !== select) return;
+        select.innerHTML = '<option value="">Teams unavailable — switch role to retry</option>';
+        showAccountMessage(error.message || "Unable to load Enforcer teams.", "error");
+      });
+      return;
+    }
+
+    if (platform === "mobile" && role === "barangay") {
       if (assignmentLabel) assignmentLabel.textContent = "Barangay";
       replaceAssignmentField(createAssignmentSelect());
       return;
@@ -899,16 +969,23 @@ function setupCreateAccountForm() {
         };
       } else if (platform === "mobile") {
         url = getCreateMobileUserApiUrl();
-        payload = {
-          full_name: fullName,
-          username,
-          password,
-          mobile_role: role,
-          assigned_source_name: assignmentName,
-          barangay: role === "barangay" || role === "enforcer" ? assignmentName : null,
-          establishment_name: role === "establishment" ? assignmentName : null,
-          status: "active"
-        };
+        if (role === "enforcer") {
+          payload = {
+            full_name: fullName, username, password, mobile_role: role,
+            enforcer_team_id: Number(assignmentName), status: "active"
+          };
+        } else {
+          payload = {
+            full_name: fullName,
+            username,
+            password,
+            mobile_role: role,
+            assigned_source_name: assignmentName,
+            barangay: role === "barangay" ? assignmentName : null,
+            establishment_name: role === "establishment" ? assignmentName : null,
+            status: "active"
+          };
+        }
       } else {
         showAccountMessage("Invalid platform selected.", "error");
         return;
