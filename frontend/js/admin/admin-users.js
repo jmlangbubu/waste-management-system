@@ -702,25 +702,25 @@ async function handleDeleteAccount(source, id) {
   }
 }
 
-let accountEnforcerTeams = null;
-let accountEnforcerTeamsRequest = null;
+let accountEnforcerAors = null;
+let accountEnforcerAorsRequest = null;
 
-async function loadAccountEnforcerTeams() {
-  if (accountEnforcerTeams) return accountEnforcerTeams;
-  if (!accountEnforcerTeamsRequest) {
-    accountEnforcerTeamsRequest = (async () => {
-      const response = await webAdminFetch(`${getAppApiBase()}/web-users/enforcer-teams`, {
+async function loadAccountEnforcerAors() {
+  if (accountEnforcerAors) return accountEnforcerAors;
+  if (!accountEnforcerAorsRequest) {
+    accountEnforcerAorsRequest = (async () => {
+      const response = await webAdminFetch(`${getAppApiBase()}/web-users/enforcer-aors`, {
         headers: { Accept: "application/json" }
       });
       const data = await response.json();
-      if (!response.ok || data.success !== true || !Array.isArray(data.teams)) {
-        throw new Error(data.message || "Unable to load Enforcer teams.");
+      if (!response.ok || data.success !== true || !Array.isArray(data.aors)) {
+        throw new Error(data.message || "Unable to load AOR assignments.");
       }
-      accountEnforcerTeams = data.teams;
-      return accountEnforcerTeams;
-    })().finally(() => { accountEnforcerTeamsRequest = null; });
+      accountEnforcerAors = data.aors;
+      return accountEnforcerAors;
+    })().finally(() => { accountEnforcerAorsRequest = null; });
   }
-  return accountEnforcerTeamsRequest;
+  return accountEnforcerAorsRequest;
 }
 
 function setupAccountPlatformForm() {
@@ -847,29 +847,62 @@ function setupAccountPlatformForm() {
 
     if (platform === "mobile" && role === "enforcer") {
       if (assignmentLabel) assignmentLabel.textContent = "Assigned AORs";
-      const select = document.createElement("select");
-      select.id = "assignmentName";
-      select.name = "enforcer_team_id";
-      select.required = true;
-      select.disabled = true;
-      select.innerHTML = '<option value="">Loading AOR assignments...</option>';
-      replaceAssignmentField(select);
-      loadAccountEnforcerTeams().then((teams) => {
-        if (getAssignmentField() !== select) return; // Ignore obsolete role/close responses.
-        select.disabled = false;
-        select.innerHTML = '<option value="">Select AOR assignment</option>' + teams.map((team) =>
-          `<option value="${Number(team.id)}">${escapeHtml((Array.isArray(team.aors) ? team.aors : []).map(cleanAccountValue).filter(Boolean).join(" • ") || "No AORs assigned")}</option>`).join("");
-        select.onchange = () => {
-          const team = teams.find((item) => Number(item.id) === Number(select.value));
+      const field = document.createElement("div");
+      field.id = "assignmentName";
+      field.className = "enforcer-aor-picker";
+      field.setAttribute("role", "group");
+      field.setAttribute("aria-labelledby", "assignmentLabel");
+      field.selectedAorIds = [];
+      field.value = "";
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "enforcer-aor-toggle";
+      toggle.textContent = "Loading barangays...";
+      toggle.disabled = true;
+      toggle.setAttribute("aria-expanded", "false");
+      toggle.setAttribute("aria-controls", "enforcerAorOptions");
+      const options = document.createElement("div");
+      options.id = "enforcerAorOptions";
+      options.className = "enforcer-aor-options";
+      options.hidden = true;
+      field.append(toggle, options);
+      replaceAssignmentField(field);
+      toggle.onclick = () => {
+        options.hidden = !options.hidden;
+        toggle.setAttribute("aria-expanded", String(!options.hidden));
+      };
+      field.addEventListener("keydown", event => {
+        if (event.key === "Escape" && !options.hidden) {
+          event.preventDefault(); event.stopPropagation();
+          options.hidden = true; toggle.setAttribute("aria-expanded", "false"); toggle.focus();
+        }
+      });
+      field.addEventListener("focusout", event => {
+        if (!field.contains(event.relatedTarget)) {
+          options.hidden = true; toggle.setAttribute("aria-expanded", "false");
+        }
+      });
+      loadAccountEnforcerAors().then((aors) => {
+        if (getAssignmentField() !== field) return; // Ignore obsolete role/reset responses.
+        toggle.disabled = !aors.length;
+        toggle.textContent = aors.length ? "Select barangays ▾" : "No AORs available";
+        options.innerHTML = [...aors].sort((a, b) => a.barangay_name.localeCompare(b.barangay_name)).map(aor =>
+          `<label><input type="checkbox" value="${Number(aor.id)}" /><span>${escapeHtml(aor.barangay_name)}</span></label>`).join("");
+        options.onchange = event => {
+          if (event.target.type !== "checkbox") return;
+          const id = Number(event.target.value);
+          field.selectedAorIds = event.target.checked ? [...field.selectedAorIds, id] : field.selectedAorIds.filter(value => value !== id);
+          field.value = field.selectedAorIds.join(",");
+          toggle.textContent = field.selectedAorIds.length ? `${field.selectedAorIds.length} barangay(s) selected ▾` : "Select barangays ▾";
           if (!preview) return;
-          preview.hidden = !team;
-          preview.innerHTML = team ? '<span class="enforcer-aor-label">Assigned AORs</span><div class="enforcer-aor-chips">' +
-            (Array.isArray(team.aors) ? team.aors : []).map((aor) => `<span>${escapeHtml(aor)}</span>`).join("") + '</div>' : "";
+          preview.hidden = !field.selectedAorIds.length;
+          preview.innerHTML = '<div class="enforcer-aor-chips">' + field.selectedAorIds.map(value =>
+            `<span>${escapeHtml(aors.find(aor => Number(aor.id) === value)?.barangay_name || "")}</span>`).join("") + '</div>';
         };
       }).catch((error) => {
-        if (getAssignmentField() !== select) return;
-        select.innerHTML = '<option value="">AOR assignments unavailable — switch role to retry</option>';
-        showAccountMessage(error.message || "Unable to load Enforcer teams.", "error");
+        if (getAssignmentField() !== field) return;
+        toggle.textContent = "AORs unavailable — switch role to retry";
+        showAccountMessage(error.message || "Unable to load AOR assignments.", "error");
       });
       return;
     }
@@ -931,6 +964,12 @@ function setupCreateAccountForm() {
     const password = document.getElementById("newPassword")?.value.trim() || "";
     const role = document.getElementById("accountRole")?.value || "";
     const assignmentName = document.getElementById("assignmentName")?.value.trim() || "";
+    const enforcerAorIds = document.getElementById("assignmentName")?.selectedAorIds || [];
+
+    if (platform === "mobile" && role === "enforcer" && !enforcerAorIds.length) {
+      showAccountMessage("Select at least one AOR.", "error");
+      return;
+    }
 
     if (!platform || !fullName || !username || !password || !role || !assignmentName) {
       showAccountMessage("Missing required fields.", "error");
@@ -966,7 +1005,7 @@ function setupCreateAccountForm() {
         if (role === "enforcer") {
           payload = {
             full_name: fullName, username, password, mobile_role: role,
-            enforcer_team_id: Number(assignmentName), status: "active"
+            enforcer_aor_ids: enforcerAorIds, status: "active"
           };
         } else {
           payload = {

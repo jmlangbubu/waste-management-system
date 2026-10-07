@@ -118,6 +118,7 @@ function routeHarness(options={}) {
   const db={query(sql,params,cb){if(typeof params==='function'){cb=params;params=[];} queries.push({sql,params}); if(/SELECT id FROM users/.test(sql)) cb(null,options.duplicate?[{id:1}]:[]); else if(/INSERT INTO users/.test(sql)) cb(null,{insertId:5}); else if(/FROM web_users/.test(sql)) cb(null,[]); else cb(null,[{id:5,account_source:'mobile',mobile_role:'enforcer'}]);}};
   const service={listTeams:async()=>[{id:1,aors:['City Heights','Conel']}], assignMember:async()=>({user_id:5}), enrichAccounts:async a=>a.map(u=>({...u,enforcer_team_name:'Team 01',enforcer_aors:['City Heights','Conel']})),createEnforcer:async data=>{options.created=data;return 5;}};
   const mocks={'express':{Router:()=>router},'../config/db':db,'bcrypt':{hash:async(p,cost)=>{assert.equal(cost,10);return 'hashed:'+p;}},'../services/webSessionService':{},'../middleware/webSessionAuth':{requireWebCapability:c=>'capability:'+c,requireCsrf:'csrf'},'../services/enforcerTeamService':{createEnforcerTeamService:()=>service,EnforcerTeamError:require('../services/enforcerTeamService').EnforcerTeamError}};
+  mocks['../services/enforcerAorService']={createEnforcerAorService:()=>({...service,listAors:async()=>[{id:5,barangay_name:'Bula'}]}),EnforcerAorError:require('../services/enforcerAorService').EnforcerAorError};
   vm.runInNewContext(fs.readFileSync(path.join(root,'routes/webUserRoutes.js'),'utf8'),{require:name=>mocks[name],module:{exports:{}},console:{log(){},warn(){},error(){}}});
   function invoke(key,body={}) {return new Promise((resolve,reject)=>{const res={code:200,status(c){this.code=c;return this;},json(data){resolve({code:this.code,data});}};Promise.resolve(handlers.get(key)({body,user:{id:1},params:{id:1,userId:5}},res)).catch(reject);});}
   return {invoke,middleware,queries,options};
@@ -127,14 +128,15 @@ test("new team routes use users.manage and existing CSRF chain",async()=>{
   assert((await h.invoke('GET /enforcer-teams')).data.teams[0].aors.length===2);
   assert.equal((await h.invoke('GET /enforcer-teams/:id')).data.team.id,1);
   assert.equal((await h.invoke('PUT /enforcer-teams/:id/members/:userId')).data.membership.user_id,5);
+  assert.equal((await h.invoke('GET /enforcer-aors')).data.aors[0].barangay_name,'Bula');
 });
 for(const [role,assignment,barangay] of [['barangay','Bula','Bula'],['establishment','Fixture Shop',null]]) test(role+' account flow unchanged',async()=>{
   const h=routeHarness(); const result=await h.invoke('POST /create-mobile-account',{full_name:'Fixture',username:'fixture',password:'pass',mobile_role:role,assigned_source_name:assignment});
   assert.equal(result.code,201); assert.deepEqual(Array.from(h.queries.find(q=>/INSERT INTO users/.test(q.sql)).params),['Fixture','fixture','hashed:pass',role,role,assignment,barangay,'active']);
 });
-test("route creates Enforcer by team only with password hashing",async()=>{
-  const h=routeHarness(); const result=await h.invoke('POST /create-mobile-account',{full_name:'Fixture',username:'fixture',password:'pass',mobile_role:'enforcer',enforcer_team_id:1});
-  assert.equal(result.code,201); assert.equal(h.options.created.enforcer_team_id,1); assert.equal(h.options.created.hashedPassword,'hashed:pass'); assert.equal(h.queries.length,0);
+test("route creates Enforcer by direct AORs without a team and with password hashing",async()=>{
+  const h=routeHarness(); const result=await h.invoke('POST /create-mobile-account',{full_name:'Fixture',username:'fixture',password:'pass',mobile_role:'enforcer',enforcer_aor_ids:[5,16]});
+  assert.equal(result.code,201); assert.deepEqual(Array.from(h.options.created.enforcer_aor_ids),[5,16]);assert.equal(h.options.created.enforcer_team_id,undefined); assert.equal(h.options.created.hashedPassword,'hashed:pass'); assert.equal(h.queries.length,0);
 });
 test("non-Enforcer team payload is rejected before creating user",async()=>{
   const h=routeHarness(); const result=await h.invoke('POST /create-mobile-account',{full_name:'Fixture',username:'fixture',password:'pass',mobile_role:'barangay',assigned_source_name:'Bula',enforcer_team_id:1}); assert.equal(result.code,400); assert.equal(h.queries.length,0);

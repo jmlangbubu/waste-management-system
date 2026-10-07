@@ -4,6 +4,8 @@ const db = require("../config/db");
 const bcrypt = require("bcrypt");
 const { createEnforcerTeamService, EnforcerTeamError } = require("../services/enforcerTeamService");
 const enforcerTeams = createEnforcerTeamService(db);
+const { createEnforcerAorService, EnforcerAorError } = require("../services/enforcerAorService");
+const enforcerAors = createEnforcerAorService(db);
 const webSessionService = require("../services/webSessionService");
 const {
     requireWebCapability,
@@ -88,6 +90,18 @@ async function revokeWebSessionsAfterSecurityChange(userId, action) {
 
 router.use(requireWebCapability("users.manage"));
 router.use(requireCsrf);
+
+function sendEnforcerAorError(res, error) {
+    console.warn("[EnforcerAors] Request failed:", error.code || "AOR_VALIDATION_ERROR");
+    const status = error instanceof EnforcerAorError ? error.statusCode : error.code === "ER_DUP_ENTRY" ? 409 : 500;
+    return res.status(status).json({success: false, message: error instanceof EnforcerAorError ? error.message :
+        status === 409 ? "Username or AOR mapping already exists" : "Enforcer AOR operation failed"});
+}
+
+router.get("/enforcer-aors", async (req, res) => {
+    try { return res.json({success: true, aors: await enforcerAors.listAors()}); }
+    catch (error) { return sendEnforcerAorError(res, error); }
+});
 
 function sendEnforcerTeamError(res, error) {
     console.warn("[EnforcerTeams] Request failed:", error.code || "TEAM_VALIDATION_ERROR");
@@ -257,18 +271,18 @@ router.post("/create-mobile-account", async (req, res) => {
         });
     }
 
-    if (normalizedMobileRole !== "enforcer" && req.body.enforcer_team_id != null) {
-        return res.status(400).json({success: false, message: "Only Enforcer accounts may select an Enforcer team."});
+    if (normalizedMobileRole !== "enforcer" && (req.body.enforcer_team_id != null || req.body.enforcer_aor_ids != null)) {
+        return res.status(400).json({success: false, message: "Only Enforcer accounts may select AOR assignments."});
     }
     if (normalizedMobileRole === "enforcer") {
         try {
             const hashedPassword = await bcrypt.hash(cleanPassword, 10);
-            const insertedId = await enforcerTeams.createEnforcer({
+            const insertedId = await enforcerAors.createEnforcer({
                 full_name: cleanFullName, username: cleanUsername, hashedPassword,
-                status: normalizedStatus, enforcer_team_id: req.body.enforcer_team_id
+                status: normalizedStatus, enforcer_aor_ids: req.body.enforcer_aor_ids
             });
             return res.status(201).json({success: true, message: "Mobile account created successfully", insertedId});
-        } catch (error) { return sendEnforcerTeamError(res, error); }
+        } catch (error) { return sendEnforcerAorError(res, error); }
     }
 
     const checkSql = `SELECT id FROM users WHERE username = ? LIMIT 1`;
@@ -433,8 +447,8 @@ router.get("/all-accounts", (req, res) => {
             });
 
             try {
-                return res.json({success: true, accounts: await enforcerTeams.enrichAccounts(accounts)});
-            } catch (error) { return sendEnforcerTeamError(res, error); }
+                return res.json({success: true, accounts: await enforcerAors.enrichAccounts(accounts)});
+            } catch (error) { return sendEnforcerAorError(res, error); }
         });
     });
 });
