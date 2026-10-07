@@ -759,8 +759,66 @@ scenario("Z", "authorization, same-origin helpers, imports, and initialization s
   assert.deepEqual([...new Set(duplicates)], []);
 });
 
+scenario("AJ", "destination search filters a copy without changing the catalog or stops", () => {
+  const catalog = [destination(101, "Pioneer Avenue", "Bula"), destination(102, "Market Street", "Lagao")];
+  const snapshot = JSON.stringify(catalog);
+  const stops = planning.dispatchPlanAddStopToList([], catalog[0]).stops;
+  const stopsSnapshot = JSON.stringify(stops);
+  const filter = (query) => planning.dispatchPlanFilteredDestinations(catalog, query);
+  assert.deepEqual(filter(""), catalog);
+  assert.deepEqual(filter("   "), catalog);
+  assert.deepEqual(filter(null), catalog);
+  assert.deepEqual(filter("  pIoNeEr  "), [catalog[0]]);
+  assert.deepEqual(filter("bula"), [catalog[0]]);
+  assert.deepEqual(filter("Road"), catalog);
+  assert.deepEqual(filter("missing"), []);
+  assert.deepEqual(filter(""), catalog);
+  assert.match(planning.dispatchPlanDestinationOptionsHtml(filter("bula"), [101]), /value="101" disabled/);
+  assert.equal(JSON.stringify(catalog), snapshot);
+  assert.equal(JSON.stringify(stops), stopsSnapshot);
+  assert.equal(planning.dispatchPlanAddStopToList(stops, catalog[1]).stops.length, 2);
+  assert.equal(planning.dispatchPlanAddStopToList(stops, catalog[0]).stops.length, 1);
+  assert.equal(countId("dispatchPlanDestinationSearch"), 1);
+  assert.match(dashboardHtml, /Search Destination[\s\S]*id="dispatchPlanDestinationSearch"[\s\S]*Search barangay or destination/);
+});
+
+scenario("AK", "search rendering and form reset preserve loaded stops and no-match usability", () => {
+  const vm = require("node:vm");
+  const search = { value: "bula" };
+  const select = { innerHTML: "", disabled: false };
+  const context = {
+    document: { getElementById: (id) => ({
+      dispatchPlanDestinationSearch: search,
+      dispatchPlanDestinationSelect: select,
+      dispatchPlanForm: { reset() { search.value = ""; } }
+    })[id] || null }
+  };
+  vm.createContext(context);
+  vm.runInContext(planningSource.replace("const exported = {", "const exported = { testState: dispatchPlanState, testRender: dispatchPlanRenderDestinationOptions, testReset: dispatchPlanResetForm,"), context);
+  context.testState.destinations = [destination(101, "Pioneer", "Bula"), destination(102, "Market", "Lagao")];
+  context.testState.stops = [{ destination_id: 101, stop_order: 1 }];
+  const stops = context.testState.stops;
+  context.testRender();
+  assert.match(select.innerHTML, /value="101" disabled/);
+  assert.doesNotMatch(select.innerHTML, /Market/);
+  search.value = "missing";
+  context.testRender();
+  assert.match(select.innerHTML, /No matching destinations/);
+  assert.equal(select.disabled, false);
+  search.value = "";
+  context.testRender();
+  assert.match(select.innerHTML, /Market/);
+  assert.equal(context.testState.stops, stops);
+  search.value = "old search";
+  context.testReset();
+  assert.equal(search.value, "");
+  assert.match(planningSource, /dispatchPlanDestinationSearch"\)\?\.addEventListener\("input", dispatchPlanRenderDestinationOptions\)/);
+  assert.match(planningSource, /id === "dispatchPlanFormModal"\) dispatchPlanClearDestinationSearch/);
+  assert.match(planningSource, /async function openEditDispatchPlan[\s\S]*dispatchPlanResetForm\(\)/);
+});
+
 async function run() {
-  assert.equal(scenarios.length, 35);
+  assert.equal(scenarios.length, 37);
   for (const current of scenarios) {
     try {
       await current.callback();
@@ -769,7 +827,7 @@ async function run() {
       throw error;
     }
   }
-  console.log("Dispatch Planning UI tests passed (35/35 required scenarios).");
+  console.log("Dispatch Planning UI tests passed (37/37 required scenarios).");
 }
 
 run().catch((error) => {

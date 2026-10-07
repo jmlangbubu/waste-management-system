@@ -215,6 +215,15 @@
     ].join("");
   }
 
+  function dispatchPlanFilteredDestinations(destinations = [], search = "") {
+    const query = String(search || "").trim().toLowerCase();
+    return destinations.filter((destination) => !query || [
+      dispatchPlanDestinationLabel(destination),
+      dispatchPlanDestinationSecondary(destination),
+      destination.destination_type
+    ].join(" ").toLowerCase().includes(query));
+  }
+
   function dispatchPlanDestinationOptionsHtml(destinations = [], selectedIds = []) {
     const used = new Set((selectedIds || []).map(Number));
     return [
@@ -676,10 +685,17 @@
   function dispatchPlanRenderDestinationOptions() {
     const select = dispatchPlanElement("dispatchPlanDestinationSelect");
     if (!select) return;
-    select.innerHTML = dispatchPlanDestinationOptionsHtml(
+    const search = dispatchPlanElement("dispatchPlanDestinationSearch")?.value || "";
+    const destinations = dispatchPlanFilteredDestinations(
       dispatchPlanState.destinations,
-      dispatchPlanState.stops.map((stop) => stop.destination_id)
+      search
     );
+    select.innerHTML = search.trim() && !destinations.length
+      ? '<option value="">No matching destinations</option>'
+      : dispatchPlanDestinationOptionsHtml(
+        destinations,
+        dispatchPlanState.stops.map((stop) => stop.destination_id)
+      );
     select.disabled = dispatchPlanState.loadingDestinations || !dispatchPlanState.destinations.length;
     dispatchPlanSetFeedback(
       "dispatchPlanDestinationGuidance",
@@ -847,6 +863,7 @@
   }
 
   function dispatchPlanCloseModal(id) {
+    if (id === "dispatchPlanFormModal") dispatchPlanClearDestinationSearch();
     if (id === "dispatchPlanDetailModal") {
       dispatchPlanInvalidateDetailRequest();
     }
@@ -917,6 +934,7 @@
   }
 
   function closeDispatchPlanningModalsForNavigation() {
+    dispatchPlanClearDestinationSearch();
     dispatchPlanInvalidateDetailRequest();
     ["dispatchPlanningModal", ...DISPATCH_PLAN_CHILD_MODAL_IDS].forEach((id) => {
       const modal = dispatchPlanElement(id);
@@ -938,8 +956,15 @@
     trigger.setAttribute("aria-hidden", String(!hasAccess));
   }
 
+  function dispatchPlanClearDestinationSearch() {
+    const search = dispatchPlanElement("dispatchPlanDestinationSearch");
+    if (search) search.value = "";
+    dispatchPlanRenderDestinationOptions();
+  }
+
   function dispatchPlanResetForm() {
     dispatchPlanElement("dispatchPlanForm")?.reset();
+    dispatchPlanClearDestinationSearch();
     dispatchPlanState.mode = "create";
     dispatchPlanState.editingPlan = null;
     dispatchPlanState.stops = [];
@@ -1309,6 +1334,7 @@
     dispatchPlanElement("dispatchPlanAddDestinationBtn")?.addEventListener("click", () => {
       addPlanStop(dispatchPlanElement("dispatchPlanDestinationSelect")?.value);
     });
+    dispatchPlanElement("dispatchPlanDestinationSearch")?.addEventListener("input", dispatchPlanRenderDestinationOptions);
     dispatchPlanElement("dispatchPlanStops")?.addEventListener("click", dispatchPlanHandleStopClick);
     [
       ["dispatchPlanFormOverlay", "dispatchPlanFormModal"],
@@ -1368,6 +1394,7 @@
     dispatchPlanTruckOptionsHtml,
     dispatchPlanEnforcerOptionsHtml,
     dispatchPlanDestinationOptionsHtml,
+    dispatchPlanFilteredDestinations,
     dispatchPlanAddStopToList,
     dispatchPlanRemoveStopFromList,
     dispatchPlanMoveStopInList,

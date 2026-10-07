@@ -487,6 +487,11 @@ body > .dispatch-plan-modal .dispatch-plan-cancel-content {
   gap: 10px;
 }
 
+.dispatch-plan-destination-search {
+  width: 100%;
+  min-width: 0;
+}
+
 .dispatch-plan-destination-picker .dispatch-plan-field {
   flex: 1 1 auto;
 }
