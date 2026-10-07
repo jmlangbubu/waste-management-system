@@ -141,6 +141,46 @@
   display: none;
 }
 
+#createAccountModal .enforcer-aor-toggle {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid #c8dbd0;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #285a48;
+  text-align: left;
+  cursor: pointer;
+}
+
+#createAccountModal .enforcer-aor-toggle:disabled { opacity: 0.65; cursor: default; }
+#createAccountModal .enforcer-aor-options[hidden] { display: none; }
+#createAccountModal .enforcer-aor-options {
+  max-height: 220px;
+  overflow-y: auto;
+  margin-top: 6px;
+  border: 1px solid #dce8e1;
+  border-radius: 7px;
+  background: #f5f9f7;
+}
+#createAccountModal .enforcer-aor-options label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 9px 12px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+#createAccountModal .enforcer-aor-options input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  min-height: 0;
+  padding: 0;
+  flex: 0 0 16px;
+  accent-color: #285a48;
+}
+
 #createAccountModal .enforcer-aor-preview {
   margin-top: 10px;
 }
