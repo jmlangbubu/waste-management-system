@@ -668,7 +668,7 @@ function setupScrollRevealAnimations() {
     { selector: ".hero-visual-wrap", effect: "reveal-right" },
 
     { selector: ".section-heading", effect: "reveal-up" },
-    { selector: ".service-card", effect: "reveal-up", stagger: true },
+    { selector: ".service-card", effect: "reveal-service-drop", stagger: true },
 
     { selector: ".status-card-copy", effect: "reveal-left" },
     { selector: ".status-check-form", effect: "reveal-right" },
@@ -680,13 +680,14 @@ function setupScrollRevealAnimations() {
 
   const elements = [];
 
+  if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+
   revealTargets.forEach((item) => {
     document.querySelectorAll(item.selector).forEach((element, index) => {
       element.classList.add("reveal-ready", item.effect);
 
       if (item.stagger) {
-        const delayClass = `reveal-delay-${(index % 5) + 1}`;
-        element.classList.add(delayClass);
+        element.style.setProperty("--service-reveal-delay", `${index * 80}ms`);
       }
 
       elements.push(element);
@@ -707,8 +708,13 @@ function setupScrollRevealAnimations() {
       entries.forEach((entry) => {
         if (entry.isIntersecting) {
           entry.target.classList.add("reveal-show");
+          if (entry.target.classList.contains("service-card")) {
+            revealObserver.unobserve(entry.target);
+          }
         } else {
-          entry.target.classList.remove("reveal-show");
+          if (!entry.target.classList.contains("service-card")) {
+            entry.target.classList.remove("reveal-show");
+          }
         }
       });
     },
