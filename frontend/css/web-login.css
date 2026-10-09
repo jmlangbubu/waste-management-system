@@ -39,13 +39,22 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--portal-blue); o
 .password-toggle[aria-pressed='true'] .eye-slash { display: block; }
 #loginBtn { width: 100%; height: 54px; border: 0; border-radius: 12px; background: var(--portal-blue); color: white; font-size: 15px; font-weight: 750; cursor: pointer; box-shadow: 0 5px 14px rgba(37,99,235,.16); transition: background .2s, transform .2s; }
 #loginBtn:hover:not(:disabled) { background: #1d4ed8; transform: translateY(-1px); }
-#loginBtn:disabled { opacity: .65; cursor: wait; }
+#loginBtn { display: inline-flex; align-items: center; justify-content: center; gap: 9px; }
+#loginBtn:disabled { opacity: .9; cursor: wait; }
+#loginBtn.is-loading::before { content: ''; width: 17px; height: 17px; flex-shrink: 0; border: 2px solid rgba(255,255,255,.35); border-top-color: white; border-radius: 50%; animation: portalLoginSpin .75s linear infinite; }
+#loginBtn.is-success::before { content: '\2713'; font-size: 18px; line-height: 1; }
+.input-group input:disabled { color: var(--portal-navy); background: #f4f8fd; opacity: 1; cursor: wait; }
+.password-toggle:disabled { opacity: .65; cursor: wait; }
+.password-toggle:hover:disabled { background: transparent; color: #52657d; }
+@keyframes portalLoginSpin { to { transform: rotate(360deg); } }
+@keyframes portalLoginFeedback { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
 .portal-back-link { align-self: center; padding: 4px; color: var(--portal-navy); font-size: 13px; font-weight: 650; text-decoration: none; }
 .portal-back-link:hover { color: var(--portal-blue); text-decoration: underline; }
 .message-box { padding: 12px 14px; border-radius: 10px; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
 .message-box:empty { display: none; }
 .message-box.error { color: #991b1b; background: #fff1f2; border: 1px solid #fecdd3; }
-.message-box.success { color: #16665e; background: #edfaf7; border: 1px solid #bce8dd; }
+.message-box.success { color: #0f5f57; background: #edfaf7; border: 1px solid #9bd4c7; }
+.message-box.error, .message-box.success { animation: portalLoginFeedback .2s ease-out; }
 .portal-access-note { margin-top: 26px; text-align: center; color: var(--portal-muted); font-size: 11px; }
 @media (max-width: 1100px) {
   .portal-login-shell { grid-template-columns: 40% 60%; }
@@ -74,4 +83,6 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--portal-blue); o
 @media (prefers-reduced-motion: reduce) {
   .input-group input, #loginBtn { transition: none; }
   #loginBtn:hover:not(:disabled) { transform: none; }
+  .message-box.error, .message-box.success { animation: none; }
+  #loginBtn.is-loading::before { animation: none; }
 }
