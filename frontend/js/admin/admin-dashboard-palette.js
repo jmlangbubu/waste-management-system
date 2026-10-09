@@ -14,26 +14,28 @@
 (function enforceDashboardWastePalette() {
   const palette = {
     biodegradable: {
+      solid: "#16A34A",
+      soft: "rgba(22, 163, 74, 0.16)",
+      hover: "#166534"
+    },
+    recyclable: {
+      solid: "#F59E0B",
+      soft: "rgba(245, 158, 11, 0.16)",
+      hover: "#B45309"
+    },
+    residual: {
+      solid: "#EAB308",
+      soft: "rgba(234, 179, 8, 0.16)",
+      hover: "#A16207"
+    },
+    special: {
       solid: "#2563EB",
       soft: "rgba(37, 99, 235, 0.16)",
       hover: "#1D4ED8"
-    },
-    recyclable: {
-      solid: "#16A34A",
-      soft: "rgba(22, 163, 74, 0.16)",
-      hover: "#15803D"
-    },
-    residual: {
-      solid: "#F97316",
-      soft: "rgba(249, 115, 22, 0.16)",
-      hover: "#EA580C"
-    },
-    special: {
-      solid: "#8B5CF6",
-      soft: "rgba(139, 92, 246, 0.16)",
-      hover: "#7C3AED"
     }
   };
+
+  window.WMO_DASHBOARD_WASTE_PALETTE = palette;
 
   function normalizeText(value) {
     return String(value || "")
@@ -91,15 +93,16 @@
     const selected = getWastePalette(dataset.label || dataset.name);
     if (!selected) return false;
 
-    dataset.borderColor = selected.solid;
+    const dimmed = !!window.dashboardSelectedWasteCategory && getWasteKey(dataset.label) !== window.dashboardSelectedWasteCategory;
+    dataset.borderColor = dimmed ? `${selected.solid}55` : selected.solid;
     dataset.backgroundColor = selected.soft;
-    dataset.pointBorderColor = selected.solid;
+    dataset.pointBorderColor = dataset.borderColor;
     dataset.pointBackgroundColor = "#FFFFFF";
     dataset.pointHoverBorderColor = selected.solid;
     dataset.pointHoverBackgroundColor = selected.solid;
     dataset.pointRadius = dataset.pointRadius || 4;
     dataset.pointHoverRadius = dataset.pointHoverRadius || 5;
-    dataset.borderWidth = dataset.borderWidth || 3;
+    dataset.borderWidth = dimmed ? 1.5 : 3.5;
     dataset.tension = dataset.tension ?? 0.35;
 
     return true;

@@ -21,7 +21,7 @@ body #adminLayout #dashboardSidebar {
   overflow-y: auto !important;
   border: 0 !important;
   border-radius: 0 !important;
-  background: var(--wmo-sidebar-bg) !important;
+  background: linear-gradient(180deg, #12355b 0%, #0f2742 100%) !important;
   box-shadow: none !important;
   color: #ffffff !important;
   transition: width 0.2s ease, transform 0.2s ease !important;
@@ -49,7 +49,7 @@ body #adminLayout #dashboardSidebar {
   gap: 8px !important;
   margin-top: auto;
   padding-top: 10px !important;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid rgba(220, 235, 250, 0.12);
   background: transparent !important;
 }
 
@@ -82,7 +82,13 @@ body #adminLayout #dashboardSidebar {
 }
 
 #dashboardSidebar .sidebar-logo-toggle:focus-visible {
-  outline: 2px solid var(--wmo-soft);
+  outline: 2px solid #60a5fa;
+  outline-offset: 2px;
+}
+
+#dashboardSidebar button:focus-visible,
+html body #sidebarOtherMenu .sidebar-other-btn:focus-visible {
+  outline: 2px solid #60a5fa;
   outline-offset: 2px;
 }
 
@@ -94,7 +100,7 @@ body #adminLayout #dashboardSidebar {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: rgba(9, 20, 19, 0.76);
+  background: rgba(15, 39, 66, 0.82);
   color: #ffffff;
   font-size: 24px;
   line-height: 1;
@@ -113,7 +119,7 @@ body #adminLayout #dashboardSidebar {
   max-width: 46px !important;
   min-height: 46px !important;
   max-height: 46px !important;
-  border: 1px solid rgba(255, 255, 255, 0.18) !important;
+  border: 1px solid rgba(220, 235, 250, 0.18) !important;
   border-radius: var(--wmo-radius-md) !important;
   display: flex !important;
   align-items: center !important;
@@ -155,7 +161,7 @@ body #adminLayout #dashboardSidebar {
 #dashboardSidebar .brand-text p {
   margin: 2px 0 0;
   overflow: hidden;
-  color: rgba(255, 255, 255, 0.62);
+  color: #a9c3db;
   font-size: 11.5px;
   line-height: 1.3;
   text-overflow: ellipsis;
@@ -179,13 +185,13 @@ body #adminLayout #dashboardSidebar {
 #dashboardSidebar .sidebar-nav-group + .sidebar-nav-group {
   margin-top: 0;
   padding-top: 16px;
-  border-top: 1px solid rgba(176, 228, 204, 0.12);
+  border-top: 1px solid rgba(220, 235, 250, 0.12);
 }
 
 #dashboardSidebar .sidebar-section-label {
   min-width: 0;
   margin: 0 10px 2px;
-  color: rgba(176, 228, 204, 0.62);
+  color: #86a9c7;
   font-size: 10.5px;
   font-weight: 625;
   line-height: 1.2;
@@ -205,7 +211,7 @@ body #adminLayout #dashboardSidebar .nav-btn {
   gap: 11px !important;
   background: transparent !important;
   box-shadow: none !important;
-  color: var(--wmo-sidebar-text) !important;
+  color: #dcebfa !important;
   font-size: 13.5px !important;
   font-weight: 575 !important;
   line-height: 1 !important;
@@ -248,15 +254,15 @@ body #adminLayout #dashboardSidebar #navUserManagement {
 }
 
 body #adminLayout #dashboardSidebar .nav-btn:hover {
-  background: var(--wmo-sidebar-hover) !important;
+  background: #1c4d6b !important;
   color: #ffffff !important;
 }
 
 body #adminLayout #dashboardSidebar .nav-btn.active {
-  background: var(--wmo-secondary) !important;
+  background: #2563eb !important;
   color: #ffffff !important;
   font-weight: 600 !important;
-  box-shadow: none !important;
+  box-shadow: 0 6px 18px rgba(37, 99, 235, 0.20) !important;
 }
 
 #dashboardSidebar .sidebar-other-group {
@@ -280,7 +286,7 @@ body #adminLayout #dashboardSidebar .sidebar-other-trigger {
   gap: 10px !important;
   background: transparent !important;
   box-shadow: none !important;
-  color: var(--wmo-sidebar-text) !important;
+  color: #dcebfa !important;
   font-size: 13px !important;
   font-weight: 575 !important;
   transform: none !important;
@@ -289,7 +295,7 @@ body #adminLayout #dashboardSidebar .sidebar-other-trigger {
 
 body #adminLayout #dashboardSidebar .sidebar-other-trigger:hover,
 body #adminLayout #dashboardSidebar .sidebar-other-trigger[aria-expanded="true"] {
-  background: var(--wmo-sidebar-hover) !important;
+  background: #1c4d6b !important;
   color: #ffffff !important;
 }
 
@@ -352,7 +358,7 @@ html body #sidebarOtherMenu.sidebar-other-menu .sidebar-other-btn {
   gap: 10px !important;
   background: rgba(255, 255, 255, 0.055) !important;
   box-shadow: none !important;
-  color: rgba(255, 255, 255, 0.76) !important;
+  color: #dcebfa !important;
   font-size: 12.5px !important;
   font-weight: 650 !important;
   text-align: left !important;
@@ -361,7 +367,7 @@ html body #sidebarOtherMenu.sidebar-other-menu .sidebar-other-btn {
 
 body #adminLayout #dashboardSidebar .sidebar-other-btn:hover,
 html body #sidebarOtherMenu.sidebar-other-menu .sidebar-other-btn:hover {
-  background: var(--wmo-sidebar-hover) !important;
+  background: #1c4d6b !important;
   color: #ffffff !important;
 }
 
@@ -382,11 +388,11 @@ html body #sidebarOtherMenu.sidebar-other-menu {
   z-index: var(--wmo-z-dropdown) !important;
   width: 250px !important;
   padding: 8px !important;
-  border: 1px solid var(--wmo-border) !important;
+  border: 1px solid #d9e6f2 !important;
   border-radius: var(--wmo-radius-lg) !important;
   display: grid !important;
   gap: 5px !important;
-  background: var(--wmo-surface) !important;
+  background: #ffffff !important;
   box-shadow: var(--wmo-shadow-subtle) !important;
   animation: none !important;
 }
@@ -394,13 +400,13 @@ html body #sidebarOtherMenu.sidebar-other-menu {
 html body #sidebarOtherMenu.sidebar-other-menu .sidebar-other-btn {
   border: 1px solid transparent !important;
   background: transparent !important;
-  color: var(--wmo-ink) !important;
+  color: #12355b !important;
 }
 
 html body #sidebarOtherMenu.sidebar-other-menu .sidebar-other-btn:hover {
-  border-color: var(--wmo-border) !important;
-  background: var(--wmo-surface-muted) !important;
-  color: var(--wmo-primary) !important;
+  border-color: #d9e6f2 !important;
+  background: #eef6ff !important;
+  color: #2563eb !important;
 }
 
 body #adminLayout #dashboardSidebar .sidebar-user-card {
@@ -428,20 +434,21 @@ body #adminLayout #dashboardSidebar .sidebar-user-card {
   display: flex;
   align-items: center;
   gap: 9px;
-  background: rgba(255, 255, 255, 0.035);
+  background: rgba(255, 255, 255, 0.055);
+  box-shadow: inset 0 0 0 1px rgba(220, 235, 250, 0.10);
 }
 
 #dashboardSidebar .sidebar-account-avatar {
   width: 34px;
   height: 34px;
   min-width: 34px;
-  border: 1px solid rgba(176, 228, 204, 0.18);
+  border: 1px solid rgba(43, 185, 168, 0.28);
   border-radius: 50%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: rgba(176, 228, 204, 0.1);
-  color: var(--wmo-soft);
+  background: rgba(43, 185, 168, 0.12);
+  color: #8fe1d6;
 }
 
 #dashboardSidebar .sidebar-account-avatar svg,
@@ -478,7 +485,7 @@ body #adminLayout #dashboardSidebar .sidebar-user-card {
   align-items: center;
   gap: 4px;
   overflow: hidden;
-  color: rgba(255, 255, 255, 0.6);
+  color: #a9c3db;
   font-size: 11.5px;
   line-height: 1.35;
   white-space: nowrap;
@@ -488,15 +495,15 @@ body #adminLayout #dashboardSidebar .logout-btn {
   width: 100% !important;
   min-height: 42px !important;
   padding: 0 12px !important;
-  border: 1px solid rgba(254, 226, 226, 0.18) !important;
+  border: 1px solid rgba(254, 202, 202, 0.18) !important;
   border-radius: var(--wmo-radius-md) !important;
   display: inline-flex !important;
   align-items: center !important;
   justify-content: flex-start !important;
   gap: 8px !important;
-  background: rgba(180, 35, 24, 0.08) !important;
+  background: rgba(220, 38, 38, 0.08) !important;
   box-shadow: none !important;
-  color: #fecaca !important;
+  color: #fca5a5 !important;
   font-size: 12.5px !important;
   font-weight: 700 !important;
   transform: none !important;
@@ -504,7 +511,7 @@ body #adminLayout #dashboardSidebar .logout-btn {
 }
 
 body #adminLayout #dashboardSidebar .logout-btn:hover {
-  background: rgba(180, 35, 24, 0.3) !important;
+  background: rgba(220, 38, 38, 0.20) !important;
   color: #ffffff !important;
 }
 
@@ -588,7 +595,7 @@ body #adminLayout.sidebar-collapsed #dashboardSidebar .logout-btn {
   body #adminLayout #dashboardSidebar.open,
   body #adminLayout.sidebar-collapsed #dashboardSidebar.open {
     transform: translateX(0) !important;
-    box-shadow: 16px 0 36px rgba(9, 20, 19, 0.2) !important;
+    box-shadow: 16px 0 36px rgba(15, 39, 66, 0.24) !important;
   }
 
   body #adminLayout.sidebar-collapsed #dashboardSidebar .brand-text,
@@ -606,7 +613,7 @@ body #adminLayout.sidebar-collapsed #dashboardSidebar .logout-btn {
     min-width: 0;
     padding: 6px 8px;
     justify-content: flex-start;
-    background: rgba(255, 255, 255, 0.035);
+    background: rgba(255, 255, 255, 0.055);
   }
 
   body #adminLayout.sidebar-collapsed #dashboardSidebar #navUserManagement {
@@ -637,12 +644,23 @@ body #adminLayout.sidebar-collapsed #dashboardSidebar .logout-btn {
     box-shadow: none !important;
   }
 
+  html body #sidebarOtherMenu.sidebar-other-menu .sidebar-other-btn {
+    color: #dcebfa !important;
+    background: rgba(255, 255, 255, 0.055) !important;
+  }
+
+  html body #sidebarOtherMenu.sidebar-other-menu .sidebar-other-btn:hover {
+    color: #ffffff !important;
+    background: #1c4d6b !important;
+    border-color: transparent !important;
+  }
+
   #sidebarBackdrop.sidebar-backdrop {
     position: fixed;
     inset: 0;
     z-index: var(--wmo-z-sidebar-backdrop);
     display: block;
-    background: rgba(9, 20, 19, 0.48);
+    background: rgba(15, 39, 66, 0.46);
   }
 
   #sidebarBackdrop.sidebar-backdrop.hidden {

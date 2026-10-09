@@ -35,10 +35,25 @@ function updateDashboardAnalytics(records = validatedWasteRecords) {
   setText("totalRecyclable", totalRecyclable);
   setText("totalResidual", totalResidual);
   setText("totalHazardous", totalSpecial);
+  const categorySum = totalBiodegradable + totalRecyclable + totalResidual + totalSpecial;
+  [ ["shareBiodegradable", totalBiodegradable], ["shareRecyclable", totalRecyclable],
+    ["shareResidual", totalResidual], ["shareSpecial", totalSpecial] ].forEach(([id, amount]) => {
+    const element = document.getElementById(id);
+    if (element) element.textContent = `${categorySum > 0 ? (amount / categorySum * 100).toFixed(1) : 0}% of selected waste`;
+  });
+  renderDashboardWasteBreakdown();
 }
 
 function renderLatestSubmission(records = validatedWasteRecords) {
-  if (!records.length) return;
+  if (!records.length) {
+    ["latestSubmissionBarangay", "latestSubmissionPersonnel", "latestSubmissionEnforcer", "latestSubmissionDate"].forEach((id) => {
+      const element = document.getElementById(id);
+      if (element) element.textContent = "—";
+    });
+    const count = document.getElementById("recordsToday");
+    if (count) count.textContent = "0";
+    return;
+  }
 
   const sortedRecords = [...records].sort((a, b) => {
     const dateA = new Date(getRecordCreatedAt(a) || 0);
@@ -1241,6 +1256,9 @@ function setDashboardTrendPeriod(periodKey) {
   const filteredRecords = getFilteredRecordsByRange(validatedWasteRecords);
 
   updateDashboardAnalytics(filteredRecords);
+  renderLatestSubmission(filteredRecords);
+  renderDashboardRecentRecords(filteredRecords);
+  renderSystemRecommendations(filteredRecords);
   renderWasteTrendOverview(validatedWasteRecords);
 
   document.dispatchEvent(
@@ -1341,8 +1359,8 @@ function renderWasteTrendOverview(records = validatedWasteRecords) {
 
     renderDashboardChartEmpty(
       container,
-      "No waste monitoring data available for this range.",
-      `${periodInfo.label}: ${formatDashboardLocalDate(periodInfo.startDate)} to ${formatDashboardLocalDate(periodInfo.endDate)}`
+      "No waste records for this period",
+      "Try another period or wait for validated submissions."
     );
     return;
   }
@@ -1360,19 +1378,13 @@ function renderWasteTrendOverview(records = validatedWasteRecords) {
   const residualData = trendData.map(item => item.residual);
   const specialData = trendData.map(item => item.special);
 
-  try {
-    if (wasteTrendChartInstance) {
-      wasteTrendChartInstance.destroy();
-      wasteTrendChartInstance = null;
-    }
-
-    if (typeof Chart !== "undefined" && Chart.getChart) {
-      const existingChart = Chart.getChart(canvas);
-      if (existingChart) existingChart.destroy();
-    }
-  } catch (error) {
-    console.warn("Old waste trend chart cleanup skipped:", error);
-    wasteTrendChartInstance = null;
+  if (wasteTrendChartInstance && wasteTrendChartInstance.canvas === canvas) {
+    wasteTrendChartInstance.data.labels = labels;
+    [biodegradableData, recyclableData, residualData, specialData].forEach((data, index) => {
+      wasteTrendChartInstance.data.datasets[index].data = data;
+    });
+    wasteTrendChartInstance.update();
+    return;
   }
 
   if (typeof Chart === "undefined") {
@@ -1393,7 +1405,7 @@ function renderWasteTrendOverview(records = validatedWasteRecords) {
       labels,
       datasets: [
         {
-          label: "Bio",
+          label: "Biodegradable",
           data: biodegradableData,
           borderWidth: 3,
           tension: 0.35,
@@ -1402,7 +1414,7 @@ function renderWasteTrendOverview(records = validatedWasteRecords) {
           pointHoverRadius: 7
         },
         {
-          label: "Recycle",
+          label: "Recyclable",
           data: recyclableData,
           borderWidth: 3,
           tension: 0.35,
@@ -1420,7 +1432,7 @@ function renderWasteTrendOverview(records = validatedWasteRecords) {
           pointHoverRadius: 7
         },
         {
-          label: "Special",
+          label: "Special Waste",
           data: specialData,
           borderWidth: 3,
           tension: 0.35,
@@ -1431,6 +1443,7 @@ function renderWasteTrendOverview(records = validatedWasteRecords) {
       ]
     },
     options: {
+      animation: { duration: 300 },
       responsive: true,
       maintainAspectRatio: false,
       interaction: {
@@ -1565,18 +1578,7 @@ function renderCategoryAnalytics(records = validatedWasteRecords) {
           maxBarThickness: 16,
           categoryPercentage: 0.72,
           barPercentage: 0.86,
-          backgroundColor: (context) => {
-            const chart = context.chart;
-            const { ctx, chartArea } = chart;
-
-            if (!chartArea) return "#2e7d32";
-
-            const gradient = ctx.createLinearGradient(0, chartArea.left, chartArea.right, 0);
-            gradient.addColorStop(0, "#66bb6a");
-            gradient.addColorStop(1, "#1b5e20");
-
-            return gradient;
-          }
+          backgroundColor: items.map((item) => window.WMO_DASHBOARD_WASTE_PALETTE?.[item.label === "Special Waste" ? "special" : item.label.toLowerCase()]?.solid || "#94A3B8")
         }
       ]
     },
@@ -1604,7 +1606,7 @@ function renderCategoryAnalytics(records = validatedWasteRecords) {
         }
       },
       animation: {
-        duration: 900,
+        duration: 300,
         easing: "easeOutQuart"
       },
       plugins: {
@@ -1719,6 +1721,7 @@ async function initializeDashboardData() {
 
   syncDashboardPeriodSelects();
   await loadDashboardOperationsSnapshot();
+  renderDashboardWasteMonitoring();
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -1736,6 +1739,134 @@ window.getDashboardPeriodRange = getDashboardPeriodRange;
 window.setDashboardTrendPeriod = setDashboardTrendPeriod;
 window.setDashboardCategoryPeriod = setDashboardCategoryPeriod;
 window.setupDashboardAdvancedPeriodFilters = setupDashboardAdvancedPeriodFilters;
+
+/* Waste monitoring UI: uses the existing validated-record loader and period helpers. */
+const dashboardWasteCategories = {
+  biodegradable: { label: "Biodegradable", field: "biodegradable_subtotal", icon: "biodegradable" },
+  recyclable: { label: "Recyclable", field: "recyclable_subtotal", icon: "recyclable" },
+  residual: { label: "Residual", field: "residual_subtotal", icon: "residual-waste" },
+  special: { label: "Special Waste", field: "special_subtotal", icon: "special-waste" }
+};
+let dashboardWasteRefreshInProgress = null;
+
+function getDashboardWasteBreakdown(records, key) {
+  const category = dashboardWasteCategories[key];
+  if (!category) return null;
+  const totals = Object.values(dashboardWasteCategories).reduce((sum, item) =>
+    sum + records.reduce((subtotal, record) => subtotal + toNumber(record[item.field]), 0), 0);
+  const contributing = records.filter((record) => toNumber(record[category.field]) > 0);
+  const total = contributing.reduce((sum, record) => sum + toNumber(record[category.field]), 0);
+  const barangays = new Map();
+  contributing.filter((record) => getRecordType(record) === "Barangay").forEach((record) => {
+    const name = getRecordDisplayName(record);
+    barangays.set(name, (barangays.get(name) || 0) + toNumber(record[category.field]));
+  });
+  return {
+    total, percentage: totals > 0 ? total / totals * 100 : 0,
+    barangays: [...barangays].sort((a, b) => b[1] - a[1]),
+    recent: [...contributing].sort((a, b) => new Date(getRecordCreatedAt(b) || 0) - new Date(getRecordCreatedAt(a) || 0)).slice(0, 5)
+  };
+}
+
+function renderDashboardWasteBreakdown() {
+  const key = window.dashboardSelectedWasteCategory;
+  const category = dashboardWasteCategories[key];
+  const dialog = document.getElementById("dashboardWasteDrawer");
+  if (!category || !dialog) return;
+  const model = getDashboardWasteBreakdown(getFilteredRecordsByRange(validatedWasteRecords), key);
+  dialog.dataset.category = key;
+  dialog.style.setProperty("--category-accent", window.WMO_DASHBOARD_WASTE_PALETTE?.[key]?.hover || "#166534");
+  dialog.querySelector("#dashboardWasteDrawerTitle").textContent = category.label;
+  dialog.querySelector(".dashboard-drawer-icon").src = `/images/dashboard/wmo-icon-${category.icon}.png`;
+  dialog.querySelector(".dashboard-drawer-body").innerHTML = `
+    <div class="dashboard-breakdown-total"><strong>${formatNumber(model.total)} kg</strong><span>${model.percentage.toFixed(1)}% of selected waste</span></div>
+    <p class="dashboard-breakdown-period">${escapeHtml(getDashboardPeriodRange(getSelectedDashboardTrendPeriodKey()).label)}</p>
+    ${model.recent.length ? `
+      <h3>Breakdown by Barangay</h3>
+      ${model.barangays.length ? `<ol class="dashboard-barangay-ranking">${model.barangays.map(([name, amount]) => `<li><span>${escapeHtml(name)}</span><strong>${formatNumber(amount)} kg</strong></li>`).join("")}</ol>` : `<p>No barangay contributions for this period.</p>`}
+      <h3>Recent Records</h3>
+      <div class="dashboard-breakdown-records">${model.recent.map((record) => `<article><strong>${escapeHtml(String(record.control_no || record.control_number || record.reference_no || record.id || "—"))}</strong><span>${escapeHtml(getRecordDisplayName(record))}</span><span>${formatNumber(toNumber(record[category.field]))} kg</span><time>${escapeHtml(formatDate(getRecordCreatedAt(record)))}</time></article>`).join("")}</div>
+    ` : `<p class="dashboard-breakdown-empty">No ${escapeHtml(category.label)} waste records for this period.</p>`}`;
+}
+
+function selectDashboardWasteCategory(key, openDrawer = true) {
+  if (key && !dashboardWasteCategories[key]) return;
+  window.dashboardSelectedWasteCategory = key || "";
+  document.querySelectorAll("#dashboardSection [data-waste-category]").forEach((button) => {
+    button.setAttribute("aria-pressed", String(button.dataset.wasteCategory === key));
+  });
+  if (wasteTrendChartInstance) wasteTrendChartInstance.update();
+  renderDashboardWasteBreakdown();
+  const dialog = document.getElementById("dashboardWasteDrawer");
+  if (key && openDrawer && dialog && !dialog.open) dialog.showModal();
+  if (!key && dialog?.open) dialog.close();
+}
+
+function renderDashboardWasteMonitoring() {
+  const filtered = getFilteredRecordsByRange(validatedWasteRecords);
+  updateDashboardAnalytics(filtered);
+  renderWasteTrendOverview(validatedWasteRecords);
+  renderCategoryAnalytics(validatedWasteRecords);
+  renderLatestSubmission(filtered);
+  renderDashboardRecentRecords(filtered);
+  renderSystemRecommendations(filtered);
+}
+
+function dashboardWasteIsActive() {
+  return document.visibilityState === "visible" &&
+    document.getElementById("dashboardSection")?.classList.contains("active") &&
+    typeof currentUser !== "undefined" && typeof hasWebCapability === "function" &&
+    hasWebCapability(currentUser, "waste.view");
+}
+
+function refreshDashboardWasteMonitoring() {
+  if (dashboardWasteRefreshInProgress) return dashboardWasteRefreshInProgress;
+  if (!dashboardWasteIsActive() || typeof loadRecords !== "function") return Promise.resolve(false);
+  const status = document.getElementById("dashboardWasteRefreshStatus");
+  if (status) status.textContent = "Updating data…";
+  dashboardWasteRefreshInProgress = Promise.resolve().then(() => loadRecords({ dashboardOnly: true }))
+    .then((success) => {
+      if (status) status.textContent = success ? "" : "Unable to refresh. Showing last available data.";
+      return success;
+    }).catch(() => {
+      if (status) status.textContent = "Unable to refresh. Showing last available data.";
+      return false;
+    }).finally(() => { dashboardWasteRefreshInProgress = null; });
+  return dashboardWasteRefreshInProgress;
+}
+
+function setupDashboardWasteMonitoring() {
+  const section = document.getElementById("dashboardSection");
+  if (!section || section.dataset.wasteMonitoringReady) return;
+  section.dataset.wasteMonitoringReady = "true";
+  const dialog = document.createElement("dialog");
+  dialog.id = "dashboardWasteDrawer";
+  dialog.className = "dashboard-waste-drawer";
+  dialog.setAttribute("aria-labelledby", "dashboardWasteDrawerTitle");
+  dialog.innerHTML = `<header><img class="dashboard-drawer-icon" alt="" /><h2 id="dashboardWasteDrawerTitle">Waste Category</h2><button type="button" class="dashboard-drawer-close" aria-label="Close waste breakdown">×</button></header><div class="dashboard-drawer-body"></div><footer><button type="button" class="view-all-btn">All Categories</button></footer>`;
+  document.body.append(dialog);
+  dialog.querySelector(".dashboard-drawer-close").addEventListener("click", () => dialog.close());
+  dialog.querySelector("footer button").addEventListener("click", () => selectDashboardWasteCategory(""));
+  document.querySelectorAll("#dashboardSection [data-waste-category]").forEach((button) => {
+    button.addEventListener("click", () => selectDashboardWasteCategory(button.dataset.wasteCategory));
+  });
+  document.getElementById("clearWasteCategoryBtn")?.addEventListener("click", () => selectDashboardWasteCategory(""));
+  document.addEventListener("wmo:waste-records-loaded", renderDashboardWasteMonitoring);
+  document.addEventListener("visibilitychange", () => { if (dashboardWasteIsActive()) refreshDashboardWasteMonitoring(); });
+  let wasActive = section.classList.contains("active");
+  new MutationObserver(() => {
+    const active = section.classList.contains("active");
+    if (active && !wasActive) refreshDashboardWasteMonitoring();
+    if (!active && dialog.open) dialog.close();
+    wasActive = active;
+  }).observe(section, { attributes: true, attributeFilter: ["class"] });
+  window.setInterval(() => { if (dashboardWasteIsActive()) refreshDashboardWasteMonitoring(); }, 60000);
+}
+
+document.addEventListener("DOMContentLoaded", setupDashboardWasteMonitoring);
+window.refreshDashboardWasteMonitoring = refreshDashboardWasteMonitoring;
+window.getDashboardWasteBreakdown = getDashboardWasteBreakdown;
+window.selectDashboardWasteCategory = selectDashboardWasteCategory;
 /* =========================================================
    DASHBOARD CUSTOM PERIOD DROPDOWN UI - FULL INTEGRATED
    Purpose:
