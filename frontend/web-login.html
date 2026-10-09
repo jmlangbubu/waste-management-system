@@ -3,40 +3,55 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Web Admin Login</title>
+  <title>WMO Secure Portal | Waste Management Office</title>
   <link rel="stylesheet" href="css/web-login.css" />
-
 </head>
 <body>
-  <div class="login-page">
-    <div class="login-card">
-      <div class="login-header">
-        <h1>Waste Management Office</h1>
-  
+  <main class="portal-login-shell">
+    <section class="portal-brand-panel" aria-label="Waste Management Office">
+      <div class="portal-brand-content">
+        <div class="portal-office-brand">
+          <img src="/images/wmo-logo-new.png" alt="Waste Management Office logo" width="64" height="64" />
+          <div><strong>Waste Management Office</strong><span>General Santos City</span></div>
+        </div>
+        <div class="portal-brand-intro">
+          <span class="portal-eyebrow">OFFICIAL WMO SECURE PORTAL</span>
+          <h2>Connected services.<br />Cleaner communities.</h2>
+          <p>Secure access to WMO administrative and operational services.</p>
+          <div class="portal-trust-tags"><span>Secure Access</span><span>Authorized Personnel</span></div>
+        </div>
       </div>
-
-      <form id="loginForm" class="login-form">
-        <div class="input-group">
-          <label for="username">Username</label>
-          <input type="text" id="username" placeholder="Enter username" required />
-        </div>
-
-        <div class="input-group">
-          <label for="password">Password</label>
-          <input type="password" id="password" placeholder="Enter password" required />
-        </div>
-
-        <button type="submit" id="loginBtn">Login</button>
-        <button class="back-btn" onclick="goBackToHome()">
-           ← Back to Home
-          </button>
-
-        <div id="messageBox" class="message-box"></div>
-      </form>
-    </div>
-  </div>
-
-<script src="js/config.js"></script>
-<script src="js/web-login.js"></script>
+    </section>
+    <section class="portal-login-panel" aria-labelledby="loginHeading">
+      <div class="portal-login-card">
+        <header class="login-header">
+          <span class="portal-eyebrow">WMO PORTAL</span>
+          <h1 id="loginHeading">Welcome Back</h1>
+          <p>Sign in to access the Waste Management Office management system.</p>
+        </header>
+        <form id="loginForm" class="login-form">
+          <div class="input-group">
+            <label for="username">Username</label>
+            <input type="text" id="username" placeholder="Enter username" autocomplete="username" required />
+          </div>
+          <div class="input-group">
+            <label for="password">Password</label>
+            <div class="password-field">
+              <input type="password" id="password" placeholder="Enter password" autocomplete="current-password" required />
+              <button type="button" id="togglePassword" class="password-toggle" aria-label="Show password" aria-controls="password" aria-pressed="false">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /><path class="eye-slash" d="m3 3 18 18" /></svg>
+              </button>
+            </div>
+          </div>
+          <button type="submit" id="loginBtn">Sign In</button>
+          <div id="messageBox" class="message-box" role="status" aria-live="polite" aria-atomic="true"></div>
+          <a class="portal-back-link" href="/">← Back to Public Portal</a>
+        </form>
+        <p class="portal-access-note">For authorized WMO personnel.</p>
+      </div>
+    </section>
+  </main>
+  <script src="js/config.js"></script>
+  <script src="js/web-login.js"></script>
 </body>
 </html>

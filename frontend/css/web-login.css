@@ -1,148 +1,77 @@
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-  font-family: Arial, Helvetica, sans-serif;
+:root { color-scheme: light; --portal-blue: #2563eb; --portal-navy: #12355b; --portal-muted: #64748b; --portal-border: #d9e6f2; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { min-width: 0; background: #f8fbff; color: var(--portal-navy); font-family: Arial, Helvetica, sans-serif; }
+button, input { font: inherit; }
+a:focus-visible, button:focus-visible { outline: 3px solid var(--portal-blue); outline-offset: 4px; }
+.portal-login-shell { min-height: 100vh; min-height: 100svh; display: grid; grid-template-columns: 45% 55%; }
+.portal-brand-panel { position: relative; isolation: isolate; padding: 56px clamp(28px, 4vw, 64px); background: #eef6ff url('/images/login/wmo-login-city-visual.png') center 55% / cover no-repeat; }
+.portal-brand-panel::before { content: ''; position: absolute; z-index: -1; inset: 0; background: linear-gradient(180deg, rgba(238,246,255,.94), rgba(238,246,255,.8) 32%, rgba(18,53,91,.03) 65%, rgba(18,53,91,.15)); }
+.portal-brand-panel::after { content: ''; position: absolute; z-index: -1; inset: 0; background: url('/images/login/wmo-login-frame-overlay.png') center / cover no-repeat; opacity: .12; pointer-events: none; }
+.portal-brand-content { max-width: 480px; margin: 0 auto; }
+.portal-office-brand { display: flex; align-items: center; gap: 14px; }
+.portal-office-brand img { width: 64px; height: 64px; flex-shrink: 0; object-fit: contain; padding: 5px; background: white; border-radius: 15px; }
+.portal-office-brand strong { display: block; font-size: 18px; font-weight: 800; line-height: 1.4; }
+.portal-office-brand span { display: block; margin-top: 4px; font-size: 13px; color: var(--portal-muted); }
+.portal-brand-intro { margin-top: clamp(56px, 9vh, 100px); }
+.portal-eyebrow { font-size: 11px; font-weight: 800; letter-spacing: 1.6px; color: var(--portal-blue); }
+.portal-brand-intro h2 { margin-top: 18px; font-size: clamp(26px, 2.5vw, 38px); line-height: 1.2; letter-spacing: -.8px; }
+.portal-brand-intro p { margin-top: 18px; max-width: 340px; font-size: 15px; line-height: 1.75; }
+.portal-trust-tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; }
+.portal-trust-tags span { padding: 8px 12px; border-radius: 30px; background: rgba(255,255,255,.8); color: #16756d; border: 1px solid rgba(43,185,168,.25); font-size: 11px; font-weight: 700; }
+.portal-login-panel { position: relative; isolation: isolate; display: grid; place-items: center; padding: 48px 32px; background: linear-gradient(145deg, #f8fbff, #eef6ff); }
+.portal-login-panel::before { content: ''; position: absolute; z-index: -1; inset: 0; background: url('/images/login/wmo-login-soft-bg.png') center / cover no-repeat; opacity: .13; pointer-events: none; }
+.portal-login-card { width: 100%; max-width: 470px; padding: 40px; border: 1px solid var(--portal-border); border-radius: 24px; background: white; box-shadow: 0 12px 38px rgba(18,53,91,.07); }
+.login-header { margin-bottom: 30px; }
+.login-header h1 { margin-top: 12px; font-size: 34px; font-weight: 800; letter-spacing: -.8px; line-height: 1.2; }
+.login-header p { margin-top: 12px; color: var(--portal-muted); font-size: 14px; line-height: 1.7; }
+.login-form { display: flex; flex-direction: column; gap: 20px; }
+.input-group { display: flex; flex-direction: column; gap: 9px; }
+.input-group label { font-size: 13px; font-weight: 700; }
+.input-group input { width: 100%; min-width: 0; height: 54px; border: 1px solid var(--portal-border); border-radius: 12px; padding: 0 15px; font-size: 15px; color: var(--portal-navy); background: #fbfdff; outline: none; transition: border-color .2s, box-shadow .2s; }
+.input-group input:focus { border-color: var(--portal-blue); box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
+.input-group input::placeholder { color: #718096; }
+.password-field { position: relative; }
+.password-field input { padding-right: 58px; }
+.password-toggle { position: absolute; top: 5px; right: 5px; display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 8px; background: transparent; color: #52657d; cursor: pointer; }
+.password-toggle:hover { background: #eef6ff; color: var(--portal-blue); }
+.password-toggle svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.eye-slash { display: none; }
+.password-toggle[aria-pressed='true'] .eye-slash { display: block; }
+#loginBtn { width: 100%; height: 54px; border: 0; border-radius: 12px; background: var(--portal-blue); color: white; font-size: 15px; font-weight: 750; cursor: pointer; box-shadow: 0 5px 14px rgba(37,99,235,.16); transition: background .2s, transform .2s; }
+#loginBtn:hover:not(:disabled) { background: #1d4ed8; transform: translateY(-1px); }
+#loginBtn:disabled { opacity: .65; cursor: wait; }
+.portal-back-link { align-self: center; padding: 4px; color: var(--portal-navy); font-size: 13px; font-weight: 650; text-decoration: none; }
+.portal-back-link:hover { color: var(--portal-blue); text-decoration: underline; }
+.message-box { padding: 12px 14px; border-radius: 10px; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.message-box:empty { display: none; }
+.message-box.error { color: #991b1b; background: #fff1f2; border: 1px solid #fecdd3; }
+.message-box.success { color: #16665e; background: #edfaf7; border: 1px solid #bce8dd; }
+.portal-access-note { margin-top: 26px; text-align: center; color: var(--portal-muted); font-size: 11px; }
+@media (max-width: 1100px) {
+  .portal-login-shell { grid-template-columns: 40% 60%; }
+  .portal-brand-panel { padding: 36px 26px; }
+  .portal-office-brand img { width: 52px; height: 52px; }
+  .portal-office-brand strong { font-size: 15px; }
+  .portal-brand-intro h2 { font-size: 29px; }
+  .portal-login-panel { padding: 36px 24px; }
+  .portal-login-card { padding: 32px; }
 }
-
-body {
-  min-height: 100vh;
-  background: linear-gradient(135deg, #eef6f0, #f8fafc);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #1f2937;
+@media (max-width: 700px) {
+  .portal-login-shell { grid-template-columns: 1fr; align-content: start; }
+  .portal-brand-panel { padding: 24px; background: #eef6ff; }
+  .portal-brand-panel::before { background: url('/images/login/wmo-login-eco-city.png') right 45% / cover no-repeat; opacity: .1; }
+  .portal-brand-panel::after, .portal-brand-intro { display: none; }
+  .portal-brand-content { max-width: 440px; }
+  .portal-office-brand img { width: 50px; height: 50px; }
+  .portal-office-brand strong { font-size: 16px; }
+  .portal-office-brand span { font-size: 12px; }
+  .portal-login-panel { padding: 24px 16px 32px; align-items: start; }
+  .portal-login-card { max-width: 440px; padding: 28px 24px; border-radius: 22px; }
+  .login-header { margin-bottom: 25px; }
+  .login-header h1 { font-size: 30px; }
+  .login-form { gap: 18px; }
 }
-
-.login-page {
-  width: 100%;
-  max-width: 460px;
-  padding: 20px;
-}
-
-.login-card {
-  background: #ffffff;
-  border-radius: 20px;
-  padding: 32px 28px;
-  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.10);
-  border: 1px solid #e5e7eb;
-}
-
-.login-header {
-  text-align: center;
-  margin-bottom: 28px;
-}
-
-.login-header h1 {
-  font-size: 28px;
-  color: #0f172a;
-  margin-bottom: 8px;
-}
-
-.login-header p {
-  font-size: 14px;
-  color: #64748b;
-}
-
-.login-form {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
-
-.input-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.input-group label {
-  font-size: 14px;
-  font-weight: bold;
-  color: #334155;
-}
-
-.input-group input {
-  height: 46px;
-  border: 1px solid #dbe3ec;
-  border-radius: 12px;
-  padding: 0 14px;
-  font-size: 14px;
-  outline: none;
-  transition: 0.2s ease;
-}
-
-.input-group input:focus {
-  border-color: #15803d;
-  box-shadow: 0 0 0 3px rgba(21, 128, 61, 0.10);
-}
-
-button {
-  height: 48px;
-  border: none;
-  border-radius: 12px;
-  background: #15803d;
-  color: white;
-  font-size: 15px;
-  font-weight: bold;
-  cursor: pointer;
-  transition: 0.2s ease;
-}
-
-button:hover {
-  background: #166534;
-}
-
-button:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-}
-
-.message-box {
-  min-height: 20px;
-  font-size: 14px;
-  text-align: center;
-  margin-top: 4px;
-}
-
-.message-box.success {
-  color: #166534;
-}
-
-.message-box.error {
-  color: #b91c1c;
-}
-
-@media (max-width: 480px) {
-  .login-card {
-    padding: 24px 18px;
-  }
-
-  .login-header h1 {
-    font-size: 24px;
-  }
-}
-
-.back-btn {
-  background: transparent !important;
-  border: none !important;
-  color: #4f6b57 !important;
-  font-size: 0.95rem;
-  font-weight: 600;
-  cursor: pointer;
-  margin-top: 14px;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  transition: 0.2s ease;
-  box-shadow: none !important;
-  width: auto !important;
-  height: auto !important;
-}
-
-.back-btn:hover {
-  color: #1f2a1f !important;
-  transform: translateX(-2px);
-  background: transparent !important;
+@media (prefers-reduced-motion: reduce) {
+  .input-group input, #loginBtn { transition: none; }
+  #loginBtn:hover:not(:disabled) { transform: none; }
 }
