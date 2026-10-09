@@ -3123,8 +3123,12 @@ a:focus-visible, button:focus-visible, .btn:focus-visible, input:focus-visible, 
 .playstore-badge-custom { min-width: 176px; padding-inline: 0.75rem; background: #12355b; box-shadow: 0 5px 16px rgba(18,53,91,0.15); }
 
 @media (min-width: 1200px) {
-  .floating-feature-stack { right: 40px !important; }
-  .feature-info-card { right: 40px !important; top: 330px; bottom: auto !important; }
+  .floating-feature-stack { left: 330px; right: auto !important; }
+  .feature-info-card { left: 330px; right: auto !important; top: 316px; bottom: auto !important; }
+  .phone-promo-block { left: 163px; }
+  .playstore-badge-custom { width: 176px; min-width: 0; min-height: 57px; padding-inline: 8px; border-radius: 13px; }
+  .playstore-big { font-size: 0.85rem; white-space: nowrap; }
+  .playstore-small { font-size: 0.6rem; }
 }
 
 .services-section { padding: 68px 0; background: #ffffff; }
