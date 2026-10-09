@@ -1,3 +1,30 @@
+/* Scoped Orientation queue/report palette; no lifecycle or modal-layout changes. */
+html body #appointmentsSection #orientationSection .page-card { padding: 24px; border-color: #d9e6f2; border-radius: 20px; }
+html body #appointmentsSection #orientationSection .page-card-header { margin-bottom: 20px; }
+html body #appointmentsSection #orientationSection h3 { color: #12355b; margin: 0 0 6px; }
+html body #appointmentsSection #orientationSection .page-card-header p { color: #64748b; }
+html body #orientationSection .orientation-queue-actions .orientation-table-action { background: #eef6ff; color: #1d4ed8; border-color: #bfdbfe; min-height: 38px !important; border-radius: 11px; }
+html body #orientationSection .orientation-table-action:hover { background: #2563eb; color: #fff; }
+html body #orientationSection .orientation-status { display: inline-flex; align-items: center; line-height: 1.4; }
+html body #orientationHistoryModal .history-modal-overlay { background: rgba(15,39,66,.58) !important; }
+html body #orientationHistoryModal :is(.history-modal-content) { border-color: #d9e6f2 !important; background: #fff !important; }
+html body #orientationHistoryModal .history-modal-header h2 { color: #12355b !important; }
+html body #orientationHistoryModal .history-modal-header p { color: #64748b !important; }
+html body #orientationHistoryModal .history-close-btn { background: #f3f8ff !important; color: #12355b !important; }
+html body #orientationHistoryModal .table-shell { border-color: #d9e6f2 !important; }
+html body #orientationHistoryModal thead th { background: #f3f8ff !important; color: #12355b !important; }
+html body #orientationHistoryModal tbody td { border-color: #e5edf5 !important; }
+html body #orientationHistoryModal tbody tr:hover td { background: #f8fbff !important; }
+html body #orientationHistoryModal .orientation-history-search-input,
+html body #orientationHistoryModal .orientation-history-barangay-filter { border-color: #d9e6f2; color: #12355b; background: #fff; }
+html body #orientationHistoryModal input:focus,
+html body #orientationHistoryModal select:focus { outline: 2px solid #2563eb; outline-offset: 2px; }
+html body #orientationSection button:focus-visible,
+html body #orientationHistoryModal button:focus-visible { outline: 3px solid rgba(37,99,235,.4); outline-offset: 3px; }
+@media (max-width: 600px) {
+  html body #appointmentsSection #orientationSection .page-card { padding: 18px; }
+}
+
 /* =========================
    ORIENTATION PAGE
 ========================= */
