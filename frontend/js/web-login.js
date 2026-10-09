@@ -10,6 +10,16 @@ const passwordInput = document.getElementById("password");
 const loginBtn = document.getElementById("loginBtn");
 const messageBox = document.getElementById("messageBox");
 
+const togglePassword = document.getElementById("togglePassword");
+if (togglePassword && passwordInput) {
+  togglePassword.addEventListener("click", () => {
+    const showPassword = passwordInput.type === "password";
+    passwordInput.type = showPassword ? "text" : "password";
+    togglePassword.setAttribute("aria-label", showPassword ? "Hide password" : "Show password");
+    togglePassword.setAttribute("aria-pressed", String(showPassword));
+  });
+}
+
 function getLoginResponseContentType(response) {
   return String(response?.headers?.get?.("content-type") || "")
     .trim()
@@ -203,7 +213,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       if (loginBtn) {
         loginBtn.disabled = true;
-        loginBtn.textContent = "Logging in...";
+        loginBtn.textContent = "Signing in...";
       }
 
       showMessage("", "");
@@ -308,7 +318,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       } finally {
         if (loginBtn) {
           loginBtn.disabled = false;
-          loginBtn.textContent = "Login";
+          loginBtn.textContent = "Sign In";
         }
       }
     });
@@ -317,10 +327,5 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 });
 
-function goBackToHome() {
-  window.location.href = "index.html";
-}
-
-window.goBackToHome = goBackToHome;
 window.getDashboardByRole = getDashboardByRole;
 window.normalizeLoginRole = normalizeLoginRole;
