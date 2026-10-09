@@ -1,3 +1,68 @@
+/* Services workspace palette refresh: presentation only, scoped to Services/history. */
+html body #appointmentsSection .appointments-workspace-tabs { background: #f8fbff; border-color: #d9e6f2; border-radius: 16px; margin-bottom: 22px; }
+html body #appointmentsSection .appointments-workspace-tab { color: #64748b; }
+html body #appointmentsSection .appointments-workspace-tab:hover { background: #eef6ff; color: #12355b; }
+html body #appointmentsSection .appointments-workspace-tab.active { background: #2563eb; color: #fff; box-shadow: 0 6px 16px rgba(37,99,235,.18); }
+html body #appointmentsSection button:focus-visible,
+html body #appointmentHistoryModal button:focus-visible { outline: 3px solid rgba(37,99,235,.4); outline-offset: 3px; }
+html body #appointmentsSection .page-card { padding: 24px; border-color: #d9e6f2; border-radius: 20px; box-shadow: 0 3px 14px rgba(15,39,66,.035); min-height: 0; }
+html body #appointmentsSection .page-card-header { margin-bottom: 20px; }
+html body #appointmentsSection .page-card-header h3 { margin: 0 0 6px; color: #12355b; font-size: 22px; }
+html body #appointmentsSection .page-card-header p { color: #64748b; font-size: 14px; line-height: 1.5; }
+html body #appointmentsSection .table-shell { border-color: #d9e6f2; border-radius: 16px; }
+html body #appointmentsSection th { background: #f3f8ff; color: #12355b; font-weight: 750; }
+html body #appointmentsSection td { color: #334155; border-color: #e5edf5; }
+html body #appointmentsSection tbody tr:hover td { background: #f8fbff; }
+html body #appointmentsSection .status-badge { min-width: 0; min-height: 30px; padding: 6px 12px; font-size: 12px; font-weight: 750; }
+html body #appointmentsSection .appointment-action-buttons button.inline-action-btn { min-height: 38px !important; border-radius: 11px; box-shadow: none; }
+html body #appointmentsSection .appointment-action-buttons .assign-btn,
+html body #appointmentsSection .appointment-action-buttons .warning-btn { background: #eef6ff; border-color: #bfdbfe; color: #1d4ed8; }
+html body #appointmentsSection .empty-state,
+html body #appointmentsSection .loading-state { padding: 32px 20px; color: #64748b; background: #f8fbff; text-align: center; font-weight: 600; }
+html body #appointmentsSection .appointments-history-card { border-color: #d9e6f2; border-radius: 18px; box-shadow: 0 3px 12px rgba(15,39,66,.03); }
+html body #appointmentsSection .appointments-history-card h3 { color: #12355b; }
+html body #appointmentsSection .appointments-history-icon { background: #eef6ff; color: #2563eb; }
+html body #appointmentsSection .appointments-history-card:nth-child(2) .appointments-history-icon { background: #ecfdf9; color: #0f766e; }
+html body #appointmentsSection #openAppointmentHistoryBtn { background: #2563eb; color: #fff; border: 1px solid #2563eb; box-shadow: none; min-height: 40px; }
+html body #appointmentsSection #openAppointmentHistoryBtn:hover { background: #1d4ed8; transform: none; }
+html body #appointmentsSection #openOrientationHistoryBtn { background: #eef6ff !important; color: #1d4ed8 !important; border: 1px solid #bfdbfe !important; box-shadow: none !important; }
+html body #appointmentsSection #openOrientationHistoryBtn:hover { background: #2563eb !important; color: #fff !important; transform: none; }
+html body #appointmentHistoryModal .history-modal-overlay { background: rgba(15,39,66,.58) !important; }
+html body #appointmentHistoryModal .history-modal-content { border-color: #d9e6f2 !important; }
+html body #appointmentHistoryModal .history-modal-header h2 { color: #12355b !important; }
+html body #appointmentHistoryModal .history-modal-header p { color: #64748b !important; }
+html body #appointmentHistoryModal .history-close-btn { background: #f3f8ff !important; color: #12355b !important; }
+html body #appointmentHistoryModal .table-shell { border-color: #d9e6f2 !important; }
+html body #appointmentHistoryModal th { background: #f3f8ff !important; color: #12355b !important; }
+html body #appointmentHistoryModal td { border-color: #e5edf5 !important; }
+html body #appointmentHistoryModal tbody tr:hover td { background: #f8fbff !important; }
+html body #appointmentHistoryModal input { border-color: #d9e6f2; color: #12355b; }
+html body #appointmentHistoryModal input:focus { outline: 2px solid #2563eb; outline-offset: 2px; }
+@media (max-width: 600px) {
+  html body #appointmentsSection .page-card { padding: 18px; }
+  html body #appointmentsSection .appointments-history-grid { grid-template-columns: minmax(0,1fr); }
+  html body #appointmentsSection .appointments-history-card { padding: 20px; }
+  html body #appointmentsSection .appointments-history-card button { white-space: normal; height: auto; min-height: 40px; padding-block: 10px; max-width: 100%; }
+  html body #appointmentsSection .appointments-workspace-tab { padding-inline: 14px; }
+}
+
+/* Desktop Active Requests spacing only; preserve the smaller-screen table layout. */
+@media (min-width: 1025px) {
+  html body #appointmentsSection #appointmentsActivePanel .table-shell { overflow-x: auto !important; }
+  html body #appointmentsSection #appointmentsActivePanel .appointments-table { min-width: 1040px !important; }
+  html body #appointmentsSection #appointmentsActivePanel :is(th,td):nth-child(1) { width: 10% !important; white-space: nowrap !important; overflow-wrap: normal !important; }
+  html body #appointmentsSection #appointmentsActivePanel :is(th,td):nth-child(2) { width: 7% !important; }
+  html body #appointmentsSection #appointmentsActivePanel :is(th,td):nth-child(3) { width: 7% !important; }
+  html body #appointmentsSection #appointmentsActivePanel :is(th,td):nth-child(4) { width: 9% !important; white-space: nowrap !important; overflow-wrap: normal !important; }
+  html body #appointmentsSection #appointmentsActivePanel :is(th,td):nth-child(5) { width: 13% !important; }
+  html body #appointmentsSection #appointmentsActivePanel :is(th,td):nth-child(6) { width: 9% !important; }
+  html body #appointmentsSection #appointmentsActivePanel :is(th,td):nth-child(7) { width: 8% !important; }
+  html body #appointmentsSection #appointmentsActivePanel :is(th,td):nth-child(8) { width: 9% !important; }
+  html body #appointmentsSection #appointmentsActivePanel :is(th,td):nth-child(9) { width: 8% !important; }
+  html body #appointmentsSection #appointmentsActivePanel :is(th,td):nth-child(10) { width: 20% !important; padding-inline: 8px !important; }
+  html body #appointmentsSection #appointmentsActivePanel .appointment-action-buttons { gap: 8px !important; }
+}
+
 /* =========================================================
    ADMIN APPOINTMENTS
    File: css/admin/admin-appointments.css
