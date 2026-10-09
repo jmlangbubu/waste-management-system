@@ -992,8 +992,41 @@ function generateWasteSummaryReport(records) {
             cursor: pointer;
           }
 
+          /* WMO report presentation only; values and print action are unchanged. */
+          body { background: #f3f7fa; color: #12355b; }
+          .report-sheet { border: 1px solid #d9e6f2; border-radius: 14px; box-shadow: 0 6px 24px rgba(15,39,66,.08); }
+          .report-header { border-bottom-color: #2563eb; }
+          .office-name, h1 { color: #12355b; }
+          .card { border-color: #d9e6f2; background: #f8fbff; border-radius: 10px; }
+          .summary .card:nth-child(1) { border-top: 3px solid #16a34a; background: #ecfdf3; }
+          .summary .card:nth-child(2) { border-top: 3px solid #f59e0b; background: #fff7e6; }
+          .summary .card:nth-child(3) { border-top: 3px solid #eab308; background: #fffbea; }
+          .summary .card:nth-child(4) { border-top: 3px solid #2563eb; background: #eff6ff; }
+          .summary .card:nth-child(1) strong { color: #166534; }
+          .summary .card:nth-child(2) strong { color: #b45309; }
+          .summary .card:nth-child(3) strong { color: #a16207; }
+          .summary .card:nth-child(4) strong { color: #1d4ed8; }
+          .card.grand-total { background: #eef6ff; border-color: #bfdbfe; }
+          .card.grand-total strong { color: #12355b; }
+          th, td, .report-footer { border-color: #d9e6f2; }
+          th { background: #eef6ff; color: #12355b; }
+          th:last-child, td:last-child { background: #f3f8ff; color: #12355b; }
+          .print-btn { background: #2563eb; border-radius: 10px; }
+          .print-btn:hover { background: #1d4ed8; }
+          .print-btn:focus-visible { outline: 2px solid #2563eb; outline-offset: 3px; }
+          @media screen and (max-width: 700px) {
+            .report-sheet { padding: 20px 16px; }
+            .report-header { flex-wrap: wrap; }
+            h1 { width: 100%; margin: 8px 0 0; text-align: left; font-size: 18px; }
+            .report-meta, .summary { grid-template-columns: repeat(2,minmax(0,1fr)); }
+            .card strong { white-space: normal; overflow-wrap: anywhere; }
+            .report-toolbar { margin-inline: 16px; }
+          }
+
           @media print {
             body { background: #fff; }
+            .report-sheet { border: 0; border-radius: 0; }
+            .summary .card, th, th:last-child, td:last-child { background: #fff !important; }
 
             .report-sheet {
               width: 100%;

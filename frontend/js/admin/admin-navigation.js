@@ -26,6 +26,7 @@ function setPageTitleFromSection(sectionId) {
   pageTitle.textContent = titleMap[sectionId] || "Admin Panel";
   if (pageSubtitle) {
     const subtitleMap = {
+      [SECTION_IDS.records]: "Validated waste records submitted by the field workflow.",
       [SECTION_IDS.appointments]: "Manage service requests, schedules, orientation activities, and completed records.",
       [SECTION_IDS.tracking]: "Monitor active trucks and plan collection routes."
     };
