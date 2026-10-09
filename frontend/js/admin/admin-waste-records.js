@@ -63,7 +63,7 @@ function getStatusBadgeClass(status) {
   return "badge";
 }
 
-async function loadRecords() {
+async function loadRecords({ dashboardOnly = false } = {}) {
   try {
     const apiBase = getWasteApiBase();
     const response = await webAdminFetch(`${apiBase}/waste/web/validated-records`);
@@ -87,11 +87,17 @@ async function loadRecords() {
       ? result.data
       : [];
 
-    populateWasteRecordFilters();
-    renderWasteRecordsTable(validatedWasteRecords);
-    updateWasteRecordsAnalyticsSafe(validatedWasteRecords);
+    if (!dashboardOnly) {
+      populateWasteRecordFilters();
+      renderWasteRecordsTable(validatedWasteRecords);
+      updateWasteRecordsAnalyticsSafe(validatedWasteRecords);
+    }
+    document.dispatchEvent(new CustomEvent("wmo:waste-records-loaded"));
+    return true;
   } catch (error) {
     console.error("Error loading validated waste records:", error);
+
+    if (dashboardOnly) return false;
 
     validatedWasteRecords = [];
     populateWasteRecordFilters();
