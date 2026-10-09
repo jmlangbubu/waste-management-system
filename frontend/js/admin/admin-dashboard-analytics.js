@@ -1462,7 +1462,7 @@ function renderWasteTrendOverview(records = validatedWasteRecords) {
         tooltip: {
           callbacks: {
             label: function(context) {
-              return `${context.dataset.label}: ${formatNumber(context.raw)}`;
+              return `${context.dataset.label}: ${formatNumber(context.raw)} kg`;
             }
           }
         }
@@ -1475,9 +1475,13 @@ function renderWasteTrendOverview(records = validatedWasteRecords) {
         },
         y: {
           beginAtZero: true,
+          title: {
+            display: true,
+            text: "Weight (kg)"
+          },
           ticks: {
             callback: function(value) {
-              return formatNumber(value);
+              return `${formatNumber(value)} kg`;
             }
           }
         }
@@ -1616,7 +1620,7 @@ function renderCategoryAnalytics(records = validatedWasteRecords) {
         tooltip: {
           callbacks: {
             label: function(context) {
-              return `Total: ${formatNumber(context.raw)}`;
+              return `Total: ${formatNumber(context.raw)} kg`;
             }
           }
         }
@@ -1624,9 +1628,15 @@ function renderCategoryAnalytics(records = validatedWasteRecords) {
       scales: {
         x: {
           beginAtZero: true,
+          title: {
+            display: true,
+            text: "Weight (kg)"
+          },
           ticks: {
             color: "#7b8981",
             padding: 6,
+            autoSkip: true,
+            maxTicksLimit: (context) => context.chart.width < 480 ? 3 : 8,
             maxRotation: 0,
             minRotation: 0,
             font: {
@@ -1634,7 +1644,7 @@ function renderCategoryAnalytics(records = validatedWasteRecords) {
               weight: "500"
             },
             callback: function(value) {
-              return formatNumber(value);
+              return `${formatNumber(value)} kg`;
             }
           },
           grid: {
