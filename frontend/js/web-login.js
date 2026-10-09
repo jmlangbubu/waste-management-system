@@ -20,6 +20,19 @@ if (togglePassword && passwordInput) {
   });
 }
 
+function setLoginLoading(isLoading) {
+  if (loginBtn) {
+    loginBtn.disabled = isLoading;
+    loginBtn.classList?.toggle("is-loading", isLoading);
+    loginBtn.classList?.remove("is-success");
+    loginBtn.setAttribute?.("aria-busy", String(isLoading));
+    loginBtn.textContent = isLoading ? "Signing in..." : "Sign In";
+  }
+  [usernameInput, passwordInput, togglePassword].forEach((input) => {
+    if (input) input.disabled = isLoading;
+  });
+}
+
 function getLoginResponseContentType(response) {
   return String(response?.headers?.get?.("content-type") || "")
     .trim()
@@ -211,10 +224,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         return;
       }
 
-      if (loginBtn) {
-        loginBtn.disabled = true;
-        loginBtn.textContent = "Signing in...";
-      }
+      let loginSucceeded = false;
+      setLoginLoading(true);
 
       showMessage("", "");
 
@@ -311,15 +322,19 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         showMessage("Login successful. Redirecting...", "success");
+        loginSucceeded = true;
+        if (loginBtn) {
+          loginBtn.classList?.remove("is-loading");
+          loginBtn.classList?.add("is-success");
+          loginBtn.setAttribute?.("aria-busy", "false");
+          loginBtn.textContent = "Redirecting...";
+        }
 
         setTimeout(() => {
           window.location.href = getDashboardByRole(savedUser.role);
         }, 800);
       } finally {
-        if (loginBtn) {
-          loginBtn.disabled = false;
-          loginBtn.textContent = "Sign In";
-        }
+        if (!loginSucceeded) setLoginLoading(false);
       }
     });
   } catch (error) {
