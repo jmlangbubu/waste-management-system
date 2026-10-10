@@ -5,6 +5,7 @@
   window.APP_CONFIG = {
     BASE_URL: applicationOrigin,
     API_BASE_URL: apiBaseUrl,
+    CARTO_BASEMAP_KEY: window.RUNTIME_CONFIG?.CARTO_BASEMAP_KEY || "",
 
     APPOINTMENTS_ACTIVE_URL: `${apiBaseUrl}/appointments/active`,
     APPOINTMENTS_HISTORY_URL: `${apiBaseUrl}/appointments/history`,
