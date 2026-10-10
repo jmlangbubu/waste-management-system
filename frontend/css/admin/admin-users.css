@@ -1022,3 +1022,81 @@ body #deactivatedAccountsModal.history-modal:not(.hidden) table {
 
 
 
+
+/* User Management surfaces only; account, status and assignment behavior is unchanged. */
+html body #userManagementSection {
+  --users-primary: #2563EB;
+  --users-secondary: #1D4ED8;
+  --users-text: #0F2742;
+  --users-muted: #64748B;
+  --users-line: #D9E6F2;
+  --users-soft: #F8FBFF;
+}
+html body #userManagementSection :is(.user-management-heading h2,.page-card-header h2) { color: #12355B; }
+html body #userManagementSection .user-management-heading h2 { font-size: 24px; }
+html body #userManagementSection .page-card { border-radius: 18px !important; box-shadow: 0 6px 20px rgba(15,39,66,.04); }
+html body #userManagementSection .page-card-header { border-color: #D9E6F2; }
+html body #userManagementSection .user-create-trigger,
+html body #createAccountModal .create-btn { background: #2563EB; color: #fff; border-radius: 10px; min-height: 44px; }
+html body #userManagementSection .user-create-trigger:hover,
+html body #createAccountModal .create-btn:hover { background: #1D4ED8; }
+html body #userManagementSection .account-search-input { border-color: #D9E6F2; border-radius: 10px; }
+html body #userManagementSection .account-search-input:focus { border-color: #2563EB; box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
+html body #userManagementSection .accounts-toolbar :is(.view-all-btn,.view-all-btn.small) { background: #EEF6FF; border-color: #BFDBFE; color: #1D4ED8; border-radius: 10px; }
+html body #userManagementSection .accounts-toolbar :is(.view-all-btn,.view-all-btn.small):hover { background: #2563EB; border-color: #2563EB; color: #fff; }
+html body #userManagementSection .accounts-table-shell { border-radius: 15px; }
+html body #userManagementSection .accounts-table-shell > .accounts-table { min-width: 1040px; }
+html body #userManagementSection .accounts-table :is(th,td):nth-child(1) { width: 13%; }
+html body #userManagementSection .accounts-table :is(th,td):nth-child(2) { width: 17%; }
+html body #userManagementSection .accounts-table :is(th,td):nth-child(3) { width: 7%; }
+html body #userManagementSection .accounts-table :is(th,td):nth-child(4) { width: 10%; }
+html body #userManagementSection .accounts-table :is(th,td):nth-child(8) { width: 18%; }
+html body #userManagementSection .accounts-table-shell::-webkit-scrollbar-thumb { background: #B8CCE0; }
+html body #userManagementSection .accounts-table th { background: #F3F8FF; color: #12355B; border-color: #D9E6F2; }
+html body #userManagementSection .accounts-table td { border-color: #E5EDF5; }
+html body #userManagementSection .accounts-table tbody tr:hover td { background: #F8FBFF; }
+html body :is(#userManagementSection,#deactivatedAccountsModal) .accounts-table td:first-child strong { color: #12355B; }
+html body :is(#userManagementSection,#deactivatedAccountsModal) .account-username { color: #0F2742; }
+html body :is(#userManagementSection,#deactivatedAccountsModal) .account-subtle-text { color: #64748B; }
+html body :is(#userManagementSection,#deactivatedAccountsModal) .accounts-table td:first-child .account-subtle-text { color: #94A3B8; }
+html body :is(#userManagementSection,#deactivatedAccountsModal) .accounts-table td:nth-child(4) { color: #12355B !important; }
+html body :is(#userManagementSection,#deactivatedAccountsModal) .accounts-table td:nth-child(7) { color: #64748B !important; }
+html body :is(#userManagementSection,#deactivatedAccountsModal) .account-source-chip.web { background: #EEF6FF; border-color: #BFDBFE; color: #1D4ED8; }
+html body :is(#userManagementSection,#deactivatedAccountsModal) .account-source-chip.mobile { background: #E7F8F5; border-color: #B7E5DC; color: #168578; }
+html body :is(#userManagementSection,#deactivatedAccountsModal) .account-status-pill { min-height: 28px; padding: 0 10px; }
+html body :is(#userManagementSection,#deactivatedAccountsModal) .account-action-buttons .edit-btn { background: #EEF6FF; border-color: #BFDBFE; color: #2563EB; }
+html body :is(#userManagementSection,#deactivatedAccountsModal) .account-action-buttons .edit-btn:hover { background: #2563EB; border-color: #2563EB; color: #fff; }
+html body :is(#userManagementSection,#deactivatedAccountsModal) .account-action-buttons .activate-btn { background: #EAF7F0; border-color: #BFE3D1; color: #24634C; }
+html body :is(#userManagementSection,#deactivatedAccountsModal) .account-action-buttons .activate-btn:hover { background: #15803D; border-color: #15803D; color: #fff; }
+html body :is(#createAccountModal,#deactivatedAccountsModal) .history-modal-overlay { background: rgba(15,39,66,.58) !important; }
+html body #createAccountModal .history-modal-content,
+html body #deactivatedAccountsModal.history-modal:not(.hidden) .history-modal-content { border: 1px solid #D9E6F2 !important; border-radius: 20px !important; box-shadow: 0 24px 70px rgba(15,39,66,.24) !important; }
+html body :is(#createAccountModal,#deactivatedAccountsModal) .history-modal-header { background: #fff; border-color: #D9E6F2 !important; }
+html body :is(#createAccountModal,#deactivatedAccountsModal) .history-modal-header h2 { color: #12355B !important; }
+html body :is(#createAccountModal,#deactivatedAccountsModal) .history-modal-header p { color: #64748B !important; }
+html body :is(#createAccountModal,#deactivatedAccountsModal) .history-close-btn { background: #F3F8FF !important; border-color: #D9E6F2 !important; color: #12355B !important; }
+html body :is(#createAccountModal,#deactivatedAccountsModal) .history-close-btn:hover { background: #E5EDF5 !important; }
+html body #createAccountModal label { color: #12355B; }
+html body #createAccountModal :is(input,select):not([type="checkbox"]) { height: 44px; border-color: #D9E6F2; border-radius: 10px; color: #0F2742; }
+html body #createAccountModal :is(input,select,.enforcer-aor-toggle):focus { outline: none; border-color: #2563EB; box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
+html body #createAccountModal .create-account-cancel { background: #EEF6FF; border-color: #BFDBFE; border-radius: 10px; color: #1D4ED8; min-height: 44px; }
+html body #createAccountModal .create-account-cancel:hover { background: #E5EDF5; }
+html body #createAccountModal .enforcer-aor-toggle { border-color: #D9E6F2; border-radius: 10px; color: #12355B; }
+html body #createAccountModal .enforcer-aor-toggle[aria-expanded="true"] { border-color: #2563EB; }
+html body #createAccountModal .enforcer-aor-options { background: #fff; border-color: #D9E6F2; border-radius: 10px; }
+html body #createAccountModal .enforcer-aor-options label:hover,
+html body #createAccountModal .enforcer-aor-options label:has(input:checked) { background: #EEF6FF; }
+html body #createAccountModal .enforcer-aor-options input[type="checkbox"] { accent-color: #2563EB; }
+html body #createAccountModal .enforcer-aor-chips span { background: #EEF6FF; border-color: #BFDBFE; color: #1D4ED8; }
+html body #deactivatedAccountsModal.history-modal:not(.hidden) .table-shell { border-color: #D9E6F2 !important; border-radius: 15px !important; overflow-x: auto !important; }
+html body #deactivatedAccountsModal.history-modal:not(.hidden) table { min-width: 900px !important; }
+html body #deactivatedAccountsModal th { background: #F3F8FF !important; color: #12355B !important; font-weight: 750 !important; }
+html body #deactivatedAccountsModal td { color: #0F2742 !important; border-color: #E5EDF5 !important; }
+html body #deactivatedAccountsModal tbody tr:hover td { background: #F8FBFF; }
+html body :is(#userManagementSection,#createAccountModal,#deactivatedAccountsModal) button:focus-visible { outline: 2px solid #2563EB; outline-offset: 3px; }
+@media (max-width: 600px) {
+  html body #userManagementSection .user-management-heading { align-items: stretch; flex-direction: column; }
+  html body #userManagementSection .user-create-trigger { width: 100%; }
+  html body #createAccountModal .form-actions { flex-direction: column-reverse; }
+  html body #createAccountModal .form-actions button { width: 100%; }
+}
