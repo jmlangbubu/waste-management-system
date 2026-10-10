@@ -1256,3 +1256,38 @@ body > .fleet-modal.custom-modal:not(.hidden) {
     width: 100%;
   }
 }
+/* Scoped fleet surfaces and generic controls; condition/severity badges retain semantics. */
+html body :is(#fleetOverviewModal,.fleet-modal) { --wmo-border: #D9E6F2; --wmo-ink: #12355B; --wmo-text-muted: #64748B; --wmo-focus-ring: rgba(37,99,235,.25); }
+html body :is(#fleetOverviewModal,.fleet-modal) .custom-modal-overlay { background: rgba(15,39,66,.58); }
+html body :is(#fleetOverviewModal,.fleet-modal) .custom-modal-content { background: #fff; border-color: #D9E6F2; box-shadow: 0 24px 70px rgba(15,39,66,.24); }
+html body :is(#fleetOverviewModal,.fleet-modal) :is(.custom-modal-header,.fleet-overview-card) { background: #fff; border-color: #D9E6F2; }
+html body :is(#fleetOverviewModal,.fleet-modal) :is(h2,h3,h4) { color: #12355B; }
+html body :is(#fleetOverviewModal,.fleet-modal) :is(.fleet-overview-eyebrow,.fleet-manage-eyebrow) { color: #1D4ED8; }
+html body :is(#fleetOverviewModal,.fleet-modal) .modal-close-btn { background: #F3F8FF; border-color: #D9E6F2; color: #12355B; }
+html body :is(#fleetOverviewModal,.fleet-modal) .fleet-button.primary { background: #2563EB; border-color: #2563EB; color: #fff; }
+html body :is(#fleetOverviewModal,.fleet-modal) .fleet-button.primary:hover { background: #1D4ED8; border-color: #1D4ED8; }
+html body :is(#fleetOverviewModal,.fleet-modal) :is(.fleet-button.secondary,.fleet-row-action) { background: #EEF6FF; border-color: #BFDBFE; color: #1D4ED8; }
+html body :is(#fleetOverviewModal,.fleet-modal) :is(.fleet-button.secondary,.fleet-row-action):hover { background: #2563EB; color: #fff; }
+html body #fleetOverviewModal .fleet-summary-card { background: #EEF6FF; border-color: #BFDBFE; border-radius: 16px; }
+html body #fleetOverviewModal .fleet-summary-card::before { background: #2563EB; }
+html body #fleetOverviewModal .fleet-summary-card.available { background: #F0FDF4; border-color: #BBF7D0; }
+html body #fleetOverviewModal .fleet-summary-card.available::before { background: #15803D; }
+html body #fleetOverviewModal .fleet-summary-card.active { background: #E7F8F5; border-color: #B7E5DC; }
+html body #fleetOverviewModal .fleet-summary-card.active::before { background: #2BB9A8; }
+html body #fleetOverviewModal .fleet-summary-card.maintenance { background: #FFFBEB; border-color: #FDE68A; }
+html body #fleetOverviewModal .fleet-summary-card.maintenance::before { background: #D97706; }
+html body #fleetOverviewModal .fleet-summary-card.unavailable { background: #FEF2F2; border-color: #FECACA; }
+html body #fleetOverviewModal .fleet-summary-card.unavailable::before { background: #DC2626; }
+html body #fleetOverviewModal .fleet-summary-card :is(span,small) { color: #64748B; }
+html body #fleetOverviewModal .fleet-summary-card strong { color: #0F2742; }
+html body :is(#fleetOverviewModal,.fleet-modal) :is(.fleet-table-shell,.fleet-issue-table-shell,.fleet-issue-detail-section) { background: #fff; border-color: #D9E6F2; }
+html body :is(#fleetOverviewModal,.fleet-modal) :is(.fleet-table,.fleet-issue-table) th { background: #F3F8FF; color: #12355B; border-color: #D9E6F2; }
+html body :is(#fleetOverviewModal,.fleet-modal) :is(.fleet-table,.fleet-issue-table) td { border-color: #E5EDF5; }
+html body .fleet-modal .fleet-issue-section-heading > span { background: #EEF6FF; color: #2563EB; border-color: #BFDBFE; }
+html body .fleet-modal .fleet-issue-detail-grid > div { background: #F8FBFF; border-color: #D9E6F2; }
+html body .fleet-modal .fleet-issue-detail-grid dt { color: #64748B; }
+html body .fleet-modal .fleet-issue-detail-grid dd { color: #0F2742; }
+html body .fleet-modal :is(input,select,textarea) { border-color: #D9E6F2; background: #fff; }
+html body .fleet-modal :is(input,select,textarea):focus { border-color: #2563EB; box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
+html body .fleet-modal .fleet-form-field > span { color: #12355B; }
+html body :is(#fleetOverviewModal,.fleet-modal) button:focus-visible { outline: 2px solid #2563EB; outline-offset: 3px; }

@@ -894,3 +894,32 @@
     font-size: 10.5px;
   }
 }
+/* WMO operations chrome only: route/marker colors and signal semantics are untouched. */
+html body #trackingSection .live-tracking-card { background: #fff; border-color: #D9E6F2; box-shadow: 0 12px 36px rgba(15,39,66,.06); }
+html body #trackingSection .tracking-eyebrow { color: #1D4ED8; background: #EEF6FF; border-color: #BFDBFE; }
+html body #trackingSection .tracking-status-ribbon { background: #F8FBFF; border-color: #D9E6F2; color: #64748B; }
+html body #trackingSection .tracking-status-items strong { color: #12355B; }
+html body #trackingSection .tracking-module-actions .tracking-compact-link,
+html body #trackingSection .tracking-ribbon-button:not(.danger),
+html body #trackingSection .tracking-diagnostics summary {
+  background: #EEF6FF; border-color: #BFDBFE; color: #1D4ED8;
+}
+html body #trackingSection .tracking-module-actions .tracking-compact-link:hover,
+html body #trackingSection .tracking-ribbon-button:not(.danger):hover { background: #2563EB; color: #fff; }
+html body #trackingSection .tracking-module-actions .tracking-compact-link[aria-expanded="true"] { background: #2563EB; color: #fff; }
+html body #trackingSection .tracking-map-wrap { border-color: #D9E6F2; border-radius: 18px; }
+html body #trackingSection .tracking-map-wrap::before { background: #fff; border-color: #D9E6F2; color: #12355B; }
+html body #trackingSection .tracking-map-legend { background: #fff; border-color: #D9E6F2; color: #475569; box-shadow: 0 3px 12px rgba(15,39,66,.08); }
+html body #trackingSection .tracking-dispatch-workspace,
+html body #trackingSection .tracking-dispatch-workspace .tracking-panel-header { background: #fff; border-color: #D9E6F2; }
+html body #trackingSection .tracking-panel-title-left h4,
+html body #trackingSection .tracking-workspace-section-heading strong,
+html body #trackingSection .tracking-empty-state strong { color: #12355B; }
+html body #trackingSection .tracking-panel-title-left p,
+html body #trackingSection .tracking-workspace-section-heading small,
+html body #trackingSection .tracking-empty-state small { color: #64748B; }
+html body #trackingSection :is(.tracking-panel-icon,.tracking-empty-icon) { background: #E7F8F5; color: #168578; }
+html body #trackingSection .tracking-empty-icon svg { stroke: #168578; }
+html body #trackingSection .tracking-diagnostics-popover { background: #fff; border-color: #D9E6F2; color: #12355B; }
+html body #trackingSection button:focus-visible,
+html body #trackingSection summary:focus-visible { outline: 2px solid #2563EB; outline-offset: 3px; }
