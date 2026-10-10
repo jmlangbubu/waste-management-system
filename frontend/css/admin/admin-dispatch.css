@@ -7176,3 +7176,26 @@ body > #dispatchTicketDetailsModal .dispatch-details-stop small {
     grid-column: auto;
   }
 }
+/* Report chrome only; route lines, status chips, calculations and lifecycle are untouched. */
+html body :is(#dispatchReportsModal,#dispatchReportModal,#dispatchDailyReportModal) .custom-modal-overlay { background: rgba(15,39,66,.58); }
+html body :is(#dispatchReportsModal,#dispatchReportModal,#dispatchDailyReportModal) .custom-modal-content { background: #fff; border-color: #D9E6F2; box-shadow: 0 24px 70px rgba(15,39,66,.24); }
+html body :is(#dispatchReportsModal,#dispatchReportModal,#dispatchDailyReportModal) :is(h3,h4) { color: #12355B; }
+html body :is(#dispatchReportsModal,#dispatchReportModal,#dispatchDailyReportModal) .custom-modal-header { background: #fff; border-color: #D9E6F2; }
+html body :is(#dispatchReportsModal,#dispatchReportModal,#dispatchDailyReportModal) .modal-close-btn { background: #F3F8FF; border-color: #D9E6F2; color: #12355B; }
+html body #dispatchReportsModal .dispatch-report-mode-tabs { background: #F3F8FF; border-color: #D9E6F2; }
+html body #dispatchReportsModal .dispatch-report-mode-tabs button { color: #12355B; }
+html body #dispatchReportsModal .dispatch-report-mode-tabs button.active { background: #2563EB; color: #fff; }
+html body #dispatchReportsModal :is(input,select) { background: #fff; border-color: #D9E6F2; color: #0F2742; }
+html body #dispatchReportsModal :is(input,select):focus { border-color: #2563EB; box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
+html body #dispatchReportsModal .dispatch-report-table th { background: #F3F8FF; color: #12355B; border-color: #D9E6F2; }
+html body #dispatchReportsModal .dispatch-report-view-button { background: #EEF6FF; border-color: #BFDBFE; color: #1D4ED8; }
+html body #dispatchReportsModal .dispatch-report-view-button:hover { background: #2563EB; color: #fff; }
+html body :is(#dispatchReportModal,#dispatchDailyReportModal) :is(.dispatch-report-hero,.dispatch-report-section) { background: #F8FBFF; border-color: #D9E6F2; }
+html body :is(#dispatchReportModal,#dispatchDailyReportModal) .dispatch-report-hero > div > span:first-child { color: #168578; }
+html body :is(#dispatchReportModal,#dispatchDailyReportModal) .dispatch-report-closure { background: #FFFBEB; border-color: #FDE68A; }
+html body :is(#dispatchReportModal,#dispatchDailyReportModal) .dispatch-report-closure :is(span,strong) { color: #92400E; }
+html body :is(#dispatchReportModal,#dispatchDailyReportModal) .dispatch-report-summary-grid div { background: #fff; border: 1px solid #D9E6F2; }
+html body :is(#dispatchReportModal,#dispatchDailyReportModal) .dispatch-report-summary-grid span { color: #64748B; }
+html body :is(#dispatchReportModal,#dispatchDailyReportModal) .dispatch-report-summary-grid strong { color: #12355B; }
+html body :is(#dispatchReportsModal,#dispatchReportModal,#dispatchDailyReportModal) .custom-modal-header p { color: #64748B; }
+html body :is(#dispatchReportsModal,#dispatchReportModal,#dispatchDailyReportModal) button:focus-visible { outline: 2px solid #2563EB; outline-offset: 3px; }

@@ -945,3 +945,24 @@ body > .dispatch-plan-modal.custom-modal:not(.hidden) {
     padding-left: 70px !important;
   }
 }
+/* Dispatch preparation visual language; assignment and plan state logic unchanged. */
+html body :is(#dispatchPlanningModal,.dispatch-plan-modal) { --wmo-border: #D9E6F2; --wmo-ink: #12355B; --wmo-text-muted: #64748B; --wmo-focus-ring: rgba(37,99,235,.25); }
+html body :is(#dispatchPlanningModal,.dispatch-plan-modal) .custom-modal-overlay { background: rgba(15,39,66,.58); }
+html body :is(#dispatchPlanningModal,.dispatch-plan-modal) .custom-modal-content { background: #fff; border-color: #D9E6F2; box-shadow: 0 24px 70px rgba(15,39,66,.24); }
+html body :is(#dispatchPlanningModal,.dispatch-plan-modal) :is(h2,h3,h4) { color: #12355B; }
+html body :is(#dispatchPlanningModal,.dispatch-plan-modal) .modal-close-btn { background: #F3F8FF; border-color: #D9E6F2; color: #12355B; }
+html body :is(#dispatchPlanningModal,.dispatch-plan-modal) :is(.dispatch-plans-eyebrow,.dispatch-plan-modal-eyebrow) { color: #1D4ED8; }
+html body :is(#dispatchPlanningModal,.dispatch-plan-modal) .dispatch-plans-button.primary { background: #2563EB; border-color: #2563EB; color: #fff; }
+html body :is(#dispatchPlanningModal,.dispatch-plan-modal) .dispatch-plans-button.primary:hover { background: #1D4ED8; border-color: #1D4ED8; }
+html body :is(#dispatchPlanningModal,.dispatch-plan-modal) :is(.dispatch-plans-button.secondary,.dispatch-plan-row-action:not(.danger),.dispatch-plan-stop-action:not(.danger)) { background: #EEF6FF; border-color: #BFDBFE; color: #1D4ED8; }
+html body :is(#dispatchPlanningModal,.dispatch-plan-modal) :is(.dispatch-plans-button.secondary,.dispatch-plan-row-action:not(.danger),.dispatch-plan-stop-action:not(.danger)):hover { background: #2563EB; color: #fff; }
+html body :is(#dispatchPlanningModal,.dispatch-plan-modal) :is(.dispatch-plans-filters,.dispatch-plan-form-section) { background: #F8FBFF; border-color: #D9E6F2; }
+html body :is(#dispatchPlanningModal,.dispatch-plan-modal) :is(input,select,textarea) { background: #fff; border-color: #D9E6F2; }
+html body :is(#dispatchPlanningModal,.dispatch-plan-modal) :is(input,select,textarea):focus { border-color: #2563EB; box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
+html body #dispatchPlanningModal .dispatch-plans-table th { background: #F3F8FF; color: #12355B; border-color: #D9E6F2; }
+html body .dispatch-plan-modal .dispatch-plan-section-heading > span { background: #2563EB; color: #fff; }
+html body .dispatch-plan-modal .dispatch-plan-review { background: #F3F8FF; border-color: #D9E6F2; }
+html body .dispatch-plan-modal .dispatch-plan-review > div > span { background: #2563EB; color: #fff; }
+html body .dispatch-plan-modal .dispatch-plan-review :is(p,small) { color: #64748B; }
+html body :is(#dispatchPlanningModal,.dispatch-plan-modal) :is(.dispatch-plan-field > span,.dispatch-plans-filter > span) { color: #12355B; }
+html body :is(#dispatchPlanningModal,.dispatch-plan-modal) button:focus-visible { outline: 2px solid #2563EB; outline-offset: 3px; }
