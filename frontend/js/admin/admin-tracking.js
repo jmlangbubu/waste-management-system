@@ -1,11 +1,16 @@
 function createTrackingBasemapLayer() {
+  const hostname = String(window.location.hostname || "").toLowerCase();
+  const isLocalHost = hostname === "localhost" || hostname === "127.0.0.1" ||
+    hostname === "::1" || hostname === "[::1]";
   let key = "";
-  try {
-    key = window.sessionStorage.getItem("wmo_carto_basemap_key") || "";
-  } catch {
-    // Storage may be unavailable; runtime configuration still works.
+  if (isLocalHost) {
+    try {
+      key = String(window.sessionStorage.getItem("wmo_carto_basemap_key") || "").trim();
+    } catch {
+      // Storage may be unavailable; runtime configuration still works.
+    }
   }
-  key = key || window.APP_CONFIG?.CARTO_BASEMAP_KEY || "";
+  key = key || String(window.APP_CONFIG?.CARTO_BASEMAP_KEY || "").trim();
 
   if (key) {
     return L.tileLayer(
