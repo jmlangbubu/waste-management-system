@@ -2982,3 +2982,112 @@ body #complaintDetailsModal .complaint-details-footer #btnValidateComplaintFromD
   }
 }
 
+/* Complaint workspace: WMO system palette; workflow/status semantics remain intact. */
+html body #complaintDetailsModal .complaint-pro-card .complaint-pro-card-header h4 { color: #12355B !important; }
+html body #complaintDetailsModal .complaint-details-pro-header h3 { color: #12355B !important; }
+html body #complaintDetailsModal .complaint-details-footer #btnValidateComplaintFromDetails { background: #15803D !important; min-height: 46px !important; border-radius: 12px !important; }
+html body #complaintDetailsModal .complaint-details-footer #btnValidateComplaintFromDetails:hover { background: #166534 !important; }
+html body #complaintsSection :is(.complaints-search-input,.complaints-filter-select):focus { border-color: #2563EB; box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
+html body #complaintHistoryModal .complaint-history-view-btn { background: #EEF6FF !important; border-color: #BFDBFE !important; color: #1D4ED8 !important; }
+html body #complaintHistoryModal .complaint-history-view-btn:hover { background: #2563EB !important; color: #fff !important; }
+html body #complaintsSection .complaints-header h2 { color: #12355B; }
+html body #complaintsSection .complaints-header p { color: #64748B; }
+html body #complaintsSection .complaints-history-btn {
+  background: #2563EB; border-color: #2563EB; color: #fff;
+}
+html body #complaintsSection .complaints-history-btn:hover { background: #1D4ED8; }
+html body #complaintsSection .complaints-refresh-btn,
+html body #complaintsSection .complaint-action-btn,
+html body #complaintDetailsModal .complaint-map-small-btn {
+  background: #EEF6FF !important; border: 1px solid #BFDBFE !important; color: #1D4ED8 !important;
+}
+html body #complaintsSection .complaints-refresh-btn:hover,
+html body #complaintsSection .complaint-action-btn:hover,
+html body #complaintDetailsModal .complaint-map-small-btn:hover {
+  background: #2563EB !important; color: #fff !important;
+}
+html body #complaintsSection .complaint-summary-card {
+  border-radius: 18px; box-shadow: 0 3px 12px rgba(15,39,66,.04);
+}
+html body #complaintsSection .complaint-summary-card.total { background: #EEF6FF; border-color: #BFDBFE; }
+html body #complaintsSection .total .complaint-summary-icon { background: #DBEAFE; color: #2563EB; }
+html body #complaintsSection .complaint-summary-card strong { color: #12355B; }
+html body #complaintsSection .summary-label { color: #64748B; }
+html body #complaintsSection :is(.complaints-search-input,.complaints-filter-select) {
+  background: #fff; border-color: #D9E6F2; color: #12355B;
+}
+html body #complaintsSection .complaints-search-input::placeholder { color: #94A3B8; }
+html body #complaintsSection :is(input,select,button):focus-visible,
+html body :is(#complaintDetailsModal,#complaintHistoryModal) :is(input,select,button):focus-visible {
+  outline: 2px solid #2563EB; outline-offset: 2px; box-shadow: 0 0 0 3px rgba(37,99,235,.12);
+}
+html body #complaintsSection .complaints-table-shell { background: #fff; border-color: #D9E6F2; border-radius: 18px; }
+html body #complaintsSection .complaints-table th { background: #F3F8FF; color: #12355B; font-weight: 750; }
+html body #complaintsSection .complaints-table td { border-color: #E5EDF5; }
+html body #complaintsSection .complaints-table tbody tr:hover { background: #F8FBFF; }
+html body #complaintsSection .complaint-subject-main { color: #12355B; font-weight: 750; }
+html body #complaintsSection .complaint-citizen { color: #12355B; font-weight: 650; }
+html body #complaintsSection :is(.complaint-description-cell,.complaint-date) { color: #64748B; }
+html body #complaintsSection .complaint-assigned-awaiting {
+  background: #EEF6FF !important; border-color: #BFDBFE !important; color: #475569 !important;
+}
+html body :is(#complaintDetailsOverlay,#complaintHistoryOverlay,#complaintMapOverlay,#complaintResolutionOverlay) {
+  background: rgba(15,39,66,.58) !important;
+}
+html body #complaintDetailsModal :is(.complaint-details-pro-modal,.complaint-modal-content),
+html body #complaintHistoryModal .history-modal-content {
+  background: #fff !important; border: 1px solid #D9E6F2 !important;
+  box-shadow: 0 24px 70px rgba(15,39,66,.24) !important;
+}
+html body #complaintDetailsModal :is(.complaint-details-pro-header,.custom-modal-header) {
+  background: #fff !important; border-color: #D9E6F2 !important;
+}
+html body #complaintDetailsModal :is(h3,h4),
+html body #complaintHistoryModal h3 { color: #12355B !important; }
+html body #complaintDetailsModal :is(.complaint-details-title-wrap p,.complaint-pro-field label) { color: #64748B !important; }
+html body #complaintDetailsModal :is(.complaint-details-title-icon,.complaint-pro-icon.blue,.complaint-pro-icon.green,.complaint-pro-icon.violet,.complaint-mini-icon.purple) {
+  background: #EEF6FF !important; color: #2563EB !important; border-color: #BFDBFE !important;
+}
+html body #complaintDetailsModal :is(.complaint-pro-icon.cyan,.complaint-mini-icon:not(.purple)) {
+  background: #E7F8F5 !important; color: #168578 !important;
+}
+html body #complaintDetailsModal :is(.complaint-pro-card,.complaint-pro-field) {
+  background: #F8FBFF !important; border-color: #D9E6F2 !important; border-radius: 16px !important;
+}
+html body #complaintDetailsModal .complaint-field-value { color: #0F2742 !important; }
+html body #complaintDetailsModal #complaintModalSubject { font-weight: 750 !important; }
+html body #complaintDetailsModal #complaintModalDescription { font-weight: 400 !important; line-height: 1.6 !important; }
+html body #complaintDetailsModal :is(.complaint-evidence-wrapper,.complaint-map-preview-box) {
+  background: #F8FBFF !important; border-color: #D9E6F2 !important; border-radius: 14px !important;
+}
+html body #complaintDetailsModal .complaint-details-footer { background: #fff !important; border-color: #D9E6F2 !important; }
+html body #complaintDetailsModal :is(.complaint-secondary-btn,.modal-close-btn),
+html body #complaintHistoryModal :is(.modal-close-btn,.history-close-btn) {
+  background: #F3F8FF !important; border: 1px solid #D9E6F2 !important; color: #12355B !important;
+}
+html body #complaintDetailsModal :is(.complaint-secondary-btn,.modal-close-btn):hover { background: #E5EDF5 !important; }
+html body #complaintDetailsModal :is(.complaint-danger-btn,.complaint-primary-btn) { min-height: 46px !important; border-radius: 12px !important; }
+html body #complaintDetailsModal .complaint-danger-btn { background: #FEF2F2 !important; border-color: #FECACA !important; color: #B91C1C !important; }
+html body #complaintDetailsModal .complaint-danger-btn:hover { background: #B91C1C !important; color: #fff !important; }
+html body #complaintDetailsModal .complaint-primary-btn { background: #15803D !important; color: #fff !important; }
+html body #complaintDetailsModal .complaint-primary-btn:hover { background: #166534 !important; }
+html body #complaintDetailsModal #complaintModalStatus.pending { background: #FEF3C7 !important; border-color: #FDE68A !important; color: #92400E !important; }
+html body #complaintDetailsModal #complaintModalStatus:is(.validated,.resolved) { background: #DCFCE7 !important; border-color: #BBF7D0 !important; color: #166534 !important; }
+html body #complaintDetailsModal #complaintModalStatus:is(.forwarded,.in-progress) { background: #DBEAFE !important; border-color: #BFDBFE !important; color: #1D4ED8 !important; }
+html body #complaintDetailsModal #complaintModalStatus:is(.rejected,.cancelled) { background: #FEE2E2 !important; border-color: #FECACA !important; color: #991B1B !important; }
+html body #complaintHistoryModal :is(.history-modal-header,.complaint-history-table th) { background: #F3F8FF !important; color: #12355B !important; border-color: #D9E6F2 !important; }
+html body #complaintHistoryModal :is(input,select) { border-color: #D9E6F2 !important; color: #12355B !important; background: #fff !important; }
+html body #complaintHistoryModal .complaint-history-table td { border-color: #E5EDF5 !important; }
+html body #complaintDetailsModal .complaint-modal-body {
+  scrollbar-width: thin; scrollbar-color: #B8CBDD #F8FBFF;
+}
+html body #complaintDetailsModal .complaint-modal-body::-webkit-scrollbar { width: 7px; }
+html body #complaintDetailsModal .complaint-modal-body::-webkit-scrollbar-thumb { background: #B8CBDD; border-radius: 999px; }
+@media (max-width: 560px) {
+  html body #complaintDetailsModal .complaint-details-footer { grid-template-columns: 1fr !important; }
+  /* Fade the scrollport edge without covering cells or intercepting touch input. */
+  html body #complaintsSection .complaints-table-shell {
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), rgba(0,0,0,.35));
+    mask-image: linear-gradient(to right, #000 calc(100% - 24px), rgba(0,0,0,.35));
+  }
+}
