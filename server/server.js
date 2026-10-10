@@ -143,6 +143,15 @@ app.use((req, res, next) => {
   next();
 });
 
+// Public browser-consumable key; restrict its allowed domains in CARTO.
+app.get("/runtime-config.js", (req, res) => {
+  res.setHeader("Content-Type", "application/javascript; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store");
+  res.send(`window.RUNTIME_CONFIG = Object.freeze(${JSON.stringify({
+    CARTO_BASEMAP_KEY: process.env.CARTO_BASEMAP_KEY || ""
+  })});`);
+});
+
 /* =========================
    STATIC FILES
 ========================= */

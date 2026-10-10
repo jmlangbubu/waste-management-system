@@ -1,3 +1,24 @@
+function createTrackingBasemapLayer() {
+  let key = "";
+  try {
+    key = window.sessionStorage.getItem("wmo_carto_basemap_key") || "";
+  } catch {
+    // Storage may be unavailable; runtime configuration still works.
+  }
+  key = key || window.APP_CONFIG?.CARTO_BASEMAP_KEY || "";
+
+  if (key) {
+    return L.tileLayer(
+      `https://basemaps.cartocdn.com/rastertiles/light_all/{z}/{x}/{y}.png?key=${encodeURIComponent(key)}`,
+      { attribution: "&copy; OpenStreetMap contributors &copy; CARTO", maxZoom: 20 }
+    );
+  }
+
+  return L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: "&copy; OpenStreetMap contributors"
+  });
+}
+
 function initializeTruckMap() {
   const mapContainer = document.getElementById("truckMap");
   if (!mapContainer) return;
@@ -22,9 +43,7 @@ function initializeTruckMap() {
   });
   trackingCurrentTruckLayerGroup = L.layerGroup().addTo(truckMap);
 
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    attribution: "&copy; OpenStreetMap contributors"
-  }).addTo(truckMap);
+  createTrackingBasemapLayer().addTo(truckMap);
 
   isTruckMapInitialized = true;
   if (typeof ensureDispatchWmoMarker === "function") ensureDispatchWmoMarker();
@@ -3600,9 +3619,7 @@ function openTrackingReportModal(data) {
 
     reportMap = L.map("trackingReportMap").setView([6.1164, 125.1716], 13);
 
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
-      attribution: "&copy; OpenStreetMap contributors &copy; CARTO"
-    }).addTo(reportMap);
+    createTrackingBasemapLayer().addTo(reportMap);
 
     const startIcon = L.icon({
       iconUrl: "https://maps.google.com/mapfiles/ms/icons/green-dot.png",
