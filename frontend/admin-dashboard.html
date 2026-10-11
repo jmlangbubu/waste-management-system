@@ -1592,8 +1592,12 @@
     <div class="custom-modal-body dispatch-plan-modal-body">
       <form id="dispatchPlanForm" class="dispatch-plan-form" novalidate>
         <input type="hidden" id="dispatchPlanEditingId">
+        <ol class="dispatch-plan-progress" aria-label="Dispatch plan steps">
+          <li id="dispatchPlanProgress1" aria-current="step"><span>1</span> Assignment</li>
+          <li id="dispatchPlanProgress2"><span>2</span> Route &amp; Destinations</li>
+        </ol>
 
-        <section class="dispatch-plan-form-section" aria-labelledby="dispatchPlanAssignmentHeading">
+        <section id="dispatchPlanStep1" class="dispatch-plan-form-section" aria-labelledby="dispatchPlanAssignmentHeading">
           <div class="dispatch-plan-section-heading">
             <span>1</span>
             <div><h4 id="dispatchPlanAssignmentHeading">Assignment</h4><p>Choose the date, eligible truck, and active mobile enforcer.</p></div>
@@ -1616,14 +1620,15 @@
           </div>
         </section>
 
-        <section class="dispatch-plan-form-section" aria-labelledby="dispatchPlanDestinationsHeading">
+        <div id="dispatchPlanStep2" class="dispatch-plan-route-layout" hidden>
+        <section class="dispatch-plan-form-section dispatch-plan-route-stops" aria-labelledby="dispatchPlanDestinationsHeading">
           <div class="dispatch-plan-section-heading">
             <span>2</span>
-            <div><h4 id="dispatchPlanDestinationsHeading">Ordered Verified Destinations</h4><p>Add verified destinations, then set their exact visit order.</p></div>
+            <div><h4 id="dispatchPlanDestinationsHeading">Route &amp; Destinations</h4><p>Add verified destinations, then set their exact visit order.</p></div>
           </div>
           <label class="dispatch-plan-field dispatch-plan-destination-search">
-            <span>Search Destination</span>
-            <input type="search" id="dispatchPlanDestinationSearch" placeholder="Search barangay or destination..." autocomplete="off">
+            <span>Search Street / Destination</span>
+            <input type="search" id="dispatchPlanDestinationSearch" placeholder="Search verified street, barangay, or destination..." autocomplete="off">
           </label>
           <div class="dispatch-plan-destination-picker">
             <label class="dispatch-plan-field">
@@ -1636,16 +1641,25 @@
           <div id="dispatchPlanStops" class="dispatch-plan-stops" aria-live="polite"></div>
         </section>
 
+        <section class="dispatch-plan-form-section dispatch-plan-preview" aria-labelledby="dispatchPlanPreviewHeading">
+          <div><h4 id="dispatchPlanPreviewHeading">Live Route Preview</h4><p>Selected verified destinations appear here in visit order.</p></div>
+          <div id="dispatchPlanRoutePreviewMap" role="region" aria-label="Planning preview: WMO and ordered verified destinations"></div>
+          <p id="dispatchPlanPreviewNotice" class="dispatch-plan-field-guidance hidden" role="status"></p>
+          <small>Preview shows stop sequence for planning. Final live routing may differ.</small>
+        </section>
         <section class="dispatch-plan-review" aria-labelledby="dispatchPlanReviewHeading">
-          <div><span>3</span><strong id="dispatchPlanReviewHeading">Review</strong></div>
+          <div><strong id="dispatchPlanReviewHeading">Plan Summary</strong></div>
           <p id="dispatchPlanReviewSummary">Choose an eligible truck, enforcer, and at least one ordered destination.</p>
           <small id="dispatchPlanFormRevision" class="hidden"></small>
         </section>
 
+        </div>
         <div id="dispatchPlanFormFeedback" class="dispatch-plan-feedback hidden" role="alert"></div>
         <div class="dispatch-plan-form-actions">
           <button type="button" class="dispatch-plans-button secondary" id="dispatchPlanFormCancelBtn">Cancel</button>
-          <button type="submit" class="dispatch-plans-button primary" id="dispatchPlanSaveBtn">Save Plan</button>
+          <button type="button" class="dispatch-plans-button secondary" id="dispatchPlanBackBtn" hidden>Back</button>
+          <button type="button" class="dispatch-plans-button primary" id="dispatchPlanNextBtn">Next</button>
+          <button type="submit" class="dispatch-plans-button primary" id="dispatchPlanSaveBtn" hidden>Save Plan</button>
         </div>
       </form>
     </div>

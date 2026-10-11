@@ -13,6 +13,7 @@
     destinations: [],
     stops: [],
     mode: "create",
+    wizardStep: 1,
     editingPlan: null,
     cancellingPlan: null,
     loadingOptions: false,
@@ -31,6 +32,11 @@
     "dispatchPlanDetailModal",
     "dispatchPlanCancelModal"
   ]);
+
+  const DISPATCH_PLAN_WMO = [6.1164, 125.1716];
+  let dispatchPlanPreviewMap = null;
+  let dispatchPlanPreviewLayers = null;
+  let dispatchPlanPreviewTimer = null;
 
   function dispatchPlanElement(id) {
     if (typeof document === "undefined") return null;
@@ -259,7 +265,9 @@
           destination_id: destinationId,
           destination_type: destination.destination_type || null,
           display_label: dispatchPlanDestinationLabel(destination),
-          barangay: destination.barangay || destination.address_reference_snapshot || null
+          barangay: destination.barangay || destination.address_reference_snapshot || null,
+          latitude: destination.latitude,
+          longitude: destination.longitude
         }
       ]),
       error: ""
@@ -751,6 +759,131 @@
     return dispatchPlanState.destinationPromise;
   }
 
+  function dispatchPlanValidateAssignment(values = {}, options = {}, now = new Date()) {
+    const date = dispatchPlanValidateOperationalDate(values.operational_date, now);
+    if (!date.valid) return { ...date, field: "dispatchPlanOperationalDate" };
+    if (!(options.fleet_trucks || []).some((truck) => Number(truck.id) === dispatchPlanPositiveId(values.fleet_truck_id))) {
+      return { valid: false, message: "Choose an eligible truck.", field: "dispatchPlanFleetTruck" };
+    }
+    if (!(options.enforcers || []).some((enforcer) => Number(enforcer.id) === dispatchPlanPositiveId(values.assigned_enforcer_user_id))) {
+      return { valid: false, message: "Choose an eligible active enforcer.", field: "dispatchPlanEnforcer" };
+    }
+    return { valid: true, message: "" };
+  }
+
+  function dispatchPlanAssignmentValidation() {
+    const values = dispatchPlanFormValues();
+    if (dispatchPlanState.loadingOptions) {
+      return { valid: false, message: "Wait for eligible assignments to finish loading.", field: "dispatchPlanOperationalDate" };
+    }
+    return dispatchPlanValidateAssignment(values, {
+      fleet_trucks: dispatchPlanWithFallback(dispatchPlanState.options.fleet_trucks,
+        dispatchPlanSelectedAssignmentFallback("truck", values.operational_date), values.fleet_truck_id),
+      enforcers: dispatchPlanWithFallback(dispatchPlanState.options.enforcers,
+        dispatchPlanSelectedAssignmentFallback("enforcer", values.operational_date), values.assigned_enforcer_user_id)
+    });
+  }
+
+  function dispatchPlanCreateBasemapLayer() {
+    const hostname = String(globalScope.location?.hostname || "").toLowerCase();
+    const local = ["localhost", "127.0.0.1", "::1", "[::1]"].includes(hostname);
+    let key = "";
+    if (local) {
+      try { key = String(globalScope.sessionStorage.getItem("wmo_carto_basemap_key") || "").trim(); }
+      catch { /* Runtime configuration remains usable when storage is denied. */ }
+    }
+    key = key || String(globalScope.APP_CONFIG?.CARTO_BASEMAP_KEY || "").trim();
+    return key
+      ? globalScope.L.tileLayer(`https://basemaps.cartocdn.com/rastertiles/light_all/{z}/{x}/{y}.png?key=${encodeURIComponent(key)}`,
+        { attribution: "&copy; OpenStreetMap contributors &copy; CARTO", maxZoom: 20 })
+      : globalScope.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        { attribution: "&copy; OpenStreetMap contributors" });
+  }
+
+  function dispatchPlanPreviewPoints(stops = []) {
+    return dispatchPlanRenumberStops(stops).flatMap((stop) => {
+      if ([stop.latitude, stop.longitude].some((value) => value == null || String(value).trim() === "")) return [];
+      const latitude = Number(stop.latitude), longitude = Number(stop.longitude);
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return [];
+      return [{ ...stop, latitude, longitude }];
+    });
+  }
+
+  function dispatchPlanDestroyPreview() {
+    clearTimeout(dispatchPlanPreviewTimer);
+    dispatchPlanPreviewTimer = null;
+    if (dispatchPlanPreviewMap) dispatchPlanPreviewMap.remove();
+    dispatchPlanPreviewMap = null;
+    dispatchPlanPreviewLayers = null;
+  }
+
+  function dispatchPlanRenderPreview() {
+    const container = dispatchPlanElement("dispatchPlanRoutePreviewMap");
+    if (!container || dispatchPlanState.wizardStep !== 2 || !dispatchPlanModalIsOpen("dispatchPlanFormModal")) return;
+    if (!globalScope.L) {
+      dispatchPlanSetFeedback("dispatchPlanPreviewNotice", "Map preview is unavailable. You can still save the ordered plan.", "info");
+      return;
+    }
+    if (!dispatchPlanPreviewMap) {
+      dispatchPlanPreviewMap = globalScope.L.map(container).setView(DISPATCH_PLAN_WMO, 13);
+      dispatchPlanCreateBasemapLayer().addTo(dispatchPlanPreviewMap);
+      dispatchPlanPreviewLayers = globalScope.L.layerGroup().addTo(dispatchPlanPreviewMap);
+    }
+    dispatchPlanPreviewLayers.clearLayers();
+    const points = dispatchPlanPreviewPoints(dispatchPlanState.stops);
+    const marker = (position, label, wmo = false) => globalScope.L.marker(position, {
+      icon: globalScope.L.divIcon({ className: "dispatch-plan-preview-icon", iconSize: [30, 30], iconAnchor: [15, 15],
+        html: `<span class="dispatch-plan-map-marker${wmo ? " wmo" : ""}">${label}</span>` })
+    }).addTo(dispatchPlanPreviewLayers);
+    marker(DISPATCH_PLAN_WMO, "W", true).bindPopup("WMO start point");
+    points.forEach((point) => marker([point.latitude, point.longitude], point.stop_order)
+      .bindPopup(dispatchPlanEscape(point.display_label || "Verified destination")));
+    const route = [DISPATCH_PLAN_WMO, ...points.map((point) => [point.latitude, point.longitude])];
+    if (points.length) globalScope.L.polyline(route, { color: "#2563EB", weight: 4, opacity: 0.9 }).addTo(dispatchPlanPreviewLayers);
+    dispatchPlanSetFeedback("dispatchPlanPreviewNotice", points.length < dispatchPlanState.stops.length
+      ? "Some selected destinations cannot be shown on the map." : "", "info");
+    clearTimeout(dispatchPlanPreviewTimer);
+    dispatchPlanPreviewTimer = setTimeout(() => {
+      if (!dispatchPlanPreviewMap || dispatchPlanState.wizardStep !== 2) return;
+      dispatchPlanPreviewMap.invalidateSize();
+      if (points.length) dispatchPlanPreviewMap.fitBounds(route, { padding: [28, 28], maxZoom: 14 });
+      else dispatchPlanPreviewMap.setView(DISPATCH_PLAN_WMO, 13);
+    }, 50);
+  }
+
+  function dispatchPlanSetWizardStep(step, focus = true) {
+    dispatchPlanState.wizardStep = step === 2 ? 2 : 1;
+    const routeStep = dispatchPlanState.wizardStep === 2;
+    ["dispatchPlanStep1", "dispatchPlanFormCancelBtn", "dispatchPlanNextBtn"].forEach((id) => {
+      const element = dispatchPlanElement(id); if (element) element.hidden = routeStep;
+    });
+    ["dispatchPlanStep2", "dispatchPlanBackBtn", "dispatchPlanSaveBtn"].forEach((id) => {
+      const element = dispatchPlanElement(id); if (element) element.hidden = !routeStep;
+    });
+    [1, 2].forEach((number) => {
+      const indicator = dispatchPlanElement(`dispatchPlanProgress${number}`);
+      if (!indicator) return;
+      indicator.classList.toggle("completed", routeStep && number === 1);
+      if (number === dispatchPlanState.wizardStep) indicator.setAttribute("aria-current", "step");
+      else indicator.removeAttribute("aria-current");
+    });
+    dispatchPlanUpdateSaveState();
+    if (routeStep) dispatchPlanRenderPreview();
+    if (focus) dispatchPlanElement(routeStep ? "dispatchPlanDestinationSearch" : "dispatchPlanOperationalDate")?.focus();
+  }
+
+  function dispatchPlanNextStep() {
+    const validation = dispatchPlanAssignmentValidation();
+    if (!validation.valid) {
+      dispatchPlanSetFeedback("dispatchPlanFormFeedback", validation.message, "error");
+      dispatchPlanElement(validation.field)?.focus();
+      return false;
+    }
+    dispatchPlanSetFeedback("dispatchPlanFormFeedback");
+    dispatchPlanSetWizardStep(2);
+    return true;
+  }
+
   function dispatchPlanStopRowsHtml(stops = []) {
     if (!stops.length) {
       return '<div class="dispatch-plan-stops-empty"><strong>No destinations selected.</strong><span>Add verified destinations in the exact order they should be visited.</span></div>';
@@ -779,6 +912,7 @@
     if (container) container.innerHTML = dispatchPlanStopRowsHtml(dispatchPlanState.stops);
     dispatchPlanRenderDestinationOptions();
     dispatchPlanRenderReview();
+    dispatchPlanRenderPreview();
   }
 
   function addPlanStop(destinationId) {
@@ -845,7 +979,7 @@
     if (!button) return;
     const payload = dispatchPlanBuildPayload(dispatchPlanFormValues(), dispatchPlanState.stops);
     const valid = dispatchPlanValidatePayload(payload).valid;
-    button.disabled = dispatchPlanState.submitting || dispatchPlanState.loadingOptions || !valid;
+    button.disabled = dispatchPlanState.wizardStep !== 2 || dispatchPlanState.submitting || dispatchPlanState.loadingOptions || !valid || !dispatchPlanAssignmentValidation().valid;
     button.textContent = dispatchPlanState.submitting
       ? "Saving..."
       : dispatchPlanState.mode === "edit" ? "Save Changes" : "Save Plan";
@@ -860,10 +994,15 @@
     modal.setAttribute("aria-hidden", "false");
     dispatchPlanSyncModalScrollLock();
     modal.querySelector("button, input, select, textarea")?.focus();
+    if (id === "dispatchPlanFormModal") dispatchPlanElement("dispatchPlanOperationalDate")?.focus();
   }
 
   function dispatchPlanCloseModal(id) {
-    if (id === "dispatchPlanFormModal") dispatchPlanClearDestinationSearch();
+    if (id === "dispatchPlanFormModal") {
+      dispatchPlanClearDestinationSearch();
+      dispatchPlanDestroyPreview();
+      dispatchPlanSetWizardStep(1, false);
+    }
     if (id === "dispatchPlanDetailModal") {
       dispatchPlanInvalidateDetailRequest();
     }
@@ -934,6 +1073,8 @@
   }
 
   function closeDispatchPlanningModalsForNavigation() {
+    dispatchPlanDestroyPreview();
+    dispatchPlanSetWizardStep(1, false);
     dispatchPlanClearDestinationSearch();
     dispatchPlanInvalidateDetailRequest();
     ["dispatchPlanningModal", ...DISPATCH_PLAN_CHILD_MODAL_IDS].forEach((id) => {
@@ -963,6 +1104,8 @@
   }
 
   function dispatchPlanResetForm() {
+    dispatchPlanDestroyPreview();
+    dispatchPlanSetWizardStep(1, false);
     dispatchPlanElement("dispatchPlanForm")?.reset();
     dispatchPlanClearDestinationSearch();
     dispatchPlanState.mode = "create";
@@ -1090,6 +1233,8 @@
             destination_id: stop.destination_id,
             display_label: stop.location_name_snapshot,
             barangay: stop.address_reference_snapshot,
+            latitude: stop.latitude,
+            longitude: stop.longitude,
             expected_arrival: stop.expected_arrival || ""
           }))
       );
@@ -1129,6 +1274,14 @@
   async function submitDispatchPlan(event) {
     event?.preventDefault?.();
     if (dispatchPlanState.submitting) return;
+    if (dispatchPlanState.wizardStep === 1) { dispatchPlanNextStep(); return; }
+    const assignment = dispatchPlanAssignmentValidation();
+    if (!assignment.valid) {
+      dispatchPlanSetWizardStep(1, false);
+      dispatchPlanSetFeedback("dispatchPlanFormFeedback", assignment.message, "error");
+      dispatchPlanElement(assignment.field)?.focus();
+      return;
+    }
     const payload = dispatchPlanBuildPayload(dispatchPlanFormValues(), dispatchPlanState.stops);
     const validation = dispatchPlanValidatePayload(payload);
     if (!validation.valid) {
@@ -1315,6 +1468,8 @@
     dispatchPlanElement("dispatchPlansStatusFilter")?.addEventListener("change", loadDispatchPlans);
     dispatchPlanElement("dispatchPlansTableBody")?.addEventListener("click", dispatchPlanHandleTableAction);
     dispatchPlanElement("dispatchPlanForm")?.addEventListener("submit", submitDispatchPlan);
+    dispatchPlanElement("dispatchPlanNextBtn")?.addEventListener("click", dispatchPlanNextStep);
+    dispatchPlanElement("dispatchPlanBackBtn")?.addEventListener("click", () => dispatchPlanSetWizardStep(1));
     dispatchPlanElement("dispatchPlanCancelForm")?.addEventListener("submit", cancelDispatchPlan);
     dispatchPlanElement("dispatchPlanOperationalDate")?.addEventListener("change", (event) => {
       const validation = dispatchPlanValidateOperationalDate(event.target.value);
@@ -1387,6 +1542,13 @@
     dispatchPlanTodayInManila,
     dispatchPlanTomorrowInManila,
     dispatchPlanValidateOperationalDate,
+    dispatchPlanValidateAssignment,
+    dispatchPlanCreateBasemapLayer,
+    dispatchPlanPreviewPoints,
+    dispatchPlanSetWizardStep,
+    dispatchPlanNextStep,
+    dispatchPlanDestroyPreview,
+    dispatchPlanResetForm,
     dispatchPlanUserHasAccess,
     dispatchPlanStatusLabel,
     dispatchPlanOperationalStatus,
