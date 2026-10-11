@@ -13971,3 +13971,91 @@ body #sidebarOtherMenu.sidebar-other-menu-portal.open:not(.hidden) {
     height: 44px;
   }
 }
+/* Calendar and invoice visual refresh: presentation only; existing modal layers remain unchanged. */
+:is(#calendarActivitiesModal, #calendarAddActivityModal, #calendarMonthlyReportModal, #incomingInvoiceModal, #invoiceTrackingModal) .custom-modal-header {
+  background: #fff !important; border-bottom: 1px solid #D9E6F2 !important;
+}
+:is(#calendarActivitiesModal, #calendarAddActivityModal, #calendarMonthlyReportModal, #incomingInvoiceModal, #invoiceTrackingModal) :is(h3, h4) { color: #12355B !important; }
+:is(#calendarActivitiesModal, #calendarAddActivityModal, #calendarMonthlyReportModal, #incomingInvoiceModal, #invoiceTrackingModal) .custom-modal-header p { color: #64748B !important; }
+:is(#calendarActivitiesModal, #calendarAddActivityModal, #calendarMonthlyReportModal, #incomingInvoiceModal, #invoiceTrackingModal) .modal-close-btn {
+  background: #EEF6FF !important; color: #12355B !important; border: 1px solid #D9E6F2 !important; flex-shrink: 0;
+}
+:is(#calendarActivitiesModal, #calendarAddActivityModal, #calendarMonthlyReportModal, #incomingInvoiceModal, #invoiceTrackingModal) :is(button, input, select, textarea):focus-visible {
+  outline: 2px solid #2563EB !important; outline-offset: 3px !important;
+}
+#calendarActivitiesModal :is(.calendar-icon-btn, .calendar-secondary-btn, .calendar-view-report-btn),
+#incomingInvoiceModal :is(.invoice-refresh-btn, .invoice-view-btn) {
+  background: #EEF6FF !important; color: #1D4ED8 !important; border: 1px solid #D9E6F2 !important; box-shadow: none !important;
+}
+#calendarActivitiesModal .calendar-primary-btn, #calendarAddActivityModal .calendar-save-activity-btn,
+#incomingInvoiceModal :is(.invoice-primary-btn, .invoice-action-btn) {
+  background: #2563EB !important; color: #fff !important; box-shadow: 0 4px 12px rgba(37,99,235,.14) !important;
+}
+#calendarActivitiesModal .calendar-primary-btn:hover, #calendarAddActivityModal .calendar-save-activity-btn:hover,
+#incomingInvoiceModal :is(.invoice-primary-btn, .invoice-action-btn):hover { background: #1D4ED8 !important; }
+#calendarActivitiesModal #calendarCurrentLabel { color: #12355B !important; }
+#calendarActivitiesModal #calendarMonthSubLabel { color: #64748B !important; }
+:is(#calendarActivitiesModal, #calendarMonthlyReportModal) .calendar-report-summary > div {
+  background: #EEF6FF !important; border-color: #D9E6F2 !important; border-left: 3px solid #2563EB !important;
+}
+:is(#calendarActivitiesModal, #calendarMonthlyReportModal) .calendar-report-summary > div:nth-child(2) {
+  background: #EFFAF8 !important; border-left-color: #2BB9A8 !important;
+}
+:is(#calendarActivitiesModal, #calendarMonthlyReportModal) .calendar-report-summary > div:nth-child(3) {
+  background: #F8FAFC !important; border-left-color: #94A3B8 !important;
+}
+:is(#calendarActivitiesModal, #calendarMonthlyReportModal) .calendar-report-summary strong { color: #12355B !important; }
+:is(#calendarActivitiesModal, #calendarMonthlyReportModal) .calendar-report-cell { background: #fff !important; border-color: #D9E6F2 !important; color: #12355B !important; }
+:is(#calendarActivitiesModal, #calendarMonthlyReportModal) .calendar-report-cell:hover { background: #F5F9FF !important; border-color: #93B7F8 !important; }
+:is(#calendarActivitiesModal, #calendarMonthlyReportModal) .calendar-report-cell.is-muted { background: #F8FAFC !important; color: #94A3B8 !important; }
+:is(#calendarActivitiesModal, #calendarMonthlyReportModal) .calendar-report-cell.is-today { border-color: #2BB9A8 !important; background: #EFFAF8 !important; }
+:is(#calendarActivitiesModal, #calendarMonthlyReportModal) .calendar-report-cell.is-selected { border-color: #2563EB !important; background: #EEF6FF !important; box-shadow: inset 0 0 0 1px #2563EB !important; }
+#calendarActivitiesModal :is(.calendar-empty-day, .calendar-empty-report), #calendarMonthlyReportModal .calendar-empty-report {
+  background: #F8FAFC !important; border-color: #D9E6F2 !important; color: #64748B !important;
+}
+#calendarActivitiesModal .calendar-empty-day strong { color: #12355B !important; }
+#calendarAddActivityModal .calendar-selected-card { background: #EEF6FF !important; border-color: #D9E6F2 !important; }
+#calendarAddActivityModal .calendar-selected-card span { color: #1D4ED8 !important; }
+#calendarAddActivityModal .calendar-selected-card strong { color: #12355B !important; }
+#calendarAddActivityModal .calendar-selected-card p { color: #64748B !important; }
+#calendarAddActivityModal :is(input, select, textarea), #incomingInvoiceModal :is(.invoice-form input, .invoice-form select, .invoice-form textarea, #invoiceHistorySearchInput) {
+  min-height: 44px !important; background: #fff !important; color: #12355B !important; border-color: #D9E6F2 !important;
+}
+#incomingInvoiceModal .invoice-process-strip {
+  list-style: none; display: flex; flex-wrap: wrap; gap: 10px 18px; margin: 0 0 18px; padding: 14px 16px;
+  background: #EEF6FF; border: 1px solid #D9E6F2; border-radius: 14px;
+}
+#incomingInvoiceModal .invoice-process-strip li { display: flex; align-items: center; gap: 8px; color: #12355B; font-size: 12px; font-weight: 700; }
+#incomingInvoiceModal .invoice-process-strip li:not(:last-child)::after { content: "→"; color: #64748B; margin-left: 8px; }
+#incomingInvoiceModal .invoice-process-strip li > span { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: #2563EB; color: #fff; font-size: 11px; }
+#incomingInvoiceModal .invoice-role-banner { background: #EEF6FF !important; border-color: #D9E6F2 !important; border-left: 3px solid #2563EB !important; }
+#incomingInvoiceModal .invoice-role-banner strong { color: #12355B !important; }
+#incomingInvoiceModal .invoice-summary-card { background: #EEF6FF !important; border-color: #D9E6F2 !important; border-left: 3px solid #2563EB !important; }
+#incomingInvoiceModal .invoice-summary-card.blue { background: #FFF7E8 !important; border-color: #F6D8A6 !important; border-left-color: #D97706 !important; }
+#incomingInvoiceModal .invoice-summary-card.amber { background: #EFFAF8 !important; border-color: #CDE9DF !important; border-left-color: #2BB9A8 !important; }
+#incomingInvoiceModal .invoice-summary-card strong { color: #12355B !important; }
+#incomingInvoiceModal .invoice-summary-card.amber strong { color: #167B64 !important; }
+#incomingInvoiceModal .invoice-panel { border-color: #D9E6F2 !important; }
+#incomingInvoiceModal .invoice-panel-header { background: #F8FBFF !important; border-color: #D9E6F2 !important; }
+#incomingInvoiceModal .invoice-table th { background: #EEF6FF !important; color: #12355B !important; }
+#incomingInvoiceModal .invoice-table td { border-color: #D9E6F2 !important; }
+@media (min-width: 1024px) {
+  #incomingInvoiceModal .invoice-table { width: 100% !important; min-width: 0 !important; table-layout: fixed !important; }
+  #incomingInvoiceModal .invoice-table :is(th, td) { width: auto !important; padding: 12px 10px !important; white-space: normal !important; overflow-wrap: anywhere; }
+  #incomingInvoiceModal .invoice-inline-assign { min-width: 0 !important; grid-template-columns: minmax(0, 1fr) !important; }
+  #incomingInvoiceModal .invoice-status-pill { min-width: 0 !important; white-space: normal !important; }
+}
+#incomingInvoiceModal .invoice-status-pill { background: #EEF6FF !important; color: #1D4ED8 !important; }
+#invoiceTrackingModal :is(.invoice-tracking-summary > div, .invoice-view-subject-card) { background: #EEF6FF !important; border-color: #D9E6F2 !important; }
+#invoiceTrackingModal :is(.invoice-tracking-summary strong, .invoice-timeline-item strong) { color: #12355B !important; }
+#invoiceTrackingModal .invoice-timeline-item { border-color: #D9E6F2 !important; }
+#invoiceTrackingModal .invoice-timeline-dot { background: #2BB9A8 !important; box-shadow: 0 0 0 4px #EFFAF8 !important; }
+@media (max-width: 560px) {
+  #calendarActivitiesModal .calendar-main-topbar { flex-wrap: wrap !important; gap: 12px !important; }
+  #calendarActivitiesModal .calendar-pro-nav { width: 100%; min-width: 0; }
+  #calendarActivitiesModal .calendar-pro-actions { width: 100%; display: flex !important; gap: 8px !important; }
+  #calendarActivitiesModal .calendar-pro-actions button { flex: 1; }
+  #calendarAddActivityModal .calendar-form-row { grid-template-columns: minmax(0, 1fr) !important; }
+  #incomingInvoiceModal .invoice-process-strip { gap: 10px 12px; }
+  #incomingInvoiceModal .invoice-history-actions { min-width: 0 !important; width: 100% !important; }
+}
