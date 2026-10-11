@@ -972,6 +972,22 @@ html body :is(#dispatchPlanningModal,.dispatch-plan-modal) :is(.dispatch-plan-fi
 html body :is(#dispatchPlanningModal,.dispatch-plan-modal) button:focus-visible { outline: 2px solid #2563EB; outline-offset: 3px; }
 
 /* Two-step planning wizard: scoped to the create/edit form only. */
+#dispatchPlanFormModal .dispatch-plan-search-input { display: flex; align-items: center; gap: 6px; }
+#dispatchPlanFormModal .dispatch-plan-search-input input { flex: 1; min-width: 0; }
+#dispatchPlanDestinationSearch::-webkit-search-cancel-button { display: none; }
+#dispatchPlanSearchClearBtn { flex: 0 0 32px; height: 32px; border: 1px solid #D9E6F2; border-radius: 8px; background: #EEF6FF; color: #12355B; cursor: pointer; }
+#dispatchPlanSearchResults { max-height: 300px; overflow-y: auto; display: grid; gap: 6px; }
+#dispatchPlanSearchResults:empty { display: none; }
+#dispatchPlanFormModal .dispatch-plan-search-result { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px; border: 1px solid #D9E6F2; border-radius: 10px; background: #fff; min-width: 0; }
+#dispatchPlanFormModal .dispatch-plan-search-result > div { min-width: 0; overflow-wrap: anywhere; }
+#dispatchPlanFormModal .dispatch-plan-search-result strong { display: block; color: #12355B; font-size: 13px; }
+#dispatchPlanFormModal .dispatch-plan-search-result small { color: #64748B; font-size: 11px; }
+#dispatchPlanFormModal .dispatch-plan-search-result:hover,
+#dispatchPlanFormModal .dispatch-plan-search-result[aria-selected="true"] { background: #EEF6FF; border-color: #93B7F8; }
+#dispatchPlanFormModal .dispatch-plan-search-result button { flex-shrink: 0; background: #EEF6FF; color: #1D4ED8; border: 1px solid #BFDBFE; border-radius: 8px; padding: 7px 9px; cursor: pointer; font-weight: 700; }
+#dispatchPlanFormModal .dispatch-plan-search-result[aria-disabled="true"] { background: #F8FAFC; }
+#dispatchPlanFormModal .dispatch-plan-search-result button:disabled { cursor: default; color: #64748B; }
+#dispatchPlanFormModal :is(.dispatch-plan-search-status,.dispatch-plan-road-status) { margin: 0; color: #64748B; font-size: 12px; line-height: 1.5; }
 #dispatchPlanForm [hidden] { display: none !important; }
 #dispatchPlanFormModal .dispatch-plan-progress {
   display: flex; gap: 12px; padding: 0; margin: 0; list-style: none;

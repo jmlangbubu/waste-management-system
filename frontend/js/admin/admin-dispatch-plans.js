@@ -39,6 +39,12 @@
   let dispatchPlanPreviewMap = null;
   let dispatchPlanPreviewLayers = null;
   let dispatchPlanPreviewTimer = null;
+  let dispatchPlanRoadTimer = null;
+  let dispatchPlanRoadController = null;
+  let dispatchPlanRoadGeneration = 0;
+  let dispatchPlanRoadLayer = null;
+  let dispatchPlanSearchIndex = -1;
+  let dispatchPlanSearchDismissed = false;
 
   function dispatchPlanElement(id) {
     if (typeof document === "undefined") return null;
@@ -707,6 +713,7 @@
         dispatchPlanState.stops.map((stop) => stop.destination_id)
       );
     select.disabled = dispatchPlanState.loadingDestinations || !dispatchPlanState.destinations.length;
+    dispatchPlanRenderSearchResults();
     dispatchPlanSetFeedback(
       "dispatchPlanDestinationGuidance",
       !dispatchPlanState.loadingDestinations && !dispatchPlanState.destinations.length
@@ -714,6 +721,71 @@
         : "",
       "error"
     );
+  }
+
+  function dispatchPlanSearchMatches() {
+    const query = dispatchPlanElement("dispatchPlanDestinationSearch")?.value || "";
+    return query.trim() ? dispatchPlanFilteredDestinations(dispatchPlanState.destinations, query).slice(0, 8) : [];
+  }
+
+  function dispatchPlanRenderSearchResults() {
+    const input = dispatchPlanElement("dispatchPlanDestinationSearch");
+    const results = dispatchPlanElement("dispatchPlanSearchResults");
+    if (!input || !results) return;
+    const query = input.value.trim();
+    const matches = dispatchPlanSearchDismissed ? [] : dispatchPlanSearchMatches();
+    const used = new Set(dispatchPlanState.stops.map((stop) => Number(stop.destination_id)));
+    if (dispatchPlanSearchIndex >= matches.length) dispatchPlanSearchIndex = -1;
+    results.innerHTML = matches.map((destination, index) => {
+      const id = dispatchPlanPositiveId(destination.id), added = used.has(id);
+      return `<div id="dispatchPlanSearchOption${index}" class="dispatch-plan-search-result" role="option" aria-selected="${index === dispatchPlanSearchIndex}" aria-disabled="${added}"><div><strong>${dispatchPlanEscape(dispatchPlanDestinationLabel(destination))}</strong><small>${dispatchPlanEscape(dispatchPlanDestinationSecondary(destination))}</small></div><button type="button" data-add-destination="${id}"${added ? " disabled" : ""} aria-label="${added ? "Added" : "Add"} ${dispatchPlanEscape(dispatchPlanDestinationLabel(destination))}">${added ? "Added ✓" : "+ Add"}</button></div>`;
+    }).join("");
+    input.setAttribute("aria-expanded", String(matches.length > 0));
+    if (dispatchPlanSearchIndex >= 0) input.setAttribute("aria-activedescendant", `dispatchPlanSearchOption${dispatchPlanSearchIndex}`);
+    else input.removeAttribute("aria-activedescendant");
+    const clear = dispatchPlanElement("dispatchPlanSearchClearBtn");
+    if (clear) clear.hidden = !query;
+    const status = dispatchPlanElement("dispatchPlanSearchStatus");
+    if (status) status.textContent = dispatchPlanState.loadingDestinations ? "Loading verified destinations…"
+      : !query ? "Start typing a street, barangay, or verified destination."
+      : dispatchPlanSearchDismissed ? "Search results closed. Type or press an arrow key to reopen."
+      : !matches.length ? `No verified destinations match ‘${query}’. Try another street, barangay, or destination name.`
+      : `${matches.length} matching destination${matches.length === 1 ? "" : "s"}${dispatchPlanFilteredDestinations(dispatchPlanState.destinations, query).length > 8 ? " shown. Refine your search for more." : "."}`;
+  }
+
+  function dispatchPlanSearchInput() {
+    dispatchPlanSearchIndex = -1;
+    dispatchPlanSearchDismissed = false;
+    dispatchPlanRenderDestinationOptions();
+  }
+
+  function dispatchPlanSearchAdd(event) {
+    const button = event.target.closest("button[data-add-destination]");
+    if (button && !button.disabled) addPlanStop(button.dataset.addDestination);
+  }
+
+  function dispatchPlanSearchKeydown(event) {
+    if (!["ArrowDown", "ArrowUp", "Enter", "Escape"].includes(event.key)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.key === "Escape") {
+      dispatchPlanSearchDismissed = true; dispatchPlanSearchIndex = -1;
+    } else {
+      dispatchPlanSearchDismissed = false;
+      const matches = dispatchPlanSearchMatches();
+      const available = matches.map((destination, index) => ({ destination, index }))
+        .filter(({ destination }) => !dispatchPlanState.stops.some((stop) => Number(stop.destination_id) === Number(destination.id)));
+      if (event.key === "Enter") {
+        const selected = available.find(({ index }) => index === dispatchPlanSearchIndex);
+        if (selected) addPlanStop(selected.destination.id);
+      } else if (available.length) {
+        const current = available.findIndex(({ index }) => index === dispatchPlanSearchIndex);
+        const next = event.key === "ArrowDown" ? (current + 1) % available.length : (current <= 0 ? available.length - 1 : current - 1);
+        dispatchPlanSearchIndex = available[next].index;
+      }
+    }
+    dispatchPlanRenderSearchResults();
+    dispatchPlanElement(`dispatchPlanSearchOption${dispatchPlanSearchIndex}`)?.scrollIntoView?.({ block: "nearest" });
   }
 
   async function loadDispatchPlanDestinations(options = {}) {
@@ -812,6 +884,7 @@
   }
 
   function dispatchPlanDestroyPreview() {
+    dispatchPlanCancelRoadPreview();
     clearTimeout(dispatchPlanPreviewTimer);
     dispatchPlanPreviewTimer = null;
     if (dispatchPlanPreviewMap) dispatchPlanPreviewMap.remove();
@@ -819,9 +892,44 @@
     dispatchPlanPreviewLayers = null;
   }
 
+  function dispatchPlanCancelRoadPreview() {
+    clearTimeout(dispatchPlanRoadTimer);
+    dispatchPlanRoadTimer = null;
+    dispatchPlanRoadController?.abort();
+    dispatchPlanRoadController = null;
+    dispatchPlanRoadGeneration++;
+  }
+
+  function dispatchPlanRequestRoadPreview(route) {
+    const generation = dispatchPlanRoadGeneration;
+    const status = dispatchPlanElement("dispatchPlanRoadStatus");
+    if (route.length < 2) { if (status) status.textContent = ""; return; }
+    if (status) status.textContent = "Calculating road route…";
+    dispatchPlanRoadTimer = setTimeout(async () => {
+      const controller = new AbortController();
+      dispatchPlanRoadController = controller;
+      try {
+        if (typeof requestDispatchRoadJourney !== "function") throw new Error("Routing helper unavailable");
+        const geometry = await requestDispatchRoadJourney(route.map(([latitude, longitude]) => ({ latitude, longitude })), controller.signal, { generation });
+        if (controller.signal.aborted || generation !== dispatchPlanRoadGeneration || !dispatchPlanPreviewMap) return;
+        if (!Array.isArray(geometry) || geometry.length < 2 || geometry.some((point) => !Array.isArray(point) || !Number.isFinite(point[0]) || !Number.isFinite(point[1]) || Math.abs(point[0]) > 90 || Math.abs(point[1]) > 180)) throw new Error("Invalid road geometry");
+        dispatchPlanPreviewLayers.removeLayer(dispatchPlanRoadLayer);
+        dispatchPlanRoadLayer = globalScope.L.polyline(geometry, { color: "#2563EB", weight: 4, opacity: 0.9 }).addTo(dispatchPlanPreviewLayers);
+        dispatchPlanPreviewMap.fitBounds([...route, ...geometry], { padding: [28, 28], maxZoom: 14 });
+        if (status) status.textContent = "Blue line = Road route";
+      } catch {
+        if (controller.signal.aborted || generation !== dispatchPlanRoadGeneration || !dispatchPlanPreviewMap) return;
+        if (status) status.textContent = "Road route unavailable. Showing approximate stop sequence.";
+      } finally {
+        if (generation === dispatchPlanRoadGeneration) dispatchPlanRoadController = null;
+      }
+    }, 300);
+  }
+
   function dispatchPlanRenderPreview() {
     const container = dispatchPlanElement("dispatchPlanRoutePreviewMap");
     if (!container || dispatchPlanState.wizardStep !== 2 || !dispatchPlanModalIsOpen("dispatchPlanFormModal")) return;
+    dispatchPlanCancelRoadPreview();
     if (!globalScope.L) {
       dispatchPlanSetFeedback("dispatchPlanPreviewNotice", "Map preview is unavailable. You can still save the ordered plan.", "info");
       return;
@@ -832,6 +940,7 @@
       dispatchPlanPreviewLayers = globalScope.L.layerGroup().addTo(dispatchPlanPreviewMap);
     }
     dispatchPlanPreviewLayers.clearLayers();
+    dispatchPlanRoadLayer = null;
     const points = dispatchPlanPreviewPoints(dispatchPlanState.stops);
     const marker = (position, label, wmo = false) => globalScope.L.marker(position, {
       icon: globalScope.L.divIcon({ className: "dispatch-plan-preview-icon", iconSize: [30, 30], iconAnchor: [15, 15],
@@ -841,7 +950,8 @@
     points.forEach((point) => marker([point.latitude, point.longitude], point.stop_order)
       .bindPopup(dispatchPlanEscape(point.display_label || "Verified destination")));
     const route = [DISPATCH_PLAN_WMO, ...points.map((point) => [point.latitude, point.longitude])];
-    if (points.length) globalScope.L.polyline(route, { color: "#2563EB", weight: 4, opacity: 0.9 }).addTo(dispatchPlanPreviewLayers);
+    if (points.length) dispatchPlanRoadLayer = globalScope.L.polyline(route, { color: "#2563EB", weight: 4, opacity: 0.9, dashArray: "7 6" }).addTo(dispatchPlanPreviewLayers);
+    dispatchPlanRequestRoadPreview(route);
     dispatchPlanSetFeedback("dispatchPlanPreviewNotice", points.length < dispatchPlanState.stops.length
       ? "Some selected destinations cannot be shown on the map." : "", "info");
     clearTimeout(dispatchPlanPreviewTimer);
@@ -856,6 +966,7 @@
   function dispatchPlanSetWizardStep(step, focus = true) {
     dispatchPlanState.wizardStep = step === 2 ? 2 : 1;
     const routeStep = dispatchPlanState.wizardStep === 2;
+    if (!routeStep) dispatchPlanCancelRoadPreview();
     ["dispatchPlanStep1", "dispatchPlanFormCancelBtn", "dispatchPlanNextBtn"].forEach((id) => {
       const element = dispatchPlanElement(id); if (element) element.hidden = routeStep;
     });
@@ -1100,6 +1211,8 @@
   }
 
   function dispatchPlanClearDestinationSearch() {
+    dispatchPlanSearchIndex = -1;
+    dispatchPlanSearchDismissed = false;
     const search = dispatchPlanElement("dispatchPlanDestinationSearch");
     if (search) search.value = "";
     dispatchPlanRenderDestinationOptions();
@@ -1491,7 +1604,10 @@
     dispatchPlanElement("dispatchPlanAddDestinationBtn")?.addEventListener("click", () => {
       addPlanStop(dispatchPlanElement("dispatchPlanDestinationSelect")?.value);
     });
-    dispatchPlanElement("dispatchPlanDestinationSearch")?.addEventListener("input", dispatchPlanRenderDestinationOptions);
+    dispatchPlanElement("dispatchPlanDestinationSearch")?.addEventListener("input", dispatchPlanSearchInput);
+    dispatchPlanElement("dispatchPlanDestinationSearch")?.addEventListener("keydown", dispatchPlanSearchKeydown);
+    dispatchPlanElement("dispatchPlanSearchClearBtn")?.addEventListener("click", () => { dispatchPlanClearDestinationSearch(); dispatchPlanElement("dispatchPlanDestinationSearch")?.focus(); });
+    dispatchPlanElement("dispatchPlanSearchResults")?.addEventListener("click", dispatchPlanSearchAdd);
     dispatchPlanElement("dispatchPlanStops")?.addEventListener("click", dispatchPlanHandleStopClick);
     [
       ["dispatchPlanFormOverlay", "dispatchPlanFormModal"],
@@ -1544,6 +1660,10 @@
     dispatchPlanTodayInManila,
     dispatchPlanTomorrowInManila,
     dispatchPlanValidateOperationalDate,
+    dispatchPlanSearchMatches,
+    dispatchPlanSearchInput,
+    dispatchPlanSearchKeydown,
+    dispatchPlanSearchAdd,
     dispatchPlanValidateAssignment,
     dispatchPlanCreateBasemapLayer,
     dispatchPlanPreviewPoints,
