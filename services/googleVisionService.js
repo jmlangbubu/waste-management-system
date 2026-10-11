@@ -184,6 +184,64 @@ async function detectLabelsFromBase64(base64Image) {
   }
 }
 
+// Google omits zero-valued normalized vertex coordinates in some responses.
+function normalizeBoundingBox(box) {
+  const coordinate = (value) => {
+    if ((typeof value !== "number" && typeof value !== "string") || String(value).trim() === "") return null;
+    const number = Number(value);
+    return Number.isFinite(number) ? Math.max(0, Math.min(1, number)) : null;
+  };
+  let values;
+  if (Array.isArray(box?.normalizedVertices)) {
+    const vertices = box.normalizedVertices;
+    if (vertices.length < 3 || vertices.some((v) => !v || typeof v !== "object" || Array.isArray(v))) return null;
+    const vertexCoordinate = (vertex, axis) => {
+      // An absent property is Google's omitted zero; a present invalid value is malformed.
+      if (!Object.prototype.hasOwnProperty.call(vertex, axis)) return 0;
+      return typeof vertex[axis] === "number" && Number.isFinite(vertex[axis]) ? coordinate(vertex[axis]) : null;
+    };
+    const xs = vertices.map((v) => vertexCoordinate(v, "x"));
+    const ys = vertices.map((v) => vertexCoordinate(v, "y"));
+    if (xs.includes(null) || ys.includes(null)) return null;
+    values = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+  } else {
+    values = [box?.left, box?.top, box?.right, box?.bottom].map(coordinate);
+  }
+  if (values.includes(null)) return null;
+  const [left, top, right, bottom] = values;
+  return left < right && top < bottom ? { left, top, right, bottom } : null;
+}
+
+async function detectObjectsFromBase64(base64Image) {
+  const cleaned = cleanBase64Image(base64Image);
+  if (!cleaned) return [];
+  const client = createVisionClient();
+  if (!client) return [];
+  try {
+    const content = Buffer.from(cleaned, "base64");
+    if (!content.length) return [];
+    const [result] = await client.annotateImage({
+      image: { content },
+      features: [{ type: "OBJECT_LOCALIZATION", maxResults: 20 }]
+    });
+    if (result?.error) return [];
+    return (result?.localizedObjectAnnotations || []).flatMap((object) => {
+      if (!object || typeof object !== "object") return [];
+      const boundingBox = normalizeBoundingBox(object.boundingPoly);
+      const name = typeof object.name === "string" ? object.name.trim() : "";
+      const confidence = object.score;
+      return name && boundingBox && Number.isFinite(confidence) && confidence >= 0 && confidence <= 1
+        ? [{ name, confidence, boundingBox }] : [];
+    });
+  } catch (_) {
+    // Provider errors can contain request details; do not log the image or credentials.
+    console.warn("[GoogleVision] Object localization unavailable; keeping legacy analysis.");
+    return [];
+  }
+}
+
 module.exports = {
-  detectLabelsFromBase64
+  detectLabelsFromBase64,
+  detectObjectsFromBase64,
+  normalizeBoundingBox
 };
