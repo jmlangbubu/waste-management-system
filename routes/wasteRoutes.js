@@ -3,7 +3,7 @@ const router = express.Router();
 const path = require("path");
 const fs = require("fs");
 const db = require("../config/db");
-const { analyzeWaste } = require("../services/wasteAnalysisService");
+const { analyzeWaste, buildScanSummary } = require("../services/wasteAnalysisService");
 const wasteController = require("../controllers/wasteController");
 const wasteCorrectionController = require("../controllers/wasteCorrectionController");
 const { requireWebCapability, requireCsrf } = require("../middleware/webSessionAuth");
@@ -827,6 +827,8 @@ router.post("/analyze", async (req, res) => {
     const aiLabel = analysisResult.aiLabel || null;
     const aiConfidence = analysisResult.aiConfidence || null;
     const analysisSource = analysisResult.analysisSource || "fallback";
+    const detectedItems = Array.isArray(analysisResult.detectedItems) ? analysisResult.detectedItems : [];
+    const multiItemResponse = { detectedItems, scanSummary: buildScanSummary(detectedItems) };
 
     const savedScanImage = saveScanImageFromBase64(image);
     const imageUrl = savedScanImage ? savedScanImage.imageUrl : null;
@@ -891,6 +893,7 @@ router.post("/analyze", async (req, res) => {
 
           return res.json({
             success: true,
+            ...multiItemResponse,
             result: {
               id: 0,
               itemName,
@@ -914,6 +917,7 @@ router.post("/analyze", async (req, res) => {
 
         return res.json({
           success: true,
+          ...multiItemResponse,
           result: {
             id: result.insertId,
             itemName,
@@ -941,6 +945,8 @@ router.post("/analyze", async (req, res) => {
 
     return res.json({
       success: true,
+      detectedItems: [],
+      scanSummary: buildScanSummary(),
       result: {
         id: 0,
         itemName: fallbackResult.itemName,

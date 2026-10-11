@@ -1,5 +1,7 @@
 const http = require("http");
 const https = require("https");
+const { detectObjectsFromBase64, normalizeBoundingBox } = require("./googleVisionService");
+const { getWasteLearningGuide } = require("./wasteLearningGuideService");
 
 const {
   analyzeWasteByObject,
@@ -7,6 +9,95 @@ const {
   mapWasteCategory,
   normalizeText
 } = require("../utils/wasteMapper");
+
+const MIN_OBJECT_CONFIDENCE = 0.40;
+const MAX_DETECTED_ITEMS = 8;
+const DUPLICATE_OVERLAP_THRESHOLD = 0.70;
+
+function overlapRatio(a, b) {
+  const intersection = Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left))
+    * Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+  const area = (box) => (box.right - box.left) * (box.bottom - box.top);
+  return intersection / (area(a) + area(b) - intersection);
+}
+
+function similarObjectNames(a, b) {
+  const words = (name) => name.split(" ").map((word) => word.replace(/s$/, ""));
+  const first = words(a);
+  const second = words(b);
+  return first.every((word) => second.includes(word)) || second.every((word) => first.includes(word));
+}
+
+function normalizeDetectedItems(objects, analysisSource, allowClassifierCategory = false) {
+  if (!Array.isArray(objects)) return [];
+  const candidates = objects.flatMap((object, index) => {
+    if (!object || typeof object !== "object") return [];
+    const name = typeof (object.itemName || object.name) === "string"
+      ? (object.itemName || object.name).trim().slice(0, 160) : "";
+    const canonicalItem = normalizeText(name);
+    const confidence = object.confidence ?? object.score;
+    const boundingBox = normalizeBoundingBox(object.boundingBox || object.boundingPoly);
+    if (!canonicalItem || !Number.isFinite(confidence) || confidence < MIN_OBJECT_CONFIDENCE
+      || confidence > 1 || !boundingBox) return [];
+    // Banana is a common localized object name; map its waste form through the existing rules.
+    const mapped = analyzeWasteByObject(canonicalItem === "banana" ? "banana peel" : canonicalItem);
+    const classifierCategory = allowClassifierCategory ? normalizeCategory(object.category) : null;
+    const category = mapped?.category === "Special Waste" || classifierCategory === "Special Waste"
+      ? "Special Waste" : classifierCategory || mapped?.category;
+    if (!isValidCategory(category)) return [];
+    const details = allowClassifierCategory ? Object.fromEntries(
+      ["explanation", "action", "warning"].filter((key) => typeof object[key] === "string" && object[key].trim())
+        .map((key) => [key, object[key]])
+    ) : {};
+    const { modelKey, modelHotspots, ...guidance } = getWasteLearningGuide(canonicalItem, category);
+    return [{ index, itemName: name, canonicalItem, category, confidence,
+      analysisSource, boundingBox, modelKey, guidance, modelHotspots, ...details }];
+  });
+  // Safety first for overlapping duplicates; same-category ties favor the more specific name.
+  candidates.sort((a, b) => Number(b.category === "Special Waste") - Number(a.category === "Special Waste")
+    || b.confidence - a.confidence
+    || b.canonicalItem.split(" ").length - a.canonicalItem.split(" ").length
+    || a.index - b.index);
+  const retained = [];
+  for (const candidate of candidates) {
+    if (retained.some((other) => (candidate.category === other.category || other.category === "Special Waste")
+      && similarObjectNames(candidate.canonicalItem, other.canonicalItem)
+      && overlapRatio(candidate.boundingBox, other.boundingBox) >= DUPLICATE_OVERLAP_THRESHOLD)) continue;
+    retained.push(candidate);
+    if (retained.length === MAX_DETECTED_ITEMS) break;
+  }
+  return retained.sort((a, b) => a.index - b.index).map(({ index, ...item }, position) => ({
+    itemId: `item_${position + 1}`, ...item
+  }));
+}
+
+function buildScanSummary(detectedItems = []) {
+  const categories = { biodegradable: 0, recyclable: 0, residual: 0, specialWaste: 0 };
+  const keys = { Biodegradable: "biodegradable", Recyclable: "recyclable", Residual: "residual", "Special Waste": "specialWaste" };
+  for (const item of detectedItems) if (keys[item.category]) categories[keys[item.category]] += 1;
+  return { totalItems: detectedItems.length, categories };
+}
+
+function withDetectedItems(legacyResult, detectedItems, preserveLegacyPrimary = false) {
+  const primary = detectedItems.reduce((best, item) => !best || item.confidence > best.confidence ? item : best, null);
+  const result = primary && !preserveLegacyPrimary ? {
+    ...createSafeResult({ category: primary.category, detectedObject: primary.itemName,
+      aiLabel: primary.itemName, aiConfidence: toSafeNumberText(primary.confidence), analysisSource: primary.analysisSource,
+      explanation: primary.explanation, action: primary.action, warning: primary.warning }),
+    itemName: primary.itemName
+  } : legacyResult;
+  return { ...result, detectedItems, scanSummary: buildScanSummary(detectedItems) };
+}
+
+async function enrichWithGoogleObjects(legacyResult, image, preserveLegacyPrimary = false) {
+  try {
+    const objects = await detectObjectsFromBase64(image);
+    return withDetectedItems(legacyResult, normalizeDetectedItems(objects, "google_vision_object_localization"), preserveLegacyPrimary);
+  } catch (_) {
+    console.warn("[WasteAnalysis] Multi-item enrichment unavailable; keeping legacy result.");
+    return withDetectedItems(legacyResult, []);
+  }
+}
 
 /*
   IMPORTANT:
@@ -285,14 +376,13 @@ async function classifyWithExternalGeminiService(image) {
   }
 
   try {
-    console.log("[WasteAnalysis] Calling external Gemini classifier:", classifierUrl);
+    console.log("[WasteAnalysis] Calling external Gemini classifier.");
 
     const response = await postJson(classifierUrl, {
       image
     });
 
     console.log("[WasteAnalysis] External classifier response success:", response?.success);
-    console.log("[WasteAnalysis] External classifier result:", response?.result);
 
     if (!response?.success || !response?.result) {
       return {
@@ -308,11 +398,7 @@ async function classifyWithExternalGeminiService(image) {
       result: response.result
     };
   } catch (error) {
-    console.error("[WasteAnalysis] External Gemini classifier error:", error.message);
-
-    if (error.response) {
-      console.error("[WasteAnalysis] External classifier error response:", error.response);
-    }
+    console.error("[WasteAnalysis] External Gemini classifier unavailable; status:", error.statusCode || "unknown");
 
     return {
       success: false,
@@ -361,7 +447,7 @@ function buildAiResultFromClassifier(classifierResult, sourceFallback) {
     return null;
   }
 
-  return createSafeResult({
+  return { ...createSafeResult({
     category,
     detectedObject: result.itemName || result.detectedObject || category,
     aiLabel: result.itemName || result.detectedObject || category,
@@ -372,7 +458,7 @@ function buildAiResultFromClassifier(classifierResult, sourceFallback) {
     warning: result.warning || null,
     visionLabels: [],
     mlKitLabels: []
-  });
+  }), itemName: result.itemName || result.detectedObject || category };
 }
 
 async function analyzeWaste({ image, detectedObject, mlKitLabels = [] }) {
@@ -390,6 +476,12 @@ async function analyzeWaste({ image, detectedObject, mlKitLabels = [] }) {
     "User location is not supported for the API use."
   */
   const externalGeminiResult = await classifyWithExternalGeminiService(image);
+  let externalItems = [];
+  if (externalGeminiResult?.success) {
+    externalItems = normalizeDetectedItems(externalGeminiResult.result?.detectedItems, "cloud_run_gemini_vision", true);
+    if (!externalItems.length) externalItems = normalizeDetectedItems(externalGeminiResult.result?.items, "cloud_run_gemini_vision", true);
+  }
+  if (externalItems.length) return withDetectedItems(null, externalItems);
   const externalAiResult = buildAiResultFromClassifier(
     externalGeminiResult,
     "cloud_run_gemini_vision"
@@ -397,7 +489,7 @@ async function analyzeWaste({ image, detectedObject, mlKitLabels = [] }) {
 
   if (externalAiResult) {
     console.log("[WasteAnalysis] RETURNING external Gemini category:", externalAiResult.category);
-    return externalAiResult;
+    return enrichWithGoogleObjects(externalAiResult, image, true);
   }
 
   /*
@@ -415,7 +507,7 @@ async function analyzeWaste({ image, detectedObject, mlKitLabels = [] }) {
 
   if (localAiResult) {
     console.log("[WasteAnalysis] RETURNING local Gemini category:", localAiResult.category);
-    return localAiResult;
+    return enrichWithGoogleObjects(localAiResult, image, true);
   }
 
   /*
@@ -436,7 +528,7 @@ async function analyzeWaste({ image, detectedObject, mlKitLabels = [] }) {
 
     console.log("[WasteAnalysis] RETURNING local mapper category:", category);
 
-    return createSafeResult({
+    return enrichWithGoogleObjects(createSafeResult({
       category,
       detectedObject: mappedFallback.itemName || category,
       aiLabel: mappedFallback.itemName || category,
@@ -447,7 +539,7 @@ async function analyzeWaste({ image, detectedObject, mlKitLabels = [] }) {
       warning: mappedFallback.warning || null,
       visionLabels: [],
       mlKitLabels: Array.isArray(mlKitLabels) ? mlKitLabels : []
-    });
+    }), image);
   }
 
   /*
@@ -467,7 +559,7 @@ async function analyzeWaste({ image, detectedObject, mlKitLabels = [] }) {
 
   console.log("[WasteAnalysis] RETURNING final fallback:", fallbackCategory);
 
-  return createSafeResult({
+  return enrichWithGoogleObjects(createSafeResult({
     category: fallbackCategory,
     detectedObject: toSafeString(detectedObject, fallbackCategory),
     aiLabel: "unable to confidently identify item",
@@ -481,9 +573,13 @@ async function analyzeWaste({ image, detectedObject, mlKitLabels = [] }) {
       "Please retake the photo with one clear waste item centered in the frame, then analyze again.",
     warning:
       "This is a fallback result and may not be accurate. Do not rely on it if the item is clearly recyclable, biodegradable, or special waste."
-  });
+  }), image);
 }
 
 module.exports = {
-  analyzeWaste
+  analyzeWaste,
+  normalizeDetectedItems,
+  buildScanSummary,
+  MIN_OBJECT_CONFIDENCE,
+  MAX_DETECTED_ITEMS
 };
