@@ -12,7 +12,7 @@ test('KPI controls retain totals, accessible selection, shares and custom artwor
     assert.match(html, new RegExp('<button[^>]+data-waste-category="'+key+'"[^>]+aria-pressed="false"'));
   }
   for (const id of ['totalBiodegradable','totalRecyclable','totalResidual','totalHazardous']) assert.ok(html.includes('id="'+id+'"'));
-  for (const icon of ['biodegradable','recyclable','residual-waste','special-waste','waste-analytics','truck-status','dispatch-route','recommendation']) assert.ok(html.includes('/images/dashboard/wmo-icon-'+icon+'.png'));
+  for (const icon of ['biodegradable','recyclable','residual-waste','special-waste','clipboard','truck-status','dispatch-route','recommendation']) assert.ok(html.includes('/images/dashboard/wmo-icon-'+icon+'.png'));
   assert.match(css, /dashboard-primary-band \{[^}]*grid-template-columns: 1fr !important/);
   assert.match(source, /dialog\.showModal\(\)/);
   assert.match(source, /aria-labelledby/);
