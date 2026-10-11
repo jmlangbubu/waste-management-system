@@ -33,7 +33,9 @@
     "dispatchPlanCancelModal"
   ]);
 
-  const DISPATCH_PLAN_WMO = [6.1164, 125.1716];
+  const DISPATCH_PLAN_WMO = typeof DISPATCH_WMO_LOCATION !== "undefined"
+    ? [Number(DISPATCH_WMO_LOCATION.latitude), Number(DISPATCH_WMO_LOCATION.longitude)]
+    : [6.1060875, 125.1816406];
   let dispatchPlanPreviewMap = null;
   let dispatchPlanPreviewLayers = null;
   let dispatchPlanPreviewTimer = null;
