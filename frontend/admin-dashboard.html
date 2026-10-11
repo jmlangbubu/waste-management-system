@@ -1628,9 +1628,14 @@
           </div>
           <label class="dispatch-plan-field dispatch-plan-destination-search">
             <span>Search Street / Destination</span>
-            <input type="search" id="dispatchPlanDestinationSearch" placeholder="Search verified street, barangay, or destination..." autocomplete="off">
+            <div class="dispatch-plan-search-input">
+              <input type="search" id="dispatchPlanDestinationSearch" placeholder="Search verified street, barangay, or destination..." autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="dispatchPlanSearchResults">
+              <button type="button" id="dispatchPlanSearchClearBtn" aria-label="Clear destination search" hidden>&times;</button>
+            </div>
           </label>
-          <div class="dispatch-plan-destination-picker">
+          <div id="dispatchPlanSearchResults" class="dispatch-plan-search-results" role="listbox" aria-label="Matching verified destinations"></div>
+          <p id="dispatchPlanSearchStatus" class="dispatch-plan-search-status" role="status">Start typing a street, barangay, or verified destination.</p>
+          <div class="dispatch-plan-destination-picker" hidden>
             <label class="dispatch-plan-field">
               <span>Verified Destination</span>
               <select id="dispatchPlanDestinationSelect"><option value="">Choose a destination</option></select>
@@ -1645,6 +1650,7 @@
           <div><h4 id="dispatchPlanPreviewHeading">Live Route Preview</h4><p>Selected verified destinations appear here in visit order.</p></div>
           <div id="dispatchPlanRoutePreviewMap" role="region" aria-label="Planning preview: WMO and ordered verified destinations"></div>
           <p id="dispatchPlanPreviewNotice" class="dispatch-plan-field-guidance hidden" role="status"></p>
+          <p id="dispatchPlanRoadStatus" class="dispatch-plan-road-status" role="status"></p>
           <small>Preview shows stop sequence for planning. Final live routing may differ.</small>
         </section>
         <section class="dispatch-plan-review" aria-labelledby="dispatchPlanReviewHeading">
