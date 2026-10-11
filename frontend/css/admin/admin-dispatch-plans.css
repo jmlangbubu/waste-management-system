@@ -890,6 +890,10 @@ body > .dispatch-plan-modal.custom-modal:not(.hidden) {
   z-index: calc(var(--wmo-z-modal) + 40) !important;
 }
 
+body > #dispatchPlanFormModal.dispatch-plan-modal.custom-modal:not(.hidden) {
+  z-index: calc(var(--wmo-z-modal) + 100) !important;
+}
+
 @media (max-width: 768px) {
   #dispatchPlanningModal > .dispatch-planning-parent-content {
     width: calc(100vw - 24px) !important;
@@ -966,3 +970,47 @@ html body .dispatch-plan-modal .dispatch-plan-review > div > span { background: 
 html body .dispatch-plan-modal .dispatch-plan-review :is(p,small) { color: #64748B; }
 html body :is(#dispatchPlanningModal,.dispatch-plan-modal) :is(.dispatch-plan-field > span,.dispatch-plans-filter > span) { color: #12355B; }
 html body :is(#dispatchPlanningModal,.dispatch-plan-modal) button:focus-visible { outline: 2px solid #2563EB; outline-offset: 3px; }
+
+/* Two-step planning wizard: scoped to the create/edit form only. */
+#dispatchPlanForm [hidden] { display: none !important; }
+#dispatchPlanFormModal .dispatch-plan-progress {
+  display: flex; gap: 12px; padding: 0; margin: 0; list-style: none;
+}
+#dispatchPlanFormModal .dispatch-plan-progress li {
+  display: flex; flex: 1; align-items: center; gap: 9px; padding: 12px;
+  border: 1px solid #D9E6F2; border-radius: 12px; color: #64748B; font-size: 13px; font-weight: 700;
+}
+#dispatchPlanFormModal .dispatch-plan-progress li > span {
+  display: grid; place-items: center; flex: 0 0 26px; height: 26px; border-radius: 50%; background: #E2E8F0;
+}
+#dispatchPlanFormModal .dispatch-plan-progress [aria-current="step"] { color: #1D4ED8; background: #EEF6FF; border-color: #93B7F8; }
+#dispatchPlanFormModal .dispatch-plan-progress [aria-current="step"] > span { color: #fff; background: #2563EB; }
+#dispatchPlanFormModal .dispatch-plan-progress .completed { color: #0F766E; border-color: #A5D8CF; background: #F0FDFA; }
+#dispatchPlanFormModal .dispatch-plan-progress .completed > span { background: #CCFBF1; }
+#dispatchPlanFormModal .dispatch-plan-route-layout {
+  display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  grid-template-areas: "stops map" "summary map"; gap: 14px; align-items: start;
+}
+#dispatchPlanFormModal .dispatch-plan-route-stops { grid-area: stops; min-width: 0; }
+#dispatchPlanFormModal .dispatch-plan-preview { grid-area: map; min-width: 0; gap: 12px; }
+#dispatchPlanFormModal .dispatch-plan-review { grid-area: summary; min-width: 0; }
+#dispatchPlanFormModal .dispatch-plan-preview h4 { margin: 0 0 5px; }
+#dispatchPlanFormModal .dispatch-plan-preview :is(p,small) { margin: 0; color: #64748B; font-size: 12px; line-height: 1.5; }
+#dispatchPlanRoutePreviewMap { height: 400px; width: 100%; border: 1px solid #D9E6F2; border-radius: 12px; z-index: 0; }
+.dispatch-plan-map-marker { display: grid; place-items: center; width: 30px; height: 30px; border: 2px solid #fff; border-radius: 50%; background: #2563EB; color: #fff; font: 700 13px system-ui; box-shadow: 0 2px 7px #12355B50; }
+.dispatch-plan-map-marker.wmo { background: #12355B; }
+#dispatchPlanFormModal .dispatch-plan-stop-row { grid-template-columns: auto minmax(0,1fr) auto; gap: 8px; }
+#dispatchPlanFormModal .dispatch-plan-stop-arrival-note { grid-column: 2 / -1; order: 4; }
+#dispatchPlanFormModal .dispatch-plan-stop-controls { display: flex; gap: 5px; }
+html body #dispatchPlanFormModal .dispatch-plan-stop-action.remove { background: #FFF1F2; color: #B91C1C; border-color: #FECDD3; }
+html body #dispatchPlanFormModal .dispatch-plan-stop-action.remove:hover { background: #FFE4E6; color: #991B1B; }
+#dispatchPlanFormModal .dispatch-plan-form-actions { position: sticky; bottom: -1px; padding: 12px 0; background: #fff; border-top: 1px solid #D9E6F2; z-index: 1; }
+@media (max-width: 700px) {
+  #dispatchPlanFormModal .dispatch-plan-route-layout { grid-template-columns: minmax(0,1fr); grid-template-areas: "stops" "map" "summary"; }
+  #dispatchPlanRoutePreviewMap { height: 300px; }
+  #dispatchPlanFormModal .dispatch-plan-progress { gap: 7px; }
+  #dispatchPlanFormModal .dispatch-plan-progress li { padding: 9px 7px; font-size: 12px; }
+  #dispatchPlanFormModal .dispatch-plan-stop-row { grid-template-columns: auto minmax(0,1fr); }
+  #dispatchPlanFormModal .dispatch-plan-stop-controls { grid-column: 2; flex-wrap: wrap; }
+  #dispatchPlanFormModal .dispatch-plan-form-actions { flex-direction: row; }
+}
