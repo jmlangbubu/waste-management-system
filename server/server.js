@@ -1,5 +1,8 @@
 require("dotenv").config();
 const wasteScanOnly = require("../config/startupMode").isWasteScanOnly();
+if (process.env.CLOUD_RUN_CALLER_CREDENTIALS_JSON !== undefined) {
+  require("../services/railwayCallerBootstrap").prepareRuntimeCredentials();
+}
 
 const express = require("express");
 const cors = require("cors");

@@ -2,6 +2,18 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const AUTH_TIMEOUT_MS = 2000;
+const STAGING_CALLER_EMAIL = "wmo-render-staging-caller@gen-lang-client-0282087033.iam.gserviceaccount.com";
+function parseCallerCredentials(raw, env) {
+  if (typeof raw !== "string" || Buffer.byteLength(raw) > 32768) throw unavailable();
+  let credentials;
+  try { credentials = JSON.parse(raw); } catch (_) { throw unavailable(); }
+  if (credentials?.type !== "service_account" || typeof credentials.client_email !== "string"
+      || !credentials.client_email.endsWith(".iam.gserviceaccount.com")
+      || typeof credentials.private_key !== "string" || !credentials.private_key
+      || credentials.universe_domain && credentials.universe_domain !== "googleapis.com"
+      || env.WMO_DEPLOYMENT_MODE === "staging" && credentials.client_email !== STAGING_CALLER_EMAIL) throw unavailable();
+  return credentials;
+}
 function unavailable() { const error = new Error("Cloud Run authentication unavailable."); error.code = "CLOUD_RUN_AUTH_UNAVAILABLE"; return error; }
 function createCloudRunAuth({ env = process.env, readFile = fs.readFileSync,
   loadLibrary = () => require("google-auth-library"), now = Date.now } = {}) {
@@ -27,11 +39,7 @@ function createCloudRunAuth({ env = process.env, readFile = fs.readFileSync,
       const cached = cache.get(audience.origin);
       if (cached && cached.expires > now() + 60000) return { Authorization: "Bearer " + cached.token };
       const raw = readFile(file, "utf8");
-      if (Buffer.byteLength(raw) > 32768) throw unavailable();
-      const credentials = JSON.parse(raw);
-      if (credentials.type !== "service_account" || typeof credentials.client_email !== "string"
-          || !credentials.client_email.endsWith(".iam.gserviceaccount.com")
-          || typeof credentials.private_key !== "string" || credentials.universe_domain && credentials.universe_domain !== "googleapis.com") throw unavailable();
+      const credentials = parseCallerCredentials(raw, env);
       // Dedicated caller only: never implicitly reuse Vision credentials or metadata-server ADC.
       const { JWT } = loadLibrary();
       const client = new JWT({ email: credentials.client_email, key: credentials.private_key, keyId: credentials.private_key_id });
@@ -57,4 +65,4 @@ function createCloudRunAuth({ env = process.env, readFile = fs.readFileSync,
     finally { clearTimeout(timer); signal?.removeEventListener("abort", cancel); }
   };
 }
-module.exports = { AUTH_TIMEOUT_MS, createCloudRunAuth, invocationHeaders: createCloudRunAuth() };
+module.exports = { AUTH_TIMEOUT_MS, STAGING_CALLER_EMAIL, parseCallerCredentials, createCloudRunAuth, invocationHeaders: createCloudRunAuth() };

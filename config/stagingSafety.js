@@ -34,26 +34,75 @@ function schemaQueryAllowed(query) {
 }
 function blocked() { const error = new Error("Automatic schema changes are disabled in staging."); error.code = "STAGING_SCHEMA_CHANGES_DISABLED"; return error; }
 const guarded = new WeakSet();
+const safeErrors = new WeakSet();
+const safeEmitters = new WeakSet();
+const SAFE_DATABASE_ERROR_CODES = new Set([
+  "PROTOCOL_CONNECTION_LOST", "PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR",
+  "ECONNRESET", "ECONNREFUSED", "ETIMEDOUT", "EPIPE",
+  "HANDSHAKE_SSL_ERROR", "HANDSHAKE_NO_SSL_SUPPORT",
+  "ERR_TLS_CERT_ALTNAME_INVALID", "CERT_HAS_EXPIRED",
+  "DEPTH_ZERO_SELF_SIGNED_CERT", "SELF_SIGNED_CERT_IN_CHAIN",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE", "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+  "ER_ACCESS_DENIED_ERROR", "ER_BAD_DB_ERROR", "ER_NO_SUCH_TABLE",
+  "ER_BAD_FIELD_ERROR", "ER_DUP_ENTRY", "ER_DUP_FIELDNAME"
+]);
+function safeDatabaseError(error) {
+  if (!error || safeErrors.has(error)) return error;
+  const safe = new Error("Staging database operation failed.");
+  safe.code = SAFE_DATABASE_ERROR_CODES.has(error.code) ? error.code : "STAGING_DATABASE_ERROR";
+  if (error.fatal === true) safe.fatal = true;
+  safeErrors.add(safe);
+  return safe;
+}
+function safeEmitter(target) {
+  if (!target || typeof target.emit !== "function" || safeEmitters.has(target)) return target;
+  safeEmitters.add(target);
+  const emit = target.emit;
+  target.emit = function(event, ...args) {
+    if (event === "error" && args[0]) args[0] = safeDatabaseError(args[0]);
+    return emit.call(this, event, ...args);
+  };
+  return target;
+}
 function guardDatabase(target, policy, promise = false) {
-  if (!policy.staging || policy.schemaChanges || guarded.has(target)) return target;
+  if (!policy.staging || guarded.has(target)) return target;
   guarded.add(target);
+  safeEmitter(target);
   for (const method of ["query", "execute"]) {
     if (typeof target[method] !== "function") continue;
     const original = target[method].bind(target);
     target[method] = (...args) => {
-      if (schemaQueryAllowed(args[0])) return original(...args);
-      const error = blocked();
-      if (promise) return Promise.reject(error);
-      const callback = args.findLast(value => typeof value === "function");
-      if (callback) { process.nextTick(() => callback(error)); return; }
-      throw error;
+      if (!policy.schemaChanges && !schemaQueryAllowed(args[0])) {
+        const error = blocked();
+        if (promise) return Promise.reject(error);
+        const callback = args.findLast(value => typeof value === "function");
+        if (callback) { process.nextTick(() => callback(error)); return; }
+        throw error;
+      }
+      if (promise) {
+        try { return Promise.resolve(original(...args)).catch(error => { throw safeDatabaseError(error); }); }
+        catch (error) { return Promise.reject(safeDatabaseError(error)); }
+      }
+      const index = args.findLastIndex(value => typeof value === "function");
+      if (index !== -1) {
+        const callback = args[index];
+        args[index] = (error, ...values) => callback(safeDatabaseError(error), ...values);
+      }
+      try { return safeEmitter(original(...args)); }
+      catch (error) { throw safeDatabaseError(error); }
     };
   }
   if (typeof target.getConnection === "function") {
     const original = target.getConnection.bind(target);
     target.getConnection = promise
-      ? async (...args) => guardDatabase(await original(...args), policy, true)
-      : callback => original((error, connection) => callback(error, connection && guardDatabase(connection, policy, false)));
+      ? async (...args) => {
+        try { return guardDatabase(await original(...args), policy, true); }
+        catch (error) { throw safeDatabaseError(error); }
+      }
+      : callback => {
+        try { return original((error, connection) => callback(safeDatabaseError(error), connection && guardDatabase(connection, policy, false))); }
+        catch (error) { throw safeDatabaseError(error); }
+      };
   }
   if (typeof target.promise === "function") {
     const original = target.promise.bind(target);
