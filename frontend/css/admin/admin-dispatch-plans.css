@@ -1,0 +1,1032 @@
+/* =========================================================
+   DISPATCH PLANNING
+   Manual pre-operation planning inside Truck Monitoring.
+========================================================= */
+
+.dispatch-plans-card {
+  margin-bottom: 18px;
+  padding: 22px;
+  border: 1px solid var(--wmo-border);
+  border-radius: var(--wmo-radius-lg);
+  background: var(--wmo-surface);
+  box-shadow: var(--wmo-shadow-subtle);
+}
+
+.dispatch-plans-header,
+.dispatch-plans-header-actions,
+.dispatch-plans-filters,
+.dispatch-plan-destination-picker,
+.dispatch-plan-form-actions {
+  display: flex;
+  align-items: center;
+}
+
+.dispatch-plans-header {
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.dispatch-plans-eyebrow {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--wmo-secondary);
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.dispatch-plans-header h2 {
+  margin: 0;
+  color: var(--wmo-ink);
+  font-size: 24px;
+  line-height: 1.2;
+}
+
+.dispatch-plans-header p {
+  max-width: 720px;
+  margin: 6px 0 0;
+  color: var(--wmo-text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.dispatch-plans-header-actions {
+  flex: 0 0 auto;
+  gap: 9px;
+}
+
+.dispatch-plans-button,
+.dispatch-plan-row-action,
+.dispatch-plan-stop-action {
+  min-height: 38px;
+  padding: 9px 14px;
+  border: 1px solid transparent;
+  border-radius: var(--wmo-radius-md);
+  background: #ffffff;
+  color: var(--wmo-ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+}
+
+.dispatch-plans-button.primary {
+  border-color: var(--wmo-primary);
+  background: var(--wmo-primary);
+  color: #ffffff;
+}
+
+.dispatch-plans-button.primary:hover {
+  border-color: #1d493a;
+  background: #1d493a;
+}
+
+.dispatch-plans-button.secondary,
+.dispatch-plan-row-action,
+.dispatch-plan-stop-action {
+  border-color: #a8c8b8;
+  background: #f3faf6;
+  color: #19563e;
+}
+
+.dispatch-plans-button.secondary:hover,
+.dispatch-plan-row-action:hover,
+.dispatch-plan-stop-action:hover {
+  border-color: #6eaa8c;
+  background: #e6f4ec;
+}
+
+.dispatch-plans-button.danger,
+.dispatch-plan-row-action.danger,
+.dispatch-plan-stop-action.remove {
+  border-color: #e6aaa5;
+  background: #fff3f2;
+  color: #92251f;
+}
+
+.dispatch-plans-button.danger:hover,
+.dispatch-plan-row-action.danger:hover,
+.dispatch-plan-stop-action.remove:hover {
+  border-color: #cc766e;
+  background: #ffe7e5;
+}
+
+.dispatch-plans-button:disabled,
+.dispatch-plan-row-action:disabled,
+.dispatch-plan-stop-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.dispatch-plans-button:focus-visible,
+.dispatch-plan-row-action:focus-visible,
+.dispatch-plan-stop-action:focus-visible,
+.dispatch-plan-field input:focus-visible,
+.dispatch-plan-field select:focus-visible,
+.dispatch-plan-field textarea:focus-visible {
+  outline: 3px solid var(--wmo-focus-ring);
+  outline-offset: 2px;
+}
+
+.dispatch-plans-filters {
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 18px;
+  padding: 14px;
+  border: 1px solid #dce8e1;
+  border-radius: var(--wmo-radius-lg);
+  background: #f7faf8;
+}
+
+.dispatch-plans-filters .dispatch-plan-field {
+  width: min(240px, 100%);
+}
+
+.dispatch-plans-status,
+.dispatch-plan-feedback,
+.dispatch-plan-field-guidance {
+  padding: 10px 12px;
+  border: 1px solid #bad9c9;
+  border-radius: var(--wmo-radius-md);
+  background: #f1faf5;
+  color: #245c43;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.dispatch-plans-status {
+  margin-top: 14px;
+}
+
+.dispatch-plans-status.error,
+.dispatch-plan-feedback.error,
+.dispatch-plan-field-guidance.error {
+  border-color: #f0bab6;
+  background: #fff4f3;
+  color: #8a1c17;
+}
+
+.dispatch-plans-table-shell {
+  width: 100%;
+  margin-top: 16px;
+  overflow-x: auto;
+  border: 1px solid var(--wmo-border);
+  border-radius: var(--wmo-radius-lg);
+  background: var(--wmo-surface);
+  -webkit-overflow-scrolling: touch;
+}
+
+.dispatch-plans-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+}
+
+.dispatch-plans-table th,
+.dispatch-plans-table td {
+  padding: 13px 14px;
+  border-bottom: 1px solid #e6eee9;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.dispatch-plans-table th {
+  background: #f4f8f6;
+  color: #44564e;
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.dispatch-plans-table td {
+  color: #263a32;
+  font-size: 13px;
+}
+
+.dispatch-plans-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.dispatch-plans-table tbody tr:hover:not(:only-child) {
+  background: #fbfdfc;
+}
+
+.dispatch-plan-cell-primary,
+.dispatch-plan-cell-secondary {
+  display: block;
+}
+
+.dispatch-plan-cell-primary {
+  color: var(--wmo-ink);
+  font-weight: 800;
+}
+
+.dispatch-plan-cell-secondary {
+  max-width: 250px;
+  margin-top: 3px;
+  color: var(--wmo-text-muted);
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: normal;
+}
+
+.dispatch-plan-status-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 5px 9px;
+  border: 1px solid #cddbd3;
+  border-radius: 999px;
+  background: #f5f8f6;
+  color: #405149;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.dispatch-plan-status-badge.planned {
+  border-color: #edc89c;
+  background: var(--wmo-warning-soft);
+  color: #8a3c08;
+}
+
+.dispatch-plan-status-badge.activated {
+  border-color: #a9c9e9;
+  background: #eef6ff;
+  color: #205d91;
+}
+
+.dispatch-plan-status-badge.cancelled {
+  border-color: #e7b8b4;
+  background: #fff2f1;
+  color: #8f211a;
+}
+
+.dispatch-plan-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dispatch-plan-row-action {
+  min-height: 32px;
+  padding: 7px 9px;
+  font-size: 11px;
+}
+
+.dispatch-plans-table-state {
+  height: 150px;
+  color: var(--wmo-text-muted);
+  text-align: center !important;
+}
+
+.dispatch-plans-table-state strong,
+.dispatch-plans-table-state span {
+  display: block;
+}
+
+.dispatch-plans-table-state strong {
+  margin-bottom: 6px;
+  color: var(--wmo-ink);
+  font-size: 15px;
+}
+
+html.dispatch-plan-modal-open,
+body.dispatch-plan-modal-open {
+  overflow: hidden !important;
+}
+
+html.dispatch-plan-modal-open body #adminLayout #dashboardSidebar {
+  z-index: calc(var(--wmo-z-modal) + 80) !important;
+  pointer-events: none;
+}
+
+html.dispatch-plan-modal-open body #dashboardSidebar .nav-btn,
+html.dispatch-plan-modal-open body #dashboardSidebar #sidebarLogoToggleBtn {
+  pointer-events: auto;
+}
+
+@media (max-width: 992px) {
+  html.dispatch-plan-modal-open body #adminLayout #mobileSidebarToggleBtn {
+    position: relative !important;
+    z-index: calc(var(--wmo-z-modal) + 90) !important;
+    pointer-events: auto;
+  }
+
+  html.dispatch-plan-modal-open body #adminLayout #dashboardSidebar.open {
+    z-index: calc(var(--wmo-z-modal) + 80) !important;
+  }
+
+  html.dispatch-plan-modal-open body #adminLayout #sidebarBackdrop:not(.hidden) {
+    z-index: calc(var(--wmo-z-modal) + 70) !important;
+  }
+}
+
+body > .dispatch-plan-modal.custom-modal {
+  position: fixed;
+  inset: 0;
+  z-index: var(--wmo-z-modal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100vw;
+  height: 100dvh;
+  padding: 20px;
+}
+
+body > .dispatch-plan-modal.custom-modal.hidden {
+  display: none !important;
+}
+
+body > .dispatch-plan-modal .custom-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  background: rgba(9, 20, 19, 0.62);
+  backdrop-filter: blur(3px);
+}
+
+body > .dispatch-plan-modal .dispatch-plan-modal-content {
+  position: relative;
+  inset: auto;
+  z-index: 2;
+  width: min(940px, calc(100vw - 40px));
+  max-width: 940px;
+  max-height: calc(100dvh - 40px);
+  margin: 0;
+  overflow: hidden;
+  transform: none;
+  border: 1px solid var(--wmo-border);
+  border-radius: var(--wmo-radius-lg);
+  background: var(--wmo-surface);
+  box-shadow: 0 24px 64px rgba(9, 20, 19, 0.3);
+}
+
+body > .dispatch-plan-modal .dispatch-plan-modal-body,
+body > .dispatch-plan-modal .dispatch-plan-detail-body {
+  max-height: calc(100dvh - 138px);
+  overflow-y: auto;
+}
+
+body > .dispatch-plan-modal .dispatch-plan-detail-content {
+  width: min(780px, calc(100vw - 40px));
+  max-width: 780px;
+}
+
+body > .dispatch-plan-modal .dispatch-plan-cancel-content {
+  width: min(570px, calc(100vw - 40px));
+  max-width: 570px;
+}
+
+.dispatch-plan-form,
+.dispatch-plan-form-section,
+.dispatch-plan-stops,
+.dispatch-plan-detail-stops {
+  display: grid;
+  gap: 16px;
+}
+
+.dispatch-plan-form-section {
+  padding: 17px;
+  border: 1px solid #dce8e1;
+  border-radius: var(--wmo-radius-lg);
+  background: #fbfdfc;
+}
+
+.dispatch-plan-section-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+}
+
+.dispatch-plan-section-heading > span,
+.dispatch-plan-review > div > span {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--wmo-primary);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.dispatch-plan-section-heading h4,
+.dispatch-plan-section-heading p {
+  margin: 0;
+}
+
+.dispatch-plan-section-heading h4 {
+  color: var(--wmo-ink);
+  font-size: 15px;
+}
+
+.dispatch-plan-section-heading p {
+  margin-top: 3px;
+  color: var(--wmo-text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.dispatch-plan-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.dispatch-plan-field-wide {
+  grid-column: 1 / -1;
+}
+
+.dispatch-plan-field > span {
+  display: block;
+  margin-bottom: 7px;
+  color: #30453c;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.dispatch-plan-field b {
+  color: var(--wmo-danger);
+}
+
+.dispatch-plan-field input,
+.dispatch-plan-field select,
+.dispatch-plan-field textarea {
+  width: 100%;
+  min-height: 42px;
+  padding: 10px 11px;
+  border: 1px solid #cbdad2;
+  border-radius: var(--wmo-radius-md);
+  background: #ffffff;
+  color: var(--wmo-ink);
+  font: inherit;
+  font-size: 13px;
+}
+
+.dispatch-plan-field textarea {
+  min-height: 86px;
+  resize: vertical;
+}
+
+.dispatch-plan-field-guidance {
+  grid-column: 1 / -1;
+  margin: -5px 0 0;
+}
+
+.dispatch-plan-destination-picker {
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.dispatch-plan-destination-search {
+  width: 100%;
+  min-width: 0;
+}
+
+.dispatch-plan-destination-picker .dispatch-plan-field {
+  flex: 1 1 auto;
+}
+
+.dispatch-plan-stops {
+  gap: 9px;
+}
+
+.dispatch-plan-stops-empty {
+  padding: 22px;
+  border: 1px dashed #b9cdc2;
+  border-radius: var(--wmo-radius-md);
+  background: #ffffff;
+  color: var(--wmo-text-muted);
+  text-align: center;
+}
+
+.dispatch-plan-stops-empty strong,
+.dispatch-plan-stops-empty span {
+  display: block;
+}
+
+.dispatch-plan-stops-empty strong {
+  margin-bottom: 5px;
+  color: var(--wmo-ink);
+}
+
+.dispatch-plan-stop-row {
+  display: grid;
+  grid-template-columns: auto minmax(170px, 1fr) minmax(190px, 0.7fr) auto;
+  align-items: center;
+  gap: 11px;
+  padding: 12px;
+  border: 1px solid #d9e6df;
+  border-radius: var(--wmo-radius-md);
+  background: #ffffff;
+}
+
+.dispatch-plan-stop-number {
+  display: grid;
+  place-items: center;
+  width: 31px;
+  height: 31px;
+  border-radius: 50%;
+  background: #e8f4ed;
+  color: #1d6043;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.dispatch-plan-stop-copy strong,
+.dispatch-plan-stop-copy span {
+  display: block;
+}
+
+.dispatch-plan-stop-copy strong {
+  color: var(--wmo-ink);
+  font-size: 13px;
+}
+
+.dispatch-plan-stop-copy span {
+  margin-top: 3px;
+  color: var(--wmo-text-muted);
+  font-size: 11px;
+}
+
+.dispatch-plan-stop-arrival-note {
+  min-width: 190px;
+  padding: 8px 10px;
+  border-radius: var(--wmo-radius-md);
+  background: #f1f8f4;
+}
+
+.dispatch-plan-stop-arrival-note span,
+.dispatch-plan-stop-arrival-note strong {
+  display: block;
+}
+
+.dispatch-plan-stop-arrival-note span {
+  color: #527064;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+.dispatch-plan-stop-arrival-note strong {
+  margin-top: 3px;
+  color: #275b44;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.dispatch-plan-stop-controls {
+  display: grid;
+  grid-template-columns: repeat(3, 34px);
+  gap: 5px;
+}
+
+.dispatch-plan-stop-action {
+  min-width: 34px;
+  min-height: 34px;
+  padding: 6px;
+  font-size: 15px;
+}
+
+.dispatch-plan-review {
+  padding: 15px 17px;
+  border: 1px solid #bcd8c9;
+  border-radius: var(--wmo-radius-lg);
+  background: #f1faf5;
+}
+
+.dispatch-plan-review > div {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--wmo-ink);
+}
+
+.dispatch-plan-review p,
+.dispatch-plan-review small {
+  display: block;
+  margin: 8px 0 0 37px;
+  color: #365548;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.dispatch-plan-form-actions {
+  justify-content: flex-end;
+  gap: 9px;
+}
+
+.dispatch-plan-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.dispatch-plan-detail-item,
+.dispatch-plan-detail-section {
+  padding: 13px;
+  border: 1px solid #dce8e1;
+  border-radius: var(--wmo-radius-md);
+  background: #fbfdfc;
+}
+
+.dispatch-plan-detail-item span,
+.dispatch-plan-detail-item strong {
+  display: block;
+}
+
+.dispatch-plan-detail-item span {
+  margin-bottom: 4px;
+  color: var(--wmo-text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.dispatch-plan-detail-item strong {
+  color: var(--wmo-ink);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.dispatch-plan-detail-section {
+  grid-column: 1 / -1;
+}
+
+.dispatch-plan-detail-section h4 {
+  margin: 0 0 10px;
+  color: var(--wmo-ink);
+  font-size: 14px;
+}
+
+.dispatch-plan-detail-section p {
+  margin: 0;
+  color: #3b5148;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.dispatch-plan-detail-stop {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: start;
+}
+
+.dispatch-plan-detail-stop .dispatch-plan-stop-number {
+  margin-top: 1px;
+}
+
+.dispatch-plan-detail-stop-main {
+  min-width: 0;
+}
+
+.dispatch-plan-detail-stop-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.dispatch-plan-detail-stop-heading > strong {
+  color: var(--wmo-ink);
+  font-size: 13px;
+}
+
+.dispatch-plan-detail-stop-address {
+  display: block;
+  margin-top: 3px;
+  color: var(--wmo-text-muted);
+  font-size: 11px;
+}
+
+.dispatch-plan-detail-arrival {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px solid #e2ece6;
+}
+
+.dispatch-plan-detail-arrival span {
+  color: var(--wmo-text-muted);
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+.dispatch-plan-detail-arrival strong {
+  color: #275b44;
+  font-size: 12px;
+  text-align: right;
+}
+
+@media (max-width: 900px) {
+  .dispatch-plan-stop-row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .dispatch-plan-stop-arrival-note {
+    grid-column: 2 / -1;
+  }
+}
+
+@media (max-width: 1180px) {
+  body > .dispatch-plan-modal .dispatch-plan-modal-content,
+  body > .dispatch-plan-modal .dispatch-plan-detail-content,
+  body > .dispatch-plan-modal .dispatch-plan-cancel-content {
+    top: auto !important;
+    left: auto !important;
+    width: min(940px, calc(100vw - 32px)) !important;
+    max-width: calc(100vw - 32px) !important;
+    margin: 0 !important;
+    transform: none !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .dispatch-plans-card {
+    padding: 18px;
+  }
+
+  .dispatch-plans-header {
+    flex-direction: column;
+  }
+
+  .dispatch-plans-header-actions,
+  .dispatch-plans-header-actions .dispatch-plans-button {
+    width: 100%;
+  }
+
+  .dispatch-plans-header-actions .dispatch-plans-button {
+    flex: 1 1 0;
+  }
+
+  body > .dispatch-plan-modal.custom-modal {
+    align-items: flex-start;
+    padding: 12px;
+  }
+
+  body > .dispatch-plan-modal .dispatch-plan-modal-content,
+  body > .dispatch-plan-modal .dispatch-plan-detail-content,
+  body > .dispatch-plan-modal .dispatch-plan-cancel-content {
+    width: calc(100vw - 24px) !important;
+    max-width: calc(100vw - 24px) !important;
+    max-height: calc(100dvh - 24px) !important;
+  }
+
+  body > .dispatch-plan-modal .dispatch-plan-modal-body,
+  body > .dispatch-plan-modal .dispatch-plan-detail-body {
+    max-height: calc(100dvh - 130px);
+  }
+
+  .dispatch-plan-form-grid,
+  .dispatch-plan-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dispatch-plan-field-wide,
+  .dispatch-plan-detail-section {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 560px) {
+  .dispatch-plans-header-actions,
+  .dispatch-plans-filters,
+  .dispatch-plan-destination-picker,
+  .dispatch-plan-form-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .dispatch-plans-filters .dispatch-plan-field,
+  .dispatch-plan-form-actions .dispatch-plans-button {
+    width: 100%;
+  }
+
+  .dispatch-plan-stop-row {
+    grid-template-columns: auto 1fr;
+  }
+
+  .dispatch-plan-stop-arrival-note,
+  .dispatch-plan-stop-controls {
+    grid-column: 1 / -1;
+  }
+
+  .dispatch-plan-stop-controls {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* Dispatch Planning workspace parent modal. Existing action dialogs stay portaled to body. */
+#dispatchPlanningModal.custom-modal {
+  z-index: var(--wmo-z-modal);
+}
+
+#dispatchPlanningModal > .dispatch-planning-parent-content {
+  position: relative !important;
+  top: auto !important;
+  left: auto !important;
+  display: flex;
+  width: min(1280px, calc(100vw - 40px)) !important;
+  max-width: 1280px !important;
+  max-height: calc(100dvh - 40px) !important;
+  flex-direction: column;
+  margin: 0 auto !important;
+  overflow: hidden !important;
+  transform: none !important;
+}
+
+#dispatchPlanningModal .dispatch-planning-parent-header {
+  flex: 0 0 auto;
+}
+
+#dispatchPlanningModal .dispatch-planning-parent-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none !important;
+  padding: 0;
+  overflow-x: hidden;
+  overflow-y: auto !important;
+}
+
+#dispatchPlanningModal .dispatch-plans-card {
+  width: 100%;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+#dispatchPlanningModal .dispatch-plans-table-shell {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
+@media (max-width: 1200px) {
+  #dispatchPlanningModal .dispatch-plans-table {
+    width: max(100%, 760px) !important;
+    min-width: 760px !important;
+  }
+}
+
+body > .dispatch-plan-modal.custom-modal:not(.hidden) {
+  z-index: calc(var(--wmo-z-modal) + 40) !important;
+}
+
+body > #dispatchPlanFormModal.dispatch-plan-modal.custom-modal:not(.hidden) {
+  z-index: calc(var(--wmo-z-modal) + 100) !important;
+}
+
+@media (max-width: 768px) {
+  #dispatchPlanningModal > .dispatch-planning-parent-content {
+    width: calc(100vw - 24px) !important;
+    max-width: calc(100vw - 24px) !important;
+    max-height: calc(100dvh - 24px) !important;
+  }
+
+  #dispatchPlanningModal .dispatch-planning-parent-header {
+    padding: 16px 18px;
+  }
+}
+
+/* Keep planning dialogs clear of the intentionally interactive desktop sidebar. */
+@media (min-width: 993px) {
+  body.dispatch-plan-modal-open {
+    --dispatch-plan-modal-sidebar-offset: var(--wmo-sidebar-expanded);
+  }
+
+  body.dispatch-plan-modal-open:has(#adminLayout.sidebar-collapsed) {
+    --dispatch-plan-modal-sidebar-offset: var(--wmo-sidebar-collapsed);
+  }
+
+  #dispatchPlanningModal.custom-modal,
+  body > .dispatch-plan-modal.custom-modal {
+    padding-right: 20px !important;
+    padding-left: calc(var(--dispatch-plan-modal-sidebar-offset) + 20px) !important;
+  }
+
+  #dispatchPlanningModal > .dispatch-planning-parent-content {
+    width: min(1280px, calc(100vw - var(--dispatch-plan-modal-sidebar-offset) - 40px)) !important;
+    max-width: calc(100vw - var(--dispatch-plan-modal-sidebar-offset) - 40px) !important;
+  }
+
+  body > .dispatch-plan-modal.custom-modal > .dispatch-plan-modal-content,
+  body > .dispatch-plan-modal.custom-modal > .dispatch-plan-detail-content,
+  body > .dispatch-plan-modal.custom-modal > .dispatch-plan-cancel-content {
+    width: min(940px, calc(100vw - var(--dispatch-plan-modal-sidebar-offset) - 40px)) !important;
+    max-width: calc(100vw - var(--dispatch-plan-modal-sidebar-offset) - 40px) !important;
+  }
+
+  body > .dispatch-plan-modal.custom-modal > .dispatch-plan-detail-content {
+    width: min(780px, calc(100vw - var(--dispatch-plan-modal-sidebar-offset) - 40px)) !important;
+  }
+
+  body > .dispatch-plan-modal.custom-modal > .dispatch-plan-cancel-content {
+    width: min(570px, calc(100vw - var(--dispatch-plan-modal-sidebar-offset) - 40px)) !important;
+  }
+}
+
+@media (max-width: 992px) {
+  html.dispatch-plan-modal-open body #dispatchPlanningModal:not(.hidden) .dispatch-planning-parent-header,
+  html.dispatch-plan-modal-open body > .dispatch-plan-modal.custom-modal:not(.hidden) .custom-modal-header {
+    padding-left: 70px !important;
+  }
+}
+/* Dispatch preparation visual language; assignment and plan state logic unchanged. */
+html body :is(#dispatchPlanningModal,.dispatch-plan-modal) { --wmo-border: #D9E6F2; --wmo-ink: #12355B; --wmo-text-muted: #64748B; --wmo-focus-ring: rgba(37,99,235,.25); }
+html body :is(#dispatchPlanningModal,.dispatch-plan-modal) .custom-modal-overlay { background: rgba(15,39,66,.58); }
+html body :is(#dispatchPlanningModal,.dispatch-plan-modal) .custom-modal-content { background: #fff; border-color: #D9E6F2; box-shadow: 0 24px 70px rgba(15,39,66,.24); }
+html body :is(#dispatchPlanningModal,.dispatch-plan-modal) :is(h2,h3,h4) { color: #12355B; }
+html body :is(#dispatchPlanningModal,.dispatch-plan-modal) .modal-close-btn { background: #F3F8FF; border-color: #D9E6F2; color: #12355B; }
+html body :is(#dispatchPlanningModal,.dispatch-plan-modal) :is(.dispatch-plans-eyebrow,.dispatch-plan-modal-eyebrow) { color: #1D4ED8; }
+html body :is(#dispatchPlanningModal,.dispatch-plan-modal) .dispatch-plans-button.primary { background: #2563EB; border-color: #2563EB; color: #fff; }
+html body :is(#dispatchPlanningModal,.dispatch-plan-modal) .dispatch-plans-button.primary:hover { background: #1D4ED8; border-color: #1D4ED8; }
+html body :is(#dispatchPlanningModal,.dispatch-plan-modal) :is(.dispatch-plans-button.secondary,.dispatch-plan-row-action:not(.danger),.dispatch-plan-stop-action:not(.danger)) { background: #EEF6FF; border-color: #BFDBFE; color: #1D4ED8; }
+html body :is(#dispatchPlanningModal,.dispatch-plan-modal) :is(.dispatch-plans-button.secondary,.dispatch-plan-row-action:not(.danger),.dispatch-plan-stop-action:not(.danger)):hover { background: #2563EB; color: #fff; }
+html body :is(#dispatchPlanningModal,.dispatch-plan-modal) :is(.dispatch-plans-filters,.dispatch-plan-form-section) { background: #F8FBFF; border-color: #D9E6F2; }
+html body :is(#dispatchPlanningModal,.dispatch-plan-modal) :is(input,select,textarea) { background: #fff; border-color: #D9E6F2; }
+html body :is(#dispatchPlanningModal,.dispatch-plan-modal) :is(input,select,textarea):focus { border-color: #2563EB; box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
+html body #dispatchPlanningModal .dispatch-plans-table th { background: #F3F8FF; color: #12355B; border-color: #D9E6F2; }
+html body .dispatch-plan-modal .dispatch-plan-section-heading > span { background: #2563EB; color: #fff; }
+html body .dispatch-plan-modal .dispatch-plan-review { background: #F3F8FF; border-color: #D9E6F2; }
+html body .dispatch-plan-modal .dispatch-plan-review > div > span { background: #2563EB; color: #fff; }
+html body .dispatch-plan-modal .dispatch-plan-review :is(p,small) { color: #64748B; }
+html body :is(#dispatchPlanningModal,.dispatch-plan-modal) :is(.dispatch-plan-field > span,.dispatch-plans-filter > span) { color: #12355B; }
+html body :is(#dispatchPlanningModal,.dispatch-plan-modal) button:focus-visible { outline: 2px solid #2563EB; outline-offset: 3px; }
+
+/* Two-step planning wizard: scoped to the create/edit form only. */
+#dispatchPlanFormModal .dispatch-plan-search-input { display: flex; align-items: center; gap: 6px; }
+#dispatchPlanFormModal .dispatch-plan-search-input input { flex: 1; min-width: 0; }
+#dispatchPlanDestinationSearch::-webkit-search-cancel-button { display: none; }
+#dispatchPlanSearchClearBtn { flex: 0 0 32px; height: 32px; border: 1px solid #D9E6F2; border-radius: 8px; background: #EEF6FF; color: #12355B; cursor: pointer; }
+#dispatchPlanSearchResults { max-height: 300px; overflow-y: auto; display: grid; gap: 6px; }
+#dispatchPlanSearchResults:empty { display: none; }
+#dispatchPlanFormModal .dispatch-plan-search-result { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px; border: 1px solid #D9E6F2; border-radius: 10px; background: #fff; min-width: 0; }
+#dispatchPlanFormModal .dispatch-plan-search-result > div { min-width: 0; overflow-wrap: anywhere; }
+#dispatchPlanFormModal .dispatch-plan-search-result strong { display: block; color: #12355B; font-size: 13px; }
+#dispatchPlanFormModal .dispatch-plan-search-result small { color: #64748B; font-size: 11px; }
+#dispatchPlanFormModal .dispatch-plan-search-result:hover,
+#dispatchPlanFormModal .dispatch-plan-search-result[aria-selected="true"] { background: #EEF6FF; border-color: #93B7F8; }
+#dispatchPlanFormModal .dispatch-plan-search-result button { flex-shrink: 0; background: #EEF6FF; color: #1D4ED8; border: 1px solid #BFDBFE; border-radius: 8px; padding: 7px 9px; cursor: pointer; font-weight: 700; }
+#dispatchPlanFormModal .dispatch-plan-search-result[aria-disabled="true"] { background: #F8FAFC; }
+#dispatchPlanFormModal .dispatch-plan-search-result button:disabled { cursor: default; color: #64748B; }
+#dispatchPlanFormModal :is(.dispatch-plan-search-status,.dispatch-plan-road-status) { margin: 0; color: #64748B; font-size: 12px; line-height: 1.5; }
+#dispatchPlanForm [hidden] { display: none !important; }
+#dispatchPlanFormModal .dispatch-plan-progress {
+  display: flex; gap: 12px; padding: 0; margin: 0; list-style: none;
+}
+#dispatchPlanFormModal .dispatch-plan-progress li {
+  display: flex; flex: 1; align-items: center; gap: 9px; padding: 12px;
+  border: 1px solid #D9E6F2; border-radius: 12px; color: #64748B; font-size: 13px; font-weight: 700;
+}
+#dispatchPlanFormModal .dispatch-plan-progress li > span {
+  display: grid; place-items: center; flex: 0 0 26px; height: 26px; border-radius: 50%; background: #E2E8F0;
+}
+#dispatchPlanFormModal .dispatch-plan-progress [aria-current="step"] { color: #1D4ED8; background: #EEF6FF; border-color: #93B7F8; }
+#dispatchPlanFormModal .dispatch-plan-progress [aria-current="step"] > span { color: #fff; background: #2563EB; }
+#dispatchPlanFormModal .dispatch-plan-progress .completed { color: #0F766E; border-color: #A5D8CF; background: #F0FDFA; }
+#dispatchPlanFormModal .dispatch-plan-progress .completed > span { background: #CCFBF1; }
+#dispatchPlanFormModal .dispatch-plan-route-layout {
+  display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  grid-template-areas: "stops map" "summary map"; gap: 14px; align-items: start;
+}
+#dispatchPlanFormModal .dispatch-plan-route-stops { grid-area: stops; min-width: 0; }
+#dispatchPlanFormModal .dispatch-plan-preview { grid-area: map; min-width: 0; gap: 12px; }
+#dispatchPlanFormModal .dispatch-plan-review { grid-area: summary; min-width: 0; }
+#dispatchPlanFormModal .dispatch-plan-preview h4 { margin: 0 0 5px; }
+#dispatchPlanFormModal .dispatch-plan-preview :is(p,small) { margin: 0; color: #64748B; font-size: 12px; line-height: 1.5; }
+#dispatchPlanRoutePreviewMap { height: 400px; width: 100%; border: 1px solid #D9E6F2; border-radius: 12px; z-index: 0; }
+.dispatch-plan-map-marker { display: grid; place-items: center; width: 30px; height: 30px; border: 2px solid #fff; border-radius: 50%; background: #2563EB; color: #fff; font: 700 13px system-ui; box-shadow: 0 2px 7px #12355B50; }
+.dispatch-plan-map-marker.wmo { background: #12355B; }
+#dispatchPlanFormModal .dispatch-plan-stop-row { grid-template-columns: auto minmax(0,1fr) auto; gap: 8px; }
+#dispatchPlanFormModal .dispatch-plan-stop-arrival-note { grid-column: 2 / -1; order: 4; }
+#dispatchPlanFormModal .dispatch-plan-stop-controls { display: flex; gap: 5px; }
+html body #dispatchPlanFormModal .dispatch-plan-stop-action.remove { background: #FFF1F2; color: #B91C1C; border-color: #FECDD3; }
+html body #dispatchPlanFormModal .dispatch-plan-stop-action.remove:hover { background: #FFE4E6; color: #991B1B; }
+#dispatchPlanFormModal .dispatch-plan-form-actions { position: sticky; bottom: -1px; padding: 12px 0; background: #fff; border-top: 1px solid #D9E6F2; z-index: 1; }
+@media (max-width: 700px) {
+  #dispatchPlanFormModal .dispatch-plan-route-layout { grid-template-columns: minmax(0,1fr); grid-template-areas: "stops" "map" "summary"; }
+  #dispatchPlanRoutePreviewMap { height: 300px; }
+  #dispatchPlanFormModal .dispatch-plan-progress { gap: 7px; }
+  #dispatchPlanFormModal .dispatch-plan-progress li { padding: 9px 7px; font-size: 12px; }
+  #dispatchPlanFormModal .dispatch-plan-stop-row { grid-template-columns: auto minmax(0,1fr); }
+  #dispatchPlanFormModal .dispatch-plan-stop-controls { grid-column: 2; flex-wrap: wrap; }
+  #dispatchPlanFormModal .dispatch-plan-form-actions { flex-direction: row; }
+}

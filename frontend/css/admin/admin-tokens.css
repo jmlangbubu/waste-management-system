@@ -1,0 +1,49 @@
+/* =========================================================
+   WMO ADMIN DESIGN TOKENS
+   One shared source for the Phase 1 visual foundation.
+========================================================= */
+
+:root {
+  --wmo-ink: #091413;
+  --wmo-primary: #285a48;
+  --wmo-secondary: #408a71;
+  --wmo-soft: #b0e4cc;
+  --wmo-surface: #ffffff;
+
+  --wmo-page: #f4f7f5;
+  --wmo-surface-muted: #f0f6f3;
+  --wmo-text-muted: #60716a;
+  --wmo-border: #dce8e1;
+
+  --wmo-danger: #b42318;
+  --wmo-danger-soft: #fee4e2;
+
+  --wmo-warning: #b54708;
+  --wmo-warning-soft: #fff4e5;
+
+  --wmo-info: #175cd3;
+  --wmo-info-soft: #eaf2ff;
+
+  --wmo-focus-ring: rgba(64, 138, 113, 0.16);
+
+  --wmo-radius-sm: 7px;
+  --wmo-radius-md: 10px;
+  --wmo-radius-lg: 14px;
+
+  --wmo-shadow-subtle: 0 6px 20px rgba(9, 20, 19, 0.06);
+
+  --wmo-sidebar-expanded: 280px;
+  --wmo-sidebar-collapsed: 88px;
+  --wmo-sidebar-bg: #12382f;
+  --wmo-sidebar-text: rgba(255, 255, 255, 0.78);
+  --wmo-sidebar-hover: rgba(255, 255, 255, 0.08);
+
+  /* Controlled shared layer scale. Module-specific legacy portals remain isolated. */
+  --wmo-z-content: 1;
+  --wmo-z-dropdown: 1200;
+  --wmo-z-sidebar-backdrop: 1800;
+  --wmo-z-sidebar: 1900;
+  --wmo-z-modal: 4000;
+  --wmo-z-modal-content: 2;
+  --wmo-z-toast: 5000;
+}

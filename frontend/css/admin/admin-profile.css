@@ -1,0 +1,108 @@
+/* =========================================================
+   ADMIN PROFILE CONTROL
+   Profile-specific topbar styling only; shared topbar layout lives elsewhere.
+========================================================= */
+
+.topbar-profile-wrapper {
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+body #adminLayout .topbar-profile-btn {
+  position: relative !important;
+  width: 40px !important;
+  height: 40px !important;
+  min-width: 40px !important;
+  min-height: 40px !important;
+  padding: 0 !important;
+  border: 1px solid var(--wmo-border) !important;
+  border-radius: 999px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  overflow: visible !important;
+  background: var(--wmo-surface) !important;
+  box-shadow: none !important;
+  color: var(--wmo-primary) !important;
+  transform: none !important;
+  transition: background-color 0.16s ease, border-color 0.16s ease !important;
+}
+
+body #adminLayout .topbar-profile-btn:hover {
+  border-color: #c5d9cf !important;
+  background: var(--wmo-surface-muted) !important;
+}
+
+body #adminLayout .topbar-profile-btn:focus-visible {
+  outline: none !important;
+  border-color: var(--wmo-secondary) !important;
+  box-shadow: 0 0 0 3px var(--wmo-focus-ring) !important;
+}
+
+.topbar-profile-image {
+  width: 100% !important;
+  height: 100% !important;
+  border-radius: 999px !important;
+  display: block !important;
+  object-fit: cover !important;
+  background: var(--wmo-surface-muted) !important;
+}
+
+.topbar-profile-image.hidden {
+  display: none !important;
+}
+
+.topbar-profile-fallback {
+  width: 100% !important;
+  height: 100% !important;
+  border-radius: 999px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: var(--wmo-surface-muted) !important;
+  color: var(--wmo-primary) !important;
+}
+
+.topbar-profile-fallback svg {
+  width: 18px !important;
+  height: 18px !important;
+  stroke-width: 2 !important;
+}
+
+.topbar-profile-camera {
+  position: absolute !important;
+  right: -2px !important;
+  bottom: -2px !important;
+  width: 16px !important;
+  height: 16px !important;
+  border: 2px solid var(--wmo-page) !important;
+  border-radius: 999px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: var(--wmo-secondary) !important;
+  box-shadow: none !important;
+  color: #ffffff !important;
+}
+
+.topbar-profile-camera svg {
+  width: 8px !important;
+  height: 8px !important;
+  stroke-width: 3 !important;
+}
+
+.topbar-profile-input {
+  display: none !important;
+}
+
+@media (max-width: 640px) {
+  body #adminLayout .topbar-profile-btn {
+    width: 38px !important;
+    height: 38px !important;
+    min-width: 38px !important;
+    min-height: 38px !important;
+  }
+}

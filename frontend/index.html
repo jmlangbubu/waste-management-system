@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Waste Management Office | Digital Public Portal</title>
+
+  <link
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+    rel="stylesheet"
+  />
+
+  <!-- REAL PROJECT CSS PATH -->
+  <link rel="stylesheet" href="css/landing.css" />
+</head>
+
+<body>
+  <!-- =========================
+       NAVBAR
+  ========================== -->
+  <nav class="navbar navbar-expand-lg navbar-custom py-3">
+    <div class="container">
+      <a class="navbar-brand d-flex align-items-center gap-3" href="#">
+        <div class="logo-box" id="brandLogoBox">
+          <img
+            src="/images/wmo-logo-new.png"
+            alt="Waste Management Office Logo"
+            class="brand-logo-img"
+          />
+        </div>
+
+        <div class="brand-copy">
+          <p class="brand-title">Waste Management Office</p>
+          <p class="brand-subtitle">General Santos City Digital Public Portal</p>
+        </div>
+      </a>
+
+      <div class="navbar-actions ms-auto">
+        <button
+          type="button"
+          class="btn btn-wmo px-4"
+          data-bs-toggle="modal"
+          data-bs-target="#appointmentModal"
+        >
+          Book Appointment
+        </button>
+
+        <a href="web-login.html" class="btn btn-wmo-outline px-4">
+          Portal Login
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- =========================
+       HERO SECTION
+  ========================== -->
+  <main class="hero-section">
+    <div class="container">
+      <div class="hero-grid">
+        <!-- LEFT HERO CONTENT -->
+        <div class="hero-copy">
+          <span class="hero-badge">
+            Official Waste Management Office Portal
+          </span>
+
+          <h1 class="hero-title">
+            Digital Waste Management Services
+            <span class="accent">for Citizens and Barangays</span>
+          </h1>
+
+          <p class="hero-description">
+            Request appointments, track public service updates, submit waste-related
+            concerns, and preview mobile-ready citizen features through one organized
+            digital portal for faster coordination and cleaner communities.
+          </p>
+
+          <div class="hero-actions">
+            <button
+              class="btn btn-wmo btn-lg px-4"
+              id="openAppointmentBtn"
+              type="button"
+              data-bs-toggle="modal"
+              data-bs-target="#appointmentModal"
+            >
+              Book Appointment
+            </button>
+
+            <a href="#servicesSection" class="btn btn-wmo-outline btn-lg px-4">
+              Explore Services
+            </a>
+          </div>
+
+          <div class="hero-trust-line">
+            <span class="trust-icon">✓</span>
+            <span>Secure, organized, mobile-ready, and built for public service access.</span>
+          </div>
+        </div>
+
+        <!-- RIGHT INTERACTIVE PHONE SHOWCASE -->
+        <div class="hero-visual-wrap">
+          <div class="hero-glow hero-glow-one"></div>
+          <div class="hero-glow hero-glow-two"></div>
+
+          <div class="phone-showcase">
+            <div class="phone-orbit-bg"></div>
+
+            <!-- CODED PHONE MOCKUP -->
+            <div class="coded-phone">
+              <div class="phone-speaker"></div>
+
+              <div class="phone-screen citizen-phone-screen">
+                <!-- PHONE STATUS BAR -->
+                <div class="phone-status-bar">
+                  <span>2:04</span>
+
+                  <div class="phone-status-icons">
+                    <span>●●●</span>
+                    <span>⌁</span>
+                    <span class="battery">100</span>
+                  </div>
+                </div>
+
+                <!-- PHONE HEADER -->
+                <div class="citizen-phone-header">
+                  <button type="button" class="phone-menu-btn" aria-label="Menu">
+                    ☰
+                  </button>
+
+                  <h3>Citizen Dashboard</h3>
+
+                  <button type="button" class="phone-notif-btn" aria-label="Notifications">
+                    🔔
+                    <span></span>
+                  </button>
+                </div>
+
+                <!-- USER SUMMARY -->
+                <div class="citizen-welcome-row">
+                  <div>
+                    <p>Welcome back,</p>
+                    <h4>Juan Dela Cruz</h4>
+                    <strong>Barangay: <span>Bula</span>⌄</strong>
+                  </div>
+
+                  <div class="citizen-avatar">
+                    <img
+                      src="/images/wmo-logo-new.png"
+                      alt="Waste Management Office Logo"
+                    />
+                  </div>
+                </div>
+
+                <!-- WASTE ANALYTICS CARD -->
+                <div class="citizen-dashboard-card">
+                  <div class="citizen-card-header">
+                    <div class="citizen-card-title">
+                      <span class="mini-icon green">▥</span>
+
+                      <div>
+                        <h5>Barangay Waste Analytics</h5>
+                        <p>Live summary of your barangay waste data</p>
+                      </div>
+                    </div>
+
+                    <button type="button">View all</button>
+                  </div>
+
+                  <div class="total-waste-box">
+                    <div>
+                      <span>Total Waste</span>
+                      <strong>483.00 <small>kg</small></strong>
+                      <p>▴ Tap to view full analytics</p>
+                    </div>
+
+                    <b>›</b>
+                  </div>
+
+                  <div class="waste-progress-list">
+                    <div class="waste-progress-item">
+                      <div class="waste-progress-icon bio">🍃</div>
+
+                      <div class="waste-progress-content">
+                        <div class="waste-progress-label">
+                          <strong>Biodegradable</strong>
+                          <span>100.00 kg (21%)</span>
+                        </div>
+
+                        <div class="progress-track">
+                          <div class="progress-fill bio-fill" style="width: 42%;"></div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="waste-progress-item">
+                      <div class="waste-progress-icon recyclable">♻️</div>
+
+                      <div class="waste-progress-content">
+                        <div class="waste-progress-label">
+                          <strong>Recyclable</strong>
+                          <span>127.00 kg (26%)</span>
+                        </div>
+
+                        <div class="progress-track">
+                          <div class="progress-fill recyclable-fill" style="width: 54%;"></div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="waste-progress-item">
+                      <div class="waste-progress-icon residual">🗑️</div>
+
+                      <div class="waste-progress-content">
+                        <div class="waste-progress-label">
+                          <strong>Residual</strong>
+                          <span>93.00 kg (19%)</span>
+                        </div>
+
+                        <div class="progress-track">
+                          <div class="progress-fill residual-fill" style="width: 38%;"></div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="waste-progress-item">
+                      <div class="waste-progress-icon special">⚠️</div>
+
+                      <div class="waste-progress-content">
+                        <div class="waste-progress-label">
+                          <strong>Special Waste</strong>
+                          <span>163.00 kg (34%)</span>
+                        </div>
+
+                        <div class="progress-track">
+                          <div class="progress-fill special-fill" style="width: 66%;"></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- COMPLAINT ANALYTICS CARD -->
+                <div class="citizen-dashboard-card complaint-card-preview">
+                  <div class="citizen-card-header">
+                    <div class="citizen-card-title">
+                      <span class="mini-icon light-green">💬</span>
+
+                      <div>
+                        <h5>Complaint Analytics</h5>
+                        <p>Monthly issue summary for your complaints</p>
+                      </div>
+                    </div>
+
+                    <button type="button">View all</button>
+                  </div>
+
+                  <div class="complaint-total-box">
+                    <div>
+                      <span>Total Issues This Month</span>
+                      <strong>4</strong>
+                      <p>+1 from last month</p>
+                    </div>
+
+                    <div class="complaint-watermark">📋</div>
+                  </div>
+                </div>
+
+                <!-- FLOATING SCAN BUTTON -->
+                <button type="button" class="phone-scan-fab">
+                  <span>📷</span>
+                  Scan Waste
+                </button>
+
+                <!-- BOTTOM NAV -->
+                <div class="citizen-bottom-nav">
+                  <button type="button" class="active">
+                    <span>⌂</span>
+                    Home
+                  </button>
+
+                  <button type="button">
+                    <span>⌗</span>
+                    Scan
+                  </button>
+
+                  <button type="button">
+                    <span>＋</span>
+                    Report
+                  </button>
+
+                  <button type="button">
+                    <span>♙</span>
+                    Profile
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- FLOATING FEATURE BUTTONS -->
+            <div class="floating-feature-stack">
+              <button
+                type="button"
+                class="floating-feature-card active"
+                data-feature="complaint"
+              >
+                <span class="feature-icon green">📍</span>
+                <span>Complaint Reporting</span>
+                <strong>›</strong>
+              </button>
+
+              <button
+                type="button"
+                class="floating-feature-card"
+                data-feature="certificate"
+              >
+                <span class="feature-icon yellow">📄</span>
+                <span>Digital Certificate</span>
+                <strong>›</strong>
+              </button>
+
+              <button
+                type="button"
+                class="floating-feature-card"
+                data-feature="scan"
+              >
+                <span class="feature-icon blue">📷</span>
+                <span>Waste Scan</span>
+                <strong>›</strong>
+              </button>
+            </div>
+
+            <!-- SELECTED FEATURE INFO CARD -->
+            <div class="feature-info-card" id="featureInfoCard">
+              <div class="feature-info-icon" id="featureInfoIcon">📍</div>
+
+              <div>
+                <h3 id="featureInfoTitle">Complaint Reporting</h3>
+                <p id="featureInfoDescription">
+                  Report waste-related concerns with location details and evidence,
+                  then track updates until resolution.
+                </p>
+              </div>
+            </div>
+
+            <!-- OFFICIAL ANDROID APP DOWNLOAD -->
+            <div class="phone-promo-block">
+              <a class="playstore-badge-link" href="/download/app" aria-label="Download WMO Mobile App for Android">
+                <div class="playstore-badge-custom">
+                  <span class="playstore-small">WMO MOBILE APP</span>
+                  <span class="playstore-big">Download for Android</span>
+                </div>
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- =========================
+       SERVICES SECTION
+  ========================== -->
+  <section class="services-section" id="servicesSection">
+    <div class="container">
+      <div class="section-heading">
+        <span></span>
+        <h2>Public Digital Services</h2>
+        <span></span>
+      </div>
+
+      <div class="services-grid">
+        <div class="service-card">
+          <div class="service-icon green"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4m10-4v4M3 11h18m-13 5h2m4 0h2"/></svg></div>
+          <h3>Appointment Access</h3>
+          <p>Book orientation, clearance, accreditation, and other office services online.</p>
+        </div>
+
+        <div class="service-card">
+          <div class="service-icon blue"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0Z"/><path d="m9 10 2 2 4-4"/></svg></div>
+          <h3>Status Tracking</h3>
+          <p>Follow your appointment updates with your reference code and contact details.</p>
+        </div>
+
+        <div class="service-card">
+          <div class="service-icon orange"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M21 14a3 3 0 0 1-3 3H9l-6 4V6a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3Z"/><path d="M7 8h10M7 12h7"/></svg></div>
+          <h3>Complaint Reporting</h3>
+          <p>Report waste concerns with details and evidence for review and proper routing.</p>
+        </div>
+
+        <div class="service-card">
+          <div class="service-icon green"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/><rect x="6" y="8" width="12" height="9" rx="2"/><path d="M9 8V6h6v2"/><circle cx="12" cy="12.5" r="2"/></svg></div>
+          <h3>Waste Scan</h3>
+          <p>Get waste classification guidance for proper segregation and disposal.</p>
+        </div>
+
+        <div class="service-card">
+          <div class="service-icon purple"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14 3H5v18h14V8Zm0 0v5h5M8 11h8"/><path d="m8 16 2 2 5-4"/></svg></div>
+          <h3>Digital Certificate</h3>
+          <p>Access certificates after completing the required processes and validation.</p>
+        </div>
+
+        <div class="service-card">
+          <div class="service-icon yellow"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4M12 2V1"/></svg></div>
+          <h3>Advisory Notifications</h3>
+          <p>Stay informed with service advisories, announcements, and schedule updates.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- =========================
+       APPOINTMENT STATUS CHECKER
+  ========================== -->
+  <section class="appointment-status-section" id="appointmentStatusSection">
+    <div class="status-bg-orb status-bg-orb-one"></div>
+    <div class="status-bg-orb status-bg-orb-two"></div>
+
+    <div class="container">
+      <div class="status-check-card status-check-card-clean">
+        <div class="status-card-copy">
+          <span class="hero-badge">Appointment Tracker</span>
+
+          <h2>Track Your Appointment</h2>
+
+          <p>
+            Enter your reference code and your email address or contact number
+            to view your latest appointment update.
+          </p>
+        </div>
+
+        <form id="checkAppointmentStatusForm" class="status-check-form">
+          <div class="status-form-group">
+            <label for="statusAppointmentCode">Reference Code</label>
+            <input
+              type="text"
+              id="statusAppointmentCode"
+              class="form-control"
+              placeholder="Example: APT-000015"
+              required
+            />
+          </div>
+
+          <div class="status-form-group">
+            <label for="statusContact">Email or Contact Number</label>
+            <input
+              type="text"
+              id="statusContact"
+              class="form-control"
+              placeholder="Enter email or 11-digit number"
+              required
+            />
+          </div>
+
+          <button type="submit" class="btn btn-wmo" id="checkAppointmentStatusBtn">
+            Check Status
+          </button>
+        </form>
+
+        <div id="appointmentStatusResult" class="status-result-area" aria-live="polite"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- =========================
+       APPOINTMENT STATUS MODAL
+  ========================== -->
+  <div
+    class="modal fade"
+    id="appointmentStatusModal"
+    tabindex="-1"
+    aria-hidden="true"
+    aria-labelledby="appointmentStatusModalTitle"
+  >
+    <div class="modal-dialog modal-dialog-centered modal-lg appointment-status-modal-dialog">
+      <div class="modal-content appointment-status-modal">
+        <div class="appointment-status-modal-header">
+          <div>
+            <span class="appointment-status-modal-eyebrow">Appointment Tracker</span>
+            <h2 id="appointmentStatusModalTitle">Appointment Status</h2>
+            <p>Latest appointment update from the Waste Management Office.</p>
+          </div>
+
+          <button
+            type="button"
+            class="btn-close appointment-status-modal-close"
+            data-bs-dismiss="modal"
+            aria-label="Close">
+          </button>
+        </div>
+
+        <div class="appointment-status-modal-body" id="appointmentStatusModalBody">
+          <div class="appointment-status-modal-loading">
+            Loading appointment details...
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================
+       FOOTER
+  ========================== -->
+  <footer class="footer-custom">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <div class="logo-box">
+            <img
+              src="/images/wmo-logo-new.png"
+              alt="Waste Management Office Logo"
+              class="brand-logo-img"
+            />
+          </div>
+
+          <div>
+            <strong>Waste Management Office</strong>
+            <p>General Santos City Digital Public Portal</p>
+          </div>
+        </div>
+
+        <p class="footer-description">
+          Empowering communities through digital solutions for cleaner, safer,
+          and more organized waste management services.
+        </p>
+
+        <div class="footer-links">
+          <a href="#">Privacy Policy</a>
+          <a href="#">Terms of Service</a>
+          <a href="#">Contact Us</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- =========================
+       APPOINTMENT REQUEST MODAL
+  ========================== -->
+  <div class="modal fade" id="appointmentModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content shadow-sm">
+        <div class="modal-header px-4 py-3">
+          <div>
+            <h2 class="h4 mb-1">Request Appointment</h2>
+            <p class="text-secondary mb-0">
+              Fill in the required details to submit your request.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            class="btn-close"
+            data-bs-dismiss="modal"
+            aria-label="Close">
+          </button>
+        </div>
+
+        <form id="appointmentForm">
+          <div class="modal-body px-4 py-4">
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label for="fullName" class="form-label">Full Name</label>
+                <input
+                  type="text"
+                  id="fullName"
+                  class="form-control"
+                  placeholder="Enter your full name"
+                  required
+                />
+              </div>
+
+              <div class="col-md-6">
+                <label for="barangay" class="form-label">Barangay</label>
+                <select id="barangay" class="form-select" required>
+                  <option value="">Select barangay</option>
+                  <option value="Apopong">Apopong</option>
+                  <option value="Baluan">Baluan</option>
+                  <option value="Batomelong">Batomelong</option>
+                  <option value="Buayan">Buayan</option>
+                  <option value="Bula">Bula</option>
+                  <option value="Calumpang">Calumpang</option>
+                  <option value="City Heights">City Heights</option>
+                  <option value="Conel">Conel</option>
+                  <option value="Dadiangas East">Dadiangas East</option>
+                  <option value="Dadiangas North">Dadiangas North</option>
+                  <option value="Dadiangas South">Dadiangas South</option>
+                  <option value="Dadiangas West">Dadiangas West</option>
+                  <option value="Fatima">Fatima</option>
+                  <option value="Katangawan">Katangawan</option>
+                  <option value="Labangal">Labangal</option>
+                  <option value="Lagao">Lagao</option>
+                  <option value="Ligaya">Ligaya</option>
+                  <option value="Mabuhay">Mabuhay</option>
+                  <option value="Olympog">Olympog</option>
+                  <option value="San Isidro">San Isidro</option>
+                  <option value="San Jose">San Jose</option>
+                  <option value="Siguel">Siguel</option>
+                  <option value="Sinawal">Sinawal</option>
+                  <option value="Tambler">Tambler</option>
+                  <option value="Tinagacan">Tinagacan</option>
+                  <option value="Upper Labay">Upper Labay</option>
+                </select>
+              </div>
+
+              <div class="col-md-6">
+                <label for="contactNumber" class="form-label">Contact Number</label>
+                <input
+                  type="text"
+                  id="contactNumber"
+                  class="form-control"
+                  placeholder="Enter 11-digit contact number"
+                  maxlength="11"
+                  inputmode="numeric"
+                  pattern="[0-9]{11}"
+                  required
+                />
+              </div>
+
+              <div class="col-md-6">
+                <label for="emailAddress" class="form-label">Email Address</label>
+                <input
+                  type="email"
+                  id="emailAddress"
+                  class="form-control"
+                  placeholder="Enter your email address"
+                  required
+                />
+              </div>
+
+              <div class="col-md-6">
+                <label for="purpose" class="form-label">Service</label>
+                <select id="purpose" class="form-select" required>
+                  <option value="">Select service</option>
+                  <option value="SWM Orientation & Clearance">SWM Orientation &amp; Clearance</option>
+                  <option value="Accreditation">Accreditation</option>
+                  <option value="IEC Resource Speaker">IEC Resource Speaker</option>
+                  <option value="Others">Others</option>
+                </select>
+              </div>
+
+              <div class="col-md-6">
+                <label for="preferredDate" class="form-label">Preferred Date</label>
+                <input
+                  type="date"
+                  id="preferredDate"
+                  class="form-control"
+                  required
+                />
+              </div>
+
+              <div class="col-md-6">
+                <label for="appointmentTime" class="form-label">Preferred Time</label>
+
+                <div class="custom-time-dropdown" id="customTimeDropdown">
+                  <button type="button" class="custom-time-selected" id="customTimeSelected">
+                    Select time slot
+                    <span>⌄</span>
+                  </button>
+
+                  <div class="custom-time-menu" id="customTimeMenu">
+                    <button type="button" data-time="09:00">9:00 AM</button>
+                    <button type="button" data-time="10:00">10:00 AM</button>
+                    <button type="button" data-time="11:00">11:00 AM</button>
+                    <button type="button" data-time="13:00">1:00 PM</button>
+                    <button type="button" data-time="14:00">2:00 PM</button>
+                    <button type="button" data-time="15:00">3:00 PM</button>
+                    <button type="button" data-time="16:00">4:00 PM</button>
+                  </div>
+                </div>
+
+                <input type="hidden" id="appointmentTime" required />
+              </div>
+
+              <div class="col-12">
+                <label for="notes" class="form-label">Additional Notes</label>
+                <textarea
+                  id="notes"
+                  rows="4"
+                  class="form-control"
+                  placeholder="Enter additional details"></textarea>
+              </div>
+
+              <div class="col-12">
+                <div id="appointmentMessage" class="small text-secondary"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="modal-footer px-4 py-3">
+            <button type="button" class="btn btn-wmo-outline" data-bs-dismiss="modal">
+              Cancel
+            </button>
+
+            <button type="submit" class="btn btn-wmo" id="submitAppointmentBtn">
+              Submit Request
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================
+       APPOINTMENT SUCCESS MODAL
+  ========================== -->
+  <div class="modal fade" id="appointmentSuccessModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content appointment-success-modal">
+        <div class="appointment-success-header">
+          <div class="success-icon">✓</div>
+
+          <button
+            type="button"
+            class="btn-close appointment-success-close"
+            data-bs-dismiss="modal"
+            aria-label="Close">
+          </button>
+        </div>
+
+        <div class="appointment-success-body">
+          <h3>Appointment Request Submitted</h3>
+
+          <p>
+            Your appointment request has been submitted successfully.
+            Please save your reference code below.
+          </p>
+
+          <div class="reference-code-box">
+            <span>Reference Code</span>
+            <strong id="successAppointmentCode">-</strong>
+          </div>
+
+          <div class="appointment-reminder-box">
+            <strong>Important Reminder</strong>
+            <p>
+              Your schedule may still be approved, rejected, or rescheduled by the
+              Waste Management Office. Please always check your Gmail for updates
+              and notifications.
+            </p>
+          </div>
+
+          <div class="appointment-success-actions">
+            <button type="button" class="btn btn-success" id="copyAppointmentCodeBtn">
+              Copy Code
+            </button>
+
+            <button type="button" class="btn btn-outline-success" id="goToCheckStatusBtn">
+              Check Appointment Status
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================
+       SCRIPTS
+      
+  ========================== -->
+  <script src="js/config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="js/landing.js"></script>
+</body>
+</html>

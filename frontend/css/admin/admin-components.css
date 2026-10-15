@@ -1,0 +1,306 @@
+/* =========================================================
+   WMO ADMIN SHARED COMPONENTS
+   Reusable visual primitives only; no module-specific selectors.
+========================================================= */
+
+.wmo-surface,
+.page-card,
+.panel-card,
+.stat-card {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--wmo-border);
+  border-radius: var(--wmo-radius-lg);
+  background: var(--wmo-surface);
+  box-shadow: var(--wmo-shadow-subtle);
+}
+
+.wmo-section-header,
+.page-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.wmo-section-header h2,
+.page-card-header h2 {
+  margin: 0;
+  color: var(--wmo-ink);
+  font-size: 20px;
+  font-weight: 750;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+}
+
+.wmo-section-header p,
+.page-card-header p {
+  margin: 4px 0 0;
+  color: var(--wmo-text-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.wmo-btn,
+.view-all-btn,
+.create-btn,
+.print-btn {
+  min-height: 40px;
+  padding: 0 15px;
+  border: 1px solid transparent;
+  border-radius: var(--wmo-radius-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--wmo-surface);
+  background: var(--wmo-primary);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+}
+
+.wmo-btn:hover,
+.view-all-btn:hover,
+.create-btn:hover,
+.print-btn:hover {
+  background: #214b3c;
+}
+
+.wmo-btn:focus-visible,
+.view-all-btn:focus-visible,
+.create-btn:focus-visible,
+.print-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--wmo-focus-ring);
+}
+
+.wmo-btn:disabled,
+.view-all-btn:disabled,
+.create-btn:disabled,
+.print-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.wmo-btn-primary {
+  border-color: var(--wmo-primary);
+  background: var(--wmo-primary);
+  color: var(--wmo-surface);
+}
+
+.wmo-btn-primary:hover {
+  background: #214b3c;
+}
+
+.wmo-btn-secondary {
+  border-color: #cfe1d8;
+  background: var(--wmo-surface-muted);
+  color: var(--wmo-ink);
+}
+
+.wmo-btn-secondary:hover {
+  background: #e4f0ea;
+}
+
+.wmo-btn-info {
+  border-color: #cfe0fb;
+  background: var(--wmo-info-soft);
+  color: var(--wmo-info);
+}
+
+.wmo-btn-info:hover {
+  background: #dceaff;
+}
+
+.wmo-btn-warning {
+  border-color: #f2d4a9;
+  background: var(--wmo-warning-soft);
+  color: var(--wmo-warning);
+}
+
+.wmo-btn-warning:hover {
+  background: #ffe9ca;
+}
+
+.wmo-btn-danger {
+  border-color: #fac9c5;
+  background: var(--wmo-danger-soft);
+  color: var(--wmo-danger);
+}
+
+.wmo-btn-danger:hover {
+  background: #fcd8d5;
+}
+
+.wmo-btn-danger-solid {
+  border-color: var(--wmo-danger);
+  background: var(--wmo-danger);
+  color: var(--wmo-surface);
+}
+
+.wmo-btn-danger-solid:hover {
+  background: #912018;
+}
+
+.wmo-btn-ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--wmo-text-muted);
+}
+
+.wmo-btn-ghost:hover {
+  border-color: var(--wmo-border);
+  background: var(--wmo-surface-muted);
+  color: var(--wmo-ink);
+}
+
+.wmo-btn-sm,
+.view-all-btn.small {
+  min-height: 36px;
+  padding-inline: 13px;
+  font-size: 12px;
+}
+
+.wmo-badge,
+.badge,
+.status-badge {
+  width: auto;
+  min-width: 0;
+  min-height: 24px;
+  padding: 4px 9px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.wmo-badge-success,
+.badge-approved,
+.status-badge.resolved,
+.status-badge.active,
+.status-badge.completed {
+  border-color: #c8e4d5;
+  background: #e7f5ed;
+  color: #236348;
+}
+
+.wmo-badge-warning,
+.badge-pending,
+.status-badge.pending {
+  border-color: #f2d4a9;
+  background: var(--wmo-warning-soft);
+  color: var(--wmo-warning);
+}
+
+.wmo-badge-danger,
+.badge-rejected,
+.status-badge.rejected,
+.status-badge.cancelled {
+  border-color: #fac9c5;
+  background: var(--wmo-danger-soft);
+  color: var(--wmo-danger);
+}
+
+.wmo-badge-info,
+.status-badge.forwarded,
+.status-badge.in-progress {
+  border-color: #cfe0fb;
+  background: var(--wmo-info-soft);
+  color: var(--wmo-info);
+}
+
+.wmo-badge-neutral {
+  border-color: var(--wmo-border);
+  background: var(--wmo-surface-muted);
+  color: var(--wmo-text-muted);
+}
+
+.wmo-field,
+.wmo-select,
+.wmo-search,
+.filter-group input,
+.filter-group select,
+.form-group input,
+.form-group select,
+.form-group textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  padding: 9px 12px;
+  border: 1px solid var(--wmo-border);
+  border-radius: var(--wmo-radius-md);
+  background: var(--wmo-surface);
+  color: var(--wmo-ink);
+  font-size: 13px;
+  line-height: 1.35;
+  outline: none;
+  box-shadow: none;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.wmo-field:focus,
+.wmo-select:focus,
+.wmo-search:focus,
+.filter-group input:focus,
+.filter-group select:focus,
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+  border-color: var(--wmo-secondary);
+  box-shadow: 0 0 0 3px var(--wmo-focus-ring);
+}
+
+.wmo-field::placeholder,
+.wmo-search::placeholder,
+.filter-group input::placeholder,
+.form-group input::placeholder,
+.form-group textarea::placeholder {
+  color: #86958e;
+}
+
+.wmo-empty-state {
+  width: 100%;
+  min-height: 132px;
+  padding: 24px;
+  border: 1px dashed var(--wmo-border);
+  border-radius: var(--wmo-radius-lg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: var(--wmo-surface-muted);
+  color: var(--wmo-text-muted);
+  text-align: center;
+}
+
+.wmo-empty-state svg {
+  width: 26px;
+  height: 26px;
+  color: var(--wmo-secondary);
+  stroke-width: 1.8;
+}
+
+.wmo-empty-state strong {
+  color: var(--wmo-ink);
+  font-size: 14px;
+}
+
+.wmo-empty-state p {
+  max-width: 360px;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+}

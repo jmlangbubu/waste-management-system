@@ -1,0 +1,5261 @@
+// =========================
+// COMPLAINT MAP HELPERS
+// =========================
+
+const issueRedIcon = L.icon({
+  iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png",
+  shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
+});
+
+const barangayBlueIcon = L.icon({
+  iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-blue.png",
+  shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
+});
+
+const personnelGreenIcon = L.icon({
+  iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png",
+  shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
+});
+
+const complaintResolutionRouteState = {
+  map: null,
+  issueMarker: null,
+  startMarker: null,
+  barangayMarker: null,
+  routeLine: null,
+  routingControl: null,
+
+  fullMap: null,
+  fullIssueMarker: null,
+  fullStartMarker: null,
+  fullBarangayMarker: null,
+  fullRouteLine: null,
+  fullRoutingControl: null,
+
+  lastRecord: null
+};
+
+const complaintDetailsPreviewMapState = {
+  map: null,
+  issueMarker: null,
+  barangayMarkers: [],
+  tileLayer: null
+};
+
+function formatComplaintStatus(status) {
+  if (!status) return "pending";
+  return String(status).toLowerCase();
+}
+
+function getComplaintStatusBadge(status) {
+  const s = String(status || "").toLowerCase();
+
+  if (s === "pending") return `<span class="status-badge pending">Pending</span>`;
+  if (s === "validated") return `<span class="status-badge forwarded">Validated</span>`;
+  if (s === "forwarded") return `<span class="status-badge forwarded">Forwarded</span>`;
+  if (s === "in_progress") return `<span class="status-badge in-progress">In Progress</span>`;
+  if (s === "accepted_overdue") return `<span class="status-badge accepted-overdue" title="Accepted · Overdue">Overdue</span>`;
+  if (s === "resolved") return `<span class="status-badge resolved">Resolved</span>`;
+  if (s === "rejected") return `<span class="status-badge rejected">Rejected</span>`;
+
+  return `<span class="status-badge unknown">${escapeHtml(status || "-")}</span>`;
+}
+
+function clearComplaintMapLayers() {
+  if (!complaintMapInstance) return;
+
+  if (complaintMapMarker) {
+    complaintMapInstance.removeLayer(complaintMapMarker);
+    complaintMapMarker = null;
+  }
+
+  if (complaintRoutingControl) {
+    complaintMapInstance.removeControl(complaintRoutingControl);
+    complaintRoutingControl = null;
+  }
+
+  complaintNearbyMarkers.forEach((marker) => {
+    if (complaintMapInstance.hasLayer(marker)) {
+      complaintMapInstance.removeLayer(marker);
+    }
+  });
+
+  complaintNearbyMarkers = [];
+}
+
+function calculateDistanceMetersLocal(lat1, lng1, lat2, lng2) {
+  const toRad = (value) => (value * Math.PI) / 180;
+  const earthRadius = 6371000;
+
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) *
+      Math.cos(toRad(lat2)) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.round(earthRadius * c);
+}
+
+function formatDistanceText(distanceMeters) {
+  const distance = Number(distanceMeters);
+
+  if (!Number.isFinite(distance) || distance <= 0) return "Distance unavailable";
+
+  if (distance >= 1000) {
+    return `${(distance / 1000).toFixed(2)} km`;
+  }
+
+  return `${Math.round(distance)} meters`;
+}
+
+function renderNearbyBarangayList(candidates) {
+  const listEl = document.getElementById("nearbyBarangayList");
+  if (!listEl) return;
+
+  if (!Array.isArray(candidates) || !candidates.length) {
+    listEl.innerHTML = `<div class="nearby-empty">No nearby barangays found.</div>`;
+    return;
+  }
+
+  listEl.innerHTML = candidates.map((candidate, index) => {
+    const isActive =
+      selectedBarangayCandidate &&
+      selectedBarangayCandidate.barangay_name === candidate.barangay_name &&
+      selectedBarangayCandidate.reference_name === candidate.reference_name;
+
+    const distanceText =
+      Number(candidate.distance_meters) > 0
+        ? `${candidate.distance_meters} meters away`
+        : "Distance unavailable";
+
+    return `
+      <div class="nearby-candidate-item ${isActive ? "active" : ""}" data-index="${index}">
+        <div class="nearby-candidate-name">${escapeHtml(candidate.barangay_name || "-")}</div>
+        <div class="nearby-candidate-ref">${escapeHtml(candidate.reference_name || "-")}</div>
+        <div class="nearby-candidate-distance">${escapeHtml(distanceText)}</div>
+      </div>
+    `;
+  }).join("");
+
+  listEl.querySelectorAll(".nearby-candidate-item").forEach((item) => {
+    item.addEventListener("click", () => {
+      const index = Number(item.dataset.index);
+      const candidate = candidates[index];
+
+      if (candidate) {
+        selectBarangayCandidate(candidate, candidates);
+      }
+    });
+  });
+}
+
+function updateChosenBarangayUI() {
+  const chosenText = document.getElementById("chosenBarangayText");
+  const chosenMeta = document.getElementById("chosenBarangayMeta");
+
+  if (!chosenText || !chosenMeta) return;
+
+  if (!selectedBarangayCandidate) {
+    chosenText.textContent = "None selected";
+    chosenMeta.textContent = "";
+    return;
+  }
+
+  const distanceText =
+    Number(selectedBarangayCandidate.distance_meters) > 0
+      ? `${selectedBarangayCandidate.distance_meters} meters away`
+      : "Distance unavailable";
+
+  chosenText.textContent = `Suggested: ${selectedBarangayCandidate.barangay_name || "-"}`;
+  chosenMeta.textContent =
+    `${selectedBarangayCandidate.reference_name || "-"} • ${distanceText}`;
+}
+
+
+function getComplaintConcernBarangayLabel(data = {}) {
+  return (
+    data.concern_barangay ||
+    data.selected_concern_barangay ||
+    data.problem_barangay ||
+    data.detected_barangay ||
+    data.issue_barangay ||
+    data.assigned_barangay ||
+    "For Verification"
+  );
+}
+
+function updateComplaintModalBarangayLabel(data = {}) {
+  const valueEl = document.getElementById("complaintModalBarangay");
+  if (!valueEl) return;
+
+  const labelEl = valueEl.closest(".complaint-pro-field")?.querySelector("label");
+
+  if (!labelEl) return;
+
+  const status = String(data.status || "").toLowerCase();
+
+  /*
+    For pending complaints, assigned_barangay is only the reported/concern barangay.
+    The real forwarding/assigned barangay should be selected by WMO from nearby options.
+  */
+  if (status === "pending") {
+    labelEl.textContent = "Reported Concern";
+  } else {
+    labelEl.textContent = "Assigned Barangay";
+  }
+}
+
+function setComplaintDetailsNearbyLoading(message = "Loading nearby options...") {
+  const wrap = document.getElementById("complaintModalNearbyOptions");
+  if (!wrap) return;
+
+  wrap.innerHTML = `
+    <div class="complaint-nearby-status">
+      ${escapeHtml(message)}
+    </div>
+  `;
+}
+
+function renderComplaintDetailsNearbyOptions(candidates = []) {
+  const wrap = document.getElementById("complaintModalNearbyOptions");
+  if (!wrap) return;
+
+  forwardingBarangayTargets = [];
+
+  const seen = new Set();
+  const topCandidates = (Array.isArray(candidates) ? candidates : [])
+    .filter((candidate) => {
+      const barangay = String(candidate?.barangay_name || "").trim();
+      if (!barangay) return false;
+
+      const key = barangay.toLowerCase();
+      if (seen.has(key)) return false;
+
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 2);
+
+  forwardingBarangayTargets = topCandidates;
+
+  if (!topCandidates.length) {
+    wrap.innerHTML = `
+      <div class="complaint-nearby-status">
+        No nearby barangay options found. Open the map to verify manually.
+      </div>
+    `;
+    return;
+  }
+
+  wrap.innerHTML = `
+    <div class="complaint-forwarding-inline">
+      ${topCandidates.map((candidate, index) => {
+        return `
+          <span class="complaint-forwarding-chip">
+            ${escapeHtml(candidate.barangay_name || "-")}
+          </span>
+          ${index < topCandidates.length - 1 ? `<span class="complaint-forwarding-separator">&amp;</span>` : ""}
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+async function loadComplaintDetailsNearbyOptions(data = {}) {
+  const lat = parseFloat(data.latitude);
+  const lng = parseFloat(data.longitude);
+
+  if (Number.isNaN(lat) || Number.isNaN(lng)) {
+    setComplaintDetailsNearbyLoading("Invalid coordinates. Open the map to verify manually.");
+    renderComplaintDetailsMapPreview(data, []);
+    return;
+  }
+
+  setComplaintDetailsNearbyLoading();
+
+  const candidates = await loadNearbyBarangaysForComplaint(lat, lng);
+
+  renderComplaintDetailsNearbyOptions(candidates);
+  renderComplaintDetailsMapPreview(data, candidates);
+}
+
+
+
+function selectBarangayCandidate(candidate, candidates = []) {
+  if (!currentComplaint || !complaintMapInstance) return;
+
+  if (!window.L || !L.Routing) {
+    console.error("Leaflet Routing Machine is not loaded.");
+    alert("Routing library is not loaded. Please refresh the page.");
+    return;
+  }
+
+  const issueLat = parseFloat(currentComplaint.latitude);
+  const issueLng = parseFloat(currentComplaint.longitude);
+  const destLat = parseFloat(candidate.latitude);
+  const destLng = parseFloat(candidate.longitude);
+
+  let fallbackDistance =
+    Number(candidate.distance_meters) > 0
+      ? Number(candidate.distance_meters)
+      : (!Number.isNaN(issueLat) &&
+         !Number.isNaN(issueLng) &&
+         !Number.isNaN(destLat) &&
+         !Number.isNaN(destLng))
+      ? calculateDistanceMetersLocal(issueLat, issueLng, destLat, destLng)
+      : null;
+
+  selectedBarangayCandidate = {
+    ...candidate,
+    distance_meters: fallbackDistance
+  };
+
+  updateChosenBarangayUI();
+  renderNearbyBarangayList(candidates);
+
+  if (
+    Number.isNaN(issueLat) ||
+    Number.isNaN(issueLng) ||
+    Number.isNaN(destLat) ||
+    Number.isNaN(destLng)
+  ) {
+    return;
+  }
+
+  if (complaintRoutingControl) {
+    try {
+      complaintMapInstance.removeControl(complaintRoutingControl);
+    } catch (err) {
+      console.warn("Failed removing old routing control:", err);
+    }
+
+    complaintRoutingControl = null;
+  }
+
+  const initialBounds = L.latLngBounds([
+    [issueLat, issueLng],
+    [destLat, destLng]
+  ]);
+
+  complaintMapInstance.fitBounds(initialBounds, { padding: [50, 50] });
+
+  complaintRoutingControl = L.Routing.control({
+    waypoints: [
+      L.latLng(issueLat, issueLng),
+      L.latLng(destLat, destLng)
+    ],
+    router: L.Routing.osrmv1({
+      serviceUrl: "https://router.project-osrm.org/route/v1"
+    }),
+    routeWhileDragging: false,
+    addWaypoints: false,
+    draggableWaypoints: false,
+    fitSelectedRoutes: true,
+    showAlternatives: false,
+    show: false,
+    createMarker: function () {
+      return null;
+    },
+    lineOptions: {
+      addWaypoints: false,
+      extendToWaypoints: true,
+      missingRouteTolerance: 0,
+      styles: [
+        {
+          color: "#2563eb",
+          opacity: 0.95,
+          weight: 6
+        }
+      ]
+    }
+  }).addTo(complaintMapInstance);
+
+  complaintRoutingControl.on("routesfound", function (e) {
+    const route = e.routes && e.routes[0];
+    if (!route) return;
+
+    const totalDistanceMeters = Math.round(route.summary?.totalDistance || 0);
+
+    if (totalDistanceMeters > 0) {
+      selectedBarangayCandidate = {
+        ...selectedBarangayCandidate,
+        distance_meters: totalDistanceMeters
+      };
+
+      updateChosenBarangayUI();
+      renderNearbyBarangayList(candidates);
+    }
+
+    if (route.coordinates && route.coordinates.length > 0) {
+      const routeBounds = L.latLngBounds(
+        route.coordinates.map((coord) => [coord.lat, coord.lng])
+      );
+
+      complaintMapInstance.fitBounds(routeBounds, { padding: [50, 50] });
+    }
+  });
+
+  complaintRoutingControl.on("routingerror", function (e) {
+    console.error("Routing failed:", e);
+
+    const fallbackBounds = L.latLngBounds([
+      [issueLat, issueLng],
+      [destLat, destLng]
+    ]);
+
+    complaintMapInstance.fitBounds(fallbackBounds, { padding: [50, 50] });
+
+    updateChosenBarangayUI();
+    renderNearbyBarangayList(candidates);
+  });
+}
+
+function enableImagePreview(imgElement) {
+  if (!imgElement) return;
+
+  imgElement.onclick = () => {
+    if (!imgElement.src) return;
+
+    const existingOverlay = document.getElementById("imagePreviewOverlay");
+    const existingImage = document.getElementById("imagePreviewFull");
+
+    if (existingOverlay && existingImage) {
+      existingImage.src = imgElement.src;
+      existingOverlay.classList.remove("hidden");
+      return;
+    }
+
+    const modal = document.createElement("div");
+    modal.className = "image-preview-modal";
+    modal.innerHTML = `<img src="${imgElement.src}" alt="Evidence Preview">`;
+
+    modal.addEventListener("click", () => {
+      modal.remove();
+    });
+
+    document.body.appendChild(modal);
+  };
+}
+
+// =========================
+// RESOLVED COMPLAINT ROUTE MAP
+// =========================
+
+function parseCoordinateValue(value) {
+  const num = parseFloat(value);
+
+  if (!Number.isFinite(num) || Number.isNaN(num) || num === 0) {
+    return null;
+  }
+
+  return num;
+}
+
+function getFirstValidCoordinate(record, keys = []) {
+  for (const key of keys) {
+    if (!record || !(key in record)) continue;
+
+    const coordinate = parseCoordinateValue(record[key]);
+
+    if (coordinate !== null) {
+      return coordinate;
+    }
+  }
+
+  return null;
+}
+
+function getResolutionIssuePoint(record) {
+  const lat = getFirstValidCoordinate(record, [
+    "latitude",
+    "complaint_latitude",
+    "issue_latitude",
+    "issue_lat",
+    "complaint_lat"
+  ]);
+
+  const lng = getFirstValidCoordinate(record, [
+    "longitude",
+    "complaint_longitude",
+    "issue_longitude",
+    "issue_lng",
+    "issue_long",
+    "complaint_lng",
+    "complaint_long"
+  ]);
+
+  if (lat === null || lng === null) return null;
+
+  return {
+    lat,
+    lng,
+    type: "issue",
+    label: "End: Issue Location"
+  };
+}
+
+function getResolutionActualStartPoint(record) {
+  /*
+    IMPORTANT:
+    This must use the barangay personnel GPS/start coordinate only.
+    Do NOT use assigned_barangay_lat/lng here because that is usually the barangay/reference location,
+    not the actual start location of the personnel route.
+  */
+  const lat = getFirstValidCoordinate(record, [
+    "start_latitude",
+    "start_lat",
+    "route_start_latitude",
+    "route_start_lat",
+    "personnel_start_latitude",
+    "personnel_start_lat",
+    "barangay_personnel_start_latitude",
+    "barangay_personnel_start_lat",
+    "gps_start_latitude",
+    "gps_start_lat",
+    "origin_latitude",
+    "origin_lat",
+    "from_latitude",
+    "from_lat",
+    "resolver_latitude",
+    "resolver_lat",
+    "resolved_latitude",
+    "resolved_lat",
+    "resolution_latitude",
+    "resolution_lat",
+    "handled_latitude",
+    "handled_lat",
+    "personnel_latitude",
+    "personnel_lat",
+    "barangay_personnel_latitude",
+    "barangay_personnel_lat",
+    "current_latitude",
+    "current_lat",
+    "gps_latitude",
+    "gps_lat"
+  ]);
+
+  const lng = getFirstValidCoordinate(record, [
+    "start_longitude",
+    "start_lng",
+    "start_long",
+    "route_start_longitude",
+    "route_start_lng",
+    "route_start_long",
+    "personnel_start_longitude",
+    "personnel_start_lng",
+    "personnel_start_long",
+    "barangay_personnel_start_longitude",
+    "barangay_personnel_start_lng",
+    "barangay_personnel_start_long",
+    "gps_start_longitude",
+    "gps_start_lng",
+    "gps_start_long",
+    "origin_longitude",
+    "origin_lng",
+    "origin_long",
+    "from_longitude",
+    "from_lng",
+    "from_long",
+    "resolver_longitude",
+    "resolver_lng",
+    "resolver_long",
+    "resolved_longitude",
+    "resolved_lng",
+    "resolved_long",
+    "resolution_longitude",
+    "resolution_lng",
+    "resolution_long",
+    "handled_longitude",
+    "handled_lng",
+    "handled_long",
+    "personnel_longitude",
+    "personnel_lng",
+    "personnel_long",
+    "barangay_personnel_longitude",
+    "barangay_personnel_lng",
+    "barangay_personnel_long",
+    "current_longitude",
+    "current_lng",
+    "current_long",
+    "gps_longitude",
+    "gps_lng",
+    "gps_long"
+  ]);
+
+  if (lat === null || lng === null) return null;
+
+  return {
+    lat,
+    lng,
+    type: "actual",
+    label: "Barangay Personnel Start"
+  };
+}
+
+function getResolutionBarangayPoint(record) {
+  /*
+    Blue pin meaning:
+    Barangay personnel marker.
+
+    This intentionally uses the same ACTUAL GPS/start point as the route start.
+    We are NOT using assigned_barangay_lat/lng anymore because that puts the pin
+    on the barangay/reference coordinate instead of the personnel's actual GPS location.
+  */
+  const personnelPoint = getResolutionActualStartPoint(record);
+
+  if (!personnelPoint) return null;
+
+  return {
+    ...personnelPoint,
+    type: "personnel",
+    label: "Barangay Personnel"
+  };
+}
+
+function getResolutionStartPoint(record) {
+  return getResolutionActualStartPoint(record);
+}
+
+function areResolutionPointsSame(pointA, pointB) {
+  if (!pointA || !pointB) return false;
+
+  const latDiff = Math.abs(Number(pointA.lat) - Number(pointB.lat));
+  const lngDiff = Math.abs(Number(pointA.lng) - Number(pointB.lng));
+
+  return latDiff < 0.00001 && lngDiff < 0.00001;
+}
+
+function getResolutionStartLabel(startPoint) {
+  if (!startPoint) return "Start Point";
+
+  if (startPoint.type === "actual") return "Start Point";
+  if (startPoint.type === "personnel") return "Start Point";
+
+  return "Start Point";
+}
+
+function getResolutionBarangayLabel(record) {
+  return (
+    record?.handled_by_barangay_name ||
+    record?.barangay_personnel_name ||
+    record?.personnel_name ||
+    record?.assigned_barangay ||
+    "Barangay Personnel"
+  );
+}
+
+function getResolutionRouteNotePrefix(startPoint, barangayPoint) {
+  if (!startPoint) return "Route preview.";
+
+  return "Route from the barangay personnel GPS start point to the issue location.";
+}
+
+
+function ensureResolutionVisibleMarkerStyles() {
+  if (document.getElementById("resolutionVisibleMarkerStyles")) return;
+
+  const style = document.createElement("style");
+  style.id = "resolutionVisibleMarkerStyles";
+  style.textContent = `
+    .resolution-start-icon-wrap,
+    .resolution-end-icon-wrap {
+      background: transparent !important;
+      border: 0 !important;
+      overflow: visible !important;
+    }
+
+    .resolution-start-icon-wrap .resolution-start-icon,
+    .resolution-end-icon-wrap .resolution-end-icon {
+      width: 24px;
+      height: 24px;
+      display: block;
+      position: relative;
+      border-radius: 999px;
+      box-sizing: border-box;
+      border: 3px solid #ffffff;
+      box-shadow: 0 6px 16px rgba(15, 23, 42, 0.20);
+    }
+
+    /*
+      Map-style target marker for START.
+      Green bullseye so it reads like an origin point.
+    */
+    .resolution-start-icon-wrap .resolution-start-icon {
+      background: radial-gradient(circle at center, #ffffff 0 4px, #22c55e 4px 8px, #ffffff 8px 11px, #16a34a 11px 100%);
+    }
+
+    /*
+      Map-style target marker for END / ISSUE.
+      Red bullseye so it reads like a destination point.
+    */
+    .resolution-end-icon-wrap .resolution-end-icon {
+      background: radial-gradient(circle at center, #ffffff 0 4px, #ef4444 4px 8px, #ffffff 8px 11px, #dc2626 11px 100%);
+    }
+
+    .resolution-route-map-card .leaflet-marker-icon,
+    .resolution-full-map-stage .leaflet-marker-icon {
+      overflow: visible !important;
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+function addResolutionStartCircle(map, startPoint, record, markerKey = "startMarker") {
+  const state = complaintResolutionRouteState;
+  if (!map || !startPoint) return null;
+
+  ensureResolutionVisibleMarkerStyles();
+
+  /*
+    Start marker:
+    Map-style green target marker centered exactly on the start GPS coordinate.
+  */
+  const marker = L.marker([startPoint.lat, startPoint.lng], {
+    icon: L.divIcon({
+      className: "resolution-start-icon-wrap",
+      html: `<span class="resolution-start-icon" aria-hidden="true"></span>`,
+      iconSize: [24, 24],
+      iconAnchor: [12, 12],
+      popupAnchor: [0, -12]
+    }),
+    interactive: true,
+    keyboard: false,
+    zIndexOffset: 1100
+  }).addTo(map);
+
+  marker.bindPopup(`
+    <div>
+      <strong>Start Point</strong><br>
+      ${escapeHtml(record?.handled_by_barangay_name || record?.assigned_barangay || "-")}<br>
+      Coordinates: ${escapeHtml(String(startPoint.lat))}, ${escapeHtml(String(startPoint.lng))}
+    </div>
+  `);
+
+  state[markerKey] = marker;
+  return marker;
+}
+
+function addResolutionEndDot(map, issuePoint, record, markerKey = "issueMarker") {
+  const state = complaintResolutionRouteState;
+  if (!map || !issuePoint) return null;
+
+  ensureResolutionVisibleMarkerStyles();
+
+  /*
+    End marker:
+    Map-style red target marker centered exactly on the issue GPS coordinate.
+  */
+  const marker = L.marker([issuePoint.lat, issuePoint.lng], {
+    icon: L.divIcon({
+      className: "resolution-end-icon-wrap",
+      html: `<span class="resolution-end-icon" aria-hidden="true"></span>`,
+      iconSize: [24, 24],
+      iconAnchor: [12, 12],
+      popupAnchor: [0, -12]
+    }),
+    interactive: true,
+    keyboard: false,
+    zIndexOffset: 1200
+  }).addTo(map);
+
+  marker.bindPopup(`
+    <div>
+      <strong>Issue Location</strong><br>
+      ${escapeHtml(record?.subject || "Resolved complaint")}<br>
+      Coordinates: ${escapeHtml(String(issuePoint.lat))}, ${escapeHtml(String(issuePoint.lng))}
+    </div>
+  `);
+
+  state[markerKey] = marker;
+  return marker;
+}
+
+function addResolutionBarangayPin(map, barangayPoint, record, markerKey = "barangayMarker") {
+  const state = complaintResolutionRouteState;
+  if (!map || !barangayPoint) return null;
+
+  /*
+    Blue pin:
+    This remains the barangay personnel GPS marker.
+    No floating label; popup only when clicked.
+  */
+  const marker = L.marker([barangayPoint.lat, barangayPoint.lng], {
+    icon: barangayBlueIcon,
+    keyboard: false,
+    zIndexOffset: 1150
+  }).addTo(map);
+
+  marker.bindPopup(`
+    <div>
+      <strong>Barangay Personnel</strong><br>
+      ${escapeHtml(getResolutionBarangayLabel(record))}<br>
+      Coordinates: ${escapeHtml(String(barangayPoint.lat))}, ${escapeHtml(String(barangayPoint.lng))}
+    </div>
+  `);
+
+  state[markerKey] = marker;
+  return marker;
+}
+
+function clearResolutionRouteMapLayers() {
+  const state = complaintResolutionRouteState;
+
+  if (!state.map) return;
+
+  if (state.issueMarker) {
+    state.map.removeLayer(state.issueMarker);
+    state.issueMarker = null;
+  }
+
+  if (state.startMarker) {
+    state.map.removeLayer(state.startMarker);
+    state.startMarker = null;
+  }
+
+  if (state.barangayMarker) {
+    state.map.removeLayer(state.barangayMarker);
+    state.barangayMarker = null;
+  }
+
+  if (state.routeLine) {
+    state.map.removeLayer(state.routeLine);
+    state.routeLine = null;
+  }
+
+  if (state.routingControl) {
+    try {
+      state.map.removeControl(state.routingControl);
+    } catch (error) {
+      console.warn("Failed removing resolution routing control:", error);
+    }
+
+    state.routingControl = null;
+  }
+}
+
+function destroyResolutionRouteMap(removeCard = false) {
+  const state = complaintResolutionRouteState;
+
+  try {
+    if (state.routingControl && state.map) {
+      state.map.removeControl(state.routingControl);
+    }
+  } catch (error) {
+    console.warn("Failed removing resolution routing control:", error);
+  }
+
+  try {
+    if (state.map) {
+      state.map.off();
+      state.map.remove();
+    }
+  } catch (error) {
+    console.warn("Failed destroying resolution route map:", error);
+  }
+
+  state.map = null;
+  state.issueMarker = null;
+  state.startMarker = null;
+  state.barangayMarker = null;
+  state.routeLine = null;
+  state.routingControl = null;
+
+  const mapEl = document.getElementById("resolutionRouteMap");
+  if (mapEl) {
+    mapEl.innerHTML = "";
+    mapEl.className = "";
+    mapEl.removeAttribute("tabindex");
+    mapEl.removeAttribute("aria-label");
+
+    try {
+      delete mapEl._leaflet_id;
+    } catch (error) {
+      console.warn("Failed clearing Leaflet container id:", error);
+    }
+  }
+
+  if (removeCard) {
+    const card = document.getElementById("resolutionRouteMapCard");
+    if (card) card.remove();
+  }
+}
+
+function ensureResolutionRouteMapContainer() {
+  ensureResolutionRouteMapRuntimeStyles();
+
+  const modal = document.getElementById("complaintResolutionModal");
+  if (!modal) return null;
+
+  const mainGrid = modal.querySelector(".resolution-main-grid");
+  const evidencePanel = modal.querySelector(".resolution-evidence-panel");
+
+  let card = document.getElementById("resolutionRouteMapCard");
+
+  if (!card) {
+    card = document.createElement("div");
+    card.id = "resolutionRouteMapCard";
+    card.className = "resolution-route-map-card";
+  }
+
+  const needsFreshTemplate =
+    !card.querySelector("#resolutionRouteMap") ||
+    !card.querySelector("#btnOpenResolutionFullRouteMap") ||
+    !card.querySelector("#resolutionRouteMapNote");
+
+  if (needsFreshTemplate) {
+    card.innerHTML = `
+      <div class="resolution-route-map-header">
+        <div class="resolution-route-map-title-block">
+          <h3>Route Map</h3>
+          <p id="resolutionRouteMapNote">Loading route preview...</p>
+        </div>
+
+        <button
+          type="button"
+          id="btnOpenResolutionFullRouteMap"
+          class="view-all-btn small resolution-route-map-full-btn">
+          Full Map
+        </button>
+      </div>
+
+      <div class="resolution-route-map-legend" aria-label="Route map legend">
+        <span><i class="route-legend-circle start"></i> Start target</span>
+        <span><i class="route-legend-circle end"></i> Issue target</span>
+        <span><i class="route-legend-pin barangay"></i> Personnel pin</span>
+      </div>
+
+      <div id="resolutionRouteMap"></div>
+    `;
+  } else {
+    card.removeAttribute("style");
+
+    const header = card.querySelector(".resolution-route-map-header");
+    const title = card.querySelector(".resolution-route-map-header h3");
+    const note = card.querySelector("#resolutionRouteMapNote");
+    const map = card.querySelector("#resolutionRouteMap");
+
+    if (header) header.removeAttribute("style");
+    if (title) title.removeAttribute("style");
+    if (note) note.removeAttribute("style");
+    if (map) map.removeAttribute("style");
+  }
+
+  const fullMapBtn = card.querySelector("#btnOpenResolutionFullRouteMap");
+  if (fullMapBtn && fullMapBtn.dataset.bound !== "true") {
+    fullMapBtn.dataset.bound = "true";
+    fullMapBtn.addEventListener("click", openResolutionFullRouteMap);
+  }
+
+  /*
+    Correct placement:
+    Route Map must be a sibling of .resolution-left-panel and .resolution-evidence-panel,
+    not inside the left panel after Coordinates.
+  */
+  if (mainGrid) {
+    if (evidencePanel && evidencePanel.parentElement === mainGrid) {
+      mainGrid.insertBefore(card, evidencePanel.nextSibling);
+    } else {
+      mainGrid.appendChild(card);
+    }
+  } else {
+    const content =
+      modal.querySelector(".resolution-pro-body") ||
+      modal.querySelector(".complaint-resolution-modal-body") ||
+      modal.querySelector(".custom-modal-content") ||
+      modal;
+
+    content.appendChild(card);
+  }
+
+  return {
+    card,
+    mapEl: document.getElementById("resolutionRouteMap"),
+    noteEl: document.getElementById("resolutionRouteMapNote")
+  };
+}
+
+function ensureResolutionFullRouteMapModal() {
+  let modal = document.getElementById("resolutionFullRouteMapModal");
+
+  if (!modal) {
+    modal = document.createElement("div");
+    modal.id = "resolutionFullRouteMapModal";
+    modal.className = "custom-modal hidden resolution-full-route-map-modal";
+
+    modal.innerHTML = `
+      <div class="custom-modal-overlay" id="resolutionFullRouteMapOverlay"></div>
+
+      <div class="custom-modal-content resolution-full-route-map-content" style="width:min(1180px, calc(100vw - 48px)); max-width:1180px;">
+        <div class="custom-modal-header">
+          <div>
+            <h3>Full Route Map</h3>
+            <p id="resolutionFullRouteMapSubtitle">Start target, barangay personnel pin, and end issue location.</p>
+          </div>
+          <button type="button" id="closeResolutionFullRouteMapModal" class="modal-close-btn">&times;</button>
+        </div>
+
+        <div class="custom-modal-body resolution-full-route-map-body">
+          <div class="complaint-map-summary">
+            <div class="complaint-map-summary-item">
+              <span>Start Point</span>
+              <strong id="resolutionFullMapStartLabel">-</strong>
+            </div>
+
+            <div class="complaint-map-summary-item">
+              <span>Barangay Personnel</span>
+              <strong id="resolutionFullMapBarangayLabel">-</strong>
+            </div>
+
+            <div class="complaint-map-summary-item">
+              <span>End Point</span>
+              <strong id="resolutionFullMapEndLabel">-</strong>
+            </div>
+
+            <div class="complaint-map-summary-item">
+              <span>Distance</span>
+              <strong id="resolutionFullMapDistance">-</strong>
+            </div>
+          </div>
+
+          <div class="resolution-route-map-legend" aria-label="Full route map legend" style="margin:12px 0; display:flex; gap:14px; flex-wrap:wrap;">
+            <span><i class="route-legend-circle start"></i> Start target</span>
+            <span><i class="route-legend-circle end"></i> Issue target</span>
+            <span><i class="route-legend-pin barangay"></i> Personnel pin</span>
+          </div>
+
+          <div
+            id="resolutionFullRouteMap"
+            class="complaint-leaflet-map resolution-full-route-map"
+            style="height:min(68vh, 620px); min-height:460px; border-radius:18px; overflow:hidden;">
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+  }
+
+  if (modal.dataset.bound !== "true") {
+    modal.dataset.bound = "true";
+
+    document
+      .getElementById("closeResolutionFullRouteMapModal")
+      ?.addEventListener("click", closeResolutionFullRouteMapModal);
+
+    document
+      .getElementById("resolutionFullRouteMapOverlay")
+      ?.addEventListener("click", closeResolutionFullRouteMapModal);
+  }
+
+  return modal;
+}
+
+function clearResolutionFullRouteMapLayers() {
+  const state = complaintResolutionRouteState;
+
+  if (!state.fullMap) return;
+
+  if (state.fullIssueMarker) {
+    state.fullMap.removeLayer(state.fullIssueMarker);
+    state.fullIssueMarker = null;
+  }
+
+  if (state.fullStartMarker) {
+    state.fullMap.removeLayer(state.fullStartMarker);
+    state.fullStartMarker = null;
+  }
+
+  if (state.fullBarangayMarker) {
+    state.fullMap.removeLayer(state.fullBarangayMarker);
+    state.fullBarangayMarker = null;
+  }
+
+  if (state.fullRouteLine) {
+    state.fullMap.removeLayer(state.fullRouteLine);
+    state.fullRouteLine = null;
+  }
+
+  if (state.fullRoutingControl) {
+    try {
+      state.fullMap.removeControl(state.fullRoutingControl);
+    } catch (error) {
+      console.warn("Failed removing full route routing control:", error);
+    }
+
+    state.fullRoutingControl = null;
+  }
+}
+
+function destroyResolutionFullRouteMap(removeModal = false) {
+  const state = complaintResolutionRouteState;
+
+  try {
+    if (state.fullRoutingControl && state.fullMap) {
+      state.fullMap.removeControl(state.fullRoutingControl);
+    }
+  } catch (error) {
+    console.warn("Failed removing full route routing control:", error);
+  }
+
+  try {
+    if (state.fullMap) {
+      state.fullMap.off();
+      state.fullMap.remove();
+    }
+  } catch (error) {
+    console.warn("Failed destroying full route map:", error);
+  }
+
+  state.fullMap = null;
+  state.fullIssueMarker = null;
+  state.fullStartMarker = null;
+  state.fullBarangayMarker = null;
+  state.fullRouteLine = null;
+  state.fullRoutingControl = null;
+
+  const mapEl = document.getElementById("resolutionFullRouteMap");
+  if (mapEl) {
+    mapEl.innerHTML = "";
+
+    try {
+      delete mapEl._leaflet_id;
+    } catch (error) {
+      console.warn("Failed clearing full route Leaflet container id:", error);
+    }
+  }
+
+  if (removeModal) {
+    const modal = document.getElementById("resolutionFullRouteMapModal");
+    if (modal) modal.remove();
+  }
+}
+
+function closeResolutionFullRouteMapModal() {
+  destroyResolutionFullRouteMap(false);
+  resetComplaintModalDisplay("resolutionFullRouteMapModal");
+}
+
+function extendResolutionBounds(boundsPoints, point) {
+  if (!point) return;
+  boundsPoints.push([point.lat, point.lng]);
+}
+
+function drawResolutionFallbackLine(startPoint, issuePoint, mapInstance = null, routeKey = "routeLine") {
+  const state = complaintResolutionRouteState;
+  const map = mapInstance || state.map;
+
+  if (!map) return;
+
+  state[routeKey] = L.polyline(
+    [
+      [startPoint.lat, startPoint.lng],
+      [issuePoint.lat, issuePoint.lng]
+    ],
+    {
+      color: "#2563eb",
+      weight: 6,
+      opacity: 0.9,
+      lineCap: "round",
+      lineJoin: "round"
+    }
+  ).addTo(map);
+
+  const bounds = L.latLngBounds([
+    [startPoint.lat, startPoint.lng],
+    [issuePoint.lat, issuePoint.lng]
+  ]);
+
+  map.fitBounds(bounds, { padding: [45, 45] });
+}
+
+function setResolutionMapNote(message) {
+  const noteEl = document.getElementById("resolutionRouteMapNote");
+  if (noteEl) noteEl.textContent = message;
+}
+
+function ensureResolutionRouteMapRuntimeStyles() {
+  if (document.getElementById("resolutionRouteMapRuntimeStyles")) return;
+
+  const style = document.createElement("style");
+  style.id = "resolutionRouteMapRuntimeStyles";
+  style.textContent = `
+    #resolutionRouteMapCard .resolution-route-map-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+    }
+
+    #resolutionRouteMapCard .resolution-route-map-title-block {
+      min-width: 0;
+    }
+
+    .resolution-route-map-legend {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin: 10px 0 12px;
+      color: #475569;
+      font-size: 13px;
+    }
+
+    .route-legend-circle {
+      display: inline-block;
+      width: 11px;
+      height: 11px;
+      border-radius: 999px;
+      margin-right: 6px;
+      vertical-align: middle;
+      box-sizing: border-box;
+    }
+
+    .route-legend-circle.start {
+      background: #16a34a;
+      border: 3px solid #ffffff;
+      box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.30);
+    }
+
+    .route-legend-circle.end {
+      background: #dc2626;
+      border: 3px solid #ffffff;
+      box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.32);
+    }
+
+    .route-legend-pin {
+      display: inline-block;
+      width: 10px;
+      height: 14px;
+      border-radius: 10px 10px 10px 0;
+      transform: rotate(-45deg);
+      margin-right: 8px;
+      vertical-align: -2px;
+      box-sizing: border-box;
+    }
+
+    .route-legend-pin.barangay {
+      background: #2563eb;
+      border: 2px solid #1d4ed8;
+    }
+
+    .resolution-route-tooltip {
+      border: 0 !important;
+      border-radius: 999px !important;
+      box-shadow: 0 8px 18px rgba(15, 23, 42, 0.18) !important;
+      color: #0f172a !important;
+      font-weight: 800 !important;
+      padding: 4px 8px !important;
+    }
+
+    .resolution-route-tooltip.start {
+      background: #ccfbf1 !important;
+    }
+
+    .resolution-route-tooltip.end {
+      background: #fee2e2 !important;
+    }
+
+    .resolution-route-tooltip.barangay {
+      background: #dbeafe !important;
+    }
+
+    .resolution-route-map-full-btn {
+      white-space: nowrap;
+    }
+
+    @media (max-width: 768px) {
+      #resolutionRouteMapCard .resolution-route-map-header {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .resolution-route-map-full-btn {
+        width: 100%;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+function renderResolutionFullRouteMap(record) {
+  ensureResolutionFullRouteMapModal();
+  destroyResolutionFullRouteMap(false);
+
+  if (!window.L) {
+    alert("Map library is not loaded. Please refresh the page.");
+    return;
+  }
+
+  const issuePoint = getResolutionIssuePoint(record);
+  const startPoint = getResolutionStartPoint(record);
+  const barangayPoint = getResolutionBarangayPoint(record);
+
+  if (!issuePoint) {
+    alert("Issue coordinates are not available for this resolved complaint.");
+    return;
+  }
+
+  if (!startPoint) {
+    alert(
+      isComplaintResolvedRecord(record)
+        ? "Barangay personnel GPS/start point was not included in this resolved complaint record."
+        : "Route map is not available yet. Barangay personnel must accept/resolve the complaint with GPS data first."
+    );
+    return;
+  }
+
+  const state = complaintResolutionRouteState;
+  const mapEl = document.getElementById("resolutionFullRouteMap");
+
+  if (!mapEl) return;
+
+  document.getElementById("resolutionFullMapStartLabel").textContent = getResolutionStartLabel(startPoint);
+  document.getElementById("resolutionFullMapBarangayLabel").textContent = barangayPoint
+    ? getResolutionBarangayLabel(record)
+    : "Not available";
+  document.getElementById("resolutionFullMapEndLabel").textContent =
+    record?.subject || "Issue Location";
+
+  const straightDistance = calculateDistanceMetersLocal(
+    startPoint.lat,
+    startPoint.lng,
+    issuePoint.lat,
+    issuePoint.lng
+  );
+
+  document.getElementById("resolutionFullMapDistance").textContent = formatDistanceText(straightDistance);
+
+  state.fullMap = L.map(mapEl, {
+    zoomControl: true,
+    attributionControl: true
+  }).setView([issuePoint.lat, issuePoint.lng], 16);
+
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: "&copy; OpenStreetMap contributors"
+  }).addTo(state.fullMap);
+
+  addResolutionStartCircle(state.fullMap, startPoint, record, "fullStartMarker");
+  addResolutionEndDot(state.fullMap, issuePoint, record, "fullIssueMarker");
+
+  if (barangayPoint) {
+    addResolutionBarangayPin(state.fullMap, barangayPoint, record, "fullBarangayMarker");
+  }
+
+  const boundsPoints = [];
+  extendResolutionBounds(boundsPoints, startPoint);
+  extendResolutionBounds(boundsPoints, issuePoint);
+  extendResolutionBounds(boundsPoints, barangayPoint);
+
+  if (boundsPoints.length > 1) {
+    state.fullMap.fitBounds(L.latLngBounds(boundsPoints), { padding: [80, 80] });
+  }
+
+  if (!window.L.Routing) {
+    drawResolutionFallbackLine(startPoint, issuePoint, state.fullMap, "fullRouteLine");
+    return;
+  }
+
+  state.fullRoutingControl = L.Routing.control({
+    waypoints: [
+      L.latLng(startPoint.lat, startPoint.lng),
+      L.latLng(issuePoint.lat, issuePoint.lng)
+    ],
+    router: L.Routing.osrmv1({
+      serviceUrl: "https://router.project-osrm.org/route/v1"
+    }),
+    routeWhileDragging: false,
+    addWaypoints: false,
+    draggableWaypoints: false,
+    fitSelectedRoutes: true,
+    showAlternatives: false,
+    show: false,
+    createMarker: function () {
+      return null;
+    },
+    lineOptions: {
+      addWaypoints: false,
+      extendToWaypoints: true,
+      missingRouteTolerance: 0,
+      styles: [
+        {
+          color: "#2563eb",
+          opacity: 0.95,
+          weight: 7
+        }
+      ]
+    }
+  }).addTo(state.fullMap);
+
+  state.fullRoutingControl.on("routesfound", function (event) {
+    const route = event.routes && event.routes[0];
+    if (!route) return;
+
+    const routeDistance = Math.round(route.summary?.totalDistance || 0);
+    document.getElementById("resolutionFullMapDistance").textContent = formatDistanceText(routeDistance);
+
+    if (route.bounds) {
+      state.fullMap.fitBounds(route.bounds, { padding: [80, 80] });
+    }
+  });
+
+  state.fullRoutingControl.on("routingerror", function (error) {
+    console.warn("Full route failed, drawing fallback line:", error);
+
+    if (state.fullRoutingControl) {
+      try {
+        state.fullMap.removeControl(state.fullRoutingControl);
+      } catch (removeError) {
+        console.warn("Failed removing failed full routing control:", removeError);
+      }
+
+      state.fullRoutingControl = null;
+    }
+
+    drawResolutionFallbackLine(startPoint, issuePoint, state.fullMap, "fullRouteLine");
+  });
+
+  setTimeout(() => {
+    state.fullMap.invalidateSize();
+  }, 180);
+}
+
+function openResolutionFullRouteMap() {
+  const record = complaintResolutionRouteState.lastRecord || currentComplaintResolution;
+
+  if (!record) {
+    alert("No resolved complaint selected.");
+    return;
+  }
+
+  ensureResolutionFullRouteMapModal();
+  openComplaintModalWithPosition("resolutionFullRouteMapModal");
+
+  setTimeout(() => {
+    renderResolutionFullRouteMap(record);
+  }, 220);
+}
+
+function renderResolvedComplaintRouteMap(record) {
+  const container = ensureResolutionRouteMapContainer();
+
+  if (!container || !container.mapEl) return;
+
+  /*
+    Leaflet can break when a modal is closed and opened again using the same map container.
+    Recreate only this small resolved-route map each time to prevent oversized tiles/overflow.
+  */
+  destroyResolutionRouteMap(false);
+
+  if (!window.L) {
+    setResolutionMapNote("Map library is not loaded. Please refresh the page.");
+    return;
+  }
+
+  const issuePoint = getResolutionIssuePoint(record);
+
+  if (!issuePoint) {
+    setResolutionMapNote("Issue coordinates are not available for this resolved complaint.");
+    return;
+  }
+
+  const startPoint = getResolutionStartPoint(record);
+  const barangayPoint = getResolutionBarangayPoint(record);
+  const state = complaintResolutionRouteState;
+  state.lastRecord = record;
+
+  if (!state.map) {
+    state.map = L.map(container.mapEl, {
+      zoomControl: true,
+      attributionControl: true
+    }).setView([issuePoint.lat, issuePoint.lng], 16);
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: "&copy; OpenStreetMap contributors"
+    }).addTo(state.map);
+  } else {
+    state.map.invalidateSize();
+  }
+
+  clearResolutionRouteMapLayers();
+
+  addResolutionEndDot(state.map, issuePoint, record, "issueMarker");
+
+  if (!startPoint) {
+    state.map.setView([issuePoint.lat, issuePoint.lng], 17);
+    state.issueMarker.openPopup();
+    setResolutionMapNote(
+      isComplaintResolvedRecord(record)
+        ? "Only the issue location is available. Barangay personnel GPS/start point was not included in this resolved complaint record."
+        : "Only the issue location is available. Route will appear after barangay personnel accepts/resolves the complaint with GPS data."
+    );
+    return;
+  }
+
+  addResolutionStartCircle(state.map, startPoint, record, "startMarker");
+
+  if (barangayPoint) {
+    addResolutionBarangayPin(state.map, barangayPoint, record, "barangayMarker");
+  }
+
+  const straightDistance = calculateDistanceMetersLocal(
+    startPoint.lat,
+    startPoint.lng,
+    issuePoint.lat,
+    issuePoint.lng
+  );
+
+  const notePrefix = getResolutionRouteNotePrefix(startPoint, barangayPoint);
+
+  const sameStartAndBarangay = areResolutionPointsSame(startPoint, barangayPoint);
+  const barangayNote = barangayPoint
+    ? " Blue pin is the barangay personnel GPS marker at the start point."
+    : " Barangay personnel GPS pin is not available.";
+
+  setResolutionMapNote(
+    `${notePrefix} Straight distance: ${formatDistanceText(straightDistance)}.${barangayNote}`
+  );
+
+  const boundsPoints = [];
+  extendResolutionBounds(boundsPoints, startPoint);
+  extendResolutionBounds(boundsPoints, issuePoint);
+  extendResolutionBounds(boundsPoints, barangayPoint);
+
+  if (boundsPoints.length > 1) {
+    state.map.fitBounds(L.latLngBounds(boundsPoints), { padding: [45, 45] });
+  }
+
+  if (!window.L.Routing) {
+    drawResolutionFallbackLine(startPoint, issuePoint);
+    return;
+  }
+
+  state.routingControl = L.Routing.control({
+    waypoints: [
+      L.latLng(startPoint.lat, startPoint.lng),
+      L.latLng(issuePoint.lat, issuePoint.lng)
+    ],
+    router: L.Routing.osrmv1({
+      serviceUrl: "https://router.project-osrm.org/route/v1"
+    }),
+    routeWhileDragging: false,
+    addWaypoints: false,
+    draggableWaypoints: false,
+    fitSelectedRoutes: true,
+    showAlternatives: false,
+    show: false,
+    createMarker: function () {
+      return null;
+    },
+    lineOptions: {
+      addWaypoints: false,
+      extendToWaypoints: true,
+      missingRouteTolerance: 0,
+      styles: [
+        {
+          color: "#2563eb",
+          opacity: 0.95,
+          weight: 6
+        }
+      ]
+    }
+  }).addTo(state.map);
+
+  state.routingControl.on("routesfound", function (event) {
+    const route = event.routes && event.routes[0];
+
+    if (!route) return;
+
+    const routeDistance = Math.round(route.summary?.totalDistance || 0);
+    const routeDistanceText = formatDistanceText(routeDistance);
+
+    setResolutionMapNote(`${notePrefix} Route distance: ${routeDistanceText}.${barangayNote}`);
+
+    if (route.bounds) {
+      state.map.fitBounds(route.bounds, { padding: [45, 45] });
+    }
+  });
+
+  state.routingControl.on("routingerror", function (error) {
+    console.warn("Resolved complaint route failed, drawing fallback line:", error);
+
+    if (state.routingControl) {
+      try {
+        state.map.removeControl(state.routingControl);
+      } catch (removeError) {
+        console.warn("Failed removing failed routing control:", removeError);
+      }
+
+      state.routingControl = null;
+    }
+
+    drawResolutionFallbackLine(startPoint, issuePoint);
+    setResolutionMapNote(
+      `${notePrefix} Route service failed, so a direct line is shown. Straight distance: ${formatDistanceText(straightDistance)}.${barangayNote}`
+    );
+  });
+
+  setTimeout(() => {
+    state.map.invalidateSize();
+  }, 180);
+}
+
+// =========================
+// COMPLAINT SUMMARY + LOAD
+// =========================
+
+function updateComplaintSummary(complaints = []) {
+  const safeComplaints = Array.isArray(complaints) ? complaints : [];
+
+  const total = safeComplaints.length;
+  const pending = safeComplaints.filter(item =>
+    String(item.status || "").toLowerCase() === "pending"
+  ).length;
+  const resolved = safeComplaints.filter(item =>
+    String(item.status || "").toLowerCase() === "resolved"
+  ).length;
+
+  const totalEl = document.getElementById("complaintsTotalCount");
+  const pendingEl = document.getElementById("complaintsPendingCount");
+  const resolvedEl = document.getElementById("complaintsResolvedCount");
+  const validatedEl = document.getElementById("complaintsValidatedCount");
+  const forwardedEl = document.getElementById("complaintsForwardedCount");
+
+  if (totalEl) totalEl.textContent = total;
+  if (pendingEl) pendingEl.textContent = pending;
+  if (resolvedEl) resolvedEl.textContent = resolved;
+
+  if (validatedEl) {
+    validatedEl.textContent = safeComplaints.filter(item =>
+      String(item.status || "").toLowerCase() === "validated"
+    ).length;
+  }
+
+  if (forwardedEl) {
+    forwardedEl.textContent = safeComplaints.filter(item =>
+      ["forwarded", "in_progress"].includes(String(item.status || "").toLowerCase())
+    ).length;
+  }
+}
+
+async function loadComplaints() {
+  const tableBody = document.getElementById("complaintsTableBody");
+  if (!tableBody) return;
+
+  tableBody.innerHTML = `
+    <tr>
+      <td colspan="6" class="loading-state">Loading complaints...</td>
+    </tr>
+  `;
+
+  try {
+    const response = await fetch(getComplaintsApiUrl(), {
+      method: "GET",
+      headers: {
+        "Accept": "application/json"
+      }
+    });
+
+    const rawText = await response.text();
+    let data = {};
+
+    try {
+      data = rawText ? JSON.parse(rawText) : {};
+    } catch (parseError) {
+      console.error("Complaints raw response:", rawText);
+      throw new Error("Complaints API did not return valid JSON.");
+    }
+
+    if (!response.ok || data.success === false) {
+      throw new Error(data.message || "Failed to load complaints.");
+    }
+
+    allComplaints = Array.isArray(data.complaints)
+      ? data.complaints
+      : Array.isArray(data.data)
+      ? data.data
+      : Array.isArray(data)
+      ? data
+      : [];
+
+    updateComplaintSummary(allComplaints);
+
+    const activeComplaints = allComplaints.filter((item) => {
+      const status = String(item.status || "").toLowerCase();
+
+      /*
+        Rejected complaints are no longer shown in the active Complaints Management table.
+        They are kept in View History / reports instead.
+      */
+      return ["pending", "validated", "forwarded", "in_progress"].includes(status);
+    });
+
+    renderComplaintsTable(activeComplaints);
+  } catch (error) {
+    console.error("loadComplaints error:", error);
+
+    allComplaints = [];
+    updateComplaintSummary([]);
+
+    tableBody.innerHTML = `
+      <tr>
+        <td colspan="6" class="empty-state-cell">
+          Failed to load complaints.
+        </td>
+      </tr>
+    `;
+  }
+}
+
+// =========================
+// COMPLAINT TABLE
+// =========================
+
+function getFilteredComplaints() {
+  const searchValue = (document.getElementById("complaintsSearchInput")?.value || "")
+    .trim()
+    .toLowerCase();
+
+  const statusValue = (document.getElementById("complaintsStatusFilter")?.value || "all")
+    .trim()
+    .toLowerCase();
+
+  const activeComplaints = allComplaints.filter((item) => {
+    const status = String(item.status || "").toLowerCase();
+
+    /*
+      Rejected complaints are history/report records, not active validation items.
+    */
+    return ["pending", "validated", "forwarded", "in_progress"].includes(status);
+  });
+
+  return activeComplaints.filter((item) => {
+    const status = String(item.status || "").toLowerCase();
+
+    const haystack = [
+      item.subject,
+      item.description,
+      item.citizen_name,
+      item.username,
+      item.assigned_barangay,
+      status,
+      item.created_at
+    ].map(value => String(value || "").toLowerCase()).join(" ");
+
+    const matchesSearch = !searchValue || haystack.includes(searchValue);
+    const matchesStatus = statusValue === "all" || status === statusValue;
+
+    return matchesSearch && matchesStatus;
+  });
+}
+
+function applyComplaintFilters() {
+  renderComplaintsTable(getFilteredComplaints());
+}
+
+
+function getComplaintTableAssignedDisplay(complaint = {}) {
+  const status = String(complaint.status || "").trim().toLowerCase();
+
+  /*
+    Pending complaints are still waiting for WMO validation/forwarding.
+    Forwarded complaints are already sent to barangays, but no barangay
+    has accepted yet, so do not show the citizen concern as final assigned.
+  */
+  if (status === "pending") {
+    return "Awaiting Assignment";
+  }
+
+  if (status === "forwarded") {
+    return "Awaiting Acceptance";
+  }
+
+  const assigned = String(complaint.assigned_barangay || "").trim();
+
+  if (!assigned || assigned.toLowerCase() === "for verification") {
+    return "Awaiting Assignment";
+  }
+
+  return assigned;
+}
+
+function getComplaintTableAssignedClass(complaint = {}) {
+  const status = String(complaint.status || "").trim().toLowerCase();
+  const assigned = String(complaint.assigned_barangay || "").trim();
+
+  if (
+    status === "pending" ||
+    status === "forwarded" ||
+    !assigned ||
+    assigned.toLowerCase() === "for verification"
+  ) {
+    return "complaint-assignment-waiting";
+  }
+
+  return "complaint-assignment-ready";
+}
+
+function ensureComplaintTableAssignmentStyles() {
+  if (document.getElementById("complaintTableAssignmentRuntimeStyles")) return;
+
+  const style = document.createElement("style");
+  style.id = "complaintTableAssignmentRuntimeStyles";
+  style.textContent = `
+    #complaintsTableBody .complaint-assignment-waiting {
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      min-height: 30px !important;
+      padding: 6px 12px !important;
+      border-radius: 999px !important;
+      background: #f8fafc !important;
+      border: 1px solid #dbe3ea !important;
+      color: #64748b !important;
+      font-size: 12px !important;
+      font-weight: 850 !important;
+      white-space: nowrap !important;
+    }
+
+    #complaintsTableBody .complaint-assignment-ready {
+      color: #102a1d !important;
+      font-weight: 850 !important;
+      white-space: nowrap !important;
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+
+function renderComplaintsTable(complaints) {
+  ensureComplaintTableAssignmentStyles();
+  const tableBody = document.getElementById("complaintsTableBody");
+  if (!tableBody) return;
+
+  const safeComplaints = Array.isArray(complaints) ? complaints : [];
+
+  const activeComplaints = safeComplaints.filter((item) => {
+    const status = String(item.status || "").toLowerCase();
+
+    /*
+      Rejected complaints must move to View History after rejection.
+    */
+    return ["pending", "validated", "forwarded", "in_progress"].includes(status);
+  });
+
+  if (!activeComplaints.length) {
+    tableBody.innerHTML = `
+      <tr>
+        <td colspan="7" class="empty-state-cell">
+          No active complaints found.
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  tableBody.innerHTML = activeComplaints.map(item => {
+    const subject = escapeHtml(item.subject || "No Subject");
+    const descriptionRaw = item.description || "";
+    const description = escapeHtml(truncateText(descriptionRaw, 60));
+    const citizen = escapeHtml(item.citizen_name || item.username || "-");
+    const barangay = `
+      <span class="${getComplaintTableAssignedClass(item)}">
+        ${escapeHtml(getComplaintTableAssignedDisplay(item))}
+      </span>
+    `;
+    const status = String(item.status || "").toLowerCase();
+
+    return `
+      <tr class="complaint-row complaint-${escapeHtml(status)}">
+
+        <td>
+          <span class="complaint-subject-main" title="${subject}">${subject}</span>
+        </td>
+
+        <td class="complaint-description-cell" title="${escapeHtml(descriptionRaw)}">
+          ${description || "-"}
+        </td>
+
+        <td class="complaint-citizen">
+          ${citizen}
+        </td>
+
+        <td>
+          <span class="barangay-badge">${barangay}</span>
+        </td>
+
+        <td>
+          ${getComplaintStatusBadge(status)}
+        </td>
+
+        <td class="complaint-date">
+          ${formatDate(item.created_at)}
+        </td>
+
+        <td>
+          <button type="button" class="complaint-action-btn" data-id="${escapeHtml(item.id)}" aria-label="View complaint details" title="View complaint details">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"></path>
+              <circle cx="12" cy="12" r="2.5"></circle>
+            </svg>
+            <span>View</span>
+          </button>
+        </td>
+
+      </tr>
+    `;
+  }).join("");
+
+  bindComplaintButtons();
+}
+
+function bindComplaintButtons() {
+  document.querySelectorAll(".complaint-action-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.id;
+      const complaint = allComplaints.find(c => String(c.id) === String(id));
+
+      if (complaint) {
+        openComplaintModal(complaint);
+      }
+    });
+  });
+}
+
+// =========================
+// COMPLAINT MODAL PORTAL FIX
+// =========================
+
+const COMPLAINT_PORTAL_MODAL_IDS = [
+  "complaintDetailsModal",
+  "complaintRejectModal",
+  "complaintResolutionModal",
+  "resolutionFullRouteMapModal",
+  "complaintMapModal",
+  "complaintHistoryModal"
+];
+
+function mountComplaintModalsToBody() {
+  COMPLAINT_PORTAL_MODAL_IDS.forEach((modalId) => {
+    const modal = document.getElementById(modalId);
+
+    if (!modal) return;
+
+    if (modal.parentElement !== document.body) {
+      document.body.appendChild(modal);
+    }
+  });
+}
+
+function applyComplaintModalPosition(modalId) {
+  try {
+    const modal = document.getElementById(modalId);
+    if (!modal) return;
+
+    const isMobile = window.matchMedia("(max-width: 992px)").matches;
+    const isComplaintDetails = modalId === "complaintDetailsModal";
+
+    const overlay =
+      modal.querySelector(".custom-modal-overlay") ||
+      modal.querySelector(".history-modal-overlay");
+
+    const content =
+      modal.querySelector(".custom-modal-content") ||
+      modal.querySelector(".history-modal-content");
+
+    modal.style.setProperty("position", "fixed", "important");
+    modal.style.setProperty("inset", "0", "important");
+    modal.style.setProperty("top", "0", "important");
+    modal.style.setProperty("right", "0", "important");
+    modal.style.setProperty("bottom", "0", "important");
+    modal.style.setProperty("left", "0", "important");
+    modal.style.setProperty("width", "100vw", "important");
+    modal.style.setProperty("height", "100vh", "important");
+    modal.style.setProperty("height", "100dvh", "important");
+    modal.style.setProperty("margin", "0", "important");
+    modal.style.setProperty("display", "flex", "important");
+    modal.style.setProperty("align-items", isMobile ? "flex-start" : "center", "important");
+    modal.style.setProperty("justify-content", "center", "important");
+    modal.style.setProperty("z-index", modalId === "complaintRejectModal" ? "2147483640" : "2147483600", "important");
+    modal.style.setProperty("overflow", "hidden", "important");
+    modal.style.setProperty(
+      "padding",
+      isComplaintDetails && isMobile ? "10px" : (isMobile ? "12px" : "24px"),
+      "important"
+    );
+    modal.style.setProperty("box-sizing", "border-box", "important");
+
+    if (overlay) {
+      overlay.style.setProperty("position", "fixed", "important");
+      overlay.style.setProperty("inset", "0", "important");
+      overlay.style.setProperty("top", "0", "important");
+      overlay.style.setProperty("right", "0", "important");
+      overlay.style.setProperty("bottom", "0", "important");
+      overlay.style.setProperty("left", "0", "important");
+      overlay.style.setProperty("width", "100vw", "important");
+      overlay.style.setProperty("height", "100vh", "important");
+      overlay.style.setProperty("height", "100dvh", "important");
+      overlay.style.setProperty("z-index", "1", "important");
+    }
+
+    if (content) {
+      content.style.setProperty("position", "relative", "important");
+      content.style.setProperty("top", "auto", "important");
+      content.style.setProperty("left", "auto", "important");
+      content.style.setProperty("right", "auto", "important");
+      content.style.setProperty("bottom", "auto", "important");
+      content.style.setProperty("transform", "none", "important");
+      content.style.setProperty("z-index", "2", "important");
+      content.style.setProperty("margin", "0 auto", "important");
+
+      if (isComplaintDetails) {
+        // Complaint Details geometry and its single body scroll live in admin-complaints.css.
+        content.style.removeProperty("overflow");
+        content.style.removeProperty("width");
+        content.style.removeProperty("max-width");
+        content.style.removeProperty("max-height");
+      } else if (isMobile) {
+        content.style.setProperty("overflow", "auto", "important");
+        content.style.setProperty("width", "calc(100vw - 24px)", "important");
+        content.style.setProperty("max-width", "calc(100vw - 24px)", "important");
+        content.style.setProperty("max-height", "calc(100dvh - 24px)", "important");
+      } else {
+        content.style.setProperty("overflow", "auto", "important");
+        if (modalId === "complaintRejectModal") {
+          content.style.setProperty("width", "min(560px, calc(100vw - 48px))", "important");
+          content.style.setProperty("max-width", "560px", "important");
+        } else if (modalId === "complaintHistoryModal") {
+          content.style.setProperty("width", "min(1180px, calc(100vw - 48px))", "important");
+          content.style.setProperty("max-width", "1180px", "important");
+        } else {
+          content.style.setProperty("width", "min(1220px, calc(100vw - 48px))", "important");
+          content.style.setProperty("max-width", "1220px", "important");
+        }
+
+        content.style.setProperty("max-height", "calc(100dvh - 48px)", "important");
+      }
+    }
+  } catch (error) {
+    console.warn("Complaint modal positioning skipped:", error);
+  }
+}
+
+function openComplaintModalWithPosition(modalId) {
+  mountComplaintModalsToBody();
+
+  const modal = document.getElementById(modalId);
+  if (!modal) return;
+
+  modal.classList.remove("hidden");
+
+  requestAnimationFrame(() => {
+    applyComplaintModalPosition(modalId);
+  });
+}
+
+function resetComplaintModalDisplay(modalId) {
+  const modal = document.getElementById(modalId);
+  if (!modal) return;
+
+  modal.classList.add("hidden");
+  modal.style.removeProperty("display");
+}
+
+window.addEventListener("resize", () => {
+  COMPLAINT_PORTAL_MODAL_IDS.forEach((modalId) => {
+    const modal = document.getElementById(modalId);
+    if (modal && !modal.classList.contains("hidden")) {
+      applyComplaintModalPosition(modalId);
+
+      if (modalId === "complaintResolutionModal" && complaintResolutionRouteState.map) {
+        setTimeout(() => {
+          complaintResolutionRouteState.map.invalidateSize();
+        }, 120);
+      }
+
+      if (modalId === "resolutionFullRouteMapModal" && complaintResolutionRouteState.fullMap) {
+        setTimeout(() => {
+          complaintResolutionRouteState.fullMap.invalidateSize();
+        }, 120);
+      }
+    }
+  });
+});
+
+
+function ensureComplaintDetailsMapPreviewStyles() {
+  if (document.getElementById("complaintDetailsMapPreviewRuntimeStyles")) return;
+
+  const style = document.createElement("style");
+  style.id = "complaintDetailsMapPreviewRuntimeStyles";
+  style.textContent = `
+    #complaintDetailsModal .complaint-map-preview-box {
+      position: relative !important;
+      height: 162px !important;
+      min-height: 162px !important;
+      padding: 0 !important;
+      overflow: hidden !important;
+      border-radius: 16px !important;
+      border: 1px solid #dce9df !important;
+      background: #eef6ef !important;
+    }
+
+    #complaintDetailsLeafletPreviewMap {
+      width: 100% !important;
+      height: 100% !important;
+      min-height: 162px !important;
+      border-radius: 16px !important;
+      overflow: hidden !important;
+      z-index: 1 !important;
+    }
+
+    #complaintDetailsModal .complaint-preview-map-loading {
+      position: absolute !important;
+      inset: 0 !important;
+      z-index: 2 !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      text-align: center !important;
+      padding: 12px !important;
+      background: linear-gradient(135deg, #f8fafc, #eef8f0) !important;
+      color: #486155 !important;
+      font-size: 12px !important;
+      font-weight: 800 !important;
+      pointer-events: none !important;
+    }
+
+    #complaintDetailsModal .complaint-preview-map-loading.hidden {
+      display: none !important;
+    }
+
+    #complaintDetailsModal .complaint-preview-map-badge {
+      position: absolute !important;
+      left: 10px !important;
+      bottom: 10px !important;
+      z-index: 450 !important;
+      padding: 6px 9px !important;
+      border-radius: 999px !important;
+      background: rgba(255, 255, 255, 0.92) !important;
+      border: 1px solid rgba(22, 101, 52, 0.16) !important;
+      color: #166534 !important;
+      font-size: 10.5px !important;
+      font-weight: 900 !important;
+      box-shadow: 0 8px 20px rgba(15, 23, 42, 0.10) !important;
+      pointer-events: none !important;
+    }
+
+    #complaintDetailsModal .complaint-map-preview-box .leaflet-control-attribution {
+      display: none !important;
+    }
+
+    @media (max-width: 900px) {
+      #complaintDetailsModal .complaint-map-preview-box,
+      #complaintDetailsLeafletPreviewMap {
+        min-height: 145px !important;
+        height: 145px !important;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+function clearComplaintDetailsPreviewMapLayers() {
+  const state = complaintDetailsPreviewMapState;
+
+  if (!state.map) return;
+
+  if (state.issueMarker) {
+    state.map.removeLayer(state.issueMarker);
+    state.issueMarker = null;
+  }
+
+  state.barangayMarkers.forEach((marker) => {
+    if (marker) state.map.removeLayer(marker);
+  });
+
+  state.barangayMarkers = [];
+}
+
+function ensureComplaintDetailsMapPreviewContainer() {
+  const box = document.querySelector("#complaintDetailsModal .complaint-map-preview-box");
+  if (!box) return null;
+
+  let mapEl = document.getElementById("complaintDetailsLeafletPreviewMap");
+
+  if (!mapEl) {
+    box.innerHTML = `
+      <div id="complaintDetailsLeafletPreviewMap"></div>
+      <div id="complaintDetailsMapPreviewLoading" class="complaint-preview-map-loading">
+        Loading map preview...
+      </div>
+      <div class="complaint-preview-map-badge">Issue location</div>
+    `;
+
+    mapEl = document.getElementById("complaintDetailsLeafletPreviewMap");
+  }
+
+  return mapEl;
+}
+
+function setComplaintDetailsMapPreviewLoading(isVisible, message = "Loading map preview...") {
+  const loadingEl = document.getElementById("complaintDetailsMapPreviewLoading");
+
+  if (!loadingEl) return;
+
+  loadingEl.textContent = message;
+  loadingEl.classList.toggle("hidden", !isVisible);
+}
+
+function getTopUniqueBarangayCandidates(candidates = [], maxItems = 2) {
+  const seen = new Set();
+
+  return (Array.isArray(candidates) ? candidates : [])
+    .filter((candidate) => {
+      const barangay = String(candidate?.barangay_name || "").trim();
+      if (!barangay) return false;
+
+      const key = barangay.toLowerCase();
+      if (seen.has(key)) return false;
+
+      seen.add(key);
+      return true;
+    })
+    .slice(0, maxItems);
+}
+
+function renderComplaintDetailsMapPreview(data = {}, candidates = []) {
+  if (!window.L) {
+    console.warn("Leaflet is not available for complaint preview map.");
+    return;
+  }
+
+  const lat = parseFloat(data.latitude);
+  const lng = parseFloat(data.longitude);
+
+  ensureComplaintDetailsMapPreviewStyles();
+
+  const mapEl = ensureComplaintDetailsMapPreviewContainer();
+  if (!mapEl) return;
+
+  if (Number.isNaN(lat) || Number.isNaN(lng)) {
+    setComplaintDetailsMapPreviewLoading(true, "Invalid complaint coordinates.");
+    return;
+  }
+
+  setComplaintDetailsMapPreviewLoading(true);
+
+  setTimeout(() => {
+    try {
+      const state = complaintDetailsPreviewMapState;
+
+      if (!state.map) {
+        state.map = L.map("complaintDetailsLeafletPreviewMap", {
+          zoomControl: false,
+          attributionControl: false,
+          dragging: false,
+          scrollWheelZoom: false,
+          doubleClickZoom: false,
+          boxZoom: false,
+          keyboard: false,
+          tap: false,
+          touchZoom: false
+        }).setView([lat, lng], 16);
+
+        state.tileLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          attribution: "&copy; OpenStreetMap contributors"
+        }).addTo(state.map);
+      } else {
+        state.map.invalidateSize();
+        state.map.setView([lat, lng], 16);
+      }
+
+      clearComplaintDetailsPreviewMapLayers();
+
+      state.issueMarker = L.marker([lat, lng], { icon: issueRedIcon })
+        .addTo(state.map)
+        .bindPopup(`
+          <div>
+            <strong>${escapeHtml(data.subject || "Complaint Issue")}</strong><br>
+            ${escapeHtml(String(lat))}, ${escapeHtml(String(lng))}
+          </div>
+        `);
+
+      const topCandidates = getTopUniqueBarangayCandidates(candidates, 2);
+      const boundsPoints = [[lat, lng]];
+
+      topCandidates.forEach((candidate) => {
+        const cLat = parseFloat(candidate.latitude);
+        const cLng = parseFloat(candidate.longitude);
+
+        if (Number.isNaN(cLat) || Number.isNaN(cLng)) return;
+
+        boundsPoints.push([cLat, cLng]);
+
+        const marker = L.marker([cLat, cLng], { icon: barangayBlueIcon })
+          .addTo(state.map)
+          .bindPopup(`
+            <div>
+              <strong>${escapeHtml(candidate.barangay_name || "-")}</strong><br>
+              ${escapeHtml(candidate.reference_name || "-")}
+            </div>
+          `);
+
+        state.barangayMarkers.push(marker);
+      });
+
+      if (boundsPoints.length > 1) {
+        const bounds = L.latLngBounds(boundsPoints);
+        state.map.fitBounds(bounds, { padding: [26, 26], maxZoom: 16 });
+      } else {
+        state.map.setView([lat, lng], 16);
+      }
+
+      setTimeout(() => {
+        if (state.map) state.map.invalidateSize();
+      }, 120);
+
+      setComplaintDetailsMapPreviewLoading(false);
+    } catch (error) {
+      console.error("Complaint details map preview error:", error);
+      setComplaintDetailsMapPreviewLoading(true, "Map preview failed to load.");
+    }
+  }, 180);
+}
+
+
+// =========================
+// COMPLAINT DETAILS MODAL
+// =========================
+
+function formatComplaintStatusLabel(status) {
+  const normalized = String(status || "pending").trim().toLowerCase();
+
+  const labels = {
+    pending: "Pending",
+    validated: "Validated",
+    forwarded: "Forwarded",
+    in_progress: "In Progress",
+    resolved: "Resolved",
+    rejected: "Rejected"
+  };
+
+  return labels[normalized] || (status || "Pending");
+}
+
+function setComplaintDetailsStatusUI(status) {
+  const statusEl = document.getElementById("complaintModalStatus");
+  if (!statusEl) return;
+
+  const normalized = String(status || "pending").trim().toLowerCase();
+  statusEl.textContent = formatComplaintStatusLabel(normalized);
+
+  statusEl.className = "complaint-details-status-pill";
+  statusEl.classList.add(normalized.replaceAll("_", "-"));
+}
+
+function updateManualBarangayVisibility(complaint) {
+  const container = document.getElementById("manualBarangayContainer");
+  const select = document.getElementById("manualBarangaySelect");
+
+  if (!container) return;
+
+  const assignedBarangay = String(complaint?.assigned_barangay || "").trim();
+  const needsManualSelection =
+    !assignedBarangay || assignedBarangay.toLowerCase() === "for verification";
+
+  container.style.display = needsManualSelection ? "block" : "none";
+
+  if (select && !needsManualSelection) {
+    select.value = "";
+  }
+}
+
+function closeImagePreviewOverlay() {
+  const overlay = document.getElementById("imagePreviewOverlay");
+  const image = document.getElementById("imagePreviewFull");
+
+  if (image) image.removeAttribute("src");
+  overlay?.classList.add("hidden");
+}
+
+
+function ensureComplaintRejectRuntimeStyles() {
+  if (document.getElementById("complaintRejectRuntimeStyles")) return;
+
+  const style = document.createElement("style");
+  style.id = "complaintRejectRuntimeStyles";
+  style.textContent = `
+    #complaintDetailsModal .complaint-danger-btn,
+    #complaintRejectModal .complaint-danger-btn {
+      min-height: 48px;
+      border: 0;
+      border-radius: 14px;
+      padding: 12px 20px;
+      background: #dc2626;
+      color: #ffffff;
+      font-weight: 800;
+      cursor: pointer;
+      box-shadow: 0 16px 34px rgba(220, 38, 38, 0.22);
+      transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #complaintDetailsModal .complaint-danger-btn:hover,
+    #complaintRejectModal .complaint-danger-btn:hover {
+      background: #b91c1c;
+      transform: translateY(-1px);
+      box-shadow: 0 20px 42px rgba(220, 38, 38, 0.28);
+    }
+
+    #complaintDetailsModal .complaint-danger-btn:disabled,
+    #complaintRejectModal .complaint-danger-btn:disabled {
+      opacity: 0.65;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+
+    #complaintRejectModal .complaint-reject-modal-content {
+      border-radius: 24px;
+      overflow: hidden;
+      background: #ffffff;
+    }
+
+    #complaintRejectModal .complaint-reject-body {
+      padding: 22px 24px 24px;
+      display: grid;
+      gap: 16px;
+    }
+
+    #complaintRejectModal .complaint-reject-warning {
+      display: grid;
+      gap: 5px;
+      padding: 14px 16px;
+      border: 1px solid #fecaca;
+      border-radius: 16px;
+      background: #fef2f2;
+      color: #7f1d1d;
+    }
+
+    #complaintRejectModal .complaint-reject-warning strong {
+      font-size: 14px;
+      font-weight: 900;
+    }
+
+    #complaintRejectModal .complaint-reject-warning span {
+      font-size: 13px;
+      line-height: 1.45;
+      color: #991b1b;
+    }
+
+    #complaintRejectModal .complaint-reject-summary {
+      display: grid;
+      gap: 6px;
+      padding: 14px 16px;
+      border: 1px solid #e5e7eb;
+      border-radius: 16px;
+      background: #f8fafc;
+    }
+
+    #complaintRejectModal .complaint-reject-summary span,
+    #complaintRejectModal .complaint-reject-field label {
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #64748b;
+    }
+
+    #complaintRejectModal .complaint-reject-summary strong {
+      font-size: 16px;
+      color: #0f172a;
+    }
+
+    #complaintRejectModal .complaint-reject-field {
+      display: grid;
+      gap: 8px;
+    }
+
+    #complaintRejectModal #complaintRejectReason {
+      width: 100%;
+      min-height: 130px;
+      resize: vertical;
+      border: 1px solid #cbd5e1;
+      border-radius: 16px;
+      padding: 14px 15px;
+      font: inherit;
+      color: #0f172a;
+      background: #ffffff;
+      outline: none;
+      box-sizing: border-box;
+    }
+
+    #complaintRejectModal #complaintRejectReason:focus {
+      border-color: #dc2626;
+      box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.12);
+    }
+
+    #complaintRejectModal #complaintRejectReasonHint {
+      font-size: 12px;
+      color: #64748b;
+    }
+
+    #complaintRejectModal .complaint-reject-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      padding-top: 4px;
+    }
+
+    @media (max-width: 640px) {
+      #complaintDetailsModal .complaint-details-footer {
+        flex-direction: column;
+      }
+
+      #complaintDetailsModal .complaint-details-footer button,
+      #complaintRejectModal .complaint-reject-actions button {
+        width: 100%;
+      }
+
+      #complaintRejectModal .complaint-reject-actions {
+        flex-direction: column-reverse;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+function syncComplaintDetailsActionButtons(status) {
+  const normalized = String(status || "pending").trim().toLowerCase();
+
+  const rejectBtn = document.getElementById("btnRejectComplaintFromDetails");
+  const validateBtn = document.getElementById("btnValidateComplaintFromDetails");
+  const footer = document.querySelector("#complaintDetailsModal .complaint-details-footer");
+
+  /*
+    WMO review actions must appear only while complaint is still pending.
+    Once the complaint is forwarded/accepted/in-progress/resolved/rejected,
+    Validate Complaint and Reject Complaint must disappear from the details modal.
+  */
+  const canReview = normalized === "pending";
+
+  const applyReviewButtonState = (button) => {
+    if (!button) return;
+
+    button.disabled = !canReview;
+    button.setAttribute("aria-hidden", canReview ? "false" : "true");
+    button.classList.toggle("complaint-action-hidden", !canReview);
+
+    if (canReview) {
+      button.style.setProperty("display", "inline-flex", "important");
+      button.style.removeProperty("visibility");
+      button.style.removeProperty("pointer-events");
+    } else {
+      button.style.setProperty("display", "none", "important");
+      button.style.setProperty("visibility", "hidden", "important");
+      button.style.setProperty("pointer-events", "none", "important");
+    }
+  };
+
+  applyReviewButtonState(rejectBtn);
+  applyReviewButtonState(validateBtn);
+
+  if (footer) {
+    footer.classList.toggle("review-actions-disabled", !canReview);
+  }
+}
+
+function isComplaintPendingForWmoReview(complaint = currentComplaint) {
+  return String(complaint?.status || "pending").trim().toLowerCase() === "pending";
+}
+
+function openComplaintRejectModal() {
+  if (!currentComplaint || !currentComplaint.id) {
+    alert("No complaint selected.");
+    return;
+  }
+
+  ensureComplaintRejectRuntimeStyles();
+
+  const subjectEl = document.getElementById("complaintRejectSubject");
+  const reasonEl = document.getElementById("complaintRejectReason");
+  const hintEl = document.getElementById("complaintRejectReasonHint");
+  const confirmBtn = document.getElementById("confirmComplaintRejectBtn");
+
+  if (subjectEl) {
+    subjectEl.textContent = currentComplaint.subject || "Selected complaint";
+  }
+
+  if (reasonEl) {
+    reasonEl.value = "";
+  }
+
+  if (hintEl) {
+    hintEl.textContent = "Minimum 10 characters. Be specific so the record is clear.";
+    hintEl.style.color = "#64748b";
+  }
+
+  if (confirmBtn) {
+    confirmBtn.disabled = false;
+    confirmBtn.textContent = "Confirm Reject";
+  }
+
+  openComplaintModalWithPosition("complaintRejectModal");
+
+  setTimeout(() => {
+    reasonEl?.focus();
+  }, 180);
+}
+
+function closeComplaintRejectModal() {
+  resetComplaintModalDisplay("complaintRejectModal");
+
+  const reasonEl = document.getElementById("complaintRejectReason");
+  if (reasonEl) reasonEl.value = "";
+}
+
+async function submitComplaintRejection() {
+  if (!currentComplaint || !currentComplaint.id) {
+    alert("No complaint selected.");
+    return;
+  }
+
+  const reasonEl = document.getElementById("complaintRejectReason");
+  const hintEl = document.getElementById("complaintRejectReasonHint");
+  const confirmBtn = document.getElementById("confirmComplaintRejectBtn");
+
+  const reason = String(reasonEl?.value || "").trim();
+
+  if (reason.length < 10) {
+    if (hintEl) {
+      hintEl.textContent = "Please enter a clear rejection reason with at least 10 characters.";
+      hintEl.style.color = "#dc2626";
+    }
+
+    reasonEl?.focus();
+    return;
+  }
+
+  const confirmed = confirm("Reject this complaint? This action will mark the complaint as rejected.");
+  if (!confirmed) return;
+
+  try {
+    if (confirmBtn) {
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = "Rejecting...";
+    }
+
+    const response = await fetch(
+      `${getComplaintsApiUrl()}/${currentComplaint.id}/reject`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
+        body: JSON.stringify({
+          rejection_reason: reason,
+          rejected_by: currentUser?.id || null
+        })
+      }
+    );
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok || data.success === false) {
+      throw new Error(data.message || "Failed to reject complaint.");
+    }
+
+    alert(data.message || "Complaint rejected successfully.");
+
+    resetComplaintModalDisplay("complaintRejectModal");
+    resetComplaintModalDisplay("complaintMapModal");
+    resetComplaintModalDisplay("complaintDetailsModal");
+
+    selectedBarangayCandidate = null;
+    currentComplaint = null;
+
+    await loadComplaints();
+
+    if (typeof loadComplaintHistory === "function") {
+      try {
+        await loadComplaintHistory();
+      } catch (historyError) {
+        console.warn("Complaint history refresh skipped:", historyError);
+      }
+    }
+  } catch (error) {
+    console.error("submitComplaintRejection error:", error);
+    alert(error.message || "Failed to reject complaint.");
+  } finally {
+    if (confirmBtn) {
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = "Confirm Reject";
+    }
+  }
+}
+
+
+async function requestComplaintReviewFromDetails() {
+  if (!currentComplaint) {
+    alert("No complaint selected.");
+    return;
+  }
+
+  await openComplaintMapModal();
+}
+
+async function validateComplaintFromDetails() {
+  if (!currentComplaint || !currentComplaint.id) {
+    alert("No complaint selected.");
+    return;
+  }
+
+  if (!isComplaintPendingForWmoReview(currentComplaint)) {
+    syncComplaintDetailsActionButtons(currentComplaint.status);
+    alert("This complaint is already forwarded or processed. Validation is no longer available.");
+    return;
+  }
+
+  if (!Array.isArray(forwardingBarangayTargets) || !forwardingBarangayTargets.length) {
+    const proceedToMap = confirm(
+      "No nearby barangay targets are loaded yet. Open the map to verify barangay options?"
+    );
+
+    if (proceedToMap) {
+      await openComplaintMapModal();
+    }
+
+    return;
+  }
+
+  await validateAndForwardComplaint();
+}
+
+
+
+
+function ensureComplaintDetailsProblemBarangayStyles() {
+  if (document.getElementById("complaintProblemBarangayRuntimeStyles")) return;
+
+  const style = document.createElement("style");
+  style.id = "complaintProblemBarangayRuntimeStyles";
+  style.textContent = `
+    #complaintDetailsModal .complaint-pro-submitted-grid {
+      align-items: stretch !important;
+      gap: 12px !important;
+    }
+
+    #complaintDetailsModal .complaint-pro-submitted-grid .complaint-pro-field {
+      min-height: 64px !important;
+      padding: 12px 14px !important;
+      border: 1px solid #e5e7eb !important;
+      border-radius: 14px !important;
+      background: #ffffff !important;
+    }
+
+    #complaintDetailsModal .complaint-forward-options-field {
+      align-items: flex-start !important;
+    }
+
+    #complaintDetailsModal .complaint-nearby-options {
+      width: 100% !important;
+      display: grid !important;
+      grid-template-columns: 1fr 1fr !important;
+      gap: 8px !important;
+      margin-top: 7px !important;
+    }
+
+    #complaintDetailsModal .complaint-nearby-option {
+      width: 100% !important;
+      min-height: 62px !important;
+      padding: 9px 10px !important;
+
+      border: 1px solid #d9e8dd !important;
+      border-radius: 13px !important;
+
+      background: #f8fbf8 !important;
+      color: #123826 !important;
+
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: flex-start !important;
+      justify-content: flex-start !important;
+      gap: 2px !important;
+
+      cursor: pointer !important;
+      text-align: left !important;
+      font-family: inherit !important;
+
+      transition:
+        border-color 0.18s ease,
+        background 0.18s ease,
+        transform 0.18s ease,
+        box-shadow 0.18s ease !important;
+    }
+
+    #complaintDetailsModal .complaint-nearby-option:hover {
+      transform: translateY(-1px) !important;
+      background: #f0faf2 !important;
+      border-color: #8bd69b !important;
+      box-shadow: 0 10px 22px rgba(22, 101, 52, 0.10) !important;
+    }
+
+    #complaintDetailsModal .complaint-nearby-option.selected {
+      background: #e9f9ee !important;
+      border-color: #22c55e !important;
+      box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.14) !important;
+    }
+
+    #complaintDetailsModal .complaint-nearby-rank {
+      color: #15803d !important;
+      font-size: 9.5px !important;
+      font-weight: 900 !important;
+      letter-spacing: 0.08em !important;
+      text-transform: uppercase !important;
+    }
+
+    #complaintDetailsModal .complaint-nearby-option strong {
+      color: #0f2d1f !important;
+      font-size: 12.5px !important;
+      font-weight: 900 !important;
+      line-height: 1.2 !important;
+    }
+
+    #complaintDetailsModal .complaint-nearby-option small {
+      color: #64748b !important;
+      font-size: 10.5px !important;
+      font-weight: 700 !important;
+      line-height: 1.25 !important;
+    }
+
+    #complaintDetailsModal .complaint-nearby-status {
+      grid-column: 1 / -1 !important;
+      min-height: 46px !important;
+      padding: 10px 12px !important;
+      border-radius: 13px !important;
+      border: 1px dashed #bdd7c5 !important;
+      background: #f8fafc !important;
+      color: #64748b !important;
+      font-size: 12px !important;
+      font-weight: 750 !important;
+      display: flex !important;
+      align-items: center !important;
+    }
+
+    #complaintDetailsModal .complaint-nearby-status.send-note {
+      background: #f0fdf4 !important;
+      border-style: solid !important;
+      border-color: #bbf7d0 !important;
+      color: #166534 !important;
+      font-size: 11px !important;
+      line-height: 1.35 !important;
+    }
+
+    #complaintDetailsModal .complaint-nearby-option.send-target {
+      cursor: default !important;
+    }
+
+    #complaintDetailsModal .complaint-nearby-option.send-target:hover {
+      transform: none !important;
+    }
+
+    /* Compact one-line forwarding barangay display */
+    #complaintDetailsModal .complaint-forwarding-inline {
+      overflow: hidden !important;
+      white-space: nowrap !important;
+    }
+
+    #complaintDetailsModal .complaint-forwarding-chip,
+    #complaintDetailsModal .complaint-forwarding-separator {
+      flex: 0 0 auto !important;
+      white-space: nowrap !important;
+    }
+
+    /* FINAL tight-fit forwarding barangay display */
+    #complaintDetailsModal .complaint-forwarding-inline {
+      width: 100% !important;
+      min-width: 0 !important;
+      max-width: 100% !important;
+      min-height: 34px !important;
+      padding: 5px 6px !important;
+      gap: 3px !important;
+      justify-content: flex-start !important;
+      flex-wrap: nowrap !important;
+      overflow: visible !important;
+      white-space: nowrap !important;
+      box-sizing: border-box !important;
+    }
+
+    #complaintDetailsModal .complaint-forwarding-chip,
+    #complaintDetailsModal .complaint-forwarding-separator {
+      flex: 0 1 auto !important;
+      min-width: 0 !important;
+      max-width: none !important;
+      white-space: nowrap !important;
+      overflow: visible !important;
+      text-overflow: clip !important;
+      font-size: 11.25px !important;
+      line-height: 1.15 !important;
+      letter-spacing: -0.02em !important;
+    }
+
+    #complaintDetailsModal .complaint-forwarding-separator {
+      padding: 0 1px !important;
+    }
+
+    /* FINAL assigned barangay ampersand display */
+    #complaintDetailsModal .complaint-forwarding-chip {
+      font-weight: 950 !important;
+      color: #0f2d1f !important;
+    }
+
+    #complaintDetailsModal .complaint-forwarding-separator {
+      color: #64748b !important;
+      font-weight: 900 !important;
+      padding: 0 2px !important;
+    }
+
+    @media (max-width: 900px) {
+      #complaintDetailsModal .complaint-nearby-options {
+        grid-template-columns: 1fr !important;
+      }
+    }
+
+    @media (max-width: 680px) {
+      #complaintDetailsModal .complaint-pro-submitted-grid {
+        grid-template-columns: 1fr !important;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+function ensureComplaintProblemBarangayField() {
+  const createdAtEl = document.getElementById("complaintModalCreatedAt");
+  if (!createdAtEl) return;
+
+  const submittedCard = createdAtEl.closest(".submitted-card");
+  if (!submittedCard) return;
+
+  if (document.getElementById("complaintModalNearbyOptions")) return;
+
+  /*
+    Pending complaint rule:
+    Concern Barangay is only the citizen-reported/selected area.
+    WMO should choose the forwarding/assigned barangay from nearby options.
+  */
+  submittedCard.innerHTML = `
+    <div class="complaint-pro-two-grid complaint-pro-submitted-grid">
+      <div class="complaint-pro-field with-icon">
+        <span class="complaint-mini-icon purple">🗓</span>
+        <div>
+          <label>Submitted At</label>
+          <div id="complaintModalCreatedAt" class="complaint-field-value">-</div>
+        </div>
+      </div>
+
+      <div class="complaint-pro-field with-icon complaint-forward-options-field">
+        <span class="complaint-mini-icon">📍</span>
+        <div style="width:100%;">
+          <label>Assigned Barangay</label>
+          <div id="complaintModalNearbyOptions" class="complaint-nearby-options">
+            <div class="complaint-nearby-status">Loading nearby options...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function getComplaintProblemBarangayLabel(data = {}) {
+  return (
+    data.problem_barangay ||
+    data.detected_barangay ||
+    data.issue_barangay ||
+    data.assigned_barangay ||
+    "For Verification"
+  );
+}
+
+
+function openComplaintModal(data) {
+  mountComplaintModalsToBody();
+  ensureComplaintRejectRuntimeStyles();
+
+  currentComplaint = data;
+  selectedBarangayCandidate = null;
+
+  ensureComplaintDetailsProblemBarangayStyles();
+  ensureComplaintProblemBarangayField();
+
+  const setText = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
+  };
+
+  setText("complaintModalSubject", data.subject || "-");
+  setText("complaintModalDescription", data.description || "-");
+  setText("complaintModalCitizenName", data.citizen_name || "-");
+  setText("complaintModalUsername", data.username || "-");
+  setText("complaintModalBarangay", getComplaintConcernBarangayLabel(data));
+  updateComplaintModalBarangayLabel(data);
+  setComplaintDetailsNearbyLoading();
+  loadComplaintDetailsNearbyOptions(data);
+  setComplaintDetailsStatusUI(data.status || "pending");
+  syncComplaintDetailsActionButtons(data.status || "pending");
+  setText("complaintModalCreatedAt", formatModalDateTime(data.created_at));
+
+  const lat = data.latitude ?? "-";
+  const lng = data.longitude ?? "-";
+  setText("complaintModalCoordinates", `${lat}, ${lng}`);
+
+  updateManualBarangayVisibility(data);
+
+  const imageEl = document.getElementById("complaintModalImage");
+  const skeletonEl = document.getElementById("complaintImageSkeleton");
+  const noImageText = document.getElementById("noImageText");
+
+  if (imageEl) {
+    const rawPath = data.image_url || data.evidence_url || data.photo_url;
+    const imageUrl = getImageUrl(rawPath);
+
+    imageEl.onload = null;
+    imageEl.onerror = null;
+    imageEl.onclick = null;
+
+    imageEl.style.display = "none";
+    imageEl.removeAttribute("src");
+
+    if (skeletonEl) skeletonEl.style.display = "block";
+    if (noImageText) noImageText.style.display = "none";
+
+    imageEl.onload = () => {
+      if (skeletonEl) skeletonEl.style.display = "none";
+      if (noImageText) noImageText.style.display = "none";
+      imageEl.style.display = "block";
+      enableImagePreview(imageEl);
+    };
+
+    imageEl.onerror = () => {
+      if (skeletonEl) skeletonEl.style.display = "none";
+      imageEl.style.display = "none";
+      if (noImageText) noImageText.style.display = "flex";
+    };
+
+    if (imageUrl) {
+      imageEl.src = `${imageUrl}?t=${Date.now()}`;
+    } else {
+      if (skeletonEl) skeletonEl.style.display = "none";
+      if (noImageText) noImageText.style.display = "flex";
+    }
+  }
+
+  openComplaintModalWithPosition("complaintDetailsModal");
+  renderComplaintDetailsMapPreview(data, forwardingBarangayTargets || []);
+
+  /*
+    Re-apply after modal render/layout because some modal CSS uses strong
+    display rules. This keeps review actions hidden for forwarded records.
+  */
+  setTimeout(() => {
+    syncComplaintDetailsActionButtons(data.status || "pending");
+  }, 0);
+}
+
+function closeComplaintModal() {
+  resetComplaintModalDisplay("complaintDetailsModal");
+}
+
+function closeComplaintMapModal() {
+  resetComplaintModalDisplay("complaintMapModal");
+}
+
+
+function ensureComplaintFullMapOnlyStyles() {
+  if (document.getElementById("complaintFullMapOnlyRuntimeStyles")) return;
+
+  const style = document.createElement("style");
+  style.id = "complaintFullMapOnlyRuntimeStyles";
+  style.textContent = `
+    #complaintMapModal .complaint-map-summary,
+    #complaintMapModal .complaint-side-panel {
+      display: none !important;
+    }
+
+    #complaintMapModal .complaint-map-modal-body {
+      padding: 18px 20px 22px !important;
+      overflow: hidden !important;
+    }
+
+    #complaintMapModal .complaint-map-layout {
+      display: block !important;
+      width: 100% !important;
+      height: min(68vh, 680px) !important;
+      min-height: 520px !important;
+      margin: 0 !important;
+    }
+
+    #complaintMapModal .complaint-map-panel {
+      width: 100% !important;
+      height: 100% !important;
+      min-height: 520px !important;
+      border-radius: 18px !important;
+      overflow: hidden !important;
+      border: 1px solid #d8e5dc !important;
+      box-shadow: 0 18px 38px rgba(15, 23, 42, 0.12) !important;
+    }
+
+    #complaintMapModal #complaintLeafletMap,
+    #complaintMapModal .complaint-leaflet-map {
+      width: 100% !important;
+      height: 100% !important;
+      min-height: 520px !important;
+      border-radius: 18px !important;
+    }
+
+    #complaintMapModal .leaflet-routing-container {
+      display: none !important;
+    }
+
+    #complaintMapModal .complaint-full-map-legend {
+      position: absolute !important;
+      left: 18px !important;
+      bottom: 18px !important;
+      z-index: 650 !important;
+
+      padding: 9px 12px !important;
+      border-radius: 14px !important;
+
+      background: rgba(255, 255, 255, 0.94) !important;
+      border: 1px solid rgba(22, 101, 52, 0.14) !important;
+      box-shadow: 0 14px 30px rgba(15, 23, 42, 0.16) !important;
+
+      color: #163d2d !important;
+      font-size: 12px !important;
+      font-weight: 850 !important;
+
+      display: flex !important;
+      align-items: center !important;
+      gap: 10px !important;
+      flex-wrap: wrap !important;
+      pointer-events: none !important;
+    }
+
+    #complaintMapModal .complaint-full-map-legend span {
+      display: inline-flex !important;
+      align-items: center !important;
+      gap: 5px !important;
+      white-space: nowrap !important;
+    }
+
+    #complaintMapModal .complaint-full-map-dot {
+      width: 10px !important;
+      height: 10px !important;
+      border-radius: 999px !important;
+      display: inline-block !important;
+      background: #ef4444 !important;
+    }
+
+    #complaintMapModal .complaint-full-map-dot.blue {
+      background: #2563eb !important;
+    }
+
+    @media (max-width: 900px) {
+      #complaintMapModal .complaint-map-modal-body {
+        padding: 12px !important;
+      }
+
+      #complaintMapModal .complaint-map-layout,
+      #complaintMapModal .complaint-map-panel,
+      #complaintMapModal #complaintLeafletMap,
+      #complaintMapModal .complaint-leaflet-map {
+        height: 70vh !important;
+        min-height: 430px !important;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+function ensureComplaintFullMapLegend() {
+  const mapEl = document.getElementById("complaintLeafletMap");
+  if (!mapEl) return;
+
+  const mapPanel = mapEl.closest(".complaint-map-panel") || mapEl.parentElement;
+  if (!mapPanel) return;
+
+  if (getComputedStyle(mapPanel).position === "static") {
+    mapPanel.style.position = "relative";
+  }
+
+  let legend = document.getElementById("complaintFullMapLegend");
+
+  if (!legend) {
+    legend = document.createElement("div");
+    legend.id = "complaintFullMapLegend";
+    legend.className = "complaint-full-map-legend";
+    legend.innerHTML = `
+      <span><i class="complaint-full-map-dot"></i> Issue location</span>
+      <span><i class="complaint-full-map-dot blue"></i> Forwarding barangays</span>
+    `;
+
+    mapPanel.appendChild(legend);
+  }
+}
+
+function clearComplaintFullMapRoutes() {
+  if (Array.isArray(window.complaintFullMapRouteControls)) {
+    window.complaintFullMapRouteControls.forEach((control) => {
+      try {
+        if (complaintMapInstance && control) {
+          complaintMapInstance.removeControl(control);
+        }
+      } catch (error) {
+        console.warn("Failed removing full map route control:", error);
+      }
+    });
+  }
+
+  window.complaintFullMapRouteControls = [];
+
+  if (Array.isArray(window.complaintFullMapRouteLines)) {
+    window.complaintFullMapRouteLines.forEach((line) => {
+      try {
+        if (complaintMapInstance && line) {
+          complaintMapInstance.removeLayer(line);
+        }
+      } catch (error) {
+        console.warn("Failed removing full map route line:", error);
+      }
+    });
+  }
+
+  window.complaintFullMapRouteLines = [];
+}
+
+function getComplaintForwardingTargets(candidates = []) {
+  return getTopUniqueBarangayCandidates(candidates, 2);
+}
+
+function drawComplaintRouteLineToCandidate(issueLat, issueLng, candidate, index = 0) {
+  if (!complaintMapInstance || !window.L || !candidate) return;
+
+  const destLat = parseFloat(candidate.latitude);
+  const destLng = parseFloat(candidate.longitude);
+
+  if (
+    Number.isNaN(issueLat) ||
+    Number.isNaN(issueLng) ||
+    Number.isNaN(destLat) ||
+    Number.isNaN(destLng)
+  ) {
+    return;
+  }
+
+  const routeColor = index === 0 ? "#2563eb" : "#16a34a";
+
+  if (window.L.Routing) {
+    const routeControl = L.Routing.control({
+      waypoints: [
+        L.latLng(issueLat, issueLng),
+        L.latLng(destLat, destLng)
+      ],
+      router: L.Routing.osrmv1({
+        serviceUrl: "https://router.project-osrm.org/route/v1"
+      }),
+      routeWhileDragging: false,
+      addWaypoints: false,
+      draggableWaypoints: false,
+      fitSelectedRoutes: false,
+      showAlternatives: false,
+      show: false,
+      createMarker: function () {
+        return null;
+      },
+      lineOptions: {
+        addWaypoints: false,
+        extendToWaypoints: true,
+        missingRouteTolerance: 0,
+        styles: [
+          {
+            color: routeColor,
+            opacity: 0.88,
+            weight: 5
+          }
+        ]
+      }
+    }).addTo(complaintMapInstance);
+
+    routeControl.on("routingerror", () => {
+      const fallbackLine = L.polyline(
+        [
+          [issueLat, issueLng],
+          [destLat, destLng]
+        ],
+        {
+          color: routeColor,
+          weight: 4,
+          opacity: 0.75,
+          dashArray: "8 8"
+        }
+      ).addTo(complaintMapInstance);
+
+      window.complaintFullMapRouteLines.push(fallbackLine);
+    });
+
+    window.complaintFullMapRouteControls.push(routeControl);
+    return;
+  }
+
+  const fallbackLine = L.polyline(
+    [
+      [issueLat, issueLng],
+      [destLat, destLng]
+    ],
+    {
+      color: routeColor,
+      weight: 4,
+      opacity: 0.75,
+      dashArray: "8 8"
+    }
+  ).addTo(complaintMapInstance);
+
+  window.complaintFullMapRouteLines.push(fallbackLine);
+}
+
+function renderComplaintFullMapRoutes(issueLat, issueLng, candidates = []) {
+  clearComplaintFullMapRoutes();
+
+  const targets = getComplaintForwardingTargets(candidates);
+
+  targets.forEach((candidate, index) => {
+    drawComplaintRouteLineToCandidate(issueLat, issueLng, candidate, index);
+  });
+}
+
+
+// =========================
+// COMPLAINT MAP MODAL
+// =========================
+
+async function openComplaintMapModal() {
+  mountComplaintModalsToBody();
+  ensureComplaintFullMapOnlyStyles();
+
+  if (!currentComplaint) {
+    alert("No complaint selected.");
+    return;
+  }
+
+  const lat = parseFloat(currentComplaint.latitude);
+  const lng = parseFloat(currentComplaint.longitude);
+
+  if (Number.isNaN(lat) || Number.isNaN(lng)) {
+    alert("Invalid complaint coordinates.");
+    return;
+  }
+
+  /*
+    Full map modal rule:
+    - no top subject/barangay/coordinates summary
+    - no side chosen barangay/candidate panel
+    - map only
+    - two route lines going to the two forwarding/assigned barangay targets
+  */
+  openComplaintModalWithPosition("complaintMapModal");
+
+  setTimeout(async () => {
+    try {
+      if (!window.L) {
+        throw new Error("Leaflet map library is not loaded.");
+      }
+
+      if (!complaintMapInstance) {
+        complaintMapInstance = L.map("complaintLeafletMap", {
+          zoomControl: true,
+          attributionControl: true
+        }).setView([lat, lng], 15);
+
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          attribution: "&copy; OpenStreetMap contributors"
+        }).addTo(complaintMapInstance);
+      } else {
+        complaintMapInstance.invalidateSize();
+        complaintMapInstance.setView([lat, lng], 15);
+      }
+
+      ensureComplaintFullMapLegend();
+      clearComplaintMapLayers();
+      clearComplaintFullMapRoutes();
+
+      complaintMapMarker = L.marker([lat, lng], { icon: issueRedIcon })
+        .addTo(complaintMapInstance);
+
+      complaintMapMarker.bindPopup(`
+        <div>
+          <strong>${escapeHtml(currentComplaint.subject || "Complaint Issue")}</strong><br>
+          Issue location<br>
+          ${escapeHtml(String(lat))}, ${escapeHtml(String(lng))}
+        </div>
+      `).openPopup();
+
+      const candidates = await loadNearbyBarangaysForComplaint(lat, lng);
+      const forwardingTargets = getComplaintForwardingTargets(candidates);
+
+      complaintNearbyMarkers = forwardingTargets.map((candidate) => {
+        const markerLat = parseFloat(candidate.latitude);
+        const markerLng = parseFloat(candidate.longitude);
+
+        if (Number.isNaN(markerLat) || Number.isNaN(markerLng)) {
+          return null;
+        }
+
+        const distanceText = formatDistanceText(candidate.distance_meters);
+
+        const marker = L.marker(
+          [markerLat, markerLng],
+          { icon: barangayBlueIcon }
+        ).addTo(complaintMapInstance);
+
+        marker.bindPopup(`
+          <div>
+            <strong>${escapeHtml(candidate.barangay_name || "-")}</strong><br>
+            ${escapeHtml(candidate.reference_name || "-")}<br>
+            ${escapeHtml(distanceText)}
+          </div>
+        `);
+
+        return marker;
+      }).filter(Boolean);
+
+      renderComplaintFullMapRoutes(lat, lng, forwardingTargets);
+
+      const boundsPoints = [
+        [lat, lng],
+        ...forwardingTargets
+          .map((candidate) => [
+            parseFloat(candidate.latitude),
+            parseFloat(candidate.longitude)
+          ])
+          .filter(([cLat, cLng]) => !Number.isNaN(cLat) && !Number.isNaN(cLng))
+      ];
+
+      if (boundsPoints.length > 1) {
+        const bounds = L.latLngBounds(boundsPoints);
+        complaintMapInstance.fitBounds(bounds, { padding: [70, 70], maxZoom: 16 });
+      } else {
+        complaintMapInstance.setView([lat, lng], 16);
+      }
+
+      setTimeout(() => {
+        if (complaintMapInstance) complaintMapInstance.invalidateSize();
+      }, 180);
+    } catch (error) {
+      console.error("Error opening complaint full map modal:", error);
+      alert(error.message || "Failed to load full map.");
+    }
+  }, 180);
+}
+
+async function loadNearbyBarangaysForComplaint(lat, lng) {
+  try {
+    const response = await fetch(
+      `${getComplaintsApiUrl()}/nearby-barangays?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lng)}`,
+      {
+        headers: {
+          "Accept": "application/json"
+        }
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || "Failed to load nearby barangays.");
+    }
+
+    const rawCandidates = Array.isArray(data.candidates) ? data.candidates : [];
+
+    const normalizedCandidates = rawCandidates.map((candidate) => {
+      const refLat = parseFloat(candidate.latitude);
+      const refLng = parseFloat(candidate.longitude);
+
+      let distanceMeters = Number(candidate.distance_meters) || 0;
+
+      if (
+        distanceMeters <= 0 &&
+        !Number.isNaN(refLat) &&
+        !Number.isNaN(refLng)
+      ) {
+        distanceMeters = calculateDistanceMetersLocal(lat, lng, refLat, refLng);
+      }
+
+      return {
+        ...candidate,
+        distance_meters: distanceMeters
+      };
+    });
+
+    normalizedCandidates.sort((a, b) => a.distance_meters - b.distance_meters);
+
+    return normalizedCandidates;
+  } catch (error) {
+    console.error("Nearby barangay error:", error);
+    return [];
+  }
+}
+
+// =========================
+// COMPLAINT VALIDATION
+// =========================
+
+async function validateComplaint() {
+  if (!currentComplaint) return;
+
+  if (!confirm("Validate and forward this complaint?")) return;
+
+  try {
+    const res = await fetch(
+      `${getComplaintsApiUrl()}/${currentComplaint.id}/validate`,
+      {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          validated_by: currentUser?.id || null
+        })
+      }
+    );
+
+    const data = await res.json();
+
+    if (!res.ok || !data.success) {
+      throw new Error(data.message || "Failed to validate complaint.");
+    }
+
+    alert("Complaint forwarded successfully.");
+    resetComplaintModalDisplay("complaintDetailsModal");
+    await loadComplaints();
+  } catch (err) {
+    console.error("validateComplaint error:", err);
+    alert(err.message || "Error validating complaint.");
+  }
+}
+
+async function validateAndForwardComplaint() {
+  if (!currentComplaint || !currentComplaint.id) {
+    alert("No complaint selected.");
+    return;
+  }
+
+  if (!isComplaintPendingForWmoReview(currentComplaint)) {
+    syncComplaintDetailsActionButtons(currentComplaint.status);
+    alert("This complaint is already forwarded or processed. Validation is no longer available.");
+    return;
+  }
+
+  const targets = (Array.isArray(forwardingBarangayTargets) ? forwardingBarangayTargets : [])
+    .map((candidate) => String(candidate?.barangay_name || "").trim())
+    .filter(Boolean)
+    .filter((value, index, array) =>
+      array.findIndex(item => item.toLowerCase() === value.toLowerCase()) === index
+    )
+    .slice(0, 2);
+
+  if (!targets.length) {
+    alert("No forwarding barangay targets found. Please open the map or refresh nearby options.");
+    return;
+  }
+
+  const confirmMessage =
+    targets.length > 1
+      ? `Forward this complaint to ${targets[0]} and ${targets[1]}?\n\nThe first barangay that accepts will become the assigned barangay.`
+      : `Forward this complaint to ${targets[0]}?`;
+
+  if (!confirm(confirmMessage)) return;
+
+  try {
+    const response = await fetch(
+      `${getComplaintsApiUrl()}/${currentComplaint.id}/validate-forward`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
+        body: JSON.stringify({
+          target_barangays: targets,
+          forwarding_barangays: targets,
+          validated_by: currentUser?.id || null
+        })
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || "Failed to validate complaint.");
+    }
+
+    alert(data.message || "Complaint forwarded to nearby barangays.");
+
+    resetComplaintModalDisplay("complaintMapModal");
+    resetComplaintModalDisplay("complaintDetailsModal");
+
+    selectedBarangayCandidate = null;
+    forwardingBarangayTargets = [];
+
+    await loadComplaints();
+  } catch (error) {
+    console.error("Validate complaint error:", error);
+    alert(error.message || "Failed to validate complaint.");
+  }
+}
+
+// =========================
+// COMPLAINT HISTORY
+// =========================
+
+let complaintHistorySearchQuery = "";
+let complaintHistoryBarangayFilter = "all";
+
+function formatComplaintHistoryStatus(status) {
+  const normalized = String(status || "").toLowerCase().trim();
+
+  if (normalized === "forwarded") return "Forwarded";
+  if (normalized === "accepted_by_barangay") return "Accepted";
+  if (normalized === "accepted_overdue") return "Overdue";
+  if (normalized === "in_progress") return "In Progress";
+  if (normalized === "resolved") return "Resolved";
+  if (normalized === "rejected") return "Rejected";
+
+  return status || "-";
+}
+
+function getComplaintHistoryStatusClass(status) {
+  const normalized = String(status || "").toLowerCase().trim();
+
+  if (normalized === "resolved") return "resolved";
+  if (normalized === "rejected") return "rejected";
+  if (normalized === "forwarded") return "forwarded";
+  if (normalized === "accepted_by_barangay") return "accepted";
+  if (normalized === "accepted_overdue") return "accepted-overdue";
+  if (normalized === "in_progress") return "in-progress";
+
+  return "unknown";
+}
+
+function ensureComplaintHistoryStatusStyles() {
+  // Styles are handled in css/admin/admin-complaints.css.
+  return;
+}
+
+function ensureComplaintHistoryModalScrollStyles() {
+  // Styles are handled in css/admin/admin-complaints.css.
+  return;
+}
+
+function prepareComplaintHistoryTableScroll() {
+  ensureComplaintHistoryModalScrollStyles();
+
+  const modal = document.getElementById("complaintHistoryModal");
+  const tbody = document.getElementById("complaintHistoryTableBody");
+  if (!modal || !tbody) return;
+
+  const table = tbody.closest("table");
+  if (!table) return;
+
+  table.classList.add("complaint-history-table");
+
+  let scrollWrapper = table.closest(".complaint-history-table-scroll");
+
+  if (!scrollWrapper) {
+    scrollWrapper = document.createElement("div");
+    scrollWrapper.className = "complaint-history-table-scroll";
+
+    const parent = table.parentNode;
+    if (parent) {
+      parent.insertBefore(scrollWrapper, table);
+      scrollWrapper.appendChild(table);
+    }
+  }
+
+  const body =
+    modal.querySelector(".custom-modal-body") ||
+    modal.querySelector(".history-modal-body") ||
+    modal.querySelector(".modal-body") ||
+    scrollWrapper.parentElement;
+
+  const content =
+    modal.querySelector(".custom-modal-content") ||
+    modal.querySelector(".history-modal-content");
+
+  if (content) {
+    content.style.setProperty("overflow", "hidden", "important");
+    content.style.setProperty("max-height", "calc(100dvh - 48px)", "important");
+  }
+
+  if (body) {
+    body.style.setProperty("overflow", "hidden", "important");
+    body.style.setProperty("max-width", "100%", "important");
+  }
+
+  scrollWrapper.style.setProperty("overflow-x", "auto", "important");
+  scrollWrapper.style.setProperty("overflow-y", "auto", "important");
+  scrollWrapper.style.setProperty("max-width", "100%", "important");
+
+  let hint = modal.querySelector(".complaint-history-scroll-hint");
+  if (!hint) {
+    hint = document.createElement("div");
+    hint.className = "complaint-history-scroll-hint";
+    hint.textContent = "Swipe or scroll sideways to view all columns.";
+    scrollWrapper.parentNode?.insertBefore(hint, scrollWrapper);
+  }
+}
+
+
+function normalizeComplaintHistoryFilterValue(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+
+function splitComplaintForwardedBarangays(value) {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => String(item || "").trim())
+      .filter(Boolean);
+  }
+
+  return String(value || "")
+    .split(/\s*&\s*|\s*,\s*|\s*\|\s*/g)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function getComplaintHistoryForwardedBarangays(item = {}) {
+  const values = [
+    item.forwarded_to_barangays,
+    item.forwarded_barangays,
+    item.forwarding_barangays,
+    item.forwarded_to,
+    item.target_barangays
+  ];
+
+  for (const value of values) {
+    const barangays = splitComplaintForwardedBarangays(value);
+
+    if (barangays.length) {
+      return barangays;
+    }
+  }
+
+  return [];
+}
+
+function getComplaintHistoryForwardedText(item = {}) {
+  const barangays = getComplaintHistoryForwardedBarangays(item);
+
+  if (!barangays.length) {
+    return "Not Forwarded";
+  }
+
+  return barangays.join(" & ");
+}
+
+function ensureComplaintHistoryForwardedColumnHeader() {
+  const tbody = document.getElementById("complaintHistoryTableBody");
+  if (!tbody) return;
+
+  const table = tbody.closest("table");
+  const headerRow = table?.querySelector("thead tr");
+
+  if (!headerRow) return;
+
+  const headers = Array.from(headerRow.children);
+  const hasForwardedHeader = headers.some((th) =>
+    String(th.textContent || "").trim().toLowerCase() === "forwarded barangays"
+  );
+
+  if (hasForwardedHeader) return;
+
+  const assignedHeaderIndex = headers.findIndex((th) =>
+    String(th.textContent || "").trim().toLowerCase() === "assigned barangay"
+  );
+
+  const forwardedHeader = document.createElement("th");
+  forwardedHeader.className = "complaint-history-forwarded-column";
+  forwardedHeader.textContent = "Forwarded Barangays";
+
+  if (assignedHeaderIndex >= 0 && headers[assignedHeaderIndex]) {
+    headers[assignedHeaderIndex].insertAdjacentElement("afterend", forwardedHeader);
+  } else if (headers[2]) {
+    headers[2].insertAdjacentElement("afterend", forwardedHeader);
+  } else {
+    headerRow.appendChild(forwardedHeader);
+  }
+}
+
+function renderComplaintHistoryForwardedBarangays(item = {}) {
+  const barangays = getComplaintHistoryForwardedBarangays(item);
+
+  if (!barangays.length) {
+    return `<span class="complaint-history-forwarded-empty">Not Forwarded</span>`;
+  }
+
+  return `
+    <span class="complaint-history-forwarded-list">
+      ${barangays.map((barangay) => `
+        <strong>${escapeHtml(barangay)}</strong>
+      `).join(`<span class="complaint-history-forwarded-separator">&amp;</span>`)}
+    </span>
+  `;
+}
+
+function ensureComplaintHistoryForwardedColumnStyles() {
+  if (document.getElementById("complaintHistoryForwardedColumnRuntimeStyles")) return;
+
+  const style = document.createElement("style");
+  style.id = "complaintHistoryForwardedColumnRuntimeStyles";
+  style.textContent = `
+    #complaintHistoryModal .complaint-history-table th,
+    #complaintHistoryModal .complaint-history-table td {
+      vertical-align: middle !important;
+    }
+
+    #complaintHistoryModal .complaint-history-forwarded-list {
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: flex-start !important;
+      gap: 5px !important;
+      flex-wrap: nowrap !important;
+      white-space: nowrap !important;
+      max-width: 100% !important;
+    }
+
+    #complaintHistoryModal .complaint-history-forwarded-list strong {
+      color: #102a1d !important;
+      font-size: 12.5px !important;
+      font-weight: 950 !important;
+      line-height: 1.2 !important;
+      white-space: nowrap !important;
+    }
+
+    #complaintHistoryModal .complaint-history-forwarded-separator {
+      color: #64748b !important;
+      font-size: 12px !important;
+      font-weight: 900 !important;
+      line-height: 1.2 !important;
+    }
+
+    #complaintHistoryModal .complaint-history-assigned-waiting {
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      min-height: 28px !important;
+      padding: 5px 10px !important;
+      border-radius: 999px !important;
+      background: #f8fafc !important;
+      border: 1px solid #dbe3ea !important;
+      color: #64748b !important;
+      font-size: 11.5px !important;
+      font-weight: 850 !important;
+      white-space: nowrap !important;
+    }
+
+    #complaintHistoryModal .complaint-history-assigned-final {
+      color: #102a1d !important;
+      font-size: 12.5px !important;
+      font-weight: 950 !important;
+      line-height: 1.2 !important;
+      white-space: nowrap !important;
+    }
+
+    #complaintHistoryModal .complaint-history-forwarded-empty {
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      min-height: 28px !important;
+      padding: 5px 10px !important;
+      border-radius: 999px !important;
+      background: #f8fafc !important;
+      border: 1px solid #dbe3ea !important;
+      color: #64748b !important;
+      font-size: 11.5px !important;
+      font-weight: 850 !important;
+      white-space: nowrap !important;
+    }
+
+  `;
+
+  document.head.appendChild(style);
+}
+
+
+function getComplaintHistoryBarangayValue(item = {}) {
+  const status = String(item.status || "").trim().toLowerCase();
+
+  /*
+    For forwarded records, this is not final assigned yet.
+    It becomes assigned only after one barangay accepts.
+  */
+  if (status === "forwarded") {
+    return "Awaiting Acceptance";
+  }
+
+  return (
+    item.assigned_barangay ||
+    item.handled_by_barangay_name ||
+    "-"
+  );
+}
+
+function renderComplaintHistoryAssignedBarangay(item = {}) {
+  const value = getComplaintHistoryBarangayValue(item);
+  const status = String(item.status || "").trim().toLowerCase();
+
+  if (status === "forwarded" || value === "Awaiting Acceptance") {
+    return `<span class="complaint-history-assigned-waiting">Awaiting Acceptance</span>`;
+  }
+
+  if (!value || value === "-") {
+    return `<span class="complaint-history-assigned-waiting">Not Assigned</span>`;
+  }
+
+  return `<strong class="complaint-history-assigned-final">${escapeHtml(value)}</strong>`;
+}
+
+function getComplaintHistorySearchText(item = {}) {
+  const statusLabel = formatComplaintHistoryStatus(item.status);
+  const dateLabel = formatDateTimeDisplay(item.rejected_at || item.resolved_at || item.validated_at || item.accepted_at || item.in_progress_at || item.created_at);
+
+  return normalizeComplaintHistoryFilterValue([
+    item.id,
+    item.subject,
+    item.description,
+    item.citizen_name,
+    item.username,
+    getComplaintHistoryBarangayValue(item),
+    getComplaintHistoryForwardedText(item),
+    item.status,
+    statusLabel,
+    dateLabel,
+    item.rejected_at,
+    item.resolved_at,
+    item.created_at
+  ].join(" "));
+}
+
+function getFilteredComplaintHistoryRecords(records = []) {
+  const searchValue = normalizeComplaintHistoryFilterValue(complaintHistorySearchQuery);
+  const barangayValue = normalizeComplaintHistoryFilterValue(complaintHistoryBarangayFilter);
+
+  return (Array.isArray(records) ? records : []).filter((item) => {
+    const itemBarangay = normalizeComplaintHistoryFilterValue(getComplaintHistoryBarangayValue(item));
+    const matchesSearch = !searchValue || getComplaintHistorySearchText(item).includes(searchValue);
+    const matchesBarangay = barangayValue === "all" || itemBarangay === barangayValue;
+
+    return matchesSearch && matchesBarangay;
+  });
+}
+
+function getComplaintHistoryBarangayOptions(records = []) {
+  const barangaySet = new Set();
+
+  (Array.isArray(records) ? records : []).forEach((item) => {
+    const barangay = String(getComplaintHistoryBarangayValue(item) || "").trim();
+
+    if (
+      barangay &&
+      barangay !== "-" &&
+      barangay !== "Awaiting Acceptance" &&
+      barangay !== "Not Assigned"
+    ) {
+      barangaySet.add(barangay);
+    }
+  });
+
+  return Array.from(barangaySet).sort((a, b) =>
+    a.localeCompare(b, undefined, {
+      sensitivity: "base"
+    })
+  );
+}
+
+function updateComplaintHistoryMeta(totalCount, visibleCount) {
+  const meta = document.getElementById("complaintHistoryFilterMeta");
+  if (!meta) return;
+
+  if (!totalCount) {
+    meta.textContent = "No records";
+    return;
+  }
+
+  const hasSearch = Boolean(normalizeComplaintHistoryFilterValue(complaintHistorySearchQuery));
+  const hasBarangayFilter = normalizeComplaintHistoryFilterValue(complaintHistoryBarangayFilter) !== "all";
+
+  if (!hasSearch && !hasBarangayFilter) {
+    meta.textContent = `${totalCount} record${totalCount === 1 ? "" : "s"}`;
+    return;
+  }
+
+  meta.textContent = `${visibleCount} of ${totalCount} shown`;
+}
+
+function updateComplaintHistoryBarangayFilterOptions(records = []) {
+  const select = document.getElementById("complaintHistoryBarangayFilter");
+  if (!select) return;
+
+  const selectedValue = complaintHistoryBarangayFilter || "all";
+  const barangays = getComplaintHistoryBarangayOptions(records);
+
+  select.innerHTML = `
+    <option value="all">All Barangays</option>
+    ${barangays.map((barangay) => `
+      <option value="${escapeHtml(barangay)}">${escapeHtml(barangay)}</option>
+    `).join("")}
+  `;
+
+  const optionExists = Array.from(select.options).some((option) => option.value === selectedValue);
+  complaintHistoryBarangayFilter = optionExists ? selectedValue : "all";
+  select.value = complaintHistoryBarangayFilter;
+}
+
+function ensureComplaintHistoryToolbar() {
+  const modal = document.getElementById("complaintHistoryModal");
+  const header = modal?.querySelector(".history-modal-header");
+
+  if (!modal || !header) return null;
+
+  let toolbar = document.getElementById("complaintHistoryFilterToolbar");
+
+  if (!toolbar) {
+    toolbar = document.createElement("div");
+    toolbar.id = "complaintHistoryFilterToolbar";
+    toolbar.className = "complaint-history-filter-toolbar";
+
+    toolbar.innerHTML = `
+      <div class="complaint-history-search-box">
+        <span class="complaint-history-search-icon" aria-hidden="true">⌕</span>
+        <input
+          type="text"
+          id="complaintHistorySearchInput"
+          class="complaint-history-search-input"
+          placeholder="Search by ID, subject, or citizen..."
+          autocomplete="off"
+        />
+        <button
+          type="button"
+          id="clearComplaintHistorySearchBtn"
+          class="complaint-history-search-clear"
+          aria-label="Clear complaint history search"
+          title="Clear search"
+        >
+          ×
+        </button>
+      </div>
+
+      <div class="complaint-history-barangay-filter-wrap">
+        <select id="complaintHistoryBarangayFilter" class="complaint-history-barangay-filter" aria-label="Filter complaint history by barangay">
+          <option value="all">All Barangays</option>
+        </select>
+      </div>
+
+      <div id="complaintHistoryFilterMeta" class="complaint-history-filter-meta">
+        No records
+      </div>
+    `;
+
+    header.insertAdjacentElement("afterend", toolbar);
+  }
+
+  const searchInput = document.getElementById("complaintHistorySearchInput");
+  const clearBtn = document.getElementById("clearComplaintHistorySearchBtn");
+  const barangaySelect = document.getElementById("complaintHistoryBarangayFilter");
+
+  if (searchInput && searchInput.dataset.boundComplaintHistorySearch !== "true") {
+    searchInput.dataset.boundComplaintHistorySearch = "true";
+
+    searchInput.addEventListener("input", () => {
+      complaintHistorySearchQuery = searchInput.value || "";
+      renderComplaintHistoryTable(complaintHistoryRecords);
+    });
+  }
+
+  if (clearBtn && clearBtn.dataset.boundComplaintHistorySearch !== "true") {
+    clearBtn.dataset.boundComplaintHistorySearch = "true";
+
+    clearBtn.addEventListener("click", () => {
+      complaintHistorySearchQuery = "";
+
+      if (searchInput) {
+        searchInput.value = "";
+        searchInput.focus();
+      }
+
+      renderComplaintHistoryTable(complaintHistoryRecords);
+    });
+  }
+
+  if (barangaySelect && barangaySelect.dataset.boundComplaintHistoryBarangay !== "true") {
+    barangaySelect.dataset.boundComplaintHistoryBarangay = "true";
+
+    barangaySelect.addEventListener("change", () => {
+      complaintHistoryBarangayFilter = barangaySelect.value || "all";
+      renderComplaintHistoryTable(complaintHistoryRecords);
+    });
+  }
+
+  if (searchInput && searchInput.value !== complaintHistorySearchQuery) {
+    searchInput.value = complaintHistorySearchQuery;
+  }
+
+  updateComplaintHistoryBarangayFilterOptions(complaintHistoryRecords);
+
+  return toolbar;
+}
+
+async function loadComplaintHistory() {
+  ensureComplaintHistoryModalScrollStyles();
+  ensureComplaintHistoryToolbar();
+  prepareComplaintHistoryTableScroll();
+
+  const tbody = document.getElementById("complaintHistoryTableBody");
+  if (!tbody) return;
+
+  tbody.innerHTML = `
+    <tr>
+      <td colspan="8" class="loading-state">Loading complaint history...</td>
+    </tr>
+  `;
+
+  try {
+    const response = await fetch(`${getComplaintsApiUrl()}/history/resolved`);
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || "Failed to load complaint history.");
+    }
+
+    complaintHistoryRecords = Array.isArray(data.complaints) ? data.complaints : [];
+    ensureComplaintHistoryToolbar();
+    updateComplaintHistoryBarangayFilterOptions(complaintHistoryRecords);
+    renderComplaintHistoryTable(complaintHistoryRecords);
+  } catch (error) {
+    console.error("loadComplaintHistory error:", error);
+
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="8" class="empty-state-cell">Failed to load complaint history.</td>
+      </tr>
+    `;
+  }
+}
+
+function renderComplaintHistoryTable(records) {
+  ensureComplaintHistoryStatusStyles();
+  ensureComplaintHistoryToolbar();
+  ensureComplaintHistoryForwardedColumnStyles();
+  prepareComplaintHistoryTableScroll();
+  ensureComplaintHistoryForwardedColumnHeader();
+
+  const tbody = document.getElementById("complaintHistoryTableBody");
+  if (!tbody) return;
+
+  const safeRecords = Array.isArray(records) ? records : [];
+  const filteredRecords = getFilteredComplaintHistoryRecords(safeRecords);
+
+  updateComplaintHistoryBarangayFilterOptions(safeRecords);
+  updateComplaintHistoryMeta(safeRecords.length, filteredRecords.length);
+
+  if (!safeRecords.length) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="8" class="empty-state-cell">No complaint history found.</td>
+      </tr>
+    `;
+    return;
+  }
+
+  if (!filteredRecords.length) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="8" class="empty-state-cell">No complaint history matches your search or barangay filter.</td>
+      </tr>
+    `;
+    return;
+  }
+
+  tbody.innerHTML = filteredRecords.map(item => `
+    <tr>
+      <td class="complaint-history-id-column">${escapeHtml(item.id ?? "-")}</td>
+      <td class="complaint-history-subject-column">${escapeHtml(item.subject || "-")}</td>
+      <td class="complaint-history-citizen-column">${escapeHtml(item.citizen_name || item.username || "-")}</td>
+      <td class="complaint-history-assigned-column">${renderComplaintHistoryAssignedBarangay(item)}</td>
+      <td class="complaint-history-forwarded-column">${renderComplaintHistoryForwardedBarangays(item)}</td>
+      <td class="complaint-history-status-column">
+        <span class="complaint-history-status ${escapeHtml(getComplaintHistoryStatusClass(item.status))}">
+          ${escapeHtml(formatComplaintHistoryStatus(item.status))}
+        </span>
+      </td>
+      <td class="complaint-history-date-column">${escapeHtml(formatDateTimeDisplay(item.rejected_at || item.resolved_at || item.validated_at || item.accepted_at || item.in_progress_at || item.created_at))}</td>
+      <td class="complaint-history-action-column">
+        <button
+          type="button"
+          class="complaint-history-view-btn"
+          data-resolution-id="${escapeHtml(item.id)}"
+        >
+          View
+        </button>
+      </td>
+    </tr>
+  `).join("");
+}
+
+function openComplaintHistoryModal() {
+  mountComplaintModalsToBody();
+  ensureComplaintHistoryModalScrollStyles();
+  ensureComplaintHistoryToolbar();
+
+  openComplaintModalWithPosition("complaintHistoryModal");
+
+  requestAnimationFrame(() => {
+    applyComplaintModalPosition("complaintHistoryModal");
+    prepareComplaintHistoryTableScroll();
+    const tableScroll = document.querySelector("#complaintHistoryModal .complaint-history-table-scroll");
+    if (tableScroll) tableScroll.scrollLeft = 0;
+  });
+
+  loadComplaintHistory();
+}
+
+function closeComplaintHistoryModal() {
+  resetComplaintModalDisplay("complaintHistoryModal");
+}
+
+// =========================
+// COMPLAINT RESOLUTION MODAL
+// =========================
+
+function isValidResolutionImagePath(path) {
+  if (!path) return false;
+
+  const value = String(path).trim();
+
+  if (!value) return false;
+
+  const lowered = value.toLowerCase();
+
+  if (lowered === "null" || lowered === "undefined") return false;
+
+  /*
+    Reject folder-only values.
+    These are not actual image files and will always fail.
+  */
+  if (
+    lowered === "/uploads/complaints" ||
+    lowered === "uploads/complaints" ||
+    lowered === "/uploads/complaints/" ||
+    lowered === "uploads/complaints/" ||
+    lowered === "/uploads/cplaints" ||
+    lowered === "uploads/cplaints" ||
+    lowered === "/uploads/cplaints/" ||
+    lowered === "uploads/cplaints/"
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+function addUniqueResolutionImageCandidate(list, rawPath) {
+  if (!isValidResolutionImagePath(rawPath)) return;
+
+  const path = String(rawPath).trim();
+  const key = path.toLowerCase();
+
+  if (list.some(item => String(item || "").trim().toLowerCase() === key)) {
+    return;
+  }
+
+  list.push(path);
+}
+
+function getResolutionImageCandidates(record = {}) {
+  /*
+    Keep all possible fields. Some old records use image_url or typo folders,
+    while newer resolved records use resolution_evidence_url.
+  */
+  const candidates = [];
+
+  [
+    record?.resolution_evidence_url,
+    record?.resolution_image_url,
+    record?.resolution_photo_url,
+    record?.resolved_evidence_url,
+    record?.resolved_image_url,
+    record?.resolved_photo_url,
+
+    record?.image_url,
+    record?.complaint_image_url,
+    record?.evidence_url,
+    record?.photo_url
+  ].forEach((path) => {
+    addUniqueResolutionImageCandidate(candidates, path);
+  });
+
+  return candidates;
+}
+
+function ensureResolutionEvidenceComparisonDom() {
+  /*
+    Safety fix:
+    Some copies of admin-dashboard.html still have the old one-image evidence panel.
+    This function upgrades the modal at runtime so WMO always sees two separate slots:
+    1. Citizen Evidence  = original complaint image_url
+    2. Resolution Evidence = barangay resolution_evidence_url
+
+    This is frontend-only. It does NOT touch complaintRoutes.js.
+  */
+  const existingCitizenImg = document.getElementById("resolutionModalCitizenEvidenceImage");
+  const existingResolutionImg = document.getElementById("resolutionModalEvidenceImage");
+
+  if (existingCitizenImg && existingResolutionImg) {
+    return;
+  }
+
+  const panel = document.querySelector("#complaintResolutionModal .resolution-evidence-panel");
+
+  if (!panel) {
+    console.warn("Resolution evidence panel not found.");
+    return;
+  }
+
+  panel.innerHTML = `
+    <div class="resolution-evidence-heading">
+      <div>
+        <h4>Evidence Comparison</h4>
+        <p>Compare the original citizen report proof with the barangay resolution proof.</p>
+      </div>
+    </div>
+
+    <div class="resolution-evidence-comparison-grid">
+      <div class="resolution-evidence-compare-card citizen-evidence-card">
+        <div class="resolution-evidence-subheading">
+          <span class="evidence-compare-label citizen">Citizen Evidence</span>
+          <p>Original proof submitted by the citizen when reporting the complaint.</p>
+        </div>
+
+        <div class="resolved-evidence-wrap">
+          <div class="resolved-evidence-frame" id="resolutionCitizenEvidenceFrame">
+            <img
+              id="resolutionModalCitizenEvidenceImage"
+              class="resolved-evidence-image hidden"
+              alt="Citizen complaint evidence" />
+          </div>
+
+          <p id="resolutionModalNoCitizenEvidence" class="muted-text">No citizen evidence submitted.</p>
+        </div>
+      </div>
+
+      <div class="resolution-evidence-compare-card resolution-evidence-card">
+        <div class="resolution-evidence-subheading">
+          <span class="evidence-compare-label resolution">Resolution Evidence</span>
+          <p>Proof submitted by barangay personnel after resolving the complaint.</p>
+        </div>
+
+        <div class="resolved-evidence-wrap">
+          <div class="resolved-evidence-frame" id="resolutionEvidenceFrame">
+            <img
+              id="resolutionModalEvidenceImage"
+              class="resolved-evidence-image hidden"
+              alt="Resolution evidence" />
+          </div>
+
+          <p id="resolutionModalNoEvidence" class="muted-text">No resolution evidence submitted.</p>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function getBarangayResolutionImageCandidates(record = {}) {
+  /*
+    Barangay resolution evidence only.
+    Do NOT include the original citizen image here because WMO needs to compare
+    the citizen evidence and the resolution evidence separately.
+  */
+  const candidates = [];
+
+  [
+    record?.resolution_evidence_url,
+    record?.resolution_image_url,
+    record?.resolution_photo_url,
+    record?.resolved_evidence_url,
+    record?.resolved_image_url,
+    record?.resolved_photo_url
+  ].forEach((path) => {
+    addUniqueResolutionImageCandidate(candidates, path);
+  });
+
+  return candidates;
+}
+
+function getCitizenComplaintImageCandidates(record = {}) {
+  /*
+    Original complaint/citizen evidence only.
+    This is the image submitted by the citizen when the complaint was created.
+  */
+  const candidates = [];
+
+  [
+    record?.image_url,
+    record?.complaint_image_url,
+    record?.complaint_evidence_url,
+    record?.citizen_evidence_url,
+    record?.citizen_image_url,
+    record?.evidence_url,
+    record?.photo_url
+  ].forEach((path) => {
+    addUniqueResolutionImageCandidate(candidates, path);
+  });
+
+  return candidates;
+}
+
+function getValidResolutionImagePath(record) {
+  const candidates = getBarangayResolutionImageCandidates(record);
+  return candidates[0] || "";
+}
+
+function addCacheBusterToImageUrl(url) {
+  if (!url) return "";
+
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}t=${Date.now()}`;
+}
+
+function addUniqueResolutionImageUrl(list, rawPath, imageUrl) {
+  if (!imageUrl) return;
+
+  const cleanUrl = String(imageUrl).trim();
+  const key = cleanUrl.toLowerCase();
+
+  if (list.some(item => String(item.imageUrl || "").toLowerCase() === key)) {
+    return;
+  }
+
+  list.push({
+    rawPath,
+    imageUrl: cleanUrl
+  });
+}
+
+function getResolutionImageUrlCandidates(rawCandidates = []) {
+  const urlCandidates = [];
+
+  rawCandidates.forEach((rawPath) => {
+    const imageUrl = getImageUrl(rawPath);
+
+    addUniqueResolutionImageUrl(urlCandidates, rawPath, imageUrl);
+
+    /*
+      IMPORTANT COMPAT FIX:
+      Some older files/records were stored under /uploads/cplaints/
+      while newer backend code saves under /uploads/complaints/.
+      If the first URL fails, the modal will try the alternate folder name
+      using the same filename.
+    */
+    if (imageUrl && imageUrl.includes("/uploads/complaints/")) {
+      addUniqueResolutionImageUrl(
+        urlCandidates,
+        rawPath,
+        imageUrl.replace("/uploads/complaints/", "/uploads/cplaints/")
+      );
+    }
+
+    if (imageUrl && imageUrl.includes("/uploads/cplaints/")) {
+      addUniqueResolutionImageUrl(
+        urlCandidates,
+        rawPath,
+        imageUrl.replace("/uploads/cplaints/", "/uploads/complaints/")
+      );
+    }
+
+    /*
+      If the config base URL is different from the page origin, also try
+      the same upload path on the current domain.
+    */
+    try {
+      const parsedUrl = new URL(imageUrl, window.location.origin);
+
+      if (
+        parsedUrl.pathname &&
+        parsedUrl.pathname.includes("/uploads/")
+      ) {
+        addUniqueResolutionImageUrl(
+          urlCandidates,
+          rawPath,
+          `${window.location.origin}${parsedUrl.pathname}`
+        );
+
+        if (parsedUrl.pathname.includes("/uploads/complaints/")) {
+          addUniqueResolutionImageUrl(
+            urlCandidates,
+            rawPath,
+            `${window.location.origin}${parsedUrl.pathname.replace("/uploads/complaints/", "/uploads/cplaints/")}`
+          );
+        }
+
+        if (parsedUrl.pathname.includes("/uploads/cplaints/")) {
+          addUniqueResolutionImageUrl(
+            urlCandidates,
+            rawPath,
+            `${window.location.origin}${parsedUrl.pathname.replace("/uploads/cplaints/", "/uploads/complaints/")}`
+          );
+        }
+      }
+    } catch (error) {
+      console.warn("Skipping current-origin image fallback:", error);
+    }
+  });
+
+  return urlCandidates;
+}
+
+function renderEvidenceImageSlot(options = {}) {
+  const {
+    record = {},
+    imageId,
+    emptyId,
+    frameId,
+    rawCandidateBuilder,
+    loadingText = "Loading evidence image...",
+    noImageText = "No evidence image submitted.",
+    failedText = "Evidence file is missing from server storage or was not uploaded yet.",
+    logLabel = "Evidence"
+  } = options;
+
+  const evidenceImg = document.getElementById(imageId);
+  const noEvidence = document.getElementById(emptyId);
+  const evidenceFrame = document.getElementById(frameId);
+
+  if (!evidenceImg) return;
+
+  const rawCandidates =
+    typeof rawCandidateBuilder === "function"
+      ? rawCandidateBuilder(record)
+      : [];
+
+  const imageCandidates = getResolutionImageUrlCandidates(rawCandidates);
+
+  console.log(`${logLabel} DATA:`, record);
+  console.log(`${logLabel} RAW IMAGE CANDIDATES:`, rawCandidates);
+  console.log(`${logLabel} FINAL IMAGE URL CANDIDATES:`, imageCandidates.map(item => item.imageUrl));
+
+  evidenceImg.onload = null;
+  evidenceImg.onerror = null;
+  evidenceImg.onclick = null;
+  evidenceImg.removeAttribute("src");
+  evidenceImg.classList.add("hidden");
+  evidenceImg.style.display = "none";
+
+  if (evidenceFrame) evidenceFrame.style.display = "none";
+
+  if (noEvidence) {
+    noEvidence.textContent = loadingText;
+    noEvidence.classList.remove("hidden");
+  }
+
+  if (!imageCandidates.length) {
+    if (noEvidence) noEvidence.textContent = noImageText;
+    return;
+  }
+
+  let currentIndex = 0;
+  let loadTimeout = null;
+  let finished = false;
+
+  const clearImageLoadTimeout = () => {
+    if (loadTimeout) {
+      clearTimeout(loadTimeout);
+      loadTimeout = null;
+    }
+  };
+
+  const showFailedState = () => {
+    clearImageLoadTimeout();
+
+    evidenceImg.onload = null;
+    evidenceImg.onerror = null;
+    evidenceImg.removeAttribute("src");
+    evidenceImg.classList.add("hidden");
+    evidenceImg.style.display = "none";
+
+    if (evidenceFrame) evidenceFrame.style.display = "none";
+
+    if (noEvidence) {
+      noEvidence.textContent = failedText;
+      noEvidence.classList.remove("hidden");
+    }
+  };
+
+  const tryLoadImage = () => {
+    clearImageLoadTimeout();
+
+    if (finished) return;
+
+    const current = imageCandidates[currentIndex];
+
+    if (!current) {
+      showFailedState();
+      return;
+    }
+
+    if (noEvidence) {
+      noEvidence.textContent =
+        imageCandidates.length > 1
+          ? `${loadingText.replace("...", "")} ${currentIndex + 1} of ${imageCandidates.length}...`
+          : loadingText;
+      noEvidence.classList.remove("hidden");
+    }
+
+    const finalUrl = addCacheBusterToImageUrl(current.imageUrl);
+
+    evidenceImg.onload = () => {
+      if (finished) return;
+
+      finished = true;
+      clearImageLoadTimeout();
+
+      console.log(`${logLabel} image loaded:`, current.imageUrl);
+
+      evidenceImg.classList.remove("hidden");
+      evidenceImg.style.display = "block";
+
+      if (evidenceFrame) evidenceFrame.style.display = "flex";
+      if (noEvidence) noEvidence.classList.add("hidden");
+
+      if (typeof enableImagePreview === "function") {
+        enableImagePreview(evidenceImg);
+      }
+    };
+
+    evidenceImg.onerror = () => {
+      if (finished) return;
+
+      clearImageLoadTimeout();
+      console.warn(`${logLabel} image failed, trying next if available:`, current.imageUrl);
+
+      currentIndex += 1;
+      tryLoadImage();
+    };
+
+    loadTimeout = setTimeout(() => {
+      if (finished) return;
+
+      console.warn(`${logLabel} image timed out, trying next if available:`, current.imageUrl);
+
+      evidenceImg.onload = null;
+      evidenceImg.onerror = null;
+      evidenceImg.removeAttribute("src");
+
+      currentIndex += 1;
+      tryLoadImage();
+    }, 3500);
+
+    evidenceImg.src = finalUrl;
+  };
+
+  tryLoadImage();
+}
+
+function renderCitizenEvidenceImage(record) {
+  renderEvidenceImageSlot({
+    record,
+    imageId: "resolutionModalCitizenEvidenceImage",
+    emptyId: "resolutionModalNoCitizenEvidence",
+    frameId: "resolutionCitizenEvidenceFrame",
+    rawCandidateBuilder: getCitizenComplaintImageCandidates,
+    loadingText: "Loading citizen evidence image...",
+    noImageText: "No citizen evidence submitted.",
+    failedText: "Citizen evidence file is missing from server storage or was not uploaded yet.",
+    logLabel: "Citizen evidence"
+  });
+}
+
+function renderResolutionEvidenceImage(record) {
+  renderEvidenceImageSlot({
+    record,
+    imageId: "resolutionModalEvidenceImage",
+    emptyId: "resolutionModalNoEvidence",
+    frameId: "resolutionEvidenceFrame",
+    rawCandidateBuilder: getBarangayResolutionImageCandidates,
+    loadingText: "Loading resolution evidence image...",
+    noImageText: "No resolution evidence submitted.",
+    failedText: "Resolution evidence file is missing from server storage or was not uploaded yet.",
+    logLabel: "Resolution evidence"
+  });
+}
+
+
+function getComplaintReadableStatus(status) {
+  const value = String(status || "").trim().toLowerCase();
+
+  const labels = {
+    pending: "Pending",
+    validated: "Validated",
+    forwarded: "Forwarded",
+    accepted_by_barangay: "Accepted",
+    accepted_overdue: "Overdue",
+    in_progress: "In Progress",
+    resolved: "Resolved",
+    rejected: "Rejected"
+  };
+
+  return labels[value] || cleanText(status, "Status");
+}
+
+function isComplaintResolvedRecord(record = {}) {
+  return String(record.status || "").trim().toLowerCase() === "resolved";
+}
+
+function getComplaintResolutionHeaderMeta(record = {}) {
+  const status = String(record.status || "").trim().toLowerCase();
+
+  if (status === "resolved") {
+    return {
+      kicker: "Resolved Complaint",
+      subtitle: "Barangay personnel submitted resolution details and evidence.",
+      evidenceTitle: "Evidence Comparison",
+      evidenceSubtitle: "Compare the citizen report proof with the barangay resolution proof.",
+      reportTitle: "Resolution Report",
+      reportFallback: "No resolution report provided.",
+      dateLabel: "Resolved At",
+      dateValue: formatDateTimeDisplay(record.resolved_at)
+    };
+  }
+
+  if (status === "rejected") {
+    return {
+      kicker: "Rejected Complaint",
+      subtitle: "This complaint was rejected by WMO after review.",
+      evidenceTitle: "Complaint Evidence",
+      evidenceSubtitle: "Original proof submitted by the citizen.",
+      reportTitle: "Rejection Reason",
+      reportFallback: "No rejection reason provided.",
+      dateLabel: "Rejected At",
+      dateValue: formatDateTimeDisplay(record.rejected_at || record.updated_at || record.created_at)
+    };
+  }
+
+  if (status === "in_progress") {
+    return {
+      kicker: "In Progress Complaint",
+      subtitle: "Barangay personnel accepted this complaint and it is currently being handled.",
+      evidenceTitle: "Complaint Evidence",
+      evidenceSubtitle: "Original proof submitted by the citizen.",
+      reportTitle: "Progress Note",
+      reportFallback: "No resolution report submitted yet.",
+      dateLabel: "Updated At",
+      dateValue: formatDateTimeDisplay(record.in_progress_at || record.accepted_at || record.validated_at || record.created_at)
+    };
+  }
+
+  if (status === "accepted_by_barangay") {
+    return {
+      kicker: "Accepted Complaint",
+      subtitle: "A barangay accepted this complaint and is ready to handle it.",
+      evidenceTitle: "Complaint Evidence",
+      evidenceSubtitle: "Original proof submitted by the citizen.",
+      reportTitle: "Progress Note",
+      reportFallback: "No resolution report submitted yet.",
+      dateLabel: "Accepted At",
+      dateValue: formatDateTimeDisplay(record.accepted_at || record.validated_at || record.created_at)
+    };
+  }
+
+  if (status === "forwarded") {
+    return {
+      kicker: "Forwarded Complaint",
+      subtitle: "This complaint was forwarded to barangay offices and is waiting for acceptance.",
+      evidenceTitle: "Complaint Evidence",
+      evidenceSubtitle: "Original proof submitted by the citizen.",
+      reportTitle: "Forwarding Note",
+      reportFallback: "No barangay resolution report submitted yet.",
+      dateLabel: "Forwarded At",
+      dateValue: formatDateTimeDisplay(record.validated_at || record.created_at)
+    };
+  }
+
+  return {
+    kicker: "Complaint Record",
+    subtitle: "Review complaint details and available evidence.",
+    evidenceTitle: "Complaint Evidence",
+    evidenceSubtitle: "Available proof submitted for this complaint.",
+    reportTitle: "Report",
+    reportFallback: "No report provided.",
+    dateLabel: "Updated At",
+    dateValue: formatDateTimeDisplay(record.updated_at || record.created_at)
+  };
+}
+
+function getComplaintResolutionHandledBy(record = {}) {
+  return (
+    record.handled_by_barangay_name ||
+    record.resolved_by_name ||
+    record.accepted_by_name ||
+    record.validated_by_name ||
+    record.handled_by ||
+    record.resolved_by ||
+    record.accepted_by ||
+    "-"
+  );
+}
+
+function updateComplaintResolutionModalCopy(record = {}) {
+  const modal = document.getElementById("complaintResolutionModal");
+  if (!modal) return getComplaintResolutionHeaderMeta(record);
+
+  const meta = getComplaintResolutionHeaderMeta(record);
+
+  const kickerEl = modal.querySelector(".resolution-kicker");
+  const subtitleEl = modal.querySelector(".resolution-pro-header p");
+  const dateLabelEl = document.getElementById("resolutionModalResolvedAt")
+    ?.closest(".resolution-summary-card")
+    ?.querySelector("span");
+  const evidenceTitleEl = modal.querySelector(".resolution-evidence-heading h4");
+  const evidenceSubtitleEl = modal.querySelector(".resolution-evidence-heading p");
+
+  const reportTitleEl = Array.from(modal.querySelectorAll(".resolution-detail-card h4"))
+    .find((el) => String(el.textContent || "").toLowerCase().includes("resolution") ||
+      String(el.textContent || "").toLowerCase().includes("progress") ||
+      String(el.textContent || "").toLowerCase().includes("rejection") ||
+      String(el.textContent || "").toLowerCase() === "report");
+
+  if (kickerEl) kickerEl.textContent = meta.kicker;
+  if (subtitleEl) subtitleEl.textContent = meta.subtitle;
+  if (dateLabelEl) dateLabelEl.textContent = meta.dateLabel;
+  if (evidenceTitleEl) evidenceTitleEl.textContent = meta.evidenceTitle;
+  if (evidenceSubtitleEl) evidenceSubtitleEl.textContent = meta.evidenceSubtitle;
+  if (reportTitleEl) reportTitleEl.textContent = meta.reportTitle;
+
+  return meta;
+}
+
+function setComplaintResolutionStatusPill(status) {
+  const pill = document.getElementById("resolutionModalStatus");
+  if (!pill) return;
+
+  const normalized = String(status || "").trim().toLowerCase();
+
+  pill.classList.remove(
+    "resolved",
+    "rejected",
+    "forwarded",
+    "in-progress",
+    "accepted",
+    "pending"
+  );
+
+  if (normalized === "resolved") pill.classList.add("resolved");
+  else if (normalized === "rejected") pill.classList.add("rejected");
+  else if (normalized === "forwarded") pill.classList.add("forwarded");
+  else if (normalized === "in_progress") pill.classList.add("in-progress");
+  else if (normalized === "accepted_by_barangay") pill.classList.add("accepted");
+  else if (normalized === "accepted_overdue") pill.classList.add("accepted-overdue");
+  else pill.classList.add("pending");
+}
+
+function ensureComplaintResolutionStateStyles() {
+  if (document.getElementById("complaintResolutionStateRuntimeStyles")) return;
+
+  const style = document.createElement("style");
+  style.id = "complaintResolutionStateRuntimeStyles";
+  style.textContent = `
+    #complaintResolutionModal .resolution-status-pill.resolved {
+      background: #dcfce7 !important;
+      color: #047857 !important;
+      border: 1px solid #86efac !important;
+    }
+
+    #complaintResolutionModal .resolution-status-pill.rejected {
+      background: #fee2e2 !important;
+      color: #b91c1c !important;
+      border: 1px solid #fca5a5 !important;
+    }
+
+    #complaintResolutionModal .resolution-status-pill.forwarded,
+    #complaintResolutionModal .resolution-status-pill.accepted,
+    #complaintResolutionModal .resolution-status-pill.in-progress {
+      background: #eef2ff !important;
+      color: #4338ca !important;
+      border: 1px solid #c7d2fe !important;
+    }
+
+    #complaintResolutionModal .resolution-status-pill.pending {
+      background: #fef3c7 !important;
+      color: #92400e !important;
+      border: 1px solid #fde68a !important;
+    }
+
+    #complaintResolutionModal .resolution-unavailable-note {
+      color: #64748b !important;
+      font-weight: 750 !important;
+    }
+
+    #complaintResolutionModal .resolution-evidence-comparison-grid {
+      display: grid !important;
+      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+      gap: 14px !important;
+      width: 100% !important;
+    }
+
+    #complaintResolutionModal .resolution-evidence-compare-card {
+      min-width: 0 !important;
+      padding: 12px !important;
+      border: 1px solid #e5edf4 !important;
+      border-radius: 16px !important;
+      background: #ffffff !important;
+    }
+
+    #complaintResolutionModal .resolution-evidence-subheading {
+      margin-bottom: 10px !important;
+    }
+
+    #complaintResolutionModal .resolution-evidence-subheading p {
+      margin: 6px 0 0 !important;
+      color: #64748b !important;
+      font-size: 12px !important;
+      line-height: 1.35 !important;
+    }
+
+    #complaintResolutionModal .evidence-compare-label {
+      display: inline-flex !important;
+      align-items: center !important;
+      width: fit-content !important;
+      min-height: 26px !important;
+      padding: 0 10px !important;
+      border-radius: 999px !important;
+      font-size: 12px !important;
+      font-weight: 900 !important;
+      letter-spacing: .02em !important;
+    }
+
+    #complaintResolutionModal .evidence-compare-label.citizen {
+      background: #fff7ed !important;
+      color: #c2410c !important;
+      border: 1px solid #fed7aa !important;
+    }
+
+    #complaintResolutionModal .evidence-compare-label.resolution {
+      background: #ecfdf5 !important;
+      color: #047857 !important;
+      border: 1px solid #a7f3d0 !important;
+    }
+
+    #complaintResolutionModal .resolution-evidence-compare-card .resolved-evidence-frame {
+      height: 225px !important;
+      min-height: 225px !important;
+      max-height: 225px !important;
+    }
+
+    @media (max-width: 980px) {
+      #complaintResolutionModal .resolution-evidence-comparison-grid {
+        grid-template-columns: 1fr !important;
+      }
+    }
+  
+    #complaintResolutionModal .resolution-evidence-comparison-grid {
+      display: grid !important;
+      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+      gap: 14px !important;
+      width: 100% !important;
+      align-items: stretch !important;
+    }
+
+    #complaintResolutionModal .resolution-evidence-compare-card {
+      display: flex !important;
+      flex-direction: column !important;
+      min-width: 0 !important;
+      padding: 12px !important;
+      border: 1px solid #e5edf4 !important;
+      border-radius: 16px !important;
+      background: #ffffff !important;
+    }
+
+    #complaintResolutionModal .resolution-evidence-subheading {
+      margin-bottom: 10px !important;
+    }
+
+    #complaintResolutionModal .resolution-evidence-subheading p {
+      margin: 6px 0 0 !important;
+      color: #64748b !important;
+      font-size: 12px !important;
+      line-height: 1.35 !important;
+    }
+
+    #complaintResolutionModal .evidence-compare-label {
+      display: inline-flex !important;
+      align-items: center !important;
+      width: fit-content !important;
+      min-height: 26px !important;
+      padding: 0 10px !important;
+      border-radius: 999px !important;
+      font-size: 12px !important;
+      font-weight: 900 !important;
+      letter-spacing: .02em !important;
+    }
+
+    #complaintResolutionModal .evidence-compare-label.citizen {
+      background: #fff7ed !important;
+      color: #c2410c !important;
+      border: 1px solid #fed7aa !important;
+    }
+
+    #complaintResolutionModal .evidence-compare-label.resolution {
+      background: #ecfdf5 !important;
+      color: #047857 !important;
+      border: 1px solid #a7f3d0 !important;
+    }
+
+    #complaintResolutionModal .resolution-evidence-compare-card .resolved-evidence-frame {
+      height: 235px !important;
+      min-height: 235px !important;
+      max-height: 235px !important;
+    }
+
+    @media (max-width: 980px) {
+      #complaintResolutionModal .resolution-evidence-comparison-grid {
+        grid-template-columns: 1fr !important;
+      }
+    }
+`;
+
+  document.head.appendChild(style);
+}
+
+
+function openComplaintResolutionModal(complaintId) {
+  mountComplaintModalsToBody();
+
+  document.getElementById("complaintHistoryModal")?.classList.add("hidden");
+
+  const modal = document.getElementById("complaintResolutionModal");
+  if (!modal) return;
+
+  currentComplaintResolution = complaintHistoryRecords.find(
+    item => Number(item.id) === Number(complaintId)
+  );
+
+  if (!currentComplaintResolution) {
+    console.error("Complaint not found:", complaintId);
+    return;
+  }
+
+  const setText = (id, value, fallback = "-") => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = cleanText(value, fallback);
+  };
+
+  ensureComplaintResolutionStateStyles();
+
+  const resolutionMeta = updateComplaintResolutionModalCopy(currentComplaintResolution);
+  const readableStatus = getComplaintReadableStatus(currentComplaintResolution.status);
+
+  setText("resolutionModalSubject", currentComplaintResolution.subject);
+  setText("resolutionModalAssignedBarangay", currentComplaintResolution.assigned_barangay);
+  setText("resolutionModalReporterBarangay", currentComplaintResolution.reporter_barangay);
+  setText("resolutionModalHandledBy", getComplaintResolutionHandledBy(currentComplaintResolution));
+  setText("resolutionModalStatus", readableStatus);
+  setComplaintResolutionStatusPill(currentComplaintResolution.status);
+  setText("resolutionModalResolvedAt", resolutionMeta.dateValue);
+  setText("resolutionModalDescription", currentComplaintResolution.description, "No description provided.");
+
+  if (String(currentComplaintResolution.status || "").toLowerCase() === "rejected") {
+    setText(
+      "resolutionModalReport",
+      currentComplaintResolution.rejection_reason,
+      resolutionMeta.reportFallback
+    );
+  } else {
+    setText(
+      "resolutionModalReport",
+      currentComplaintResolution.resolution_report,
+      resolutionMeta.reportFallback
+    );
+  }
+
+  setText(
+    "resolutionModalCoordinates",
+    `${cleanText(currentComplaintResolution.latitude, "-")}, ${cleanText(currentComplaintResolution.longitude, "-")}`
+  );
+
+  ensureResolutionEvidenceComparisonDom();
+  renderCitizenEvidenceImage(currentComplaintResolution);
+  renderResolutionEvidenceImage(currentComplaintResolution);
+
+  openComplaintModalWithPosition("complaintResolutionModal");
+
+  const body =
+    modal.querySelector(".resolution-pro-body") ||
+    modal.querySelector(".complaint-resolution-modal-body") ||
+    modal.querySelector(".custom-modal-content");
+
+  if (body) body.scrollTop = 0;
+
+  setTimeout(() => {
+    renderResolvedComplaintRouteMap(currentComplaintResolution);
+  }, 250);
+}
+
+function closeComplaintResolutionModal() {
+  const modal = document.getElementById("complaintResolutionModal");
+  if (!modal) return;
+
+  destroyResolutionRouteMap(true);
+  destroyResolutionFullRouteMap(true);
+  resetComplaintModalDisplay("complaintResolutionModal");
+  currentComplaintResolution = null;
+}
+
+function setupComplaintResolutionModal() {
+  const tbody = document.getElementById("complaintHistoryTableBody");
+  const closeBtn = document.getElementById("closeComplaintResolutionModal");
+  const overlay = document.getElementById("complaintResolutionOverlay");
+
+  if (tbody && tbody.dataset.bound !== "true") {
+    tbody.dataset.bound = "true";
+
+    tbody.addEventListener("click", (event) => {
+      const viewBtn = event.target.closest("[data-resolution-id]");
+      if (!viewBtn) return;
+
+      openComplaintResolutionModal(viewBtn.getAttribute("data-resolution-id"));
+    });
+  }
+
+  closeBtn?.addEventListener("click", closeComplaintResolutionModal);
+  overlay?.addEventListener("click", closeComplaintResolutionModal);
+}
+
+// =========================
+// COMPLAINT MODULE SETUP
+// =========================
+
+function setupComplaintsModule() {
+  mountComplaintModalsToBody();
+  ensureComplaintHistoryToolbar();
+  setupComplaintResolutionModal();
+
+  document.getElementById("btnRefreshComplaints")
+    ?.addEventListener("click", loadComplaints);
+
+  document.getElementById("btnOpenComplaintMap")
+    ?.addEventListener("click", openComplaintMapModal);
+
+  document.getElementById("btnValidateForwardComplaint")
+    ?.addEventListener("click", validateAndForwardComplaint);
+
+  const detailsValidateBtn = document.getElementById("btnValidateComplaintFromDetails");
+  if (detailsValidateBtn) {
+    detailsValidateBtn.removeAttribute("onclick");
+    detailsValidateBtn.addEventListener("click", validateComplaintFromDetails);
+  }
+
+  document.getElementById("btnRejectComplaintFromDetails")
+    ?.addEventListener("click", openComplaintRejectModal);
+
+  document.getElementById("closeComplaintRejectModal")
+    ?.addEventListener("click", closeComplaintRejectModal);
+
+  document.getElementById("cancelComplaintRejectBtn")
+    ?.addEventListener("click", closeComplaintRejectModal);
+
+  document.getElementById("complaintRejectOverlay")
+    ?.addEventListener("click", closeComplaintRejectModal);
+
+  document.getElementById("confirmComplaintRejectBtn")
+    ?.addEventListener("click", submitComplaintRejection);
+
+  document.getElementById("btnRequestComplaintReview")
+    ?.addEventListener("click", requestComplaintReviewFromDetails);
+
+  document.getElementById("btnCloseComplaintModalFooter")
+    ?.addEventListener("click", closeComplaintModal);
+
+  document.getElementById("closeComplaintDetailsModal")
+    ?.addEventListener("click", closeComplaintModal);
+
+  document.getElementById("complaintDetailsOverlay")
+    ?.addEventListener("click", closeComplaintModal);
+
+  document.getElementById("closeComplaintMapModal")
+    ?.addEventListener("click", closeComplaintMapModal);
+
+  document.getElementById("complaintMapOverlay")
+    ?.addEventListener("click", closeComplaintMapModal);
+
+  document.getElementById("btnOpenComplaintHistory")
+    ?.addEventListener("click", openComplaintHistoryModal);
+
+  document.getElementById("closeComplaintHistoryBtn")
+    ?.addEventListener("click", closeComplaintHistoryModal);
+
+  document.getElementById("complaintHistoryOverlay")
+    ?.addEventListener("click", closeComplaintHistoryModal);
+
+  document.getElementById("complaintsSearchInput")
+    ?.addEventListener("input", applyComplaintFilters);
+
+  document.getElementById("complaintsStatusFilter")
+    ?.addEventListener("change", applyComplaintFilters);
+
+  document.getElementById("closeImagePreviewBtn")
+    ?.addEventListener("click", closeImagePreviewOverlay);
+
+  document.getElementById("imagePreviewOverlay")
+    ?.addEventListener("click", (event) => {
+      if (event.target?.id === "imagePreviewOverlay") {
+        closeImagePreviewOverlay();
+      }
+    });
+}
+
+function ensureComplaintHistoryDateReadableStyles() {
+  return;
+}
+
+window.ensureComplaintHistoryToolbar = ensureComplaintHistoryToolbar;

@@ -1,0 +1,1080 @@
+function showAccountMessage(message, type) {
+  const modal = document.getElementById("createAccountModal");
+  const box = document.getElementById(
+    modal && !modal.classList.contains("hidden") ? "accountMessageBox" : "accountPageMessageBox"
+  );
+  if (!box) return;
+
+  box.textContent = message;
+  box.className = `module-message ${type}`;
+  box.hidden = !message;
+}
+
+let createAccountPreviousFocus = null;
+let createAccountPreviousOverflow = "";
+
+function handleCreateAccountModalKeydown(event) {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeCreateAccountModal();
+    return;
+  }
+  if (event.key !== "Tab") return;
+  const controls = Array.from(document.querySelectorAll(
+    '#createAccountModal button:not([disabled]), #createAccountModal input:not([disabled]), #createAccountModal select:not([disabled])'
+  ));
+  const first = controls[0];
+  const last = controls[controls.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last?.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first?.focus();
+  }
+}
+
+function openCreateAccountModal() {
+  const modal = document.getElementById("createAccountModal");
+  if (!modal || !modal.classList.contains("hidden")) return;
+  createAccountPreviousFocus = document.activeElement;
+  createAccountPreviousOverflow = document.body.style.overflow;
+  document.body.style.overflow = "hidden";
+  modal.classList.remove("hidden");
+  document.addEventListener("keydown", handleCreateAccountModalKeydown);
+  document.getElementById("accountPlatform")?.focus();
+}
+
+function closeCreateAccountModal() {
+  const modal = document.getElementById("createAccountModal");
+  if (!modal || modal.classList.contains("hidden")) return;
+  modal.classList.add("hidden");
+  document.body.style.overflow = createAccountPreviousOverflow;
+  document.removeEventListener("keydown", handleCreateAccountModalKeydown);
+  document.getElementById("createAccountForm")?.reset();
+  setupAccountPlatformForm();
+  const message = document.getElementById("accountMessageBox");
+  if (message) {
+    message.textContent = "";
+    message.className = "module-message";
+    message.hidden = true;
+  }
+  createAccountPreviousFocus?.focus();
+}
+
+async function loadWebUsers() {
+  try {
+    const res = await webAdminFetch(getAccountsApiUrl(), {
+      headers: { Accept: "application/json" }
+    });
+
+    const rawText = await res.text();
+    let data = {};
+
+    try {
+      data = rawText ? JSON.parse(rawText) : {};
+    } catch (parseError) {
+      console.error("Accounts raw response:", rawText);
+      throw new Error("Accounts API did not return valid JSON.");
+    }
+
+    if (!res.ok) {
+      throw new Error(data.message || "Failed to load accounts.");
+    }
+
+    const accounts = Array.isArray(data)
+      ? data
+      : Array.isArray(data.accounts)
+      ? data.accounts
+      : Array.isArray(data.data)
+      ? data.data
+      : [];
+
+    allWebUsers = accounts;
+
+    renderWebUsers(typeof getFilteredWebUsers === "function" ? getFilteredWebUsers() : accounts);
+
+    if (typeof renderWebUserActivity === "function") {
+      renderWebUserActivity();
+    }
+  } catch (error) {
+    console.error("Error loading accounts:", error);
+    allWebUsers = [];
+    renderWebUsers([]);
+
+    if (typeof renderWebUserActivity === "function") {
+      renderWebUserActivity();
+    }
+  }
+}
+
+function formatAccountRoleLabel(role) {
+  const value = String(role || "").toLowerCase().trim();
+
+  const labels = {
+    division_admin: "Division Admin",
+    personnel: "Personnel",
+    supervisor: "Supervisor",
+    clerk_admin: "Clerk Admin",
+    enforcer: "Enforcer",
+    citizen: "Citizen",
+    barangay: "Barangay",
+    establishment: "Establishment",
+    mobile_user: "Mobile User"
+  };
+
+  return labels[value] || role || "-";
+}
+
+
+function cleanAccountValue(value) {
+  const text = String(value ?? "").trim();
+
+  if (
+    !text ||
+    text.toLowerCase() === "null" ||
+    text.toLowerCase() === "undefined" ||
+    text === "-"
+  ) {
+    return "";
+  }
+
+  return text;
+}
+
+function getAccountSource(user = {}) {
+  return String(user.account_source || user.source || "web").toLowerCase().trim() === "mobile"
+    ? "mobile"
+    : "web";
+}
+
+function getAccountUsername(user = {}) {
+  return (
+    cleanAccountValue(user.username) ||
+    cleanAccountValue(user.user_name) ||
+    cleanAccountValue(user.login_username) ||
+    cleanAccountValue(user.email) ||
+    cleanAccountValue(user.contact_number) ||
+    "-"
+  );
+}
+
+function getAccountEmail(user = {}) {
+  return (
+    cleanAccountValue(user.email) ||
+    cleanAccountValue(user.email_address) ||
+    cleanAccountValue(user.emailAddress) ||
+    cleanAccountValue(user.user_email) ||
+    cleanAccountValue(user.contact_email) ||
+    "-"
+  );
+}
+
+function getMobileAssignmentLabel(user = {}) {
+  const role = String(user.mobile_role || user.role || "").toLowerCase().trim();
+
+  if (role === "enforcer" && Array.isArray(user.enforcer_aors)) {
+    const aors = user.enforcer_aors.map(cleanAccountValue).filter(Boolean);
+    if (aors.length) return aors.join(" • ");
+  }
+
+  const barangay = (
+    cleanAccountValue(user.assigned_source_name) ||
+    cleanAccountValue(user.assigned_barangay) ||
+    cleanAccountValue(user.barangay) ||
+    cleanAccountValue(user.barangay_name) ||
+    cleanAccountValue(user.user_barangay) ||
+    cleanAccountValue(user.address_barangay) ||
+    cleanAccountValue(user.location_barangay) ||
+    cleanAccountValue(user.division_barangay) ||
+    cleanAccountValue(user.area_barangay) ||
+    cleanAccountValue(user.assigned_area)
+  );
+
+  const establishment = (
+    cleanAccountValue(user.establishment_name) ||
+    cleanAccountValue(user.business_name) ||
+    cleanAccountValue(user.company_name) ||
+    cleanAccountValue(user.assigned_source_name)
+  );
+
+  if (role === "establishment") {
+    return establishment || barangay || "-";
+  }
+
+  if (role === "citizen" || role === "barangay" || role === "enforcer" || role === "mobile_user") {
+    return barangay || "Barangay not set";
+  }
+
+  return barangay || establishment || "-";
+}
+
+function getAccountAssignmentLabel(user = {}) {
+  const source = getAccountSource(user);
+
+  if (source === "mobile") {
+    return getMobileAssignmentLabel(user);
+  }
+
+  return (
+    cleanAccountValue(user.division_name) ||
+    cleanAccountValue(user.division) ||
+    cleanAccountValue(user.office_division) ||
+    "-"
+  );
+}
+
+function renderAccountMutedValue(value) {
+  const text = cleanAccountValue(value);
+
+  if (!text) {
+    return `<span class="account-subtle-text">Not provided</span>`;
+  }
+
+  return escapeHtml(text);
+}
+
+function renderAccountSourceChip(source) {
+  const safeSource = source === "mobile" ? "mobile" : "web";
+  const label = safeSource === "mobile" ? "Mobile" : "Web";
+
+  return `<span class="account-source-chip ${safeSource}">${label}</span>`;
+}
+
+function renderAccountNameCell(user = {}) {
+  const fullName = cleanAccountValue(user.full_name) || cleanAccountValue(user.name) || "-";
+  const id = cleanAccountValue(user.id);
+
+  return `
+    <strong>${escapeHtml(fullName)}</strong>
+    ${id ? `<span class="account-subtle-text">ID: ${escapeHtml(id)}</span>` : ""}
+  `;
+}
+
+function renderAccountIdentityCell(username, email) {
+  const usernameText = cleanAccountValue(username) || "Not provided";
+  const emailText = cleanAccountValue(email) || "Not provided";
+
+  return `
+    <strong class="account-username">${escapeHtml(usernameText)}</strong>
+    <span class="account-subtle-text">${escapeHtml(emailText)}</span>
+  `;
+}
+
+function renderAccountAssignmentCell(user) {
+  return escapeHtml(getAccountAssignmentLabel(user));
+}
+
+function renderAccountStatusBadge(status) {
+  const normalized = String(status || "pending").toLowerCase().trim();
+  const statusLabels = {
+    active: "Active",
+    pending: "Pending",
+    inactive: "Inactive",
+    suspended: "Suspended",
+    deactivated: "Deactivated"
+  };
+  const label = statusLabels[normalized] || formatAccountRoleLabel(normalized);
+  const tone = normalized === "active"
+    ? "active"
+    : normalized === "pending"
+      ? "pending"
+      : "inactive";
+
+  return `<span class="account-status-pill ${tone}">${escapeHtml(label)}</span>`;
+}
+
+
+function renderWebUsers(users) {
+  const tableBody = document.getElementById("webUsersTableBody");
+  if (!tableBody) return;
+
+  if (!Array.isArray(users) || !users.length) {
+    tableBody.innerHTML = `<tr><td colspan="8" class="empty-state">No accounts found</td></tr>`;
+    return;
+  }
+
+  const activeUsers = users.filter((user) => {
+    const status = String(user.status || "active").toLowerCase().trim();
+    return status !== "deactivated" && status !== "inactive" && status !== "suspended";
+  });
+
+  if (!activeUsers.length) {
+    tableBody.innerHTML = `<tr><td colspan="8" class="empty-state">No active accounts found</td></tr>`;
+    return;
+  }
+
+  tableBody.innerHTML = activeUsers.map((user) => {
+    const accountId = Number(user.id);
+    const accountSource = getAccountSource(user);
+    const status = String(user.status || "active").toLowerCase().trim();
+
+    const isDeactivated =
+      status === "deactivated" ||
+      status === "inactive" ||
+      status === "suspended";
+
+    const usernameLabel = getAccountUsername(user);
+    const emailLabel = getAccountEmail(user);
+
+    const roleLabel =
+      accountSource === "mobile"
+        ? formatAccountRoleLabel(user.mobile_role || user.role || "mobile_user")
+        : formatAccountRoleLabel(user.role || "-");
+
+    const assignmentLabel = getAccountAssignmentLabel(user);
+
+    const actionLabel = isDeactivated ? "Activate" : "Deactivate";
+    const nextStatus = isDeactivated ? "active" : "suspended";
+
+    return `
+      <tr>
+        <td>${renderAccountNameCell(user)}</td>
+        <td class="account-identity-cell">${renderAccountIdentityCell(usernameLabel, emailLabel)}</td>
+        <td>${renderAccountSourceChip(accountSource)}</td>
+        <td>${escapeHtml(roleLabel)}</td>
+        <td>${renderAccountAssignmentCell(user)}</td>
+        <td>${renderAccountStatusBadge(status)}</td>
+        <td>${formatDate(user.created_at || user.createdAt || user.date_created)}</td>
+        <td>
+          <div class="account-action-buttons">
+            <button
+              class="inline-action-btn edit-btn"
+              type="button"
+              onclick="openEditAccountModal('${accountSource}', ${accountId})">
+              Edit
+            </button>
+
+            <button
+              class="inline-action-btn ${isDeactivated ? "activate-btn" : "suspend-btn"}"
+              type="button"
+              onclick="handleAccountStatusUpdate('${accountSource}', ${accountId}, '${nextStatus}')">
+              ${actionLabel}
+            </button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join("");
+}
+
+function getFilteredWebUsers() {
+  const searchValue = (document.getElementById("accountSearchInput")?.value || "")
+    .trim()
+    .toLowerCase();
+
+  if (!searchValue) return allWebUsers;
+
+  return allWebUsers.filter((user) => {
+    const fullName = String(user.full_name || user.name || "").toLowerCase();
+    const username = String(getAccountUsername(user)).toLowerCase();
+    const email = String(getAccountEmail(user)).toLowerCase();
+    const source = String(getAccountSource(user)).toLowerCase();
+    const role = String(user.mobile_role || user.role || "").toLowerCase();
+    const assignment = String(getAccountAssignmentLabel(user)).toLowerCase();
+    const status = String(user.status || "active").toLowerCase();
+
+    return (
+      fullName.includes(searchValue) ||
+      username.includes(searchValue) ||
+      email.includes(searchValue) ||
+      source.includes(searchValue) ||
+      role.includes(searchValue) ||
+      assignment.includes(searchValue) ||
+      status.includes(searchValue)
+    );
+  });
+}
+
+function getDeactivatedWebUsers() {
+  return (Array.isArray(allWebUsers) ? allWebUsers : []).filter((user) => {
+    const status = String(user.status || "").toLowerCase().trim();
+    return status === "deactivated" || status === "inactive" || status === "suspended";
+  });
+}
+
+function renderDeactivatedAccountsHistory() {
+  const tableBody = document.getElementById("deactivatedAccountsTableBody");
+  if (!tableBody) return;
+
+  const users = getDeactivatedWebUsers();
+
+  if (!users.length) {
+    tableBody.innerHTML = `
+      <tr>
+        <td colspan="8" class="empty-state">No deactivated accounts found.</td>
+      </tr>
+    `;
+    return;
+  }
+
+  tableBody.innerHTML = users.map((user) => {
+    const accountId = Number(user.id);
+    const accountSource = getAccountSource(user);
+
+    const usernameLabel = getAccountUsername(user);
+    const emailLabel = getAccountEmail(user);
+
+    const roleLabel =
+      accountSource === "mobile"
+        ? formatAccountRoleLabel(user.mobile_role || user.role || "mobile_user")
+        : formatAccountRoleLabel(user.role || "-");
+
+    const assignmentLabel = getAccountAssignmentLabel(user);
+
+    return `
+      <tr>
+        <td>${renderAccountNameCell(user)}</td>
+        <td class="account-identity-cell">${renderAccountIdentityCell(usernameLabel, emailLabel)}</td>
+        <td>${renderAccountSourceChip(accountSource)}</td>
+        <td>${escapeHtml(roleLabel)}</td>
+        <td>${renderAccountAssignmentCell(user)}</td>
+        <td>${renderAccountStatusBadge(user.status || "deactivated")}</td>
+        <td>${formatDate(user.created_at || user.createdAt || user.date_created)}</td>
+        <td>
+          <div class="account-action-buttons">
+            <button
+              class="inline-action-btn activate-btn"
+              type="button"
+              onclick="handleAccountStatusUpdate('${accountSource}', ${accountId}, 'active')">
+              Activate
+            </button>
+
+            <button
+              class="inline-action-btn delete-btn"
+              type="button"
+              onclick="handleDeleteAccount('${accountSource}', ${accountId})">
+              Delete
+            </button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join("");
+}
+
+function openDeactivatedAccountsModal() {
+  const modal = document.getElementById("deactivatedAccountsModal");
+  if (!modal) {
+    console.error("deactivatedAccountsModal not found.");
+    return;
+  }
+
+  renderDeactivatedAccountsHistory();
+  modal.classList.remove("hidden");
+}
+
+function closeDeactivatedAccountsModal() {
+  const modal = document.getElementById("deactivatedAccountsModal");
+  if (!modal) return;
+  modal.classList.add("hidden");
+}
+
+/* =========================
+   EDIT ACCOUNT
+========================= */
+
+function openEditAccountModal(source, id) {
+  const user = allWebUsers.find((u) => Number(u.id) === Number(id));
+
+  if (!user) {
+    showAccountMessage("User not found.", "error");
+    return;
+  }
+
+  currentEditUser = {
+    ...user,
+    source
+  };
+
+  const modal = document.getElementById("editUserModal");
+  const idInput = document.getElementById("editUserId");
+  const usernameInput = document.getElementById("editUsername");
+  const passwordInput = document.getElementById("editPassword");
+  const confirmInput = document.getElementById("editConfirmPassword");
+
+  if (!modal || !idInput || !usernameInput || !passwordInput || !confirmInput) {
+    showAccountMessage("Edit account modal is missing in HTML.", "error");
+    return;
+  }
+
+  idInput.value = id;
+  usernameInput.value = user.username || user.email || user.contact_number || "";
+  passwordInput.value = "";
+  confirmInput.value = "";
+
+  modal.classList.remove("hidden");
+}
+
+function closeEditUserModal() {
+  const modal = document.getElementById("editUserModal");
+  if (modal) modal.classList.add("hidden");
+}
+
+async function submitEditUser() {
+  const id = document.getElementById("editUserId")?.value;
+  const username = document.getElementById("editUsername")?.value.trim();
+  const password = document.getElementById("editPassword")?.value.trim();
+  const confirmPassword = document.getElementById("editConfirmPassword")?.value.trim();
+
+  if (!currentEditUser) {
+    showToast?.("No selected account to edit.", "error");
+    return;
+  }
+
+  if (!id || !username) {
+    showToast?.("Username is required.", "error");
+    return;
+  }
+
+  if (password && password.length < 4) {
+    showToast?.("Password must be at least 4 characters.", "error");
+    return;
+  }
+
+  if (password && password !== confirmPassword) {
+    showToast?.("Passwords do not match.", "error");
+    return;
+  }
+
+  const saveBtn = document.querySelector("#editUserModal .edit-save-btn");
+
+  try {
+    if (saveBtn) {
+      saveBtn.disabled = true;
+      saveBtn.textContent = "Saving...";
+    }
+
+    const url =
+      currentEditUser.source === "mobile"
+        ? `${getAppApiBase()}/web-users/update-mobile/${id}`
+        : `${getAppApiBase()}/web-users/update/${id}`;
+
+    const res = await webAdminFetch(url, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json"
+      },
+      body: JSON.stringify({
+        username,
+        password: password || null
+      })
+    });
+
+    const rawText = await res.text();
+    let data = {};
+
+    try {
+      data = rawText ? JSON.parse(rawText) : {};
+    } catch {
+      data = {};
+    }
+
+    if (!res.ok) {
+      const message = data.message || "Failed to update account.";
+      if (typeof showToast === "function") showToast(message, "error");
+      else showAccountMessage(message, "error");
+      return;
+    }
+
+    closeEditUserModal();
+
+    if (typeof showToast === "function") {
+      showToast(data.message || "Account updated successfully.", "success");
+    } else {
+      showAccountMessage(data.message || "Account updated successfully.", "success");
+    }
+
+    await loadWebUsers();
+
+  } catch (error) {
+    console.error("Edit account error:", error);
+
+    if (typeof showToast === "function") {
+      showToast("Unable to update account.", "error");
+    } else {
+      showAccountMessage("Unable to update account.", "error");
+    }
+  } finally {
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = "Save Changes";
+    }
+  }
+}
+
+function setupAccountSearch() {
+  const searchInput = document.getElementById("accountSearchInput");
+  if (!searchInput) return;
+
+  searchInput.addEventListener("input", () => {
+    const filteredUsers = getFilteredWebUsers();
+    renderWebUsers(filteredUsers);
+  });
+}
+
+async function handleAccountStatusUpdate(source, id, newStatus) {
+  const actionText = newStatus === "suspended" ? "deactivate" : "activate";
+
+  if (!confirm(`Are you sure you want to ${actionText} this account?`)) {
+    return;
+  }
+
+  try {
+    const url =
+      source === "mobile"
+        ? `${getAppApiBase()}/web-users/update-mobile-status/${id}`
+        : `${getAppApiBase()}/web-users/update-status/${id}`;
+
+    const res = await webAdminFetch(url, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json"
+      },
+      body: JSON.stringify({ status: newStatus })
+    });
+
+    const rawText = await res.text();
+    let data = {};
+
+    try {
+      data = rawText ? JSON.parse(rawText) : {};
+    } catch (parseError) {
+      console.error("Status update raw response:", rawText);
+      throw new Error("Status update API did not return valid JSON.");
+    }
+
+    if (!res.ok) {
+      showAccountMessage(data.message || "Failed to update account status.", "error");
+      return;
+    }
+
+    showAccountMessage(data.message || "Account status updated successfully.", "success");
+    await loadWebUsers();
+    renderDeactivatedAccountsHistory();
+  } catch (error) {
+    console.error("Error updating account status:", error);
+    showAccountMessage("Unable to update account status.", "error");
+  }
+}
+
+async function handleDeleteAccount(source, id) {
+  if (!confirm("Are you sure you want to delete this account? This cannot be undone.")) {
+    return;
+  }
+
+  try {
+    const url =
+      source === "mobile"
+        ? `${getAppApiBase()}/web-users/delete-mobile/${id}`
+        : `${getAppApiBase()}/web-users/delete/${id}`;
+
+    const res = await webAdminFetch(url, {
+      method: "DELETE",
+      headers: {
+        Accept: "application/json"
+      }
+    });
+
+    const rawText = await res.text();
+    let data = {};
+
+    try {
+      data = rawText ? JSON.parse(rawText) : {};
+    } catch (parseError) {
+      console.error("Delete raw response:", rawText);
+      throw new Error("Delete API did not return valid JSON.");
+    }
+
+    if (!res.ok) {
+      showAccountMessage(data.message || "Failed to delete account.", "error");
+      return;
+    }
+
+    showAccountMessage(data.message || "Account deleted successfully.", "success");
+    await loadWebUsers();
+    renderDeactivatedAccountsHistory();
+  } catch (error) {
+    console.error("Error deleting account:", error);
+    showAccountMessage("Unable to delete account.", "error");
+  }
+}
+
+let accountEnforcerAors = null;
+let accountEnforcerAorsRequest = null;
+
+async function loadAccountEnforcerAors() {
+  if (accountEnforcerAors) return accountEnforcerAors;
+  if (!accountEnforcerAorsRequest) {
+    accountEnforcerAorsRequest = (async () => {
+      const response = await webAdminFetch(`${getAppApiBase()}/web-users/enforcer-aors`, {
+        headers: { Accept: "application/json" }
+      });
+      const data = await response.json();
+      if (!response.ok || data.success !== true || !Array.isArray(data.aors)) {
+        throw new Error(data.message || "Unable to load AOR assignments.");
+      }
+      accountEnforcerAors = data.aors;
+      return accountEnforcerAors;
+    })().finally(() => { accountEnforcerAorsRequest = null; });
+  }
+  return accountEnforcerAorsRequest;
+}
+
+function setupAccountPlatformForm() {
+  const platformEl = document.getElementById("accountPlatform");
+  const roleEl = document.getElementById("accountRole");
+  const assignmentLabel = document.querySelector('label[for="assignmentName"]');
+
+  if (!platformEl || !roleEl) return;
+
+  const roleOptions = {
+    web: [
+      { value: "division_admin", label: "Division Admin" },
+      { value: "personnel", label: "Personnel" },
+      { value: "supervisor", label: "Supervisor" },
+      { value: "clerk_admin", label: "Clerk Admin" }
+    ],
+    mobile: [
+      { value: "enforcer", label: "Enforcer" },
+      { value: "barangay", label: "Barangay" },
+      { value: "establishment", label: "Establishment" }
+    ]
+  };
+
+  const barangayOptions = [
+    "Apopong",
+    "Baluan",
+    "Batomelong",
+    "Buayan",
+    "Bula",
+    "Calumpang",
+    "City Heights",
+    "Conel",
+    "Dadiangas East",
+    "Dadiangas North",
+    "Dadiangas South",
+    "Dadiangas West",
+    "Fatima",
+    "Katangawan",
+    "Labangal",
+    "Lagao",
+    "Ligaya",
+    "Mabuhay",
+    "Olympog",
+    "San Isidro",
+    "San Jose",
+    "Siguel",
+    "Sinawal",
+    "Tambler",
+    "Tinagacan",
+    "Upper Labay"
+  ];
+
+  function getAssignmentField() {
+    return document.getElementById("assignmentName");
+  }
+
+  function replaceAssignmentField(nextField) {
+    const currentField = getAssignmentField();
+
+    if (!currentField || !currentField.parentElement) return;
+
+    currentField.replaceWith(nextField);
+  }
+
+  function createAssignmentSelect() {
+    const select = document.createElement("select");
+
+    select.id = "assignmentName";
+    select.name = "assignmentName";
+    select.required = true;
+
+    select.innerHTML = `
+      <option value="">Select barangay</option>
+      ${barangayOptions.map((barangay) => `
+        <option value="${barangay}">${barangay}</option>
+      `).join("")}
+    `;
+
+    return select;
+  }
+
+  function createAssignmentInput(placeholder) {
+    const input = document.createElement("input");
+
+    input.type = "text";
+    input.id = "assignmentName";
+    input.name = "assignmentName";
+    input.placeholder = placeholder;
+    input.required = true;
+
+    return input;
+  }
+
+  function renderRoleOptions(platform) {
+    const options = roleOptions[platform] || [];
+    const previousValue = roleEl.value;
+
+    roleEl.innerHTML = `
+      <option value="">Select role</option>
+      ${options.map((option) => `
+        <option value="${option.value}">${option.label}</option>
+      `).join("")}
+    `;
+
+    if (options.some((option) => option.value === previousValue)) {
+      roleEl.value = previousValue;
+    }
+  }
+
+  function renderAssignmentField() {
+    const platform = platformEl.value;
+    const role = roleEl.value;
+    const preview = document.getElementById("enforcerAorPreview");
+    if (preview) {
+      preview.hidden = true;
+      preview.innerHTML = "";
+    }
+
+    if (platform === "web") {
+      if (assignmentLabel) assignmentLabel.textContent = "Division Name";
+      replaceAssignmentField(createAssignmentInput("Enter division name"));
+      return;
+    }
+
+    if (platform === "mobile" && role === "enforcer") {
+      if (assignmentLabel) assignmentLabel.textContent = "Assigned AORs";
+      const field = document.createElement("div");
+      field.id = "assignmentName";
+      field.className = "enforcer-aor-picker";
+      field.setAttribute("role", "group");
+      field.setAttribute("aria-labelledby", "assignmentLabel");
+      field.selectedAorIds = [];
+      field.value = "";
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "enforcer-aor-toggle";
+      toggle.textContent = "Loading barangays...";
+      toggle.disabled = true;
+      toggle.setAttribute("aria-expanded", "false");
+      toggle.setAttribute("aria-controls", "enforcerAorOptions");
+      const options = document.createElement("div");
+      options.id = "enforcerAorOptions";
+      options.className = "enforcer-aor-options";
+      options.hidden = true;
+      field.append(toggle, options);
+      replaceAssignmentField(field);
+      toggle.onclick = () => {
+        options.hidden = !options.hidden;
+        toggle.setAttribute("aria-expanded", String(!options.hidden));
+      };
+      field.addEventListener("keydown", event => {
+        if (event.key === "Escape" && !options.hidden) {
+          event.preventDefault(); event.stopPropagation();
+          options.hidden = true; toggle.setAttribute("aria-expanded", "false"); toggle.focus();
+        }
+      });
+      field.addEventListener("focusout", event => {
+        if (!field.contains(event.relatedTarget)) {
+          options.hidden = true; toggle.setAttribute("aria-expanded", "false");
+        }
+      });
+      loadAccountEnforcerAors().then((aors) => {
+        if (getAssignmentField() !== field) return; // Ignore obsolete role/reset responses.
+        toggle.disabled = !aors.length;
+        toggle.textContent = aors.length ? "Select barangays ▾" : "No AORs available";
+        options.innerHTML = [...aors].sort((a, b) => a.barangay_name.localeCompare(b.barangay_name)).map(aor =>
+          `<label><input type="checkbox" value="${Number(aor.id)}" /><span>${escapeHtml(aor.barangay_name)}</span></label>`).join("");
+        options.onchange = event => {
+          if (event.target.type !== "checkbox") return;
+          const id = Number(event.target.value);
+          field.selectedAorIds = event.target.checked ? [...field.selectedAorIds, id] : field.selectedAorIds.filter(value => value !== id);
+          field.value = field.selectedAorIds.join(",");
+          toggle.textContent = field.selectedAorIds.length ? `${field.selectedAorIds.length} barangay(s) selected ▾` : "Select barangays ▾";
+          if (!preview) return;
+          preview.hidden = !field.selectedAorIds.length;
+          preview.innerHTML = '<div class="enforcer-aor-chips">' + field.selectedAorIds.map(value =>
+            `<span>${escapeHtml(aors.find(aor => Number(aor.id) === value)?.barangay_name || "")}</span>`).join("") + '</div>';
+        };
+      }).catch((error) => {
+        if (getAssignmentField() !== field) return;
+        toggle.textContent = "AORs unavailable — switch role to retry";
+        showAccountMessage(error.message || "Unable to load AOR assignments.", "error");
+      });
+      return;
+    }
+
+    if (platform === "mobile" && role === "barangay") {
+      if (assignmentLabel) assignmentLabel.textContent = "Barangay";
+      replaceAssignmentField(createAssignmentSelect());
+      return;
+    }
+
+    if (platform === "mobile" && role === "establishment") {
+      if (assignmentLabel) assignmentLabel.textContent = "Establishment Name";
+      replaceAssignmentField(createAssignmentInput("Enter establishment name"));
+      return;
+    }
+
+    if (platform === "mobile") {
+      if (assignmentLabel) assignmentLabel.textContent = "Assignment Area";
+      replaceAssignmentField(createAssignmentInput("Select a role first"));
+      return;
+    }
+
+    if (assignmentLabel) assignmentLabel.textContent = "Division / Barangay / Assignment";
+    replaceAssignmentField(createAssignmentInput("Enter assignment name"));
+  }
+
+  function syncAccountPlatformForm() {
+    renderRoleOptions(platformEl.value);
+    renderAssignmentField();
+  }
+
+  platformEl.onchange = function () {
+    renderRoleOptions(this.value);
+    renderAssignmentField();
+  };
+
+  roleEl.onchange = function () {
+    renderAssignmentField();
+  };
+
+  syncAccountPlatformForm();
+}
+
+function setupCreateAccountForm() {
+  const form = document.getElementById("createAccountForm");
+  const submitBtn = document.getElementById("createAccountBtn");
+
+  if (!form) return;
+  if (form.dataset.bound === "true") return;
+
+  form.dataset.bound = "true";
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    const platform = document.getElementById("accountPlatform")?.value || "";
+    const fullName = document.getElementById("fullName")?.value.trim() || "";
+    const username = document.getElementById("newUsername")?.value.trim() || "";
+    const password = document.getElementById("newPassword")?.value.trim() || "";
+    const role = document.getElementById("accountRole")?.value || "";
+    const assignmentName = document.getElementById("assignmentName")?.value.trim() || "";
+    const enforcerAorIds = document.getElementById("assignmentName")?.selectedAorIds || [];
+
+    if (platform === "mobile" && role === "enforcer" && !enforcerAorIds.length) {
+      showAccountMessage("Select at least one AOR.", "error");
+      return;
+    }
+
+    if (!platform || !fullName || !username || !password || !role || !assignmentName) {
+      showAccountMessage("Missing required fields.", "error");
+      return;
+    }
+
+    if (password.length < 4) {
+      showAccountMessage("Password must be at least 4 characters.", "error");
+      return;
+    }
+
+    try {
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Creating...";
+      }
+
+      let url = "";
+      let payload = {};
+
+      if (platform === "web") {
+        url = getCreateWebUserApiUrl();
+        payload = {
+          full_name: fullName,
+          username,
+          password,
+          role,
+          division_name: assignmentName,
+          status: "active"
+        };
+      } else if (platform === "mobile") {
+        url = getCreateMobileUserApiUrl();
+        if (role === "enforcer") {
+          payload = {
+            full_name: fullName, username, password, mobile_role: role,
+            enforcer_aor_ids: enforcerAorIds, status: "active"
+          };
+        } else {
+          payload = {
+            full_name: fullName,
+            username,
+            password,
+            mobile_role: role,
+            assigned_source_name: assignmentName,
+            barangay: role === "barangay" ? assignmentName : null,
+            establishment_name: role === "establishment" ? assignmentName : null,
+            status: "active"
+          };
+        }
+      } else {
+        showAccountMessage("Invalid platform selected.", "error");
+        return;
+      }
+
+      const res = await webAdminFetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json"
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const rawText = await res.text();
+      let data = {};
+
+      try {
+        data = rawText ? JSON.parse(rawText) : {};
+      } catch (parseError) {
+        console.error("Create account raw response:", rawText);
+        throw new Error("Create account API did not return valid JSON.");
+      }
+
+      if (!res.ok) {
+        showAccountMessage(data.message || "Failed to create account.", "error");
+        return;
+      }
+
+      closeCreateAccountModal();
+      showAccountMessage(data.message || "Account created successfully.", "success");
+
+      await loadWebUsers();
+    } catch (error) {
+      console.error("Error creating account:", error);
+      showAccountMessage("Unable to create account.", "error");
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Create Account";
+      }
+    }
+  });
+}
+
+/* =========================
+   GLOBAL EXPORTS
+========================= */
+
+window.handleAccountStatusUpdate = handleAccountStatusUpdate;
+window.openCreateAccountModal = openCreateAccountModal;
+window.closeCreateAccountModal = closeCreateAccountModal;
+window.handleDeleteAccount = handleDeleteAccount;
+window.openDeactivatedAccountsModal = openDeactivatedAccountsModal;
+window.closeDeactivatedAccountsModal = closeDeactivatedAccountsModal;
+window.openEditAccountModal = openEditAccountModal;
+window.closeEditUserModal = closeEditUserModal;
+window.submitEditUser = submitEditUser;
+window.formatAccountRoleLabel = formatAccountRoleLabel;

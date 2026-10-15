@@ -1,0 +1,158 @@
+.tracking-offline-notice {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    padding: 14px 16px;
+    margin: 0 0 16px;
+    border: 1px solid #d8eadb;
+    border-radius: 18px;
+    background: linear-gradient(135deg, #f1faf3, #ffffff);
+    color: #244332;
+  }
+
+  .tracking-offline-notice-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #e1f4e5;
+    color: #1b7f38;
+    font-weight: 800;
+    flex: 0 0 auto;
+  }
+
+  .tracking-offline-notice strong {
+    display: block;
+    font-size: 14px;
+    color: #173d2b;
+    margin-bottom: 3px;
+  }
+
+  .tracking-offline-notice span {
+    display: block;
+    font-size: 12px;
+    color: #5e7064;
+    line-height: 1.45;
+  }
+
+  .tracking-signal-status.good {
+    color: #1f7a3a;
+  }
+
+  .tracking-signal-status.warning {
+    color: #a05a00;
+  }
+
+  .tracking-signal-status.idle {
+    color: #66766d;
+  }
+
+  .active-truck-item.sync-pending {
+    border-color: #f4c56f;
+    background: #fffaf0;
+  }
+
+  .active-truck-item.stopped {
+    opacity: 0.72;
+  }
+
+  .truck-list-topline {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 2px;
+  }
+
+  .truck-status-label {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: max-content;
+    padding: 3px 8px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+  }
+
+  .truck-status-label.active {
+    background: #e4f7e8;
+    color: #207b35;
+  }
+
+  .truck-status-label.sync-pending {
+    background: #fff0cf;
+    color: #9a5b00;
+  }
+
+  .truck-status-label.stopped,
+  .truck-status-label.offline {
+    background: #eef1f3;
+    color: #5e6a70;
+  }
+
+  .truck-sync-note,
+  .truck-last-sync {
+    color: #68776f;
+    line-height: 1.35;
+  }
+
+  .tracking-map-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 10px;
+    font-size: 11px;
+    color: #58685f;
+  }
+
+  .tracking-map-legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .tracking-legend-dot,
+  .tracking-legend-line {
+    display: inline-block;
+    flex: 0 0 auto;
+  }
+
+  .tracking-legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+  }
+
+  .tracking-legend-dot.start {
+    background: #198754;
+  }
+
+  .tracking-legend-dot.current {
+    background: #dc3545;
+  }
+
+  .tracking-legend-line.actual {
+    width: 22px;
+    height: 4px;
+    border-radius: 999px;
+    background: #0d6efd;
+  }
+
+  .tracking-legend-line.gap {
+    width: 24px;
+    border-top: 3px dashed #0d6efd;
+  }
+
+  @keyframes trackingMarkerPulse {
+    0% { box-shadow: 0 0 0 0 rgba(25, 135, 84, 0.45), 0 3px 12px rgba(0,0,0,0.28); }
+    70% { box-shadow: 0 0 0 10px rgba(25, 135, 84, 0), 0 3px 12px rgba(0,0,0,0.28); }
+    100% { box-shadow: 0 0 0 0 rgba(25, 135, 84, 0), 0 3px 12px rgba(0,0,0,0.28); }
+  }
+
+  .tracking-marker-pulse {
+    animation: trackingMarkerPulse 1.8s infinite;
+  }

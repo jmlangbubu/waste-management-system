@@ -1,0 +1,3685 @@
+<!DOCTYPE html>
+<html lang="en" class="web-session-pending">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Admin Panel</title>
+<style>html.web-session-pending body { visibility: hidden; }</style>
+<link rel="stylesheet" href="css/admin/admin-tokens.css">
+<link rel="stylesheet" href="css/admin/admin-base.css">
+<link rel="stylesheet" href="css/admin/admin-layout.css">
+<link rel="stylesheet" href="css/admin/admin-sidebar.css">
+<link rel="stylesheet" href="css/admin/admin-topbar.css">
+<link rel="stylesheet" href="css/admin/admin-components.css">
+<link rel="stylesheet" href="css/admin/admin-tables.css">
+<link rel="stylesheet" href="css/admin/admin-modals.css">
+<link rel="stylesheet" href="css/admin/admin-appointments.css">
+<link rel="stylesheet" href="css/admin/admin-tracking.css">
+<link rel="stylesheet" href="css/admin/admin-tracking-offline-sync.css">
+<link rel="stylesheet" href="css/admin/admin-users.css">
+<link rel="stylesheet" href="css/admin/admin-orientation.css">
+<link rel="stylesheet" href="css/admin/admin-waste-records.css">
+<link rel="stylesheet" href="css/admin/admin-waste-corrections.css">
+<link rel="stylesheet" href="css/admin/admin-complaints.css">
+<link rel="stylesheet" href="css/admin/admin-profile.css">
+<link rel="stylesheet" href="css/admin/admin-dispatch.css">
+<link rel="stylesheet" href="css/admin/admin-dispatch-plans.css">
+<link rel="stylesheet" href="css/admin/admin-responsive.css">
+<link rel="stylesheet" href="css/admin/admin-overrides.css">
+<link rel="stylesheet" href="css/admin/admin-dashboard.css">
+<link rel="stylesheet" href="css/admin/admin-fleet.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+
+</head>
+<body>
+  <div class="admin-layout" id="adminLayout">
+    <aside class="dashboard-sidebar" id="dashboardSidebar">
+      <div class="sidebar-top">
+        <div class="sidebar-brand">
+          <button
+            id="sidebarLogoToggleBtn"
+            class="sidebar-logo-toggle"
+            type="button"
+            aria-label="Toggle sidebar"
+            title="Toggle sidebar"
+          >
+            <span class="brand-mark brand-logo">
+              <img src="/images/wmo-logo-new.png" alt="WMO Logo" class="sidebar-logo-img" />
+              <span class="sidebar-logo-fallback">W</span>
+            </span>
+          </button>
+
+          <div class="brand-text">
+            <h2 id="sidebarBrandTitle">WMO Admin</h2>
+            <p id="sidebarBrandSubtitle">Management Panel</p>
+          </div>
+        </div>
+
+       <nav class="sidebar-nav" aria-label="Admin navigation">
+  <div class="sidebar-nav-group sidebar-nav-group-overview">
+    <div class="sidebar-section-label">Overview</div>
+
+    <button class="nav-btn active" data-section="dashboardSection" type="button" aria-label="Dashboard Overview" title="Dashboard Overview">
+      <i data-lucide="layout-dashboard"></i>
+      <span>Dashboard Overview</span>
+    </button>
+  </div>
+
+  <div class="sidebar-nav-group sidebar-nav-group-operations">
+    <div class="sidebar-section-label">Operations</div>
+
+    <button class="nav-btn" data-section="recordsSection" type="button" aria-label="Waste Records" title="Waste Records">
+      <i data-lucide="clipboard-list"></i>
+      <span>Waste Records</span>
+    </button>
+
+    <button class="nav-btn" data-section="appointmentsSection" type="button" aria-label="Services" title="Services">
+      <i data-lucide="calendar-days"></i>
+      <span>Services</span>
+    </button>
+
+    <button class="nav-btn" data-section="complaintsSection" type="button" aria-label="Complaints" title="Complaints">
+      <i data-lucide="message-square-warning"></i>
+      <span>Complaints</span>
+    </button>
+
+    <button class="nav-btn" data-section="trackingSection" type="button" aria-label="Live Tracking" title="Live Tracking">
+      <i data-lucide="map-pinned"></i>
+      <span>Live Tracking</span>
+    </button>
+  </div>
+
+  <div class="sidebar-nav-group sidebar-nav-group-management">
+    <div class="sidebar-section-label">Management</div>
+
+    <button id="navUserManagement" class="nav-btn" data-section="userManagementSection" type="button" aria-label="User Management" title="User Management">
+      <i data-lucide="users"></i>
+      <span>User Management</span>
+    </button>
+  </div>
+
+  <div class="sidebar-nav-group sidebar-nav-group-more">
+    <div class="sidebar-section-label">More</div>
+
+    <div class="sidebar-other-group" id="sidebarOtherGroup">
+          <button class="sidebar-other-trigger" id="sidebarOtherTrigger" type="button" aria-expanded="false" aria-label="Other" title="Other">
+            <span class="sidebar-other-trigger-left">
+              <i data-lucide="ellipsis"></i>
+              <span>Other</span>
+            </span>
+
+            <span class="sidebar-other-arrow" aria-hidden="true"><i data-lucide="chevron-down"></i></span>
+          </button>
+
+          <div class="sidebar-other-menu hidden" id="sidebarOtherMenu">
+            <button type="button" class="sidebar-other-btn" id="openCalendarActivitiesBtn">
+              <i data-lucide="calendar-range"></i>
+              <span>Calendar of Activities</span>
+            </button>
+
+            <button type="button" class="sidebar-other-btn" id="openIncomingInvoiceBtn">
+              <i data-lucide="receipt-text"></i>
+              <span>Incoming Invoice</span>
+            </button>
+          </div>
+        </div>
+  </div>
+</nav>
+      </div>
+
+      <div class="sidebar-bottom">
+        <div class="sidebar-section-label sidebar-account-label">Account</div>
+
+        <div class="sidebar-account-row">
+          <span class="sidebar-account-avatar" aria-hidden="true">
+            <i data-lucide="user-round"></i>
+          </span>
+
+          <div class="sidebar-user-card">
+            <div class="sidebar-user-name" id="sidebarName">-</div>
+            <div class="sidebar-account-meta">
+              <span class="sidebar-user-role" id="sidebarRole">-</span>
+            </div>
+          </div>
+        </div>
+
+        <button class="logout-btn" id="logoutBtn" type="button" aria-label="Logout" title="Logout">
+          <i data-lucide="log-out" aria-hidden="true"></i>
+          <span>Logout</span>
+        </button>
+      </div>
+    </aside>
+
+    <div id="sidebarBackdrop" class="sidebar-backdrop hidden"></div>
+
+    <main class="main-content">
+      <div class="topbar">
+        <div class="topbar-left">
+          <button id="mobileSidebarToggleBtn" class="sidebar-toggle-btn mobile-sidebar-toggle" type="button" aria-label="Open sidebar" title="Open sidebar">☰</button>
+          <div>
+            <h1 id="pageTitle">Dashboard Overview</h1>
+            <p class="topbar-subtitle" id="pageSubtitle">Centralized monitoring and administration panel.</p>
+          </div>
+        </div>
+
+        <div class="topbar-actions">
+          <div class="notification-wrapper">
+            <button id="notificationBtn" class="notification-btn" type="button" aria-label="Notifications">
+              <i data-lucide="bell" aria-hidden="true"></i>
+              <span id="notificationCount" class="notif-badge">0</span>
+            </button>
+
+            <div id="notificationDropdown" class="notification-dropdown hidden">
+              <div class="notif-header">Notifications</div>
+              <div id="notificationList" class="notif-list">
+                <div class="notif-empty">No notifications</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="topbar-profile-wrapper">
+            <button
+              id="topbarProfileBtn"
+              class="topbar-profile-btn"
+              type="button"
+              aria-label="Change admin profile picture"
+              title="Change profile picture"
+            >
+              <img
+                id="topbarProfileImage"
+                class="topbar-profile-image hidden"
+                src=""
+                alt="Admin profile picture"
+              />
+
+              <span id="topbarProfileFallback" class="topbar-profile-fallback">
+                <i data-lucide="user"></i>
+              </span>
+
+              <span class="topbar-profile-camera" aria-hidden="true">
+                <i data-lucide="camera"></i>
+              </span>
+            </button>
+
+            <input
+              id="topbarProfileInput"
+              class="topbar-profile-input"
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              hidden
+            />
+          </div>
+
+          <!-- Kept hidden so existing refresh JS does not break if it looks for #refreshBtn. -->
+          <button class="refresh-btn refresh-btn-hidden" id="refreshBtn" type="button" hidden aria-hidden="true" tabindex="-1">
+            Refresh Data
+          </button>
+        </div>
+      </div>
+
+ <section id="dashboardSection" class="content-section dashboard-executive active">
+
+  <!-- BAND 1: KPI STRIP -->
+  <div class="waste-summary-cards dashboard-kpi-strip" aria-label="Waste category totals">
+    <button type="button" class="waste-summary-card biodegradable" data-waste-category="biodegradable" aria-pressed="false">
+      <div class="waste-summary-icon waste-icon--bio" aria-hidden="true">
+              <img src="/images/dashboard/wmo-icon-biodegradable.png" alt="" aria-hidden="true" />
+            </div>
+      <div>
+        <strong id="totalBiodegradable">0</strong>
+        <span>Biodegradable</span>
+        <small id="shareBiodegradable">0% of selected waste</small>
+      </div>
+    </button>
+
+    <button type="button" class="waste-summary-card recyclable" data-waste-category="recyclable" aria-pressed="false">
+      <div class="waste-summary-icon waste-icon--recyclable" aria-hidden="true">
+              <img src="/images/dashboard/wmo-icon-recyclable.png" alt="" aria-hidden="true" />
+            </div>
+      <div>
+        <strong id="totalRecyclable">0</strong>
+        <span>Recyclable</span>
+        <small id="shareRecyclable">0% of selected waste</small>
+      </div>
+    </button>
+
+    <button type="button" class="waste-summary-card residual" data-waste-category="residual" aria-pressed="false">
+      <div class="waste-summary-icon waste-icon--residual" aria-hidden="true">
+              <img src="/images/dashboard/wmo-icon-residual-waste.png" alt="" aria-hidden="true" />
+            </div>
+      <div>
+        <strong id="totalResidual">0</strong>
+        <span>Residual</span>
+        <small id="shareResidual">0% of selected waste</small>
+      </div>
+    </button>
+
+    <button type="button" class="waste-summary-card special" data-waste-category="special" aria-pressed="false">
+      <div class="waste-summary-icon waste-icon--special" aria-hidden="true">
+              <img src="/images/dashboard/wmo-icon-special-waste.png" alt="" aria-hidden="true" />
+            </div>
+      <div>
+        <strong id="totalHazardous">0</strong>
+        <span>Special Waste</span>
+        <small id="shareSpecial">0% of selected waste</small>
+      </div>
+    </button>
+  </div>
+
+  <!-- BAND 2: PRIMARY MONITORING -->
+  <div class="dashboard-main-grid dashboard-primary-band">
+    <div class="page-card dashboard-primary-card">
+      <div class="page-card-header dashboard-header-row">
+        <div class="dashboard-title-with-icon">
+          <div class="dashboard-card-icon dashboard-icon--analytics" aria-hidden="true">
+              <img src="/images/dashboard/wmo-icon-clipboard.png" alt="" aria-hidden="true" />
+            </div>
+          <div>
+            <h2>Waste Trend</h2>
+            <p>Validated waste volume over time.</p>
+          </div>
+        </div>
+
+        <div class="dashboard-header-actions">
+          <div class="segmented-filter">
+            <button type="button" class="segment-btn active" data-range="day">Day</button>
+            <button type="button" class="segment-btn" data-range="month">Month</button>
+            <button type="button" class="segment-btn" data-range="year">Year</button>
+          </div>
+          <button type="button" class="view-all-btn" id="viewAllAnalyticsBtn">View All</button>
+        </div>
+      </div>
+
+      <button type="button" class="view-all-btn" id="clearWasteCategoryBtn">All Categories</button>
+      <p id="dashboardWasteRefreshStatus" class="dashboard-refresh-status" role="status" aria-live="polite"></p>
+      <div class="chart-card modern-trend-card">
+        <div id="wasteTrendChart" class="waste-trend-box">
+          <canvas id="wasteTrendCanvas"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="dashboard-side-stack">
+      <div class="page-card recent-records-card">
+        <div class="page-card-header compact-header">
+          <div class="dashboard-title-with-icon">
+            <div class="dashboard-card-icon dashboard-icon--records" aria-hidden="true">
+              <svg viewBox="0 0 24 24" role="img" focusable="false">
+                <path d="M9 4h6" />
+                <path d="M10 2h4a2 2 0 0 1 2 2v1H8V4a2 2 0 0 1 2-2Z" />
+                <path d="M7 5H6a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-1" />
+                <path d="M8 11h8" />
+                <path d="M8 15h5" />
+              </svg>
+            </div>
+            <div>
+              <h2>Recent Waste Records</h2>
+              <p>Latest submitted monitoring records.</p>
+            </div>
+          </div>
+          <button type="button" class="view-all-btn small" onclick="openSection('recordsSection')">View All</button>
+        </div>
+
+        <div class="recent-records-preview">
+          <table>
+            <thead>
+              <tr>
+                <th>Control No.</th>
+                <th>Source</th>
+                <th>Type</th>
+                <th>Grand Total</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="dashboardRecentRecordsBody">
+              <tr>
+                <td colspan="5" class="empty-state">No recent records available.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="page-card latest-summary-card">
+        <div class="page-card-header">
+          <div class="dashboard-title-with-icon">
+            <div class="dashboard-card-icon dashboard-icon--verified" aria-hidden="true">
+              <svg viewBox="0 0 24 24" role="img" focusable="false">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" />
+                <path d="m9 12 2 2 4-5" />
+              </svg>
+            </div>
+            <div>
+              <h2>Latest Submission</h2>
+              <p>Most recent validated waste record.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="session-box">
+          <div class="session-row"><span class="session-label">Barangay</span><span class="session-value" id="latestSubmissionBarangay">-</span></div>
+          <div class="session-row"><span class="session-label">Personnel</span><span class="session-value" id="latestSubmissionPersonnel">-</span></div>
+          <div class="session-row"><span class="session-label">Validated By</span><span class="session-value" id="latestSubmissionEnforcer">-</span></div>
+          <div class="session-row"><span class="session-label">Records Today</span><span class="session-value" id="recordsToday">0</span></div>
+          <div class="session-row"><span class="session-label">Submitted At</span><span class="session-value" id="latestSubmissionDate">-</span></div>
+          <div class="session-row"><span class="session-label">Current Role</span><span class="session-value" id="loggedInRole">-</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BAND 3: SUPPORTING INSIGHTS -->
+  <div class="dashboard-bottom-grid dashboard-support-grid">
+    <div class="page-card dashboard-category-card">
+      <div class="page-card-header dashboard-header-row">
+        <div class="dashboard-title-with-icon">
+          <div class="dashboard-card-icon dashboard-icon--category" aria-hidden="true">
+              <img src="/images/dashboard/wmo-icon-clipboard.png" alt="" aria-hidden="true" />
+            </div>
+          <div>
+            <h2>Waste Category Analytics</h2>
+            <p>Distribution by waste category.</p>
+          </div>
+        </div>
+
+        <div class="dashboard-header-actions">
+          <div class="segmented-filter">
+            <button type="button" class="segment-btn active" data-category-range="day">Day</button>
+            <button type="button" class="segment-btn" data-category-range="month">Month</button>
+            <button type="button" class="segment-btn" data-category-range="year">Year</button>
+          </div>
+          <button type="button" class="view-all-btn" id="viewAllWasteMixBtn">View All</button>
+        </div>
+      </div>
+
+      <div class="chart-card medium-chart-card">
+        <div class="chart-placeholder" id="wasteCategoryChart">Chart area</div>
+      </div>
+    </div>
+
+    <div class="page-card operations-snapshot-card">
+      <div class="operations-snapshot-header">
+        <div>
+          <span class="dashboard-eyebrow">Operations</span>
+          <h2>Operations Snapshot</h2>
+        </div>
+        <span class="operations-snapshot-status">Live overview</span>
+      </div>
+
+      <div class="operations-snapshot-grid">
+        <section class="operations-panel dashboard-fleet-status-panel" aria-labelledby="dashboardFleetStatusTitle">
+          <div class="operations-panel-heading">
+            <div class="dashboard-card-icon dashboard-icon--truck" aria-hidden="true">
+              <img src="/images/dashboard/wmo-icon-truck-status.png" alt="" aria-hidden="true" />
+            </div>
+            <div>
+              <h3 id="dashboardFleetStatusTitle">Truck Status</h3>
+              <p>Registered condition and live operations.</p>
+            </div>
+          </div>
+
+          <div class="dashboard-operation-metrics dashboard-fleet-metrics" aria-live="polite">
+            <div class="dashboard-operation-metric metric-neutral">
+              <span>Registered</span>
+              <strong id="dashboardFleetTotal">—</strong>
+            </div>
+            <div class="dashboard-operation-metric metric-positive">
+              <span>Available</span>
+              <strong id="dashboardFleetAvailable">—</strong>
+            </div>
+            <div class="dashboard-operation-metric metric-active">
+              <span>Active</span>
+              <strong id="dashboardFleetActive">—</strong>
+            </div>
+            <div class="dashboard-operation-metric metric-warning">
+              <span>Maintenance</span>
+              <strong id="dashboardFleetMaintenance">—</strong>
+            </div>
+            <div class="dashboard-operation-metric metric-danger">
+              <span>Out of Service</span>
+              <strong id="dashboardFleetOutOfService">—</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="operations-panel dashboard-dispatch-summary-panel" aria-labelledby="dashboardDispatchSummaryTitle">
+          <div class="operations-panel-heading">
+            <div class="dashboard-card-icon dashboard-icon--dispatch" aria-hidden="true">
+              <img src="/images/dashboard/wmo-icon-dispatch-route.png" alt="" aria-hidden="true" />
+            </div>
+            <div>
+              <h3 id="dashboardDispatchSummaryTitle">Dispatch Planning</h3>
+              <p>Today, tomorrow, and active field work.</p>
+            </div>
+          </div>
+
+          <div class="dashboard-operation-metrics dashboard-dispatch-metrics" aria-live="polite">
+            <div class="dashboard-operation-metric metric-neutral">
+              <span>Planned Today</span>
+              <strong id="dashboardDispatchToday">—</strong>
+            </div>
+            <div class="dashboard-operation-metric metric-neutral">
+              <span>Planned Tomorrow</span>
+              <strong id="dashboardDispatchTomorrow">—</strong>
+            </div>
+            <div class="dashboard-operation-metric metric-active">
+              <span>Active Dispatches</span>
+              <strong id="dashboardDispatchActive">—</strong>
+            </div>
+            <div class="dashboard-next-schedule">
+              <span>Next Dispatch</span>
+              <strong id="dashboardDispatchNext">Loading dispatch…</strong>
+              <small id="dashboardDispatchNextMeta">Checking planned dispatches</small>
+            </div>
+          </div>
+        </section>
+
+        <section class="operations-panel dashboard-latest-operation-panel" aria-labelledby="dashboardLatestOperationTitle">
+          <div class="operations-panel-heading">
+            <div class="dashboard-card-icon dashboard-icon--latest-operation" aria-hidden="true">
+              <img src="/images/dashboard/wmo-icon-latest-operations.png" alt="" aria-hidden="true" />
+            </div>
+            <div>
+              <h3 id="dashboardLatestOperationTitle">Latest Operations</h3>
+              <p id="dashboardLatestSource">Most recent completed field activity.</p>
+            </div>
+          </div>
+
+          <div class="dashboard-latest-operation" id="dashboardLatestOperation" aria-live="polite">
+            <div class="dashboard-latest-operation-copy">
+              <strong id="dashboardLatestTruck">Loading operations…</strong>
+              <span id="dashboardLatestEnforcer">Checking recent reports</span>
+            </div>
+            <div class="dashboard-latest-operation-result">
+              <span class="dashboard-operation-status" id="dashboardLatestStatus">Loading</span>
+              <time id="dashboardLatestTime">—</time>
+            </div>
+          </div>
+        </section>
+
+        <section class="compact-recommendation-card operations-panel dashboard-recommendations-panel" aria-labelledby="dashboardRecommendationsTitle">
+          <div class="operations-panel-heading">
+            <div class="dashboard-card-icon dashboard-icon--recommendation" aria-hidden="true">
+              <img src="/images/dashboard/wmo-icon-recommendation.png" alt="" aria-hidden="true" />
+            </div>
+            <div>
+              <h3 id="dashboardRecommendationsTitle">System Recommendations</h3>
+              <p>Compact operational guidance.</p>
+            </div>
+          </div>
+
+          <div class="summary-list" id="recommendationList">
+            <div class="summary-item"><span>No recommendations available yet.</span></div>
+          </div>
+        </section>
+      </div>
+
+      <div class="dashboard-legacy-monitoring-hooks" hidden aria-hidden="true">
+        <button type="button" id="viewAllTruckAnalyticsBtn" tabindex="-1">View All</button>
+        <span id="monitoringActiveTruckCount">0</span>
+        <span id="monitoringMaintenanceCount">0</span>
+        <div id="monitoringAlertList"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="legacy-metrics-hidden" aria-hidden="true">
+    <span id="totalWasteVolume">0</span>
+    <span id="totalRecords">0</span>
+    <span id="activeBarangaysCount">0</span>
+    <span id="totalUsersCount">0</span>
+    <span id="activeWebUsersCount">0</span>
+    <span id="inactiveUsersCount">0</span>
+    <span id="superAdminUsersCount">0</span>
+    <span id="dominantWasteType">-</span>
+    <span id="dominantWasteValue">-</span>
+    <span id="highestWasteBarangay">-</span>
+    <span id="highestWasteVolume">-</span>
+    <span id="recordsThisWeek">0</span>
+    <span id="lastRefreshTime">-</span>
+    <span id="loggedInName">-</span>
+    <span id="sessionRoleMirror">-</span>
+  </div>
+
+</section>
+
+      <!-- RECORDS -->
+      <section id="recordsSection" class="content-section">
+        <div class="page-card">
+          <div class="page-card-header">
+            <div>
+            </div>
+            <button type="button" id="wasteCorrectionQueueBtn" class="waste-correction-button" aria-haspopup="dialog" aria-controls="wasteCorrectionQueuePanel" hidden>Correction Requests</button>
+          </div>
+
+          <div class="filter-bar">
+
+  <div class="filter-group wide">
+    <label for="wasteSearchInput">Search</label>
+    <input
+      id="wasteSearchInput"
+      type="text"
+      placeholder="Search barangay, establishment, validated by..." />
+  </div>
+
+  <div class="filter-group">
+    <label for="wasteBarangayFilter">Barangay</label>
+    <select id="wasteBarangayFilter">
+      <option value="">All Barangays</option>
+    </select>
+  </div>
+
+  <div class="filter-group">
+    <label for="wasteTypeFilter">Entity Type</label>
+    <select id="wasteTypeFilter">
+      <option value="">All Types</option>
+      <option value="Barangay">Barangay</option>
+      <option value="Establishment">Establishment</option>
+    </select>
+  </div>
+
+  <div class="filter-group">
+    <label for="wasteValidationFilter">Validation Status</label>
+    <select id="wasteValidationFilter">
+      <option value="">All Validation</option>
+      <option value="Validated">Validated</option>
+    </select>
+  </div>
+
+  <!-- ✅ NEW: MONTH -->
+  <div class="filter-group">
+    <label for="wasteMonthFilter">Month</label>
+    <select id="wasteMonthFilter">
+      <option value="">All Months</option>
+      <option value="1">January</option>
+      <option value="2">February</option>
+      <option value="3">March</option>
+      <option value="4">April</option>
+      <option value="5">May</option>
+      <option value="6">June</option>
+      <option value="7">July</option>
+      <option value="8">August</option>
+      <option value="9">September</option>
+      <option value="10">October</option>
+      <option value="11">November</option>
+      <option value="12">December</option>
+    </select>
+  </div>
+
+  <!-- ✅ NEW: YEAR -->
+  <div class="filter-group">
+    <label for="wasteYearFilter">Year</label>
+    <select id="wasteYearFilter">
+      <option value="">All Years</option>
+    </select>
+  </div>
+
+  <!-- ✅ NEW: REPORT -->
+  <div class="filter-group">
+    <label>&nbsp;</label>
+    <button type="button" id="generateWasteReportBtn" class="view-all-btn">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M6 3h9l3 3v15H6z"></path>
+        <path d="M14 3v4h4M9 12h6M9 16h6"></path>
+      </svg>
+      <span>Generate Report</span>
+    </button>
+  </div>
+
+</div>
+
+          <div class="table-shell waste-records-table-wrapper">
+            <table class="waste-records-table">
+              <thead>
+                <tr>
+                  <th>Control No.</th>
+                  <th>Name</th>
+                  <th>Type</th>
+                  <th>Period</th>
+                  <th>Biodegradable</th>
+                  <th>Recyclable</th>
+                  <th>Residual</th>
+                  <th>Special</th>
+                  <th>Grand Total</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="wasteRecordsTableBody">
+                <tr>
+                  <td colspan="11" class="loading-state">Loading validated waste records...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- APPOINTMENTS -->
+      <section id="appointmentsSection" class="content-section">
+        <div class="appointments-workspace-tabs" role="tablist" aria-label="Appointment workspace views">
+          <button
+            type="button"
+            class="appointments-workspace-tab active"
+            id="appointmentsActiveTab"
+            data-appointments-tab="active"
+            role="tab"
+            aria-selected="true"
+            aria-controls="appointmentsActivePanel"
+          >
+            Active Requests
+          </button>
+          <button
+            type="button"
+            class="appointments-workspace-tab"
+            id="appointmentsOrientationTab"
+            data-appointments-tab="orientation"
+            role="tab"
+            aria-selected="false"
+            aria-controls="appointmentsOrientationPanel"
+            tabindex="-1"
+          >
+            Orientation
+          </button>
+          <button
+            type="button"
+            class="appointments-workspace-tab"
+            id="appointmentsHistoryTab"
+            data-appointments-tab="history"
+            role="tab"
+            aria-selected="false"
+            aria-controls="appointmentsHistoryPanel"
+            tabindex="-1"
+          >
+            History
+          </button>
+        </div>
+
+        <div
+          class="appointments-workspace-panel active"
+          id="appointmentsActivePanel"
+          data-appointments-panel="active"
+          role="tabpanel"
+          aria-labelledby="appointmentsActiveTab"
+        >
+          <div class="page-card">
+            <div class="page-card-header appointment-header">
+              <div>
+                <h3>Active Requests</h3>
+                <p>Review incoming service requests and manage appointment decisions.</p>
+              </div>
+            </div>
+
+            <div class="table-shell">
+             <table class="appointments-table">
+                <thead>
+                  <tr>
+                    <th>Reference Code</th>
+                    <th>Name</th>
+                    <th>Barangay</th>
+                    <th>Contact</th>
+                    <th>Email Address</th>
+                    <th>Purpose</th>
+                    <th>Date</th>
+                    <th>Status</th>
+                    <th>Assigned Personnel</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="appointmentsTableBody">
+                  <tr>
+                    <td colspan="10" class="loading-state">Loading active appointments...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div
+          class="appointments-workspace-panel"
+          id="appointmentsOrientationPanel"
+          data-appointments-panel="orientation"
+          role="tabpanel"
+          aria-labelledby="appointmentsOrientationTab"
+          hidden
+        >
+          <!-- Existing Orientation module relocated into the Appointments workspace. -->
+          <div id="orientationSection">
+            <div class="page-card">
+              <div class="page-card-header">
+                <div>
+                  <h3>Orientation Queue</h3>
+                  <p>Manage QR-based orientation, exam progress, and completion.</p>
+                </div>
+
+              </div>
+
+              <div class="table-shell orientation-queue-table-shell">
+                <table class="orientation-history-table">
+                  <thead>
+                    <tr><th>Name</th><th>Barangay</th><th>Scheduled Date</th><th>Purpose</th><th>Status</th><th>Action</th></tr>
+                  </thead>
+                  <tbody id="orientationQueueTableBody">
+                    <tr><td colspan="6">Loading orientation records...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div
+          class="appointments-workspace-panel"
+          id="appointmentsHistoryPanel"
+          data-appointments-panel="history"
+          role="tabpanel"
+          aria-labelledby="appointmentsHistoryTab"
+          hidden
+        >
+          <div class="page-card">
+            <div class="page-card-header appointment-header">
+              <div>
+                <h3>Service History</h3>
+                <p>View completed, cancelled, and past service records.</p>
+              </div>
+            </div>
+
+            <div class="appointments-history-grid">
+              <article class="appointments-history-card">
+                <span class="appointments-history-icon" aria-hidden="true">
+                  <i data-lucide="calendar-check-2"></i>
+                </span>
+                <div>
+                  <h3>Appointment History</h3>
+                  <p>Review completed, rejected, cancelled, and past WMO service requests.</p>
+                </div>
+                <button type="button" class="view-all-btn small" id="openAppointmentHistoryBtn">
+                  Open Appointment History
+                </button>
+              </article>
+
+              <article class="appointments-history-card">
+                <span class="appointments-history-icon" aria-hidden="true">
+                  <i data-lucide="graduation-cap"></i>
+                </span>
+                <div>
+                  <h3>Orientation Report</h3>
+                  <p>Review orientation attendance, quiz scores, completion, and certificate records.</p>
+                </div>
+                <button type="button" class="view-all-btn small" id="openOrientationHistoryBtn">
+                  Open Orientation Report
+                </button>
+              </article>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- BARANGAY COMPLAINTS -->
+<section id="barangayComplaintsSection" class="content-section">
+  <div class="page-card">
+    <div class="page-card-header appointment-header">
+      <div>
+        <h2>Assigned Barangay Complaints</h2>
+        <p>View complaints forwarded to your barangay and respond to waste issues using the pinned location.</p>
+      </div>
+
+      <div class="appointment-toolbar">
+        <button type="button" class="view-all-btn small" id="btnRefreshBarangayComplaints">
+          Refresh
+        </button>
+      </div>
+    </div>
+
+    <div class="complaints-summary-grid">
+      <div class="complaint-summary-card">
+        <span class="summary-label">Total Assigned</span>
+        <strong id="barangayComplaintsTotalCount">0</strong>
+      </div>
+
+      <div class="complaint-summary-card">
+        <span class="summary-label">Validated</span>
+        <strong id="barangayComplaintsValidatedCount">0</strong>
+      </div>
+
+      <div class="complaint-summary-card">
+        <span class="summary-label">Forwarded</span>
+        <strong id="barangayComplaintsForwardedCount">0</strong>
+      </div>
+
+      <div class="complaint-summary-card">
+        <span class="summary-label">Resolved</span>
+        <strong id="barangayComplaintsResolvedCount">0</strong>
+      </div>
+    </div>
+
+    <div class="filter-bar">
+      <div class="filter-group wide">
+        <label for="barangayComplaintsSearchInput">Search</label>
+        <input
+          id="barangayComplaintsSearchInput"
+          type="text"
+          placeholder="Search subject, citizen, status, or barangay" />
+      </div>
+
+      <div class="filter-group">
+        <label for="barangayComplaintsStatusFilter">Status</label>
+        <select id="barangayComplaintsStatusFilter">
+          <option value="all">All Status</option>
+          <option value="validated">Validated</option>
+          <option value="forwarded">Forwarded</option>
+          <option value="resolved">Resolved</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="table-shell">
+      <table class="complaints-table">
+        <thead>
+          <tr>
+            <th>Subject</th>
+            <th>Citizen</th>
+            <th>Barangay</th>
+            <th>Status</th>
+            <th>Date</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="barangayComplaintsTableBody">
+          <tr>
+            <td colspan="6" class="loading-state">Loading assigned complaints...</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+      <!-- COMPLAINTS -->
+<section id="complaintsSection" class="content-section">
+  <div class="page-card complaints-page-card">
+    <div class="page-card-header complaints-header">
+      <div class="complaints-header-copy">
+        <h2>Complaint Queue</h2>
+        <p>
+          Review submitted citizen complaints, inspect evidence, and validate reports
+          before forwarding them to the assigned barangay.
+        </p>
+      </div>
+
+      <div class="complaints-header-actions">
+  <button type="button" class="view-all-btn small complaints-history-btn" id="btnOpenComplaintHistory">
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M3 12a9 9 0 1 0 3-6.7"></path>
+      <path d="M3 4v5h5M12 7v5l3 2"></path>
+    </svg>
+    <span>View History</span>
+  </button>
+
+  <button type="button" class="view-all-btn small complaints-refresh-btn" id="btnRefreshComplaints">
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M20 11a8 8 0 1 0-2.3 5.7"></path>
+      <path d="M20 4v7h-7"></path>
+    </svg>
+    <span>Refresh</span>
+  </button>
+</div>
+    </div>
+
+    <div class="complaints-summary-grid">
+      <div class="complaint-summary-card total">
+        <span class="complaint-summary-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M4 5h16v11H8l-4 4z"></path><path d="M8 9h8M8 12h5"></path></svg>
+        </span>
+        <div>
+          <span class="summary-label">Total Complaints</span>
+          <strong id="complaintsTotalCount">0</strong>
+        </div>
+      </div>
+
+      <div class="complaint-summary-card pending">
+        <span class="complaint-summary-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
+        </span>
+        <div>
+          <span class="summary-label">Pending</span>
+          <strong id="complaintsPendingCount">0</strong>
+        </div>
+      </div>
+
+      <div class="complaint-summary-card resolved">
+        <span class="complaint-summary-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="m8 12 2.5 2.5L16 9"></path></svg>
+        </span>
+        <div>
+          <span class="summary-label">Resolved</span>
+          <strong id="complaintsResolvedCount">0</strong>
+        </div>
+      </div>
+    </div>
+
+    <div class="complaints-toolbar">
+      <div class="complaints-search-wrap">
+        <label for="complaintsSearchInput">Search</label>
+        <input
+          id="complaintsSearchInput"
+          class="complaints-search-input"
+          type="text"
+          placeholder="Search subject, barangay, citizen, or status" />
+      </div>
+
+      <div class="complaints-filter-wrap">
+        <label for="complaintsStatusFilter">Status</label>
+        <select id="complaintsStatusFilter" class="complaints-filter-select">
+          <option value="all">All Status</option>
+          <option value="pending">Pending</option>
+          <option value="validated">Validated</option>
+          <option value="forwarded">Forwarded</option>
+          <option value="resolved">Resolved</option>
+          <option value="rejected">Rejected</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="complaints-table-shell">
+      <table class="complaints-table">
+        <thead>
+        <tr>
+    <th>Subject</th>
+    <th>Description</th>
+    <th>Citizen</th>
+    <th>Assigned Barangay</th>
+    <th>Status</th>
+    <th>Date</th>
+    <th class="th-action">Action</th>
+  </tr>
+</thead>
+<tbody id="complaintsTableBody">
+  <tr>
+    <td colspan="7" class="loading-state">Loading complaints...</td>
+  </tr>
+</tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- TRACKING -->
+<section id="trackingSection" class="content-section">
+  <div class="page-card live-tracking-card">
+    <div class="tracking-module-toolbar">
+      <span class="tracking-eyebrow">WMO operations workspace</span>
+      <div class="tracking-module-actions" aria-label="WMO operations actions">
+        <button type="button" class="tracking-compact-link" id="openFleetOverviewBtn" hidden>Truck Operations</button>
+        <button type="button" class="tracking-compact-link" id="openDispatchPlanningBtn" hidden>Dispatch Planning</button>
+        <button type="button" class="tracking-compact-link tracking-panel-tickets-button" id="dispatchOpenTicketsBtn">Tickets</button>
+        <button type="button" class="tracking-compact-link" id="openTrackingReportsBtn">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></svg>
+          Dispatch Reports
+        </button>
+      </div>
+    </div>
+
+    <div class="tracking-status-ribbon" aria-label="Live tracking status">
+      <div class="tracking-status-items">
+        <span><strong id="activeTruckCount">0</strong> Active</span>
+        <i aria-hidden="true"></i>
+        <span id="selectedTruckLabel">No truck selected</span>
+        <i aria-hidden="true"></i>
+        <span id="trackingSignalStatus" class="tracking-signal-status idle">No active trucks</span>
+        <i aria-hidden="true"></i>
+        <span>Last sync <strong id="trackingLastUpdated">--</strong></span>
+        <i aria-hidden="true"></i>
+        <span><strong id="trackingRoutePointCount">0</strong> mapped points</span>
+      </div>
+
+      <div class="tracking-ribbon-actions">
+        <details class="tracking-diagnostics">
+          <summary>Diagnostics</summary>
+          <div class="tracking-diagnostics-popover">
+            <strong>Route diagnostics</strong>
+            <dl>
+              <div><dt>Raw GPS</dt><dd id="trackingRawPointCount">0</dd></div>
+              <div><dt>Accepted/display</dt><dd id="trackingAcceptedPointCount">0</dd></div>
+              <div><dt>Filtered</dt><dd id="trackingFilteredPointCount">0</dd></div>
+              <div><dt>Sync gaps</dt><dd id="trackingRouteGapCount">0</dd></div>
+              <div><dt>Actual segments</dt><dd id="trackingActualSegmentCount">0</dd></div>
+              <div><dt>Actual visible</dt><dd id="trackingActualLayerVisible">No</dd></div>
+              <div><dt>Assigned points</dt><dd id="trackingAssignedRoutePointCount">0</dd></div>
+              <div><dt>Live target</dt><dd id="trackingLiveGuideTarget">--</dd></div>
+              <div><dt>Primary points</dt><dd id="trackingLiveGuidePointCount">0</dd></div>
+              <div><dt>Primary visible</dt><dd id="trackingLiveGuideLayerVisible">No</dd></div>
+              <div><dt>Guide origin</dt><dd id="trackingLiveGuideOrigin">--</dd></div>
+              <div><dt>Origin time</dt><dd id="trackingLiveGuideOriginTime">--</dd></div>
+              <div><dt>Alternative routes</dt><dd id="trackingAlternativeRouteCount">0</dd></div>
+              <div><dt>Alternatives visible</dt><dd id="trackingAlternativeVisibleCount">0</dd></div>
+              <div><dt>Reroute reason</dt><dd id="trackingLiveGuideReason">--</dd></div>
+              <div><dt>Reroute time</dt><dd id="trackingLiveGuideTime">--</dd></div>
+              <div><dt>Request result</dt><dd id="trackingLiveGuideRequestStatus">--</dd></div>
+              <div><dt>Distance moved</dt><dd id="trackingLiveGuideMovedDistance">--</dd></div>
+              <div><dt>Off primary route</dt><dd id="trackingLiveGuideDistance">--</dd></div>
+              <div><dt>Current stop</dt><dd id="trackingCurrentStopStatus">--</dd></div>
+            </dl>
+            <p id="trackingDiagnosticsNotice">Select a truck to inspect its route.</p>
+          </div>
+        </details>
+        <button type="button" class="tracking-ribbon-button" id="resetTrackingViewBtn">Reset View</button>
+        <button type="button" class="tracking-ribbon-button danger" id="forceStopTruckBtn" disabled hidden>Stop Truck</button>
+      </div>
+    </div>
+
+    <div class="tracking-layout">
+      <div class="tracking-map-wrap">
+        <div id="truckMap" class="tracking-live-map"></div>
+
+        <div id="dispatchMapInstruction" class="dispatch-map-instruction hidden" role="status">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M2 12h20"/><circle cx="12" cy="12" r="5"/></svg>
+          Click a street or location on the map to add a destination.
+        </div>
+
+        <div class="tracking-map-legend" aria-label="Map legend">
+          <span><i class="tracking-legend-line actual"></i> Actual trail</span>
+          <span><i class="tracking-legend-dot start"></i> WMO</span>
+          <span><i class="tracking-legend-line planned"></i> Assigned route</span>
+          <span><i class="tracking-legend-line alternative-guide"></i> Alternative route</span>
+          <span><i class="tracking-legend-line live-guide"></i> Primary live guide</span>
+          <span><i class="tracking-legend-dot current"></i> Current truck</span>
+          <span><i class="tracking-legend-destination">1</i> Destination</span>
+        </div>
+
+        <div id="dispatchRouteMapOverlay" class="dispatch-route-map-overlay hidden" aria-live="polite">
+          <div>
+            <strong id="dispatchRouteMapOverlayTitle">Route ready</strong>
+            <span id="dispatchRouteMapOverlayMeta">0 destinations</span>
+          </div>
+          <button type="button" id="dispatchFitRouteBtn">Fit Route</button>
+        </div>
+      </div>
+
+      <aside class="tracking-side-panel tracking-dispatch-workspace" aria-label="Live tracking and dispatch workspace">
+        <div class="tracking-panel-header">
+          <div class="tracking-panel-title-left">
+            <span class="tracking-panel-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h11v8H3z"/><path d="M14 10h3.5L21 13.5V15h-7z"/><path d="M7 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM17 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/></svg></span>
+            <div>
+              <h4>Operations Workspace</h4>
+              <p>Select a truck, choose stops, then dispatch.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="tracking-workspace-scroll dispatch-monitor-scroll">
+          <section class="tracking-workspace-view active" data-tracking-workspace-view="monitor" role="tabpanel">
+            <div class="tracking-workspace-section-heading">
+              <div>
+                <strong>Trucks &amp; Active Dispatches</strong>
+                <small>Fresh trucks are dispatch-ready; offline active dispatches remain available for monitoring.</small>
+              </div>
+            </div>
+            <div id="activeTruckList" class="active-truck-list">
+              <div class="tracking-empty-state">
+                <span class="tracking-empty-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h11v8H3z"/><path d="M14 10h3.5L21 13.5V15h-7z"/><path d="M7 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM17 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/></svg></span>
+                <strong>No available trucks or active dispatches</strong>
+                <small>Fresh trucks and ongoing dispatches will appear here.</small>
+              </div>
+            </div>
+          </section>
+
+        </div>
+
+        <section
+          id="dispatchPlannerDrawer"
+          class="dispatch-planner-drawer"
+          role="dialog"
+          aria-modal="false"
+          aria-hidden="true"
+          aria-labelledby="dispatchPlannerHeading"
+        >
+          <header class="dispatch-drawer-header">
+            <div class="dispatch-drawer-title-row">
+              <button type="button" class="dispatch-drawer-icon-button" id="dispatchPlannerBackBtn" aria-label="Back to active trucks">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/><path d="M9 12h10"/></svg>
+              </button>
+              <div>
+                <small id="dispatchDrawerEyebrow">Operations Workspace</small>
+                <h2 id="dispatchPlannerHeading" tabindex="-1">Dispatch Planner</h2>
+              </div>
+              <button type="button" class="dispatch-drawer-icon-button" id="dispatchPlannerCloseBtn" aria-label="Close dispatch planner">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+              </button>
+            </div>
+
+            <article id="dispatchSelectedTruckSummary" class="dispatch-selected-truck is-empty">
+              <div class="dispatch-selected-truck-heading">
+                <span class="dispatch-selected-truck-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h11v8H3z"/><path d="M14 10h3.5L21 13.5V15h-7z"/><path d="M7 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM17 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/></svg></span>
+                <div class="dispatch-drawer-truck-copy">
+                  <strong id="dispatchSelectedTruckIdLabel">--</strong>
+                  <span id="dispatchSelectedTruckName">Available for dispatch</span>
+                </div>
+                <span id="dispatchSelectedTruckStatus" class="tracking-live-chip">Waiting</span>
+              </div>
+              <div class="dispatch-drawer-session-line">
+                <span id="dispatchSelectedSessionLabel" class="dispatch-visually-hidden">--</span>
+                <span id="dispatchSelectedGpsStatusLabel" class="dispatch-gps-badge">Waiting for GPS</span>
+                <span aria-hidden="true">&middot;</span>
+                <span>Last GPS update <strong id="dispatchSelectedGpsLabel">--</strong></span>
+              </div>
+            </article>
+
+            <div class="dispatch-workspace-actions" aria-label="Dispatch planner views">
+              <button type="button" class="active" data-dispatch-workspace-action="plan">Planner</button>
+              <button type="button" data-dispatch-workspace-action="tickets">Tickets</button>
+            </div>
+          </header>
+
+          <div class="tracking-workspace-scroll dispatch-planner-scroll">
+
+          <section class="tracking-workspace-view" data-tracking-workspace-view="plan" role="tabpanel" hidden>
+            <form id="dispatchTicketForm" class="dispatch-inline-planner" novalidate>
+              <input type="hidden" id="dispatchEditingTicketId">
+              <input type="hidden" id="dispatchTicketNumber">
+              <input type="hidden" id="dispatchTrackingSessionId">
+              <input type="hidden" id="dispatchTruckId">
+              <input type="hidden" id="dispatchTruckName">
+              <input type="hidden" id="dispatchPersonnelId">
+              <input type="hidden" id="dispatchPersonnelName">
+              <input type="hidden" id="dispatchScheduledStart">
+              <input type="hidden" id="dispatchRouteDescription">
+              <input type="hidden" id="dispatchRouteName">
+              <span id="dispatchTicketEditorTitle" class="dispatch-visually-hidden">Dispatch Planner</span>
+
+              <div id="dispatchPlannerStepHeader" class="dispatch-step-header">
+                <div>
+                  <span id="dispatchPlannerStepCount">Step 1 of 2</span>
+                  <strong id="dispatchPlannerStepTitle">Ticket</strong>
+                </div>
+                <ol class="dispatch-step-indicator" aria-label="Dispatch planner progress">
+                  <li class="active" data-dispatch-step-indicator="1"><span>1</span><small>Ticket</small></li>
+                  <li data-dispatch-step-indicator="2"><span>2</span><small>Destinations</small></li>
+                </ol>
+              </div>
+
+              <div class="dispatch-step-viewport">
+                <div id="dispatchSessionWarning" class="dispatch-session-warning hidden" role="alert"></div>
+
+                <section id="dispatchEligibilityPanel" class="dispatch-eligibility-panel hidden" aria-live="polite" hidden>
+                  <div class="dispatch-eligibility-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 1 0 18 9 9 0 0 1 0-18Z"/><path d="M12 8v5M12 16.5v.5"/></svg>
+                  </div>
+                  <div class="dispatch-eligibility-copy">
+                    <small id="dispatchEligibilityEyebrow">Checking dispatch status</small>
+                    <h3 id="dispatchEligibilityTitle">Checking truck eligibility</h3>
+                    <p id="dispatchEligibilityMessage">Confirming that this truck can receive a new dispatch.</p>
+                    <dl id="dispatchEligibilityMeta" class="dispatch-eligibility-meta hidden" hidden>
+                      <div><dt>Ticket</dt><dd id="dispatchEligibilityTicket">--</dd></div>
+                      <div><dt>Status</dt><dd id="dispatchEligibilityStatus">--</dd></div>
+                    </dl>
+                    <p id="dispatchEligibilityGuidance" class="dispatch-eligibility-guidance"></p>
+                    <div class="dispatch-eligibility-actions">
+                      <button type="button" class="dispatch-inline-action primary hidden" id="dispatchOpenExistingBtn" hidden>View Ticket</button>
+                      <button type="button" class="dispatch-inline-action secondary" id="dispatchEligibilityBackBtn">Back</button>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="dispatch-step-panel active" data-dispatch-step-panel="1" aria-labelledby="dispatchTicketNumberHeading">
+                  <div class="dispatch-step-intro">
+                    <small>Dispatch Assignment</small>
+                    <h3 id="dispatchTicketNumberHeading">Confirm truck assignment</h3>
+                    <p>The ticket number will be generated securely by the backend.</p>
+                  </div>
+                  <div class="dispatch-assignment-summary" aria-describedby="dispatchTicketNumberHint">
+                    <span>Truck<strong data-dispatch-assignment-truck>Selected truck</strong></span>
+                    <span>Ticket<strong id="dispatchGeneratedTicketNumber">Auto-generated</strong></span>
+                    <span>GPS<strong data-dispatch-assignment-gps>Current status shown above</strong></span>
+                  </div>
+                  <p id="dispatchTicketNumberHint" class="dispatch-ticket-number-hint">Generated automatically when dispatch is finalized.</p>
+                </section>
+
+                <section class="dispatch-step-panel dispatch-destinations-step" data-dispatch-step-panel="2" aria-labelledby="dispatchAddDestinationsHeading" hidden>
+                  <section class="dispatch-planner-section dispatch-add-destinations-section">
+                    <div class="dispatch-picker-heading">
+                      <div>
+                        <strong id="dispatchAddDestinationsHeading">Add Destinations</strong>
+                        <small>Choose a road, street, or barangay destination.</small>
+                      </div>
+                    </div>
+                    <fieldset id="dispatchDestinationControls" class="dispatch-destination-controls" disabled>
+                      <div class="dispatch-destination-modes" role="group" aria-label="Destination type">
+                        <button type="button" class="active" data-dispatch-destination-mode="road_segment" aria-pressed="true">
+                          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3 5 21M16 3l3 18M12 3v4M12 11v4M12 19v2"/></svg>
+                          Road / Street
+                        </button>
+                        <button type="button" data-dispatch-destination-mode="barangay_hall" aria-pressed="false">
+                          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 9 9-5 9 5M5 10v9M9 10v9M15 10v9M19 10v9M3 20h18"/></svg>
+                          Barangay Hall
+                        </button>
+                      </div>
+                      <label class="dispatch-inline-field" id="dispatchDestinationSearchField">
+                        <span id="dispatchDestinationSearchLabel" class="dispatch-visually-hidden">Search Gensan roads</span>
+                        <div class="dispatch-combobox" id="dispatchDestinationSearchWrap">
+                          <svg class="dispatch-combobox-search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m16 16 4 4"/></svg>
+                          <input type="search" id="dispatchDestinationSearch" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="dispatchDestinationSuggestions" autocomplete="off" placeholder="Search road, street or location...">
+                          <button type="button" class="dispatch-combobox-clear hidden" id="dispatchDestinationSearchClearBtn" aria-label="Clear destination search" hidden>
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+                          </button>
+                        </div>
+                      </label>
+                      <div class="dispatch-available-destinations-heading">
+                        <strong>Available Locations</strong>
+                        <small>Verified Gensan catalog</small>
+                      </div>
+                      <div class="dispatch-popular-section hidden">
+                        <div id="dispatchPopularDestinations" class="dispatch-popular-destinations" aria-live="polite"></div>
+                      </div>
+                      <div id="dispatchDestinationSuggestions" class="dispatch-combobox-options dispatch-destination-results hidden" role="listbox"></div>
+                      <button type="button" class="dispatch-browse-all-trigger" id="dispatchBrowseAllBtn">Browse All Gensan Roads</button>
+                      <section id="dispatchBrowseAllPanel" class="dispatch-browse-all-panel hidden" aria-live="polite">
+                        <div class="dispatch-browse-all-heading">
+                          <strong id="dispatchBrowseAllCount">All Gensan Roads</strong>
+                          <button type="button" id="dispatchBrowseAllCloseBtn" aria-label="Close all roads list">Close</button>
+                        </div>
+                        <div id="dispatchBrowseAllList" class="dispatch-browse-all-list"></div>
+                      </section>
+                      <div id="dispatchDestinationCatalogNotice" class="dispatch-setup-notice hidden" role="alert">Destination catalog setup is required. Custom map points remain available.</div>
+                      <details class="dispatch-more-options">
+                        <summary>More options</summary>
+                        <div class="dispatch-custom-point-option">
+                          <span><strong>Location not listed?</strong><small>Select a custom point on the map.</small></span>
+                          <button type="button" class="dispatch-inline-action secondary" id="dispatchAddStopBtn" aria-pressed="false">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s6-5.1 6-11a6 6 0 1 0-12 0c0 5.9 6 11 6 11Z"/><circle cx="12" cy="10" r="2"/></svg>
+                            <span data-dispatch-add-label>Add Unlisted Location</span>
+                          </button>
+                        </div>
+                        <div id="dispatchDestinationPreview" class="dispatch-destination-preview hidden" aria-live="polite">
+                          <div class="dispatch-preview-heading">
+                            <div><small>Custom location</small><strong id="dispatchPreviewName">Destination preview</strong></div>
+                            <button type="button" id="dispatchClearPreviewBtn">Clear</button>
+                          </div>
+                          <p id="dispatchPreviewMeta">Name this custom point before adding it.</p>
+                          <label class="dispatch-inline-field hidden" id="dispatchCustomLabelField">
+                            Location label
+                            <input type="text" id="dispatchPreviewLabel" maxlength="255">
+                          </label>
+                          <button type="button" class="dispatch-inline-action secondary" id="dispatchConfirmDestinationBtn" disabled>
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+                            Add Custom Point
+                          </button>
+                        </div>
+                      </details>
+                      <p id="dispatchDestinationHint" class="dispatch-destination-hint">Select a truck before planning destinations.</p>
+                    </fieldset>
+                  </section>
+
+                  <section class="dispatch-planner-section dispatch-required-destinations-section" aria-labelledby="dispatchRequiredDestinationsHeading">
+                    <div class="dispatch-section-heading-row">
+                      <div><strong id="dispatchRequiredDestinationsHeading">Selected Route</strong></div>
+                      <div class="dispatch-selected-route-meta">
+                        <span id="dispatchRequiredDestinationCount">0 stops</span>
+                        <button type="button" class="dispatch-text-action hidden" id="dispatchClearRouteBtn" disabled hidden>Clear All</button>
+                      </div>
+                    </div>
+                    <p class="dispatch-selection-order-note">Stops will be visited in the order shown below.</p>
+                    <div id="dispatchStopRows" class="dispatch-stop-rows dispatch-inline-stop-rows">
+                      <div class="dispatch-route-empty dispatch-selected-route-empty"><strong>No collection stops selected yet.</strong><span>Search above to add destinations.</span></div>
+                    </div>
+                    <div class="dispatch-wmo-return" aria-label="Required final route point">
+                      <span class="dispatch-stop-order" data-dispatch-wmo-order>W</span>
+                      <div><strong>Return to WMO</strong><small>Required final endpoint</small></div>
+                      <span class="dispatch-locked-badge">Final</span>
+                    </div>
+                    <div id="dispatchOptimizedRouteList" class="dispatch-visually-hidden" aria-hidden="true"></div>
+                  </section>
+                  <section class="dispatch-route-status-section" aria-labelledby="dispatchRouteStatusHeading">
+                    <div class="dispatch-section-heading-row">
+                      <div><strong id="dispatchRouteStatusHeading">Route Status</strong></div>
+                      <button type="button" class="dispatch-text-action" id="dispatchRefreshRouteBtn">Retry Route</button>
+                    </div>
+                    <div id="dispatchRoutePreviewNotice" class="dispatch-route-preview-notice" role="status">Add a destination to calculate the route.</div>
+                  </section>
+                  <div id="dispatchTicketFormError" class="dispatch-form-error hidden" role="alert"></div>
+                  <div id="dispatchWorkflowResult" class="dispatch-workflow-result hidden" aria-live="polite"></div>
+                </section>
+
+                <section id="dispatchCurrentPanel" class="dispatch-current-panel dispatch-live-monitor hidden" aria-live="polite"></section>
+              </div>
+
+              <footer class="dispatch-form-actions dispatch-inline-form-actions" aria-label="Dispatch planner actions">
+                <button type="button" class="dispatch-inline-action secondary hidden" id="dispatchStepBackBtn">Back</button>
+                <button type="button" class="dispatch-inline-action primary" id="dispatchStepContinueBtn">Continue</button>
+                <button type="button" class="dispatch-inline-action primary hidden" id="dispatchNowBtn" disabled>Done</button>
+                <button type="button" class="dispatch-inline-action secondary hidden" id="dispatchViewActiveRouteBtn">View Route</button>
+                <details id="dispatchLiveActionsMenu" class="dispatch-live-actions-menu hidden">
+                  <summary aria-label="More dispatch actions">&bull;&bull;&bull;</summary>
+                  <div class="dispatch-live-actions-popover">
+                    <button type="button" id="dispatchViewTicketDetailsBtn">View Ticket Details</button>
+                    <button type="button" id="dispatchUpdateStopStatusBtn">Update Stop Status</button>
+                    <button type="button" class="danger" id="dispatchEndActiveBtn">End Dispatch</button>
+                  </div>
+                </details>
+              </footer>
+            </form>
+          </section>
+
+          <section class="tracking-workspace-view" data-tracking-workspace-view="records" role="tabpanel" hidden>
+            <div class="tracking-workspace-section-heading">
+              <div><strong>Dispatch Tickets</strong><small>Review saved and issued dispatch tickets.</small></div>
+            </div>
+
+            <div class="dispatch-inline-filters">
+              <label class="dispatch-inline-field">
+                Ticket Number
+                <input type="search" id="dispatchTicketSearch" placeholder="Ticket Number">
+              </label>
+              <label class="dispatch-inline-field">
+                Truck Number
+                <input type="search" id="dispatchTicketTruckFilter" placeholder="Truck Number">
+              </label>
+              <div class="dispatch-filter-actions">
+                <button type="button" class="dispatch-inline-action secondary" id="dispatchTicketFilterBtn">Apply</button>
+                <button type="button" class="dispatch-inline-action secondary" id="dispatchTicketClearFiltersBtn">Clear</button>
+              </div>
+            </div>
+            <div id="dispatchTicketsSetupNotice" class="dispatch-setup-notice hidden">Dispatch database setup is required.</div>
+
+            <div id="dispatchTicketsList" class="dispatch-inline-list">
+              <div class="dispatch-route-empty">Open Tickets to load dispatch tickets.</div>
+            </div>
+          </section>
+        </div>
+
+        </section>
+
+        <div id="dispatchTicketDetailsModal" class="dispatch-ticket-details-modal hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="dispatchTicketDetailsTitle">
+          <div class="dispatch-ticket-details-card">
+            <header>
+              <div><small>Dispatch Ticket</small><h3 id="dispatchTicketDetailsTitle">Ticket Details</h3></div>
+              <button type="button" data-dispatch-close="dispatchTicketDetailsModal" aria-label="Close ticket details">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+              </button>
+            </header>
+            <div id="dispatchTicketDetailsBody" class="dispatch-ticket-details-body"></div>
+          </div>
+        </div>
+
+        <div id="dispatchPlannerConfirmation" class="dispatch-planner-confirmation hidden" role="alertdialog" aria-modal="true" aria-labelledby="dispatchPlannerConfirmationTitle" aria-describedby="dispatchPlannerConfirmationMessage">
+          <div class="dispatch-planner-confirmation-card">
+            <span class="dispatch-confirmation-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M12 3 2.5 20h19L12 3Z"/><path d="M12 9v5M12 17h.01"/></svg>
+            </span>
+            <div>
+              <h3 id="dispatchPlannerConfirmationTitle">Switch trucks?</h3>
+              <p id="dispatchPlannerConfirmationMessage">The current unsaved route will be cleared.</p>
+            </div>
+            <div class="dispatch-confirmation-actions">
+              <button type="button" class="dispatch-inline-action secondary" id="dispatchPlannerConfirmationCancelBtn">Keep Current Truck</button>
+              <button type="button" class="dispatch-inline-action primary" id="dispatchPlannerConfirmationAcceptBtn">Switch Truck</button>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+</section>
+
+<div id="fleetOverviewModal" class="custom-modal fleet-overview-parent-modal hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="fleetOverviewTitle">
+  <div class="custom-modal-overlay" id="fleetOverviewParentOverlay"></div>
+  <div class="custom-modal-content fleet-overview-parent-content">
+    <div class="custom-modal-header fleet-overview-parent-header">
+      <div>
+        <span class="fleet-overview-eyebrow">WMO truck management</span>
+        <p>Review registered trucks, operation status, and current GPS availability.</p>
+      </div>
+      <button type="button" class="modal-close-btn" id="fleetOverviewParentCloseBtn" aria-label="Close Truck Operations">&times;</button>
+    </div>
+    <div class="custom-modal-body fleet-overview-parent-body">
+      <div class="page-card fleet-overview-card" aria-labelledby="fleetOverviewTitle">
+        <div class="fleet-overview-header">
+          <div>
+            <span class="fleet-overview-eyebrow">Registered WMO trucks</span>
+            <h2 id="fleetOverviewTitle">Truck Operations</h2>
+            <p>Truck condition and current operation status are shown separately.</p>
+          </div>
+          <div class="fleet-overview-actions">
+            <button type="button" class="fleet-button secondary" id="fleetRefreshBtn" aria-label="Refresh truck operations">
+              Refresh
+            </button>
+            <button type="button" class="fleet-button secondary fleet-issues-trigger" id="fleetVehicleIssuesBtn">
+              Vehicle Issues
+              <span id="fleetVehicleIssuesCount" class="fleet-issues-count" aria-label="0 open vehicle issues">0</span>
+            </button>
+            <button type="button" class="fleet-button primary" id="fleetAddTruckBtn">
+              Add Truck
+            </button>
+          </div>
+        </div>
+
+        <div class="fleet-summary-grid" aria-label="Truck summary">
+          <article class="fleet-summary-card total">
+            <span>Total Trucks</span>
+            <strong id="fleetSummaryTotal">0</strong>
+            <small>Registered trucks</small>
+          </article>
+          <article class="fleet-summary-card available">
+            <span>Available</span>
+            <strong id="fleetSummaryAvailable">0</strong>
+            <small>Truck condition</small>
+          </article>
+          <article class="fleet-summary-card active">
+            <span>Active</span>
+            <strong id="fleetSummaryActive">0</strong>
+            <small>Operation status</small>
+          </article>
+          <article class="fleet-summary-card maintenance">
+            <span>For Maintenance</span>
+            <strong id="fleetSummaryMaintenance">0</strong>
+            <small>Truck condition</small>
+          </article>
+          <article class="fleet-summary-card unavailable">
+            <span>Out of Service</span>
+            <strong id="fleetSummaryOutOfService">0</strong>
+            <small>Truck condition</small>
+          </article>
+        </div>
+
+        <p class="fleet-summary-note">
+          Active is an operational count. Condition totals may overlap with active operations.
+        </p>
+
+        <div id="fleetStatusMessage" class="fleet-status-message hidden" role="status" aria-live="polite"></div>
+        <div class="fleet-table-shell">
+          <table class="fleet-table">
+            <thead>
+              <tr>
+                <th>Truck</th>
+                <th>Plate Number</th>
+                <th>Truck Condition</th>
+                <th>Operation Status</th>
+                <th>GPS</th>
+                <th>Availability</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="fleetTableBody">
+              <tr><td colspan="7" class="fleet-table-state">Loading registered fleet...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="dispatchPlanningModal" class="custom-modal dispatch-planning-parent-modal hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="dispatchPlansTitle">
+  <div class="custom-modal-overlay" id="dispatchPlanningParentOverlay"></div>
+  <div class="custom-modal-content dispatch-planning-parent-content">
+    <div class="custom-modal-header dispatch-planning-parent-header">
+      <div>
+        <span class="dispatch-plans-eyebrow">WMO dispatch preparation</span>
+        <p>Review and prepare dated truck, enforcer, and destination assignments.</p>
+      </div>
+      <button type="button" class="modal-close-btn" id="dispatchPlanningParentCloseBtn" aria-label="Close Dispatch Planning">&times;</button>
+    </div>
+    <div class="custom-modal-body dispatch-planning-parent-body">
+      <div id="dispatchPlansWorkspace" class="page-card dispatch-plans-card" aria-labelledby="dispatchPlansTitle" hidden>
+        <div class="dispatch-plans-header">
+          <div>
+            <span class="dispatch-plans-eyebrow">Pre-operation planning</span>
+            <h2 id="dispatchPlansTitle">Dispatch Planning</h2>
+            <p>Prepare truck, enforcer, and ordered destination assignments for an operational date.</p>
+          </div>
+          <div class="dispatch-plans-header-actions">
+            <button type="button" class="dispatch-plans-button secondary" id="dispatchPlansRefreshBtn">Refresh</button>
+            <button type="button" class="dispatch-plans-button primary" id="dispatchPlanCreateBtn">Create Plan</button>
+          </div>
+        </div>
+
+        <div class="dispatch-plans-filters" aria-label="Dispatch plan filters">
+          <label class="dispatch-plan-field">
+            <span>Operational Date</span>
+            <input type="date" id="dispatchPlansDateFilter">
+          </label>
+          <label class="dispatch-plan-field">
+            <span>Status</span>
+            <select id="dispatchPlansStatusFilter">
+              <option value="">All statuses</option>
+              <option value="planned">Planned</option>
+              <option value="activated">Active / Completed</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </label>
+        </div>
+
+        <div id="dispatchPlansStatusMessage" class="dispatch-plans-status hidden" role="status" aria-live="polite"></div>
+        <div class="dispatch-plans-table-shell">
+          <table class="dispatch-plans-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Truck</th>
+                <th>Enforcer</th>
+                <th>Stops</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="dispatchPlansTableBody">
+              <tr><td colspan="6" class="dispatch-plans-table-state">Loading planned dispatches...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="dispatchPlanFormModal" class="custom-modal dispatch-plan-modal hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="dispatchPlanFormTitle">
+  <div class="custom-modal-overlay" id="dispatchPlanFormOverlay"></div>
+  <div class="custom-modal-content dispatch-plan-modal-content">
+    <div class="custom-modal-header">
+      <div>
+        <span class="dispatch-plans-eyebrow">WMO assignment</span>
+        <h3 id="dispatchPlanFormTitle">Create Dispatch Plan</h3>
+        <p id="dispatchPlanFormSubtitle">Select the operational date, assigned team, and ordered destinations.</p>
+      </div>
+      <button type="button" class="modal-close-btn" id="dispatchPlanFormCloseBtn" aria-label="Close dispatch plan form">&times;</button>
+    </div>
+    <div class="custom-modal-body dispatch-plan-modal-body">
+      <form id="dispatchPlanForm" class="dispatch-plan-form" novalidate>
+        <input type="hidden" id="dispatchPlanEditingId">
+        <ol class="dispatch-plan-progress" aria-label="Dispatch plan steps">
+          <li id="dispatchPlanProgress1" aria-current="step"><span>1</span> Assignment</li>
+          <li id="dispatchPlanProgress2"><span>2</span> Route &amp; Destinations</li>
+        </ol>
+
+        <section id="dispatchPlanStep1" class="dispatch-plan-form-section" aria-labelledby="dispatchPlanAssignmentHeading">
+          <div class="dispatch-plan-section-heading">
+            <span>1</span>
+            <div><h4 id="dispatchPlanAssignmentHeading">Assignment</h4><p>Choose the date, eligible truck, and active mobile enforcer.</p></div>
+          </div>
+          <div class="dispatch-plan-form-grid">
+            <label class="dispatch-plan-field">
+              <span>Operational Date <b aria-hidden="true">*</b></span>
+              <input type="date" id="dispatchPlanOperationalDate" required>
+            </label>
+            <label class="dispatch-plan-field">
+              <span>Truck <b aria-hidden="true">*</b></span>
+              <select id="dispatchPlanFleetTruck" required><option value="">Choose an eligible truck</option></select>
+            </label>
+            <p id="dispatchPlanTruckGuidance" class="dispatch-plan-field-guidance hidden"></p>
+            <label class="dispatch-plan-field">
+              <span>Enforcer <b aria-hidden="true">*</b></span>
+              <select id="dispatchPlanEnforcer" required><option value="">Choose an eligible enforcer</option></select>
+            </label>
+            <p id="dispatchPlanEnforcerGuidance" class="dispatch-plan-field-guidance hidden"></p>
+          </div>
+        </section>
+
+        <div id="dispatchPlanStep2" class="dispatch-plan-route-layout" hidden>
+        <section class="dispatch-plan-form-section dispatch-plan-route-stops" aria-labelledby="dispatchPlanDestinationsHeading">
+          <div class="dispatch-plan-section-heading">
+            <span>2</span>
+            <div><h4 id="dispatchPlanDestinationsHeading">Route &amp; Destinations</h4><p>Add verified destinations, then set their exact visit order.</p></div>
+          </div>
+          <label class="dispatch-plan-field dispatch-plan-destination-search">
+            <span>Search Street / Destination</span>
+            <div class="dispatch-plan-search-input">
+              <input type="search" id="dispatchPlanDestinationSearch" placeholder="Search verified street, barangay, or destination..." autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="dispatchPlanSearchResults">
+              <button type="button" id="dispatchPlanSearchClearBtn" aria-label="Clear destination search" hidden>&times;</button>
+            </div>
+          </label>
+          <div id="dispatchPlanSearchResults" class="dispatch-plan-search-results" role="listbox" aria-label="Matching verified destinations"></div>
+          <p id="dispatchPlanSearchStatus" class="dispatch-plan-search-status" role="status">Start typing a street, barangay, or verified destination.</p>
+          <div class="dispatch-plan-destination-picker" hidden>
+            <label class="dispatch-plan-field">
+              <span>Verified Destination</span>
+              <select id="dispatchPlanDestinationSelect"><option value="">Choose a destination</option></select>
+            </label>
+            <button type="button" class="dispatch-plans-button secondary" id="dispatchPlanAddDestinationBtn">Add Stop</button>
+          </div>
+          <p id="dispatchPlanDestinationGuidance" class="dispatch-plan-field-guidance hidden"></p>
+          <div id="dispatchPlanStops" class="dispatch-plan-stops" aria-live="polite"></div>
+        </section>
+
+        <section class="dispatch-plan-form-section dispatch-plan-preview" aria-labelledby="dispatchPlanPreviewHeading">
+          <div><h4 id="dispatchPlanPreviewHeading">Live Route Preview</h4><p>Selected verified destinations appear here in visit order.</p></div>
+          <div id="dispatchPlanRoutePreviewMap" role="region" aria-label="Planning preview: WMO and ordered verified destinations"></div>
+          <p id="dispatchPlanPreviewNotice" class="dispatch-plan-field-guidance hidden" role="status"></p>
+          <p id="dispatchPlanRoadStatus" class="dispatch-plan-road-status" role="status"></p>
+          <small>Preview shows stop sequence for planning. Final live routing may differ.</small>
+        </section>
+        <section class="dispatch-plan-review" aria-labelledby="dispatchPlanReviewHeading">
+          <div><strong id="dispatchPlanReviewHeading">Plan Summary</strong></div>
+          <p id="dispatchPlanReviewSummary">Choose an eligible truck, enforcer, and at least one ordered destination.</p>
+          <small id="dispatchPlanFormRevision" class="hidden"></small>
+        </section>
+
+        </div>
+        <div id="dispatchPlanFormFeedback" class="dispatch-plan-feedback hidden" role="alert"></div>
+        <div class="dispatch-plan-form-actions">
+          <button type="button" class="dispatch-plans-button secondary" id="dispatchPlanFormCancelBtn">Cancel</button>
+          <button type="button" class="dispatch-plans-button secondary" id="dispatchPlanBackBtn" hidden>Back</button>
+          <button type="button" class="dispatch-plans-button primary" id="dispatchPlanNextBtn">Next</button>
+          <button type="submit" class="dispatch-plans-button primary" id="dispatchPlanSaveBtn" hidden>Save Plan</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div id="dispatchPlanDetailModal" class="custom-modal dispatch-plan-modal hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="dispatchPlanDetailTitle">
+  <div class="custom-modal-overlay" id="dispatchPlanDetailOverlay"></div>
+  <div class="custom-modal-content dispatch-plan-modal-content dispatch-plan-detail-content">
+    <div class="custom-modal-header">
+      <div><span class="dispatch-plans-eyebrow">Planned dispatch</span><h3 id="dispatchPlanDetailTitle">Dispatch Plan Details</h3></div>
+      <button type="button" class="modal-close-btn" id="dispatchPlanDetailCloseBtn" aria-label="Close dispatch plan details">&times;</button>
+    </div>
+    <div id="dispatchPlanDetailBody" class="custom-modal-body dispatch-plan-detail-body"></div>
+  </div>
+</div>
+
+<div id="dispatchPlanCancelModal" class="custom-modal dispatch-plan-modal hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="dispatchPlanCancelTitle">
+  <div class="custom-modal-overlay" id="dispatchPlanCancelOverlay"></div>
+  <div class="custom-modal-content dispatch-plan-modal-content dispatch-plan-cancel-content">
+    <div class="custom-modal-header">
+      <div><span class="dispatch-plans-eyebrow">Preserve plan history</span><h3 id="dispatchPlanCancelTitle">Cancel Dispatch Plan</h3><p>The plan remains available as a read-only historical record.</p></div>
+      <button type="button" class="modal-close-btn" id="dispatchPlanCancelCloseBtn" aria-label="Close cancel dispatch plan dialog">&times;</button>
+    </div>
+    <div class="custom-modal-body">
+      <form id="dispatchPlanCancelForm" class="dispatch-plan-form" novalidate>
+        <input type="hidden" id="dispatchPlanCancelId">
+        <label class="dispatch-plan-field">
+          <span>Cancellation Reason <b aria-hidden="true">*</b></span>
+          <textarea id="dispatchPlanCancellationReason" maxlength="1000" rows="4" required></textarea>
+        </label>
+        <div id="dispatchPlanCancelFeedback" class="dispatch-plan-feedback hidden" role="alert"></div>
+        <div class="dispatch-plan-form-actions">
+          <button type="button" class="dispatch-plans-button secondary" id="dispatchPlanCancelBackBtn">Keep Plan</button>
+          <button type="submit" class="dispatch-plans-button danger" id="dispatchPlanCancelConfirmBtn">Cancel Plan</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div id="fleetAddTruckModal" class="custom-modal fleet-modal hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="fleetAddTruckTitle">
+  <div class="custom-modal-overlay" id="fleetAddTruckOverlay"></div>
+  <div class="custom-modal-content fleet-modal-content">
+    <div class="custom-modal-header">
+      <div>
+        <h3 id="fleetAddTruckTitle">Add Truck</h3>
+        <p>Register a verified truck in the official WMO truck roster.</p>
+      </div>
+      <button type="button" class="modal-close-btn" id="fleetAddTruckCloseBtn" aria-label="Close add truck dialog">&times;</button>
+    </div>
+    <div class="custom-modal-body">
+      <form id="fleetAddTruckForm" class="fleet-form" novalidate>
+        <div class="fleet-form-grid">
+          <div class="fleet-form-field">
+            <label for="fleetTruckCode">Truck Code <span aria-hidden="true">*</span></label>
+            <input type="text" id="fleetTruckCode" name="truck_code" maxlength="100" autocomplete="off" required>
+          </div>
+          <div class="fleet-form-field">
+            <label for="fleetTruckName">Truck Name <span aria-hidden="true">*</span></label>
+            <input type="text" id="fleetTruckName" name="truck_name" maxlength="150" autocomplete="off" required>
+          </div>
+          <div class="fleet-form-field">
+            <label for="fleetPlateNumber">Plate Number</label>
+            <input type="text" id="fleetPlateNumber" name="plate_number" maxlength="50" autocomplete="off">
+          </div>
+          <div class="fleet-form-field">
+            <label for="fleetInitialCondition">Truck Condition</label>
+            <select id="fleetInitialCondition" name="fleet_condition">
+              <option value="available" selected>Available</option>
+              <option value="for_maintenance">For Maintenance</option>
+              <option value="out_of_service">Out of Service</option>
+            </select>
+          </div>
+        </div>
+        <div id="fleetInitialReasonField" class="fleet-form-field hidden">
+          <label for="fleetInitialReason">Condition Reason <span aria-hidden="true">*</span></label>
+          <textarea id="fleetInitialReason" name="condition_reason" maxlength="500" rows="3"></textarea>
+        </div>
+        <div id="fleetAddTruckFeedback" class="fleet-form-feedback hidden" role="alert"></div>
+        <div class="fleet-form-actions">
+          <button type="submit" class="fleet-button primary" id="fleetAddTruckSubmitBtn">Add Truck</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- MANAGE TRUCK -->
+<div id="fleetManageModal" class="custom-modal fleet-modal hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="fleetManageTitle">
+  <div class="custom-modal-overlay" id="fleetManageOverlay"></div>
+  <div class="custom-modal-content fleet-modal-content fleet-manage-modal-content">
+    <div class="custom-modal-header">
+      <div>
+        <h3 id="fleetManageTitle">Manage Truck</h3>
+        <p>Review truck details and choose what you want to update.</p>
+      </div>
+      <button type="button" class="modal-close-btn" id="fleetManageCloseBtn" aria-label="Close manage truck dialog">&times;</button>
+    </div>
+
+    <div class="custom-modal-body">
+      <div class="fleet-manage-summary">
+        <div class="fleet-manage-heading">
+          <div>
+            <span class="fleet-manage-eyebrow">Selected truck</span>
+            <strong id="fleetManageTruckCode">-</strong>
+            <small id="fleetManageTruckName">-</small>
+          </div>
+          <span id="fleetManageCondition" class="fleet-badge condition">-</span>
+        </div>
+
+        <dl class="fleet-manage-details">
+          <div>
+            <dt>Plate Number</dt>
+            <dd id="fleetManagePlateNumber">-</dd>
+          </div>
+          <div>
+            <dt>Operational State</dt>
+            <dd id="fleetManageOperationalState">-</dd>
+          </div>
+          <div>
+            <dt>GPS</dt>
+            <dd id="fleetManageGps">-</dd>
+          </div>
+          <div>
+            <dt>Availability</dt>
+            <dd id="fleetManageAssignable">-</dd>
+          </div>
+        </dl>
+
+        <div id="fleetManageConditionReasonWrap" class="fleet-manage-reason hidden">
+          <span>Condition Reason</span>
+          <p id="fleetManageConditionReason">-</p>
+        </div>
+
+        <section id="fleetManageVehicleIssue" class="fleet-manage-issue hidden" aria-labelledby="fleetManageVehicleIssueTitle">
+          <div>
+            <span class="fleet-manage-eyebrow">Latest unresolved report</span>
+            <strong id="fleetManageVehicleIssueTitle">Vehicle Issue</strong>
+            <p id="fleetManageVehicleIssueSummary">-</p>
+          </div>
+          <div class="fleet-manage-issue-meta">
+            <span id="fleetManageVehicleIssueSeverity" class="fleet-issue-badge severity">-</span>
+            <span id="fleetManageVehicleIssueStatus" class="fleet-issue-badge status">-</span>
+            <button type="button" class="fleet-row-action" id="fleetManageVehicleIssueBtn">View Issue</button>
+          </div>
+        </section>
+      </div>
+
+      <div class="fleet-manage-actions">
+        <button type="button" class="fleet-button primary" id="fleetManageEditBtn">
+          Edit Truck Details
+        </button>
+        <button type="button" class="fleet-button secondary" id="fleetManageConditionBtn">
+          Change Condition
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- VEHICLE ISSUE QUEUE -->
+<div id="fleetVehicleIssuesModal" class="custom-modal fleet-modal fleet-vehicle-issues-modal hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="fleetVehicleIssuesTitle">
+  <div class="custom-modal-overlay" id="fleetVehicleIssuesOverlay"></div>
+  <div class="custom-modal-content fleet-modal-content fleet-vehicle-issues-content">
+    <div class="custom-modal-header">
+      <div>
+        <span class="fleet-overview-eyebrow">Fleet review queue</span>
+        <h3 id="fleetVehicleIssuesTitle">Vehicle Issues</h3>
+        <p>Review driver-reported concerns and record the WMO Fleet decision.</p>
+      </div>
+      <button type="button" class="modal-close-btn" id="fleetVehicleIssuesCloseBtn" aria-label="Close vehicle issues">&times;</button>
+    </div>
+    <div class="custom-modal-body fleet-vehicle-issues-body">
+      <div class="fleet-issue-filters" aria-label="Vehicle issue filters">
+        <label class="fleet-form-field">
+          <span>Status</span>
+          <select id="fleetVehicleIssueStatusFilter">
+            <option value="open" selected>Open</option>
+            <option value="submitted">Submitted</option>
+            <option value="under_review">Under Review</option>
+            <option value="resolved">Resolved</option>
+            <option value="all">All</option>
+          </select>
+        </label>
+        <label class="fleet-form-field">
+          <span>Severity</span>
+          <select id="fleetVehicleIssueSeverityFilter">
+            <option value="all" selected>All</option>
+            <option value="critical">Critical</option>
+            <option value="moderate">Moderate</option>
+            <option value="low">Low</option>
+          </select>
+        </label>
+        <button type="button" class="fleet-button secondary" id="fleetVehicleIssuesRefreshBtn">Refresh Issues</button>
+      </div>
+      <div id="fleetVehicleIssuesStatus" class="fleet-status-message hidden" role="status" aria-live="polite"></div>
+      <div class="fleet-issue-table-shell">
+        <table class="fleet-issue-table">
+          <thead>
+            <tr>
+              <th>Severity</th>
+              <th>Truck</th>
+              <th>Issue</th>
+              <th>Reported By</th>
+              <th>Reported At</th>
+              <th>Status</th>
+              <th>View</th>
+            </tr>
+          </thead>
+          <tbody id="fleetVehicleIssuesTableBody">
+            <tr><td colspan="7" class="fleet-table-state">Loading vehicle issues...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- VEHICLE ISSUE DETAIL / RESOLUTION -->
+<div id="fleetVehicleIssueDetailModal" class="custom-modal fleet-modal fleet-vehicle-issue-detail-modal hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="fleetVehicleIssueDetailTitle">
+  <div class="custom-modal-overlay" id="fleetVehicleIssueDetailOverlay"></div>
+  <div class="custom-modal-content fleet-modal-content fleet-vehicle-issue-detail-content">
+    <div class="custom-modal-header">
+      <div>
+        <span class="fleet-overview-eyebrow">Vehicle issue review</span>
+        <h3 id="fleetVehicleIssueDetailTitle">Vehicle Issue Details</h3>
+        <p id="fleetVehicleIssueDetailSubtitle">Loading report...</p>
+      </div>
+      <button type="button" class="modal-close-btn" id="fleetVehicleIssueDetailCloseBtn" aria-label="Close vehicle issue details">&times;</button>
+    </div>
+    <div class="custom-modal-body fleet-vehicle-issue-detail-body">
+      <div id="fleetVehicleIssueDetailStatus" class="fleet-status-message hidden" role="status" aria-live="polite"></div>
+      <div id="fleetVehicleIssueDetailBody" class="fleet-issue-detail-sections">
+        <div class="fleet-issue-loading">Loading vehicle issue details...</div>
+      </div>
+
+      <div id="fleetVehicleIssueMutationControls" class="fleet-issue-mutation-controls hidden">
+        <div class="fleet-issue-review-action">
+          <div>
+            <strong>Review status</strong>
+            <p>Mark a newly submitted report as under review before or while deciding its resolution.</p>
+          </div>
+          <button type="button" class="fleet-button secondary" id="fleetVehicleIssueReviewBtn">Mark Under Review</button>
+        </div>
+
+        <form id="fleetVehicleIssueResolutionForm" class="fleet-issue-resolution-form" novalidate>
+          <div>
+            <span class="fleet-manage-eyebrow">Resolution</span>
+            <h4>Record Fleet Decision</h4>
+            <p>Vehicle Issue status is recorded separately from the truck's operational state.</p>
+          </div>
+          <label class="fleet-form-field">
+            <span>Resolution Action <b aria-hidden="true">*</b></span>
+            <select id="fleetVehicleIssueResolutionAction" required>
+              <option value="">Choose an action</option>
+              <option value="continue_operation">Continue Operation</option>
+              <option value="set_for_maintenance">Set For Maintenance</option>
+              <option value="set_out_of_service">Set Out of Service</option>
+            </select>
+          </label>
+          <label class="fleet-form-field" id="fleetVehicleIssueResolutionNotesField">
+            <span>Resolution Notes <b id="fleetVehicleIssueResolutionNotesRequired" class="hidden" aria-hidden="true">*</b></span>
+            <textarea id="fleetVehicleIssueResolutionNotes" maxlength="1000" rows="4" placeholder="Record the reason and follow-up action."></textarea>
+          </label>
+          <p id="fleetVehicleIssueResolutionImpact" class="fleet-issue-resolution-impact">Choose a resolution action to review its effect.</p>
+          <div id="fleetVehicleIssueResolutionFeedback" class="fleet-form-feedback hidden" role="alert"></div>
+          <div class="fleet-form-actions">
+            <button type="submit" class="fleet-button primary" id="fleetVehicleIssueResolveBtn">Resolve Vehicle Issue</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT TRUCK DETAILS -->
+<div id="fleetEditTruckModal" class="custom-modal fleet-modal hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="fleetEditTruckTitle">
+  <div class="custom-modal-overlay" id="fleetEditTruckOverlay"></div>
+  <div class="custom-modal-content fleet-modal-content">
+    <div class="custom-modal-header">
+      <div>
+        <h3 id="fleetEditTruckTitle">Edit Truck Details</h3>
+        <p>Update the registered truck information without changing its fleet condition.</p>
+      </div>
+      <button type="button" class="modal-close-btn" id="fleetEditTruckCloseBtn" aria-label="Close edit truck dialog">&times;</button>
+    </div>
+
+    <div class="custom-modal-body">
+      <form id="fleetEditTruckForm" class="fleet-form" novalidate>
+        <div class="fleet-form-grid">
+          <div class="fleet-form-field">
+            <label for="fleetEditTruckCode">Truck Code <span aria-hidden="true">*</span></label>
+            <input type="text" id="fleetEditTruckCode" name="truck_code" maxlength="100" autocomplete="off" required>
+          </div>
+
+          <div class="fleet-form-field">
+            <label for="fleetEditTruckName">Truck Name <span aria-hidden="true">*</span></label>
+            <input type="text" id="fleetEditTruckName" name="truck_name" maxlength="150" autocomplete="off" required>
+          </div>
+
+          <div class="fleet-form-field">
+            <label for="fleetEditPlateNumber">Plate Number</label>
+            <input type="text" id="fleetEditPlateNumber" name="plate_number" maxlength="50" autocomplete="off">
+          </div>
+        </div>
+
+        <p class="fleet-edit-note">
+          Truck Code can only be changed when the truck has no active or planned operation.
+        </p>
+
+        <div id="fleetEditTruckFeedback" class="fleet-form-feedback hidden" role="alert"></div>
+
+        <div class="fleet-form-actions fleet-edit-form-actions">
+          <button type="button" class="fleet-button secondary" id="fleetEditTruckCancelBtn">Cancel</button>
+          <button type="submit" class="fleet-button primary" id="fleetEditTruckSubmitBtn">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div id="fleetConditionModal" class="custom-modal fleet-modal hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="fleetConditionTitle">
+  <div class="custom-modal-overlay" id="fleetConditionOverlay"></div>
+  <div class="custom-modal-content fleet-modal-content">
+    <div class="custom-modal-header">
+      <div>
+        <h3 id="fleetConditionTitle">Change Truck Condition</h3>
+        <p id="fleetConditionTruckLabel">Select the truck's roster condition.</p>
+      </div>
+      <button type="button" class="modal-close-btn" id="fleetConditionCloseBtn" aria-label="Close condition dialog">&times;</button>
+    </div>
+    <div class="custom-modal-body">
+      <form id="fleetConditionForm" class="fleet-form" novalidate>
+        <div class="fleet-form-field">
+          <label for="fleetConditionValue">Truck Condition</label>
+          <select id="fleetConditionValue" name="fleet_condition">
+            <option value="available">Available</option>
+            <option value="for_maintenance">For Maintenance</option>
+            <option value="out_of_service">Out of Service</option>
+          </select>
+        </div>
+        <div id="fleetConditionReasonField" class="fleet-form-field hidden">
+          <label for="fleetConditionReason">Condition Reason <span aria-hidden="true">*</span></label>
+          <textarea id="fleetConditionReason" name="condition_reason" maxlength="500" rows="3"></textarea>
+        </div>
+        <div id="fleetConditionFeedback" class="fleet-form-feedback hidden" role="alert"></div>
+        <div class="fleet-form-actions">
+          <button type="submit" class="fleet-button primary" id="fleetConditionSubmitBtn">Save Condition</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+
+
+
+      <!-- USER MANAGEMENT -->
+   <section id="userManagementSection" class="content-section">
+  <div id="restrictedUserMessage" class="page-card hidden">
+    <div class="page-card-header">
+      <div>
+        <h2>User Management</h2>
+        <p>This module is only available for the super admin account.</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="superAdminContent" class="users-layout">
+
+    <header class="user-management-heading">
+      <div>
+      <h2>Account Directory</h2>
+      <p>Manage web and mobile user accounts.</p>
+      </div>
+      <button type="button" class="user-create-trigger" onclick="openCreateAccountModal()">+ Create Account</button>
+    </header>
+
+    <div id="accountPageMessageBox" class="module-message" role="status" hidden></div>
+
+    <div class="page-card user-accounts-panel">
+      <div class="page-card-header">
+        <div>
+          <h2>All Accounts</h2>
+          <p>Manage both web admin and mobile user accounts.</p>
+        </div>
+      </div>
+
+      <div class="accounts-toolbar">
+        <input
+          type="text"
+          id="accountSearchInput"
+          class="account-search-input"
+          placeholder="Search by name, username, role, source, division, or status"
+        >
+
+        <button
+          type="button"
+          class="view-all-btn small"
+          onclick="openDeactivatedAccountsModal()">
+          View History
+        </button>
+      </div>
+
+      <div class="table-shell accounts-table-shell">
+        <table class="accounts-table">
+          <thead>
+            <tr>
+              <th>Full Name</th>
+              <th>Username / Email</th>
+              <th>Source</th>
+              <th>Role</th>
+              <th>Division / Barangay</th>
+              <th>Status</th>
+              <th>Created At</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="webUsersTableBody">
+            <tr>
+              <td colspan="8" class="loading-state">Loading accounts...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+      <!-- APPOINTMENT HISTORY MODAL -->
+      <div id="appointmentHistoryModal" class="history-modal hidden">
+        <div class="history-modal-overlay" id="historyModalOverlay"></div>
+        <div class="history-modal-content">
+          <div class="history-modal-header">
+            <div>
+              <h2>Appointment History</h2>
+              <p>Approved, completed, and rejected appointments.</p>
+            </div>
+            <button type="button" class="history-close-btn" id="closeAppointmentHistoryBtn">✕</button>
+          </div>
+
+          <div class="table-shell">
+            <table>
+              <thead>
+                <tr>
+                  <th>Reference Code</th>
+                  <th>Name</th>
+                  <th>Barangay</th>
+                  <th>Contact</th>
+                  <th>Email Address</th>
+                  <th>Purpose</th>
+                  <th>Date</th>
+                  <th>Status</th>
+                  <th>Assigned Personnel</th>
+                  <th>Updated At</th>
+                </tr>
+              </thead>
+              <tbody id="appointmentHistoryTableBody">
+                <tr>
+                  <td colspan="10" class="loading-state">Loading appointment history...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- RESCHEDULE APPOINTMENT MODAL -->
+<div id="rescheduleAppointmentModal" class="custom-modal hidden">
+  <div class="custom-modal-overlay" id="rescheduleAppointmentOverlay"></div>
+
+  <div class="custom-modal-content">
+    <div class="custom-modal-header">
+      <div>
+        <h3>Reschedule Appointment</h3>
+        <p>Select a new appointment date for the citizen request.</p>
+      </div>
+      <button type="button" id="closeRescheduleAppointmentBtn" class="modal-close-btn">&times;</button>
+    </div>
+
+    <div class="custom-modal-body">
+  <div class="form-grid">
+    <div class="form-group">
+      <label for="rescheduleAppointmentDate">New Appointment Date</label>
+      <input type="date" id="rescheduleAppointmentDate" />
+    </div>
+
+    <div class="form-group">
+      <label for="rescheduleAppointmentTime">New Appointment Time</label>
+      <select id="rescheduleAppointmentTime">
+        <option value="">Select time</option>
+        <option value="09:00">9:00 AM</option>
+        <option value="10:00">10:00 AM</option>
+        <option value="11:00">11:00 AM</option>
+        <option value="13:00">1:00 PM</option>
+        <option value="14:00">2:00 PM</option>
+        <option value="15:00">3:00 PM</option>
+        <option value="16:00">4:00 PM</option>
+      </select>
+    </div>
+  </div>
+
+      <div class="complaint-modal-actions">
+        <button
+        type="button"
+        id="confirmRescheduleAppointmentBtn"
+        class="view-all-btn">
+        Save Reschedule
+        </button>
+        <button type="button" id="cancelRescheduleAppointmentBtn" class="logout-btn">
+          Cancel
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+      <!-- TRUCK ANALYTICS MODAL -->
+      <div id="truckAnalyticsModal" class="history-modal hidden">
+        <div class="history-modal-overlay" id="truckAnalyticsOverlay"></div>
+        <div class="history-modal-content truck-analytics-modal-content">
+          <div class="history-modal-header">
+            <div>
+              <h2>Truck Monitoring Analytics</h2>
+              <p>Expanded monitoring view for fleet alerts, truck activity, and distance insights.</p>
+            </div>
+            <button type="button" class="history-close-btn" id="closeTruckAnalyticsBtn" aria-label="Close Truck Monitoring Analytics" title="Close">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"></path></svg>
+            </button>
+          </div>
+
+          <div class="truck-analytics-summary-grid">
+            <div class="truck-analytics-summary-card total">
+              <span class="truck-analytics-metric-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M12 3 3 20h18z"></path><path d="M12 9v4M12 17h.01"></path></svg>
+              </span>
+              <div><span>Total Alerts</span><strong id="modalTotalAlerts">0</strong></div>
+            </div>
+
+            <div class="truck-analytics-summary-card active">
+              <span class="truck-analytics-metric-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M3 7h11v8H3zM14 10h3.5l3.5 3.5V15h-7z"></path><circle cx="7" cy="17" r="2"></circle><circle cx="17" cy="17" r="2"></circle></svg>
+              </span>
+              <div><span>Active Trucks</span><strong id="modalActiveTrucks">0</strong></div>
+            </div>
+
+            <div class="truck-analytics-summary-card warning">
+              <span class="truck-analytics-metric-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="m14.7 6.3 3-3a4 4 0 0 1-5 5l-7.8 7.8a2 2 0 1 0 2.8 2.8l7.8-7.8a4 4 0 0 1 5-5l-3 3"></path></svg>
+              </span>
+              <div><span>Maintenance Alerts</span><strong id="modalMaintenanceAlerts">0</strong></div>
+            </div>
+          </div>
+
+          <div class="truck-analytics-grid">
+            <div class="truck-analytics-panel">
+              <div class="page-card-header compact-header">
+                <div>
+                  <h2>Alert Feed</h2>
+                  <p>Latest monitoring and maintenance notifications.</p>
+                </div>
+              </div>
+
+              <div id="modalMonitoringAlertList" class="truck-analytics-feed-list">
+                <div class="summary-item">
+                  <span>No monitoring alerts yet.</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="truck-analytics-panel">
+              <div class="page-card-header compact-header">
+                <div>
+                  <h2>Truck Status Overview</h2>
+                  <p>Current active trucks from live tracking.</p>
+                </div>
+              </div>
+
+              <div id="modalTruckStatusList" class="truck-analytics-feed-list">
+                <div class="truck-analytics-empty">
+                  <span class="truck-analytics-empty-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M3 7h11v8H3zM14 10h3.5l3.5 3.5V15h-7z"></path><circle cx="7" cy="17" r="2"></circle><circle cx="17" cy="17" r="2"></circle></svg>
+                  </span>
+                  <strong>No active trucks available.</strong>
+                  <small>Active tracking sessions will appear here.</small>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="truck-analytics-panel">
+            <div class="page-card-header compact-header">
+              <div>
+                <h2>Distance Monitoring</h2>
+                <p>Visual ranking of truck movement and maintenance readiness.</p>
+              </div>
+            </div>
+
+            <div id="modalTruckDistanceChart" class="truck-distance-chart-box">
+              <div class="truck-analytics-empty">
+                <span class="truck-analytics-empty-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2"></circle><circle cx="18" cy="18" r="2"></circle><path d="M8 6h5a3 3 0 0 1 0 6h-2a3 3 0 0 0 0 6h5"></path></svg>
+                </span>
+                <strong>No truck distance data available yet.</strong>
+                <small>Distance appears after tracked movement is recorded.</small>
+              </div>
+            </div>
+          </div>
+
+          <div class="truck-analytics-panel">
+            <div class="page-card-header compact-header">
+              <div>
+                <h2>System Recommendations</h2>
+                <p>Operational guidance based on monitoring results.</p>
+              </div>
+            </div>
+
+            <div id="modalTruckRecommendationList" class="truck-analytics-feed-list">
+              <div class="summary-item">
+                <span>No recommendations available yet.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- DEACTIVATED ACCOUNTS HISTORY MODAL -->
+<div id="createAccountModal" class="history-modal hidden">
+  <div class="history-modal-overlay" onclick="closeCreateAccountModal()"></div>
+  <div class="history-modal-content" role="dialog" aria-modal="true" aria-labelledby="createAccountModalTitle" aria-describedby="createAccountModalDescription" tabindex="-1">
+    <div class="history-modal-header">
+      <div>
+        <h2 id="createAccountModalTitle">Create Account</h2>
+        <p id="createAccountModalDescription">Create a new web or mobile user account.</p>
+      </div>
+      <button type="button" class="history-close-btn" aria-label="Close Create Account" onclick="closeCreateAccountModal()">✕</button>
+    </div>
+    <div class="create-account-modal-body">
+      <form id="createAccountForm" class="account-form">
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="accountPlatform">Platform</label>
+            <select id="accountPlatform" required>
+              <option value="">Select platform</option>
+              <option value="web">Web</option>
+              <option value="mobile">Mobile</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="fullName">Full Name</label>
+            <input type="text" id="fullName" placeholder="Enter full name" required />
+          </div>
+
+          <div class="form-group">
+            <label for="newUsername">Username</label>
+            <input type="text" id="newUsername" placeholder="Enter username" required />
+          </div>
+
+          <div class="form-group">
+            <label for="newPassword">Password</label>
+            <input type="password" id="newPassword" placeholder="Enter password" required />
+          </div>
+
+          <div class="form-group" id="roleGroup">
+            <label for="accountRole">Role</label>
+            <select id="accountRole" required>
+              <option value="">Select role</option>
+            </select>
+          </div>
+
+          <div class="form-group" id="assignmentGroup">
+            <label for="assignmentName" id="assignmentLabel">Division Name</label>
+            <input type="text" id="assignmentName" placeholder="Enter division name" />
+            <div id="enforcerAorPreview" class="enforcer-aor-preview" aria-live="polite" hidden></div>
+          </div>
+        </div>
+
+        <div id="accountMessageBox" class="module-message" role="status"></div>
+        <div class="form-actions">
+          <button type="button" class="create-account-cancel" onclick="closeCreateAccountModal()">Cancel</button>
+          <button type="submit" class="create-btn" id="createAccountBtn">Create Account</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div id="deactivatedAccountsModal" class="history-modal hidden">
+  <div class="history-modal-overlay" onclick="closeDeactivatedAccountsModal()"></div>
+
+  <div class="history-modal-content">
+    <div class="history-modal-header">
+      <div>
+        <h2>Deactivated Account History</h2>
+        <p>List of deactivated user accounts.</p>
+      </div>
+      <button type="button" class="history-close-btn" onclick="closeDeactivatedAccountsModal()">✕</button>
+    </div>
+
+    <div class="table-shell accounts-table-shell">
+      <table class="accounts-table">
+        <thead>
+          <tr>
+            <th>Full Name</th>
+            <th>Username / Email</th>
+            <th>Source</th>
+            <th>Role</th>
+            <th>Division / Barangay</th>
+            <th>Status</th>
+            <th>Created At</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="deactivatedAccountsTableBody">
+          <tr>
+            <td colspan="8" class="loading-state">Loading deactivated accounts...</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+  <!-- Waste Breakdown Modal -->
+  <div id="wasteBreakdownModal" class="custom-modal hidden">
+    <div class="custom-modal-overlay" id="wasteBreakdownOverlay"></div>
+
+    <div class="custom-modal-content waste-breakdown-modal">
+      <div class="custom-modal-header">
+        <div>
+          <h3 id="wasteBreakdownTitle">Waste Breakdown</h3>
+          <p id="wasteBreakdownSubtitle">Detailed waste inputs</p>
+        </div>
+        <button id="closeWasteBreakdownModal" class="modal-close-btn" type="button">&times;</button>
+      </div>
+
+      <div class="custom-modal-body">
+        <div class="breakdown-summary-strip">
+          <div class="breakdown-summary-item">
+            <span>Source</span>
+            <strong id="breakdownSourceName">-</strong>
+          </div>
+          <div class="breakdown-summary-item">
+            <span>Category</span>
+            <strong id="breakdownCategoryName">-</strong>
+          </div>
+          <div class="breakdown-summary-item">
+            <span>Subtotal</span>
+            <strong id="breakdownSubtotalValue">0</strong>
+          </div>
+        </div>
+
+        <div id="wasteBreakdownList" class="breakdown-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="validationDetailsModal" class="custom-modal hidden">
+    <div id="validationDetailsOverlay" class="custom-modal-overlay"></div>
+
+    <div class="custom-modal-content report-modal">
+
+      <div class="report-header">
+        <div class="report-office-identity">
+          <span class="report-office-mark" aria-hidden="true">
+            <img src="/images/wmo-logo-new.png" alt="" />
+          </span>
+          <div>
+            <h2>Waste Management Office</h2>
+            <p>General Santos City</p>
+          </div>
+        </div>
+
+        <div class="report-actions">
+          <button id="printReportBtn" class="print-btn" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8V3h10v5M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2"></path><path d="M7 14h10v7H7z"></path></svg>
+            <span>Print</span>
+          </button>
+          <button id="closeValidationDetailsModal" class="modal-close-btn" type="button" aria-label="Close Waste Validation Report" title="Close">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"></path></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="report-body" id="printableReportArea">
+        <div class="report-title">
+          <h3>Waste Validation Report</h3>
+          <p id="reportDate"></p>
+        </div>
+
+        <div class="report-section">
+          <h4>Record Information</h4>
+          <div id="reportBasicInfo" class="report-grid"></div>
+        </div>
+
+        <div class="report-section">
+          <h4>Waste Summary</h4>
+          <div id="reportWasteSummary" class="report-grid"></div>
+        </div>
+
+        <div class="report-section">
+          <h4>Validation Details</h4>
+          <div id="reportValidationInfo" class="report-grid"></div>
+        </div>
+
+        <div class="report-footer">
+          <div id="reportFooterValidator"></div>
+        </div>
+      </div>
+      <section id="wasteCorrectionPanel" class="waste-correction-panel" hidden aria-label="Validated record corrections"></section>
+    </div>
+  </div>
+
+  <div id="wasteCorrectionQueuePanel" class="custom-modal waste-correction-queue-modal hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="wasteCorrectionQueueTitle" aria-describedby="wasteCorrectionQueueDescription">
+    <div id="wasteCorrectionQueueOverlay" class="custom-modal-overlay"></div>
+    <div class="custom-modal-content waste-correction-queue-dialog">
+      <div class="custom-modal-header">
+        <div>
+          <h3 id="wasteCorrectionQueueTitle">Correction Requests</h3>
+          <p id="wasteCorrectionQueueDescription">Review pending proposals and monitor approved, rejected, cancelled, and applied corrections.</p>
+        </div>
+        <button type="button" id="closeWasteCorrectionQueueBtn" class="modal-close-btn" aria-label="Close correction requests">&times;</button>
+      </div>
+      <div class="custom-modal-body">
+        <div id="wasteCorrectionQueueContent" role="status">No correction requests yet.</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="wasteCorrectionRequestModal" class="custom-modal modal-stack-child hidden" data-modal-parent="validationDetailsModal" role="dialog" aria-modal="true" aria-labelledby="wasteCorrectionRequestTitle">
+    <div id="wasteCorrectionRequestOverlay" class="custom-modal-overlay"></div>
+    <div class="custom-modal-content waste-correction-modal">
+      <div class="custom-modal-header">
+        <div><h3 id="wasteCorrectionRequestTitle">Request Correction</h3><p>Official totals change only after review and approval.</p></div>
+        <button type="button" id="closeWasteCorrectionRequestBtn" class="modal-close-btn" aria-label="Close correction request">&times;</button>
+      </div>
+      <form id="wasteCorrectionRequestForm" class="waste-correction-form">
+        <div id="wasteCorrectionOriginalValues" class="waste-correction-original"></div>
+        <div id="wasteCorrectionInputs" class="waste-correction-fields"></div>
+        <label for="wasteCorrectionReason">Correction reason <span aria-hidden="true">*</span></label>
+        <textarea id="wasteCorrectionReason" maxlength="1000" required rows="3" placeholder="Explain why the official subtotals need correction."></textarea>
+        <p id="wasteCorrectionRequestError" class="waste-correction-error" role="alert" hidden></p>
+        <button type="submit" class="waste-correction-button">Submit for Supervisor Review</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="wasteCorrectionReviewModal" class="custom-modal modal-stack-child hidden" data-modal-parent="wasteCorrectionQueuePanel" role="dialog" aria-modal="true" aria-labelledby="wasteCorrectionReviewTitle">
+    <div id="wasteCorrectionReviewOverlay" class="custom-modal-overlay"></div>
+    <div class="custom-modal-content waste-correction-modal">
+      <div class="custom-modal-header">
+        <div><h3 id="wasteCorrectionReviewTitle">Review Correction</h3><p>Compare the exact original and proposed values.</p></div>
+        <button type="button" id="closeWasteCorrectionReviewBtn" class="modal-close-btn" aria-label="Close correction review">&times;</button>
+      </div>
+      <form id="wasteCorrectionReviewForm" class="waste-correction-form">
+        <div id="wasteCorrectionReviewComparison"></div>
+        <label for="wasteCorrectionDecisionReason">Decision reason <span id="wasteCorrectionDecisionRequired">(required for rejection)</span></label>
+        <textarea id="wasteCorrectionDecisionReason" maxlength="1000" rows="3"></textarea>
+        <p id="wasteCorrectionReviewError" class="waste-correction-error" role="alert" hidden></p>
+        <button type="submit" id="wasteCorrectionReviewSubmit" class="waste-correction-button">Confirm Review</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="wasteCorrectionCancelModal" class="custom-modal modal-stack-child hidden" data-modal-parent="validationDetailsModal" role="dialog" aria-modal="true" aria-labelledby="wasteCorrectionCancelTitle">
+    <div id="wasteCorrectionCancelOverlay" class="custom-modal-overlay"></div>
+    <div class="custom-modal-content waste-correction-modal">
+      <div class="custom-modal-header">
+        <div><h3 id="wasteCorrectionCancelTitle">Cancel Correction</h3><p>The request remains in history; no official Waste Record values change.</p></div>
+        <button type="button" id="closeWasteCorrectionCancelBtn" class="modal-close-btn" aria-label="Close correction cancellation">&times;</button>
+      </div>
+      <form id="wasteCorrectionCancelForm" class="waste-correction-form">
+        <p id="wasteCorrectionCancelSummary"></p>
+        <label for="wasteCorrectionCancelReason">Cancellation reason <span aria-hidden="true">*</span></label>
+        <textarea id="wasteCorrectionCancelReason" maxlength="1000" required rows="3" placeholder="Explain why this request should be withdrawn."></textarea>
+        <p id="wasteCorrectionCancelError" class="waste-correction-error" role="alert" hidden></p>
+        <button type="submit" class="waste-correction-button">Confirm Cancellation</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="wasteCorrectionHistoryModal" class="custom-modal modal-stack-child hidden" data-modal-parent="validationDetailsModal" role="dialog" aria-modal="true" aria-labelledby="wasteCorrectionHistoryTitle">
+    <div id="wasteCorrectionHistoryOverlay" class="custom-modal-overlay"></div>
+    <div class="custom-modal-content waste-correction-modal">
+      <div class="custom-modal-header">
+        <div><h3 id="wasteCorrectionHistoryTitle">Correction History</h3><p>Requests and immutable applied-value audits.</p></div>
+        <button type="button" id="closeWasteCorrectionHistoryBtn" class="modal-close-btn" aria-label="Close correction history">&times;</button>
+      </div>
+      <div id="wasteCorrectionHistoryContent" class="waste-correction-history" role="status"></div>
+    </div>
+  </div>
+
+  <!-- COMPLAINT DETAILS MODAL - UPDATED UI/UX -->
+<div id="complaintDetailsModal" class="custom-modal hidden">
+  <div class="custom-modal-overlay" id="complaintDetailsOverlay"></div>
+
+  <div class="custom-modal-content complaint-modal-content complaint-details-pro-modal">
+    <div class="custom-modal-header complaint-details-pro-header">
+      <div class="complaint-details-title-wrap">
+        <div class="complaint-details-title-icon">📄</div>
+
+        <div>
+          <h3>Complaint Details</h3>
+          <p>Review complaint information and evidence before validation.</p>
+        </div>
+      </div>
+
+      <div class="complaint-details-header-actions">
+        <span id="complaintModalStatus" class="complaint-details-status-pill">Pending</span>
+        <button type="button" id="closeComplaintDetailsModal" class="modal-close-btn">&times;</button>
+      </div>
+    </div>
+
+    <div class="custom-modal-body complaint-modal-body complaint-details-pro-body">
+      <div class="complaint-details-pro-grid">
+
+        <!-- LEFT COLUMN -->
+        <div class="complaint-details-left-stack">
+
+          <!-- COMPLAINT SUMMARY -->
+          <section class="complaint-pro-card complaint-summary-card-pro">
+            <div class="complaint-pro-card-header">
+              <span class="complaint-pro-icon blue">▣</span>
+              <h4>Complaint Summary</h4>
+            </div>
+
+            <div class="complaint-summary-fields">
+              <div class="complaint-pro-field full">
+                <label>Subject</label>
+                <div id="complaintModalSubject" class="complaint-field-value">-</div>
+              </div>
+
+              <div class="complaint-pro-field full">
+                <label>Description</label>
+                <div id="complaintModalDescription" class="complaint-field-value">-</div>
+              </div>
+            </div>
+          </section>
+
+          <!-- REPORTER INFORMATION -->
+          <section class="complaint-pro-card">
+            <div class="complaint-pro-card-header">
+              <span class="complaint-pro-icon cyan">👤</span>
+              <h4>Reporter Information</h4>
+            </div>
+
+            <div class="complaint-pro-two-grid">
+              <div class="complaint-pro-field with-icon">
+                <span class="complaint-mini-icon">👤</span>
+                <div>
+                  <label>Citizen Name</label>
+                  <div id="complaintModalCitizenName" class="complaint-field-value">-</div>
+                </div>
+              </div>
+
+              <div class="complaint-pro-field with-icon">
+                <span class="complaint-mini-icon">＠</span>
+                <div>
+                  <label>Username</label>
+                  <div id="complaintModalUsername" class="complaint-field-value">-</div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- LOCATION DETAILS -->
+          <section class="complaint-pro-card">
+            <div class="complaint-pro-card-header">
+              <span class="complaint-pro-icon green">📍</span>
+              <h4>Location Details</h4>
+            </div>
+
+            <div class="complaint-pro-two-grid">
+              <div class="complaint-pro-field with-icon">
+                <span class="complaint-mini-icon">🏠</span>
+                <div>
+                  <label>Assigned Barangay</label>
+                  <div id="complaintModalBarangay" class="complaint-field-value">-</div>
+                </div>
+              </div>
+
+              <div class="complaint-pro-field with-icon">
+                <span class="complaint-mini-icon">◎</span>
+                <div>
+                  <label>Coordinates</label>
+                  <div id="complaintModalCoordinates" class="complaint-field-value">-</div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- SUBMITTED AT -->
+          <section class="complaint-pro-card submitted-card">
+            <div class="complaint-pro-field with-icon no-border">
+              <span class="complaint-mini-icon purple">🗓</span>
+              <div>
+                <label>Submitted At</label>
+                <div id="complaintModalCreatedAt" class="complaint-field-value">-</div>
+              </div>
+            </div>
+          </section>
+
+          <!-- MANUAL BARANGAY FALLBACK -->
+          <div id="manualBarangayContainer" class="manual-barangay-container" style="display:none;">
+            <label for="manualBarangaySelect">Select Barangay</label>
+            <select id="manualBarangaySelect">
+              <option value="">-- Select Barangay --</option>
+              <option value="Bula">Bula</option>
+              <option value="Lagao">Lagao</option>
+              <option value="San Isidro">San Isidro</option>
+              <option value="Calumpang">Calumpang</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- RIGHT COLUMN -->
+        <div class="complaint-details-right-stack">
+
+          <!-- EVIDENCE -->
+          <section class="complaint-pro-card evidence-card">
+            <div class="complaint-pro-card-header">
+              <span class="complaint-pro-icon violet">🖼</span>
+              <h4>Evidence</h4>
+            </div>
+
+            <div class="complaint-evidence-wrapper">
+              <div id="complaintImageSkeleton" class="complaint-image-skeleton"></div>
+
+              <img
+                id="complaintModalImage"
+                class="complaint-evidence-image"
+                src=""
+                alt="Complaint evidence"
+                style="display:none;"
+              />
+
+              <div id="noImageText" class="no-image-placeholder" style="display:none;">
+                <div class="no-image-icon">🖼</div>
+                <strong>No evidence uploaded</strong>
+                <span>Photos, videos, or documents will appear here.</span>
+              </div>
+            </div>
+          </section>
+
+          <!-- MAP PREVIEW -->
+          <section class="complaint-pro-card map-preview-card">
+            <div class="complaint-pro-card-header map-preview-header">
+              <div>
+                <span class="complaint-pro-icon green">🗺</span>
+                <h4>Map Preview</h4>
+              </div>
+
+              <button type="button" id="btnOpenComplaintMap" class="complaint-map-small-btn">
+                Open Map
+              </button>
+            </div>
+
+            <div class="complaint-map-preview-box">
+              <div class="map-preview-pin">📍</div>
+              <div class="map-preview-lines"></div>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <div class="complaint-details-footer">
+        <button type="button" id="btnCloseComplaintModalFooter" class="complaint-secondary-btn">
+          Close
+        </button>
+
+        <button
+          type="button"
+          id="btnRejectComplaintFromDetails"
+          class="complaint-danger-btn">
+          Reject Complaint
+        </button>
+
+        <button
+          type="button"
+          id="btnValidateComplaintFromDetails"
+          class="complaint-primary-btn">
+          Validate Complaint
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div id="imagePreviewOverlay" class="image-preview-overlay hidden">
+    <button type="button" id="closeImagePreviewBtn" class="image-preview-close">&times;</button>
+    <img id="imagePreviewFull" class="imagePreviewFull image-preview-full" src="" alt="Preview image">
+  </div>
+</div> 
+
+
+<!-- REJECT COMPLAINT MODAL -->
+<div id="complaintRejectModal" class="custom-modal hidden complaint-reject-modal">
+  <div class="custom-modal-overlay" id="complaintRejectOverlay"></div>
+
+  <div class="custom-modal-content complaint-reject-modal-content">
+    <div class="custom-modal-header complaint-reject-header">
+      <div>
+        <h3>Reject Complaint</h3>
+        <p>Provide a clear reason why this citizen complaint is not valid.</p>
+      </div>
+
+      <button type="button" id="closeComplaintRejectModal" class="modal-close-btn">&times;</button>
+    </div>
+
+    <div class="custom-modal-body complaint-reject-body">
+      <div class="complaint-reject-warning">
+        <strong>Review carefully before rejecting.</strong>
+        <span>The complaint will be marked as rejected and will no longer be forwarded to the barangay.</span>
+      </div>
+
+      <div class="complaint-reject-summary">
+        <span>Complaint</span>
+        <strong id="complaintRejectSubject">-</strong>
+      </div>
+
+      <div class="complaint-reject-field">
+        <label for="complaintRejectReason">Reason for rejection</label>
+        <textarea
+          id="complaintRejectReason"
+          rows="5"
+          maxlength="500"
+          placeholder="Example: The complaint evidence is unclear, duplicate, wrong location, or not waste-related."
+        ></textarea>
+        <small id="complaintRejectReasonHint">Minimum 10 characters. Be specific so the record is clear.</small>
+      </div>
+
+      <div class="complaint-reject-actions">
+        <button type="button" id="confirmComplaintRejectBtn" class="complaint-danger-btn">
+          Confirm Reject
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="complaintMapModal" class="custom-modal hidden">
+  <div class="custom-modal-overlay" id="complaintMapOverlay"></div>
+
+  <div class="custom-modal-content complaint-map-modal-content">
+    <div class="custom-modal-header">
+      <div>
+        <h3>Complaint Location</h3>
+        <p>Mapped location of the reported issue.</p>
+      </div>
+      <button type="button" id="closeComplaintMapModal" class="modal-close-btn">&times;</button>
+    </div>
+
+    <div class="custom-modal-body complaint-map-modal-body">
+  <div class="complaint-map-summary">
+    <div class="complaint-map-summary-item">
+      <span>Subject</span>
+      <strong id="complaintMapSubject">-</strong>
+    </div>
+
+    <div class="complaint-map-summary-item">
+      <span>Barangay</span>
+      <strong id="complaintMapBarangay">-</strong>
+    </div>
+
+    <div class="complaint-map-summary-item">
+      <span>Coordinates</span>
+      <strong id="complaintMapCoordinates">-</strong>
+    </div>
+  </div>
+
+  <div class="complaint-map-layout">
+    <div class="complaint-map-panel">
+      <div id="complaintLeafletMap" class="complaint-leaflet-map"></div>
+    </div>
+
+    <div class="complaint-side-panel">
+      <div class="chosen-barangay-box">
+        <div class="label">Chosen Barangay</div>
+        <div id="chosenBarangayText" class="chosen-barangay-text">None selected</div>
+        <div id="chosenBarangayMeta" class="chosen-barangay-meta"></div>
+      </div>
+
+      <div class="nearby-list-box">
+        <div class="label">Nearby Barangay Candidates</div>
+        <div id="nearbyBarangayList" class="nearby-barangay-list">
+          <div class="nearby-empty">No nearby barangays loaded yet.</div>
+        </div>
+      </div>
+
+      <div class="complaint-map-footer-actions">
+        <button type="button" id="btnValidateForwardComplaint" class="view-all-btn">
+          Validate &amp; Forward
+        </button>
+      </div>
+    </div>
+  </div>
+    </div>
+  </div>
+</div>
+
+<div id="complaintHistoryModal" class="history-modal hidden">
+  <div class="history-modal-overlay" id="complaintHistoryOverlay"></div>
+
+  <div class="history-modal-content">
+    <div class="history-modal-header">
+      <div>
+        <h2>Complaint History</h2>
+        <p>Rejected, forwarded, accepted, and resolved complaint records.</p>
+      </div>
+      <button type="button" class="history-close-btn" id="closeComplaintHistoryBtn">✕</button>
+    </div>
+
+    <div class="table-shell">
+      <table>
+        <thead>
+          <tr>
+            <th class="complaint-history-id-column">ID No.</th>
+            <th class="complaint-history-subject-column">Subject</th>
+            <th class="complaint-history-citizen-column">Citizen</th>
+            <th class="complaint-history-assigned-column">Assigned Barangay</th>
+            <th class="complaint-history-forwarded-column">Forwarded Barangays</th>
+            <th class="complaint-history-status-column">Status</th>
+            <th class="complaint-history-date-column">Date</th>
+            <th class="complaint-history-action-column">Action</th>
+          </tr>
+        </thead>
+        <tbody id="complaintHistoryTableBody">
+          <tr>
+            <td colspan="8" class="loading-state">Loading complaint history...</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div id="complaintResolutionModal" class="custom-modal hidden">
+  <div class="custom-modal-overlay" id="complaintResolutionOverlay"></div>
+
+  <div class="custom-modal-content complaint-resolution-modal-content resolution-pro-modal">
+    <div class="custom-modal-header resolution-pro-header">
+      <div>
+        <span class="resolution-kicker">Resolved Complaint</span>
+        <h3 id="resolutionModalSubject">Resolution Report</h3>
+        <p>Barangay personnel submitted resolution details and evidence.</p>
+      </div>
+
+      <button type="button" id="closeComplaintResolutionModal" class="modal-close-btn">&times;</button>
+    </div>
+
+    <div class="custom-modal-body complaint-resolution-modal-body resolution-pro-body">
+      <div class="resolution-summary-row">
+        <div class="resolution-summary-card">
+          <span>Assigned Barangay</span>
+          <strong id="resolutionModalAssignedBarangay">-</strong>
+        </div>
+
+        <div class="resolution-summary-card">
+          <span>Handled By</span>
+          <strong id="resolutionModalHandledBy">-</strong>
+        </div>
+
+        <div class="resolution-summary-card">
+          <span>Reporter Barangay</span>
+          <strong id="resolutionModalReporterBarangay">-</strong>
+        </div>
+
+        <div class="resolution-summary-card">
+          <span>Resolved At</span>
+          <strong id="resolutionModalResolvedAt">-</strong>
+        </div>
+      </div>
+
+      <div class="resolution-main-grid">
+        <div class="resolution-left-panel">
+          <div class="resolution-status-line">
+            <span>Status</span>
+            <strong id="resolutionModalStatus" class="resolution-status-pill">-</strong>
+          </div>
+
+          <div class="resolution-detail-card">
+            <h4>Description</h4>
+            <p id="resolutionModalDescription">-</p>
+          </div>
+
+          <div class="resolution-detail-card">
+            <h4>Resolution Report</h4>
+            <p id="resolutionModalReport">-</p>
+          </div>
+
+          <div class="resolution-detail-card">
+            <h4>Coordinates</h4>
+            <p id="resolutionModalCoordinates">-</p>
+          </div>
+        </div>
+
+        <div class="resolution-evidence-panel">
+          <div class="resolution-evidence-heading">
+            <div>
+              <h4>Evidence Comparison</h4>
+              <p>Compare the original citizen report evidence with the barangay resolution proof.</p>
+            </div>
+          </div>
+
+          <div class="resolution-evidence-comparison-grid">
+            <div class="resolution-evidence-compare-card citizen-evidence-card">
+              <div class="resolution-evidence-subheading">
+                <span class="evidence-compare-label citizen">Citizen Evidence</span>
+                <p>Original proof submitted by the citizen when reporting the complaint.</p>
+              </div>
+
+              <div class="resolved-evidence-wrap">
+                <div class="resolved-evidence-frame" id="resolutionCitizenEvidenceFrame">
+                  <img
+                    id="resolutionModalCitizenEvidenceImage"
+                    class="resolved-evidence-image hidden"
+                    alt="Citizen complaint evidence" />
+                </div>
+
+                <p id="resolutionModalNoCitizenEvidence" class="muted-text">No citizen evidence submitted.</p>
+              </div>
+            </div>
+
+            <div class="resolution-evidence-compare-card resolution-evidence-card">
+              <div class="resolution-evidence-subheading">
+                <span class="evidence-compare-label resolution">Resolution Evidence</span>
+                <p>Proof submitted by barangay personnel after resolving the complaint.</p>
+              </div>
+
+              <div class="resolved-evidence-wrap">
+                <div class="resolved-evidence-frame" id="resolutionEvidenceFrame">
+                  <img
+                    id="resolutionModalEvidenceImage"
+                    class="resolved-evidence-image hidden"
+                    alt="Resolution evidence" />
+                </div>
+
+                <p id="resolutionModalNoEvidence" class="muted-text">No resolution evidence submitted.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="orientationQrModal" class="qr-modal hidden">
+  <div class="qr-overlay" id="orientationQrOverlay"></div>
+
+  <div class="qr-modal-content">
+    <div class="qr-header">
+      <h2>Orientation QR Access</h2>
+      <button type="button" id="closeOrientationQrBtn">✕</button>
+    </div>
+
+    <div class="qr-body">
+      <div id="orientationQrContainer"></div>
+
+      <div class="qr-info">
+        <p id="orientationQrNameText">Name: -</p>
+        <p id="orientationQrBarangayText">Barangay: -</p>
+        <p id="orientationQrDateText">Date: -</p>
+        <p id="orientationQrTokenText">Token: -</p>
+      </div>
+
+      <div class="qr-note">
+        Scan this QR using the mobile app to start the orientation quiz.
+      </div>
+    </div>
+  </div>
+</div>
+
+  </div>
+</div>
+
+<div id="dispatchEndModal" class="custom-modal dispatch-end-modal hidden" role="dialog" aria-modal="true" aria-labelledby="dispatchEndModalTitle" aria-describedby="dispatchEndModalMessage">
+  <div class="custom-modal-overlay" id="dispatchEndModalOverlay"></div>
+  <div class="custom-modal-content dispatch-end-modal-content">
+    <div class="custom-modal-header">
+      <div>
+        <h3 id="dispatchEndModalTitle">End Dispatch?</h3>
+        <p id="dispatchEndModalMessage">This ends the dispatch before normal completion and removes it from Active Dispatch. Its record remains in Dispatch Reports. Truck GPS tracking is not automatically stopped.</p>
+      </div>
+      <button type="button" class="modal-close-btn" id="closeDispatchEndModalBtn" aria-label="Close End Dispatch dialog">&times;</button>
+    </div>
+    <div class="custom-modal-body">
+      <form id="dispatchEndForm" class="dispatch-end-form" novalidate>
+        <label for="dispatchEndReason">Reason <span aria-hidden="true">*</span></label>
+        <select id="dispatchEndReason" required>
+          <option value="">Select a reason</option>
+          <option value="trip_cancelled">Trip cancelled</option>
+          <option value="vehicle_unavailable">Vehicle unavailable</option>
+          <option value="mechanical_issue">Mechanical issue</option>
+          <option value="wrong_ticket_or_route">Wrong ticket or route</option>
+          <option value="returned_early">Returned early</option>
+          <option value="other">Other</option>
+        </select>
+        <label id="dispatchEndOtherField" class="hidden" for="dispatchEndOtherReason">
+          Other reason <span aria-hidden="true">*</span>
+          <textarea id="dispatchEndOtherReason" maxlength="500" rows="3" placeholder="Enter a short reason"></textarea>
+        </label>
+        <div id="dispatchEndError" class="dispatch-form-error hidden" role="alert"></div>
+        <div class="dispatch-end-actions">
+          <button type="button" class="dispatch-inline-action secondary" id="dispatchEndCancelBtn">Keep Active</button>
+          <button type="submit" class="dispatch-inline-action danger" id="dispatchEndConfirmBtn">End Dispatch</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div id="dispatchReportsModal" class="custom-modal dispatch-reports-modal hidden">
+  <div class="custom-modal-overlay" id="dispatchReportsModalOverlay"></div>
+  <div class="custom-modal-content dispatch-reports-modal-content">
+    <div class="custom-modal-header">
+      <div>
+        <h3>Dispatch Reports</h3>
+        <p>Review ticket records or actual truck operations for a Manila calendar day.</p>
+      </div>
+      <button type="button" class="modal-close-btn" id="closeDispatchReportsModalBtn">&times;</button>
+    </div>
+    <div class="custom-modal-body">
+      <div class="dispatch-report-mode-tabs" role="tablist" aria-label="Dispatch report type">
+        <button type="button" class="active" role="tab" aria-selected="true" data-dispatch-report-mode="ticket">Ticket Reports</button>
+        <button type="button" role="tab" aria-selected="false" data-dispatch-report-mode="daily">Daily Operations</button>
+      </div>
+      <section id="dispatchTicketReportsPanel" class="dispatch-report-mode-panel" role="tabpanel">
+        <div class="dispatch-report-filters">
+          <label>Search<input type="search" id="dispatchReportSearch" placeholder="Ticket or truck"></label>
+          <label>Status<select id="dispatchReportStatusFilter"><option value="">All terminal statuses</option><option value="completed">Completed</option><option value="closed_early">Closed Early</option><option value="day_end_incomplete">Day-End Incomplete</option><option value="cancelled">Cancelled</option></select></label>
+          <label>Date<input type="date" id="dispatchReportDateFilter"></label>
+        </div>
+        <div class="table-shell dispatch-report-table-shell">
+          <table class="dispatch-report-table">
+            <thead><tr><th>Ticket Number</th><th>Truck</th><th>Dispatch Status</th><th>Started At</th><th>Ended At</th><th>Destinations</th><th>Personnel / Created By</th><th>Action</th></tr></thead>
+            <tbody id="dispatchReportsTableBody"><tr><td colspan="8" class="loading-state">Loading dispatch reports...</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+      <section id="dispatchDailyReportsPanel" class="dispatch-report-mode-panel hidden" role="tabpanel">
+        <div class="dispatch-report-filters dispatch-daily-report-filters">
+          <label>Date<input type="date" id="dispatchDailyReportDate"></label>
+          <label>Truck<input type="search" id="dispatchDailyReportTruck" placeholder="Truck ID or name"></label>
+          <button type="button" class="dispatch-report-view-button" id="dispatchDailyReportRefreshBtn">Load Daily Operations</button>
+        </div>
+        <div class="table-shell dispatch-report-table-shell">
+          <table class="dispatch-report-table dispatch-daily-report-table">
+            <thead><tr><th>Date</th><th>Truck</th><th>Personnel / Enforcer</th><th>Dispatches</th><th>Stops</th><th>Actual Distance</th><th>Tracking Time</th><th>Stop Time</th><th>Action</th></tr></thead>
+            <tbody id="dispatchDailyReportsTableBody"><tr><td colspan="9" class="loading-state">Choose a date to load daily operations.</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<div id="dispatchDailyReportModal" class="custom-modal dispatch-report-modal hidden">
+  <div class="custom-modal-overlay" id="dispatchDailyReportModalOverlay"></div>
+  <div class="custom-modal-content dispatch-report-modal-content">
+    <div class="custom-modal-header">
+      <div><h3 id="dispatchDailyReportTitle">Daily Operations</h3><p>Actual truck activity within one Asia/Manila calendar day</p></div>
+      <button type="button" id="closeDispatchDailyReportModalBtn" class="modal-close-btn">&times;</button>
+    </div>
+    <div class="custom-modal-body">
+      <div id="dispatchDailyReportBody" class="dispatch-report-body"><div class="loading-state">Loading daily operations...</div></div>
+    </div>
+  </div>
+</div>
+
+<div id="dispatchReportModal" class="custom-modal dispatch-report-modal hidden">
+  <div class="custom-modal-overlay" id="dispatchReportModalOverlay"></div>
+  <div class="custom-modal-content dispatch-report-modal-content">
+    <div class="custom-modal-header">
+      <div><h3 id="dispatchReportTitle">Dispatch Report</h3><p>Ticket-centered trip record</p></div>
+      <button type="button" id="closeDispatchReportModalBtn" class="modal-close-btn">&times;</button>
+    </div>
+    <div class="custom-modal-body">
+      <div id="dispatchReportBody" class="dispatch-report-body"><div class="loading-state">Loading dispatch report...</div></div>
+    </div>
+  </div>
+</div>
+
+<div id="orientationHistoryModal" class="history-modal hidden">
+  <div class="history-modal-overlay" id="orientationHistoryOverlay"></div>
+
+  <div class="history-modal-content">
+    <div class="history-modal-header">
+      <div>
+        <h2>Orientation History / Report</h2>
+        <p>Completed, incomplete, and other terminal SWM orientation records.</p>
+      </div>
+
+      <button type="button" class="history-close-btn" id="closeOrientationHistoryBtn">✕</button>
+    </div>
+
+    <div class="orientation-history-filter-toolbar">
+      <input
+        type="search"
+        id="orientationHistorySearchInput"
+        class="orientation-history-search-input"
+        placeholder="Search by ID or name..."
+        aria-label="Search orientation history by ID or name"
+      />
+      <select
+        id="orientationHistoryBarangayFilter"
+        class="orientation-history-barangay-filter"
+        aria-label="Filter orientation history by barangay"
+      >
+        <option value="all">All Barangays</option>
+      </select>
+    </div>
+
+    <div class="table-shell">
+      <table class="orientation-history-table">
+        <thead>
+          <tr>
+            <th>ID No.</th>
+            <th>Name</th>
+            <th>Barangay</th>
+            <th>Scheduled Date</th>
+            <th>Service</th>
+            <th>Date Started</th>
+            <th>Date Completed</th>
+            <th>Score</th>
+          </tr>
+        </thead>
+
+        <tbody id="orientationHistoryTableBody">
+          <tr>
+            <td colspan="8" class="loading-state">
+              Loading orientation history...
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div id="editUserModal" class="history-modal hidden">
+  <div class="history-modal-overlay" onclick="closeEditUserModal()"></div>
+
+  <div class="history-modal-content edit-user-modal-content">
+    <div class="history-modal-header">
+      <div>
+        <h2>Edit Account</h2>
+        <p>Update the username or change the password for this account.</p>
+      </div>
+
+      <button type="button" onclick="closeEditUserModal()" class="history-close-btn">×</button>
+    </div>
+
+    <div class="edit-user-form-grid">
+      <input type="hidden" id="editUserId">
+
+      <div class="edit-user-form-group full">
+        <label for="editUsername">Username / Email</label>
+        <input type="text" id="editUsername" placeholder="Enter username or email">
+      </div>
+
+      <div class="edit-user-form-group">
+        <label for="editPassword">New Password</label>
+        <input type="password" id="editPassword" placeholder="Leave blank if unchanged">
+      </div>
+
+      <div class="edit-user-form-group">
+        <label for="editConfirmPassword">Confirm Password</label>
+        <input type="password" id="editConfirmPassword" placeholder="Confirm new password">
+      </div>
+    </div>
+
+    <div class="edit-user-actions">
+      <button type="button" class="edit-cancel-btn" onclick="closeEditUserModal()">Cancel</button>
+      <button type="button" class="edit-save-btn" onclick="submitEditUser()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+
+
+
+<div id="calendarActivitiesModal" class="custom-modal hidden other-modal calendar-pro-modal">
+  <div class="custom-modal-overlay" id="calendarActivitiesOverlay"></div>
+
+  <div class="custom-modal-content calendar-pro-content calendar-main-report-content">
+    <div class="custom-modal-header calendar-pro-header">
+      <div>
+        <h3 id="calendarMainTitle">Calendar of Activities</h3>
+        <p id="calendarMainSubtitle">Whole-month activity calendar. Click a date or use Add Activity to create a schedule.</p>
+      </div>
+
+      <button type="button" class="modal-close-btn" id="closeCalendarActivitiesBtn">&times;</button>
+    </div>
+
+    <div class="custom-modal-body calendar-pro-body calendar-main-report-body">
+      <div class="calendar-main-topbar">
+        <div class="calendar-pro-nav">
+          <button type="button" class="calendar-icon-btn" id="calendarPrevMonthBtn" aria-label="Previous Month">‹</button>
+
+          <div>
+            <h4 id="calendarCurrentLabel">Month Year</h4>
+            <p id="calendarMonthSubLabel">Saved activities for this month.</p>
+          </div>
+
+          <button type="button" class="calendar-icon-btn" id="calendarNextMonthBtn" aria-label="Next Month">›</button>
+        </div>
+
+        <div class="calendar-pro-actions">
+          <button type="button" class="calendar-secondary-btn" id="calendarTodayBtn">Today</button>
+          <button type="button" class="calendar-primary-btn" id="calendarOpenAddBtn">Add Activity</button>
+        </div>
+      </div>
+
+      <div class="calendar-report-summary calendar-main-summary">
+        <div>
+          <span>Total Activities</span>
+          <strong id="calendarMainTotal">0</strong>
+        </div>
+
+        <div>
+          <span>Active Days</span>
+          <strong id="calendarMainActiveDays">0</strong>
+        </div>
+
+        <div>
+          <span>Month Status</span>
+          <strong id="calendarMainStatus">-</strong>
+        </div>
+      </div>
+
+      <div class="calendar-main-calendar-wrap">
+        <div class="calendar-report-weekdays">
+          <span>Sun</span>
+          <span>Mon</span>
+          <span>Tue</span>
+          <span>Wed</span>
+          <span>Thu</span>
+          <span>Fri</span>
+          <span>Sat</span>
+        </div>
+
+        <div id="calendarGrid" class="calendar-report-grid calendar-main-grid"></div>
+      </div>
+
+      <div class="calendar-main-bottom-grid">
+        <div class="calendar-selected-activities-panel">
+          <div class="calendar-day-activities-header">
+            <div>
+              <h4 id="calendarSelectedDateLabel">Select a date</h4>
+              <p>Activities saved for the selected date.</p>
+            </div>
+
+            <span id="calendarActivityCount">0</span>
+          </div>
+
+          <div id="calendarActivityList" class="calendar-day-activities-list">
+            <div class="calendar-empty-day">
+              <strong>No selected date</strong>
+              <p>Click a date from the calendar to view or add activities.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="calendar-month-reports-card calendar-main-month-reports">
+          <div class="calendar-month-reports-header">
+            <div>
+              <h4>Monthly Activity Reports</h4>
+              <p>Saved activity months with full report view.</p>
+            </div>
+          </div>
+
+          <div id="calendarMonthlyReportList" class="calendar-month-report-list">
+            <div class="calendar-empty-report">No monthly reports yet.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+    </div>
+  </div>
+</div>
+</div>
+
+<div id="incomingInvoiceModal" class="custom-modal hidden other-modal invoice-workflow-modal">
+  <div class="custom-modal-overlay" id="incomingInvoiceOverlay"></div>
+
+  <div class="custom-modal-content invoice-workflow-content">
+    <div class="custom-modal-header invoice-workflow-header">
+      <div>
+        <h3>Incoming Invoice Workflow</h3>
+        <p>Route invoice subjects from Head Admin → Clerk Admin → Supervisor → Division Admin → Report.</p>
+      </div>
+      <button type="button" class="modal-close-btn" id="closeIncomingInvoiceBtn">&times;</button>
+    </div>
+
+    <div class="custom-modal-body invoice-workflow-body">
+      <ol class="invoice-process-strip" aria-label="Invoice routing overview, not current progress">
+        <li><span aria-hidden="true">1</span>Head Admin</li>
+        <li><span aria-hidden="true">2</span>Clerk Admin</li>
+        <li><span aria-hidden="true">3</span>Supervisor</li>
+        <li><span aria-hidden="true">4</span>Division Admin</li>
+        <li><span aria-hidden="true">5</span>Report</li>
+      </ol>
+      <div class="invoice-role-banner">
+        <div>
+          <span>Current Account</span>
+          <strong id="invoiceCurrentRoleLabel">-</strong>
+          <p id="invoiceRoleInstruction">Loading role access...</p>
+        </div>
+        <button type="button" class="invoice-refresh-btn" id="refreshInvoiceWorkflowBtn">Refresh Workflow</button>
+      </div>
+
+      <div class="invoice-summary-grid">
+        <div class="invoice-summary-card">
+          <span>Total Invoices</span>
+          <strong id="invoiceTotalCount">0</strong>
+          <small>All active and completed invoices</small>
+        </div>
+        <div class="invoice-summary-card blue">
+          <span>Needs My Action</span>
+          <strong id="invoiceMyActionCount">0</strong>
+          <small>Based on your current role</small>
+        </div>
+        <div class="invoice-summary-card amber">
+          <span>Completed Reports</span>
+          <strong id="invoiceCompletedCount">0</strong>
+          <small>Confirmed by Clerk Admin</small>
+        </div>
+      </div>
+
+      <div class="invoice-workflow-layout">
+        <section class="invoice-panel invoice-create-panel" id="invoiceCreatePanel">
+          <div class="invoice-panel-header">
+            <div>
+              <h4>Create Invoice Subject</h4>
+              <p>Head Admin assigns a Clerk Admin and sends the invoice subject for acceptance.</p>
+            </div>
+          </div>
+
+          <form id="invoiceCreateForm" class="invoice-form">
+            <div class="invoice-form-group">
+              <label for="invoiceSubjectInput">Subject</label>
+              <input type="text" id="invoiceSubjectInput" placeholder="Example: Collection Billing Request" required />
+            </div>
+
+            <div class="invoice-form-group">
+              <label for="invoiceDescriptionInput">Details / Description</label>
+              <textarea id="invoiceDescriptionInput" placeholder="Enter invoice details, remarks, or transaction request..." required></textarea>
+            </div>
+
+            <div class="invoice-form-group">
+              <label for="invoiceAssignedClerkSelect">Assign Clerk Admin</label>
+              <select id="invoiceAssignedClerkSelect" required>
+                <option value="">Loading Clerk Admin accounts...</option>
+              </select>
+              <small class="invoice-field-hint">
+                Select from registered Clerk Admin accounts. The dropdown shows full names, not roles.
+              </small>
+            </div>
+
+            <button type="submit" class="invoice-primary-btn">Send to Clerk Admin</button>
+          </form>
+        </section>
+
+        <section class="invoice-panel invoice-queue-panel">
+          <div class="invoice-panel-header">
+            <div>
+              <h4>My Invoice Queue</h4>
+              <p>Invoices that are waiting for your role action.</p>
+            </div>
+          </div>
+
+          <div class="invoice-table-shell">
+            <table class="invoice-table">
+              <thead>
+                <tr>
+                  <th>Tracking No.</th>
+                  <th>Subject</th>
+                  <th>Status</th>
+                  <th>Assigned To</th>
+                  <th>Updated</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="invoiceQueueTableBody">
+                <tr><td colspan="6" class="invoice-empty-cell">No invoices waiting for your action.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <section class="invoice-panel invoice-history-panel">
+        <div class="invoice-panel-header invoice-history-header">
+          <div>
+            <h4>Invoice Report / History</h4>
+            <p>Confirmed invoices with tracking numbers and validation trail.</p>
+          </div>
+          <div class="invoice-history-actions">
+            <input type="text" id="invoiceHistorySearchInput" placeholder="Search tracking no., subject, validator..." />
+          </div>
+        </div>
+
+        <div class="invoice-table-shell">
+          <table class="invoice-table">
+            <thead>
+              <tr>
+                <th>Tracking No.</th>
+                <th>Subject</th>
+                <th>Head Admin</th>
+                <th>Clerk Admin</th>
+                <th>Supervisor</th>
+                <th>Division Admin</th>
+                <th>Completed Date</th>
+                <th>View</th>
+              </tr>
+            </thead>
+            <tbody id="invoiceHistoryTableBody">
+              <tr><td colspan="8" class="invoice-empty-cell">No confirmed invoice reports yet.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+</div>
+
+
+<div id="invoiceTrackingModal" class="custom-modal modal-stack-child hidden invoice-tracking-modal" data-modal-parent="incomingInvoiceModal">
+  <div class="custom-modal-overlay" id="invoiceTrackingOverlay"></div>
+
+  <div class="custom-modal-content invoice-tracking-content">
+    <div class="custom-modal-header">
+      <div>
+        <h3 id="invoiceTrackingTitle">Invoice Tracking Details</h3>
+        <p id="invoiceTrackingSubtitle">Full validation and routing trail.</p>
+      </div>
+      <button type="button" class="modal-close-btn" id="closeInvoiceTrackingBtn">&times;</button>
+    </div>
+
+    <div class="custom-modal-body invoice-tracking-body">
+      <div class="invoice-tracking-summary">
+        <div><span>Tracking No.</span><strong id="invoiceViewTrackingNo">-</strong></div>
+        <div><span>Status</span><strong id="invoiceViewStatus">-</strong></div>
+        <div><span>Current / Final Handler</span><strong id="invoiceViewHandler">-</strong></div>
+      </div>
+
+      <div class="invoice-view-subject-card">
+        <span>Subject</span>
+        <h4 id="invoiceViewSubject">-</h4>
+        <p id="invoiceViewDescription">-</p>
+      </div>
+
+      <div class="invoice-trail-section">
+        <h4>Validation Trail</h4>
+        <div id="invoiceTrackingTimeline" class="invoice-tracking-timeline">
+          <div class="invoice-empty-cell">No tracking logs available.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="calendarAddActivityModal" class="custom-modal hidden calendar-add-activity-modal">
+  <div class="custom-modal-overlay" id="calendarAddActivityOverlay"></div>
+
+  <div class="custom-modal-content calendar-add-activity-content">
+    <div class="custom-modal-header">
+      <div>
+        <h3>Add Calendar Activity</h3>
+        <p id="calendarAddActivitySubtitle">Create an activity for the selected date.</p>
+      </div>
+
+      <button type="button" class="modal-close-btn" id="calendarCloseAddFormBtn">&times;</button>
+    </div>
+
+    <div class="custom-modal-body calendar-add-activity-body">
+      <form class="calendar-add-form" id="calendarActivityForm">
+        <div class="calendar-selected-card">
+          <span>Selected Date</span>
+          <strong id="calendarAddSelectedDateLabel">Select a date</strong>
+          <p>You can click any date in the calendar before adding an activity.</p>
+        </div>
+
+        <div class="calendar-form-group">
+          <label for="calendarActivityTitle">Activity Title</label>
+          <input type="text" id="calendarActivityTitle" placeholder="Example: SWM Orientation" required />
+        </div>
+
+        <div class="calendar-form-row">
+          <div class="calendar-form-group">
+            <label for="calendarActivityTime">Time</label>
+            <input type="time" id="calendarActivityTime" />
+          </div>
+
+          <div class="calendar-form-group">
+            <label for="calendarActivityTag">Category</label>
+            <select id="calendarActivityTag">
+              <option value="Orientation">Orientation</option>
+              <option value="Collection">Collection</option>
+              <option value="Meeting">Meeting</option>
+              <option value="Training">Training</option>
+              <option value="Community Event">Community Event</option>
+              <option value="Inspection">Inspection</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="calendar-form-group">
+          <label for="calendarActivityNotes">Notes / Venue</label>
+          <textarea id="calendarActivityNotes" placeholder="Optional notes, venue, or reminders..."></textarea>
+        </div>
+
+        <button type="submit" class="calendar-save-activity-btn">Save Activity</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div id="calendarMonthlyReportModal" class="custom-modal hidden calendar-report-modal">
+  <div class="custom-modal-overlay" id="calendarMonthlyReportOverlay"></div>
+
+  <div class="custom-modal-content calendar-report-content">
+    <div class="custom-modal-header calendar-report-header">
+      <div>
+        <h3 id="calendarReportTitle">Monthly Activity Report</h3>
+        <p id="calendarReportSubtitle">Full month activity record.</p>
+      </div>
+
+      <button type="button" class="modal-close-btn" id="closeCalendarMonthlyReportBtn">&times;</button>
+    </div>
+
+    <div class="custom-modal-body calendar-report-body">
+      <div class="calendar-report-summary">
+        <div>
+          <span>Total Activities</span>
+          <strong id="calendarReportTotal">0</strong>
+        </div>
+
+        <div>
+          <span>Active Days</span>
+          <strong id="calendarReportActiveDays">0</strong>
+        </div>
+
+        <div>
+          <span>Month Status</span>
+          <strong id="calendarReportStatus">-</strong>
+        </div>
+      </div>
+
+      <div class="calendar-report-grid-wrap">
+        <div class="calendar-report-weekdays">
+          <span>Sun</span>
+          <span>Mon</span>
+          <span>Tue</span>
+          <span>Wed</span>
+          <span>Thu</span>
+          <span>Fri</span>
+          <span>Sat</span>
+        </div>
+
+        <div id="calendarReportGrid" class="calendar-report-grid"></div>
+      </div>
+
+      <div class="calendar-report-list-section">
+        <h4>Activity List</h4>
+        <div id="calendarReportList" class="calendar-report-list"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toastContainer" style="
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 9999;
+"></div>
+
+<script src="https://unpkg.com/lucide@latest"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="/runtime-config.js"></script>
+<script src="js/config.js"></script>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script src="js/admin/admin-state.js"></script>
+<script src="js/admin/admin-api.js"></script>
+<script src="js/admin/admin-utils.js"></script>
+<script src="js/admin/admin-session.js"></script>
+<script src="js/admin/admin-navigation.js"></script>
+<script src="js/admin/admin-notifications.js"></script>
+<script src="js/admin/admin-waste-records.js"></script>
+<script src="js/admin/admin-waste-corrections.js"></script>
+<script src="js/admin/admin-dashboard-analytics.js"></script>
+<script src="js/admin/admin-dashboard-palette.js"></script>
+<script src="js/admin/admin-complaints.js"></script>
+<script src="js/admin/admin-appointments.js"></script>
+<script src="js/admin/admin-orientation.js"></script>
+<script src="js/admin/admin-dispatch.js"></script>
+<script src="js/admin/admin-dispatch-plans.js"></script>
+<script src="js/admin/admin-tracking.js"></script>
+<script src="js/admin/admin-fleet.js"></script>
+<script src="js/admin/admin-users.js"></script>
+<script src="js/admin/admin-invoices.js"></script>
+<script src="js/admin/admin-other.js"></script>
+<script src="js/admin/admin-profile.js"></script>
+<script src="js/admin/admin-init.js"></script>
+
+</body>
+</html>

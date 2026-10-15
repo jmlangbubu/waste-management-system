@@ -1,0 +1,687 @@
+/* =========================================================
+   ADMIN SIDEBAR
+   Canonical Phase 1 navigation surface.
+========================================================= */
+
+body #adminLayout #dashboardSidebar {
+  position: fixed !important;
+  inset: 0 auto 0 0 !important;
+  z-index: var(--wmo-z-sidebar) !important;
+  width: var(--wmo-sidebar-expanded) !important;
+  min-width: var(--wmo-sidebar-expanded) !important;
+  max-width: var(--wmo-sidebar-expanded) !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  padding: 16px 14px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: space-between !important;
+  gap: 18px !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: linear-gradient(180deg, #12355b 0%, #0f2742 100%) !important;
+  box-shadow: none !important;
+  color: #ffffff !important;
+  transition: width 0.2s ease, transform 0.2s ease !important;
+}
+
+#dashboardSidebar .sidebar-top,
+#dashboardSidebar .sidebar-bottom,
+#dashboardSidebar .sidebar-nav {
+  width: 100%;
+  min-width: 0;
+}
+
+#dashboardSidebar .sidebar-top {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px !important;
+}
+
+#dashboardSidebar .sidebar-bottom {
+  flex: 0 0 auto;
+  display: flex !important;
+  flex-direction: column;
+  gap: 8px !important;
+  margin-top: auto;
+  padding-top: 10px !important;
+  border-top: 1px solid rgba(220, 235, 250, 0.12);
+  background: transparent !important;
+}
+
+#dashboardSidebar .sidebar-brand {
+  width: 100%;
+  min-width: 0;
+  min-height: 48px !important;
+  margin: 0 !important;
+  padding: 0 2px !important;
+  display: flex !important;
+  grid-template-columns: none !important;
+  align-items: center;
+  gap: 10px !important;
+}
+
+#dashboardSidebar .sidebar-logo-toggle {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  min-width: 48px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--wmo-radius-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: #ffffff;
+  box-shadow: none;
+}
+
+#dashboardSidebar .sidebar-logo-toggle:focus-visible {
+  outline: 2px solid #60a5fa;
+  outline-offset: 2px;
+}
+
+#dashboardSidebar button:focus-visible,
+html body #sidebarOtherMenu .sidebar-other-btn:focus-visible {
+  outline: 2px solid #60a5fa;
+  outline-offset: 2px;
+}
+
+#dashboardSidebar .sidebar-logo-toggle::after {
+  content: "‹";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--wmo-radius-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 39, 66, 0.82);
+  color: #ffffff;
+  font-size: 24px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.16s ease;
+}
+
+#dashboardSidebar .sidebar-logo-toggle:hover::after {
+  opacity: 1;
+}
+
+#dashboardSidebar .brand-mark {
+  width: 46px !important;
+  height: 46px !important;
+  min-width: 46px !important;
+  max-width: 46px !important;
+  min-height: 46px !important;
+  max-height: 46px !important;
+  border: 1px solid rgba(220, 235, 250, 0.18) !important;
+  border-radius: var(--wmo-radius-md) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  overflow: hidden !important;
+  background: #ffffff !important;
+  box-shadow: none !important;
+}
+
+#dashboardSidebar .sidebar-logo-img {
+  width: 100% !important;
+  height: 100% !important;
+  padding: 2px !important;
+  display: block !important;
+  object-fit: cover !important;
+}
+
+#dashboardSidebar .sidebar-logo-fallback {
+  display: none;
+}
+
+#dashboardSidebar .brand-text {
+  min-width: 0;
+  overflow: hidden;
+}
+
+#dashboardSidebar .brand-text h2 {
+  margin: 0;
+  overflow: hidden;
+  color: #ffffff;
+  font-size: 18px;
+  font-weight: 750;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#dashboardSidebar .brand-text p {
+  margin: 2px 0 0;
+  overflow: hidden;
+  color: #a9c3db;
+  font-size: 11.5px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#dashboardSidebar .sidebar-nav {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0 !important;
+}
+
+#dashboardSidebar .sidebar-nav-group {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+}
+
+#dashboardSidebar .sidebar-nav-group + .sidebar-nav-group {
+  margin-top: 0;
+  padding-top: 16px;
+  border-top: 1px solid rgba(220, 235, 250, 0.12);
+}
+
+#dashboardSidebar .sidebar-section-label {
+  min-width: 0;
+  margin: 0 10px 2px;
+  color: #86a9c7;
+  font-size: 10.5px;
+  font-weight: 625;
+  line-height: 1.2;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+body #adminLayout #dashboardSidebar .nav-btn {
+  width: 100% !important;
+  min-height: 44px !important;
+  padding: 0 12px !important;
+  border: 0 !important;
+  border-radius: var(--wmo-radius-md) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 11px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: #dcebfa !important;
+  font-size: 13.5px !important;
+  font-weight: 575 !important;
+  line-height: 1 !important;
+  text-align: left !important;
+  transform: none !important;
+  transition: background-color 0.16s ease, color 0.16s ease !important;
+}
+
+#dashboardSidebar .nav-btn svg,
+#dashboardSidebar .nav-btn i {
+  width: 20px !important;
+  height: 20px !important;
+  min-width: 20px !important;
+  flex: 0 0 20px !important;
+  color: currentColor !important;
+  opacity: 0.86 !important;
+  stroke-width: 2 !important;
+}
+
+#dashboardSidebar .nav-btn span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body #adminLayout #dashboardSidebar #navUserManagement {
+  grid-template-columns: 20px minmax(0, 1fr) !important;
+  align-items: center !important;
+  column-gap: 11px !important;
+}
+
+#dashboardSidebar #navUserManagement svg,
+#dashboardSidebar #navUserManagement i {
+  grid-column: 1;
+}
+
+#dashboardSidebar #navUserManagement span {
+  grid-column: 2;
+}
+
+body #adminLayout #dashboardSidebar .nav-btn:hover {
+  background: #1c4d6b !important;
+  color: #ffffff !important;
+}
+
+body #adminLayout #dashboardSidebar .nav-btn.active {
+  background: #2563eb !important;
+  color: #ffffff !important;
+  font-weight: 600 !important;
+  box-shadow: 0 6px 18px rgba(37, 99, 235, 0.20) !important;
+}
+
+#dashboardSidebar .sidebar-other-group {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+body #adminLayout #dashboardSidebar .sidebar-other-trigger {
+  width: 100% !important;
+  min-height: 42px !important;
+  padding: 0 11px !important;
+  border: 0 !important;
+  border-radius: var(--wmo-radius-md) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 10px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: #dcebfa !important;
+  font-size: 13px !important;
+  font-weight: 575 !important;
+  transform: none !important;
+  transition: background-color 0.16s ease, color 0.16s ease !important;
+}
+
+body #adminLayout #dashboardSidebar .sidebar-other-trigger:hover,
+body #adminLayout #dashboardSidebar .sidebar-other-trigger[aria-expanded="true"] {
+  background: #1c4d6b !important;
+  color: #ffffff !important;
+}
+
+#dashboardSidebar .sidebar-other-trigger-left {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#dashboardSidebar .sidebar-other-trigger-left svg,
+#dashboardSidebar .sidebar-other-trigger-left i {
+  width: 18px !important;
+  height: 18px !important;
+  min-width: 18px !important;
+  color: currentColor !important;
+  stroke-width: 2 !important;
+}
+
+#dashboardSidebar .sidebar-other-arrow {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: currentColor;
+  transition: transform 0.16s ease;
+}
+
+#dashboardSidebar .sidebar-other-arrow svg {
+  width: 15px;
+  height: 15px;
+}
+
+#dashboardSidebar .sidebar-other-trigger[aria-expanded="true"] .sidebar-other-arrow {
+  transform: rotate(180deg);
+}
+
+#dashboardSidebar .sidebar-other-menu {
+  width: 100%;
+  display: grid;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+#dashboardSidebar .sidebar-other-menu.hidden,
+body #sidebarOtherMenu.hidden {
+  display: none !important;
+}
+
+body #adminLayout #dashboardSidebar .sidebar-other-btn,
+html body #sidebarOtherMenu.sidebar-other-menu .sidebar-other-btn {
+  width: 100% !important;
+  min-height: 40px !important;
+  padding: 0 11px !important;
+  border: 0 !important;
+  border-radius: var(--wmo-radius-md) !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  background: rgba(255, 255, 255, 0.055) !important;
+  box-shadow: none !important;
+  color: #dcebfa !important;
+  font-size: 12.5px !important;
+  font-weight: 650 !important;
+  text-align: left !important;
+  transform: none !important;
+}
+
+body #adminLayout #dashboardSidebar .sidebar-other-btn:hover,
+html body #sidebarOtherMenu.sidebar-other-menu .sidebar-other-btn:hover {
+  background: #1c4d6b !important;
+  color: #ffffff !important;
+}
+
+#dashboardSidebar .sidebar-other-btn svg,
+html body #sidebarOtherMenu .sidebar-other-btn svg {
+  width: 17px !important;
+  height: 17px !important;
+  min-width: 17px !important;
+  color: currentColor !important;
+  stroke-width: 2 !important;
+}
+
+html body #sidebarOtherMenu.sidebar-other-menu {
+  position: fixed !important;
+  left: var(--other-menu-left, calc(var(--wmo-sidebar-expanded) + 12px)) !important;
+  top: var(--other-menu-top, auto) !important;
+  bottom: auto !important;
+  z-index: var(--wmo-z-dropdown) !important;
+  width: 250px !important;
+  padding: 8px !important;
+  border: 1px solid #d9e6f2 !important;
+  border-radius: var(--wmo-radius-lg) !important;
+  display: grid !important;
+  gap: 5px !important;
+  background: #ffffff !important;
+  box-shadow: var(--wmo-shadow-subtle) !important;
+  animation: none !important;
+}
+
+html body #sidebarOtherMenu.sidebar-other-menu .sidebar-other-btn {
+  border: 1px solid transparent !important;
+  background: transparent !important;
+  color: #12355b !important;
+}
+
+html body #sidebarOtherMenu.sidebar-other-menu .sidebar-other-btn:hover {
+  border-color: #d9e6f2 !important;
+  background: #eef6ff !important;
+  color: #2563eb !important;
+}
+
+body #adminLayout #dashboardSidebar .sidebar-user-card {
+  min-width: 0 !important;
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  overflow: hidden !important;
+}
+
+#dashboardSidebar .sidebar-account-label {
+  margin-inline: 8px;
+}
+
+#dashboardSidebar .sidebar-account-row {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 6px 8px;
+  border-radius: var(--wmo-radius-md);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: rgba(255, 255, 255, 0.055);
+  box-shadow: inset 0 0 0 1px rgba(220, 235, 250, 0.10);
+}
+
+#dashboardSidebar .sidebar-account-avatar {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  border: 1px solid rgba(43, 185, 168, 0.28);
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(43, 185, 168, 0.12);
+  color: #8fe1d6;
+}
+
+#dashboardSidebar .sidebar-account-avatar svg,
+#dashboardSidebar .sidebar-account-avatar i {
+  width: 17px;
+  height: 17px;
+  stroke-width: 2;
+}
+
+#dashboardSidebar .sidebar-user-name {
+  overflow: hidden;
+  color: #ffffff;
+  font-size: 12.5px !important;
+  font-weight: 650 !important;
+  line-height: 1.3 !important;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#dashboardSidebar .sidebar-user-role {
+  min-width: 0;
+  overflow: hidden;
+  color: inherit !important;
+  font-size: 11.5px !important;
+  line-height: 1.35 !important;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#dashboardSidebar .sidebar-account-meta {
+  min-width: 0;
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  color: #a9c3db;
+  font-size: 11.5px;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+body #adminLayout #dashboardSidebar .logout-btn {
+  width: 100% !important;
+  min-height: 42px !important;
+  padding: 0 12px !important;
+  border: 1px solid rgba(254, 202, 202, 0.18) !important;
+  border-radius: var(--wmo-radius-md) !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 8px !important;
+  background: rgba(220, 38, 38, 0.08) !important;
+  box-shadow: none !important;
+  color: #fca5a5 !important;
+  font-size: 12.5px !important;
+  font-weight: 700 !important;
+  transform: none !important;
+  transition: background-color 0.16s ease, color 0.16s ease !important;
+}
+
+body #adminLayout #dashboardSidebar .logout-btn:hover {
+  background: rgba(220, 38, 38, 0.20) !important;
+  color: #ffffff !important;
+}
+
+#dashboardSidebar .logout-btn svg {
+  width: 17px;
+  height: 17px;
+}
+
+body #adminLayout.sidebar-collapsed #dashboardSidebar {
+  width: var(--wmo-sidebar-collapsed) !important;
+  min-width: var(--wmo-sidebar-collapsed) !important;
+  max-width: var(--wmo-sidebar-collapsed) !important;
+  padding-inline: 12px !important;
+}
+
+#adminLayout.sidebar-collapsed #dashboardSidebar .sidebar-brand {
+  justify-content: center;
+  padding-inline: 0;
+}
+
+#adminLayout.sidebar-collapsed #dashboardSidebar .sidebar-logo-toggle {
+  width: 48px;
+  min-width: 48px;
+}
+
+#adminLayout.sidebar-collapsed #dashboardSidebar .sidebar-logo-toggle::after {
+  content: "›";
+}
+
+#adminLayout.sidebar-collapsed #dashboardSidebar .brand-text,
+#adminLayout.sidebar-collapsed #dashboardSidebar .sidebar-section-label,
+#adminLayout.sidebar-collapsed #dashboardSidebar .nav-btn span,
+#adminLayout.sidebar-collapsed #dashboardSidebar .sidebar-other-trigger-left span,
+#adminLayout.sidebar-collapsed #dashboardSidebar .sidebar-other-arrow,
+#adminLayout.sidebar-collapsed #dashboardSidebar .sidebar-user-card,
+#adminLayout.sidebar-collapsed #dashboardSidebar .logout-btn span {
+  display: none !important;
+}
+
+#adminLayout.sidebar-collapsed #dashboardSidebar .sidebar-nav-group + .sidebar-nav-group {
+  padding-top: 12px;
+}
+
+#adminLayout.sidebar-collapsed #dashboardSidebar .sidebar-account-row {
+  width: 52px;
+  min-width: 52px;
+  padding: 0;
+  justify-content: center;
+  background: transparent;
+}
+
+body #adminLayout.sidebar-collapsed #dashboardSidebar #navUserManagement {
+  grid-template-columns: 20px !important;
+  column-gap: 0 !important;
+  justify-content: center !important;
+}
+
+body #adminLayout.sidebar-collapsed #dashboardSidebar .nav-btn,
+body #adminLayout.sidebar-collapsed #dashboardSidebar .sidebar-other-trigger,
+body #adminLayout.sidebar-collapsed #dashboardSidebar .logout-btn {
+  width: 52px !important;
+  min-width: 52px !important;
+  padding: 0 !important;
+  justify-content: center !important;
+}
+
+#sidebarBackdrop.sidebar-backdrop {
+  display: none;
+}
+
+@media (max-width: 992px) {
+  body #adminLayout #dashboardSidebar,
+  body #adminLayout.sidebar-collapsed #dashboardSidebar {
+    width: min(280px, 84vw) !important;
+    min-width: min(280px, 84vw) !important;
+    max-width: min(280px, 84vw) !important;
+    padding: 16px 14px !important;
+    transform: translateX(-100%) !important;
+  }
+
+  body #adminLayout #dashboardSidebar.open,
+  body #adminLayout.sidebar-collapsed #dashboardSidebar.open {
+    transform: translateX(0) !important;
+    box-shadow: 16px 0 36px rgba(15, 39, 66, 0.24) !important;
+  }
+
+  body #adminLayout.sidebar-collapsed #dashboardSidebar .brand-text,
+  body #adminLayout.sidebar-collapsed #dashboardSidebar .sidebar-section-label,
+  body #adminLayout.sidebar-collapsed #dashboardSidebar .nav-btn span,
+  body #adminLayout.sidebar-collapsed #dashboardSidebar .sidebar-other-trigger-left span,
+  body #adminLayout.sidebar-collapsed #dashboardSidebar .sidebar-other-arrow,
+  body #adminLayout.sidebar-collapsed #dashboardSidebar .sidebar-user-card,
+  body #adminLayout.sidebar-collapsed #dashboardSidebar .logout-btn span {
+    display: block !important;
+  }
+
+  body #adminLayout.sidebar-collapsed #dashboardSidebar .sidebar-account-row {
+    width: 100%;
+    min-width: 0;
+    padding: 6px 8px;
+    justify-content: flex-start;
+    background: rgba(255, 255, 255, 0.055);
+  }
+
+  body #adminLayout.sidebar-collapsed #dashboardSidebar #navUserManagement {
+    grid-template-columns: 20px minmax(0, 1fr) !important;
+    column-gap: 11px !important;
+    justify-content: flex-start !important;
+  }
+
+  body #adminLayout.sidebar-collapsed #dashboardSidebar .nav-btn,
+  body #adminLayout.sidebar-collapsed #dashboardSidebar .sidebar-other-trigger,
+  body #adminLayout.sidebar-collapsed #dashboardSidebar .logout-btn {
+    width: 100% !important;
+    padding-inline: 12px !important;
+    justify-content: flex-start !important;
+  }
+
+  body #adminLayout.sidebar-collapsed #dashboardSidebar .sidebar-other-trigger {
+    justify-content: space-between !important;
+  }
+
+  html body #sidebarOtherMenu.sidebar-other-menu {
+    position: static !important;
+    width: 100% !important;
+    margin-top: 6px !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  html body #sidebarOtherMenu.sidebar-other-menu .sidebar-other-btn {
+    color: #dcebfa !important;
+    background: rgba(255, 255, 255, 0.055) !important;
+  }
+
+  html body #sidebarOtherMenu.sidebar-other-menu .sidebar-other-btn:hover {
+    color: #ffffff !important;
+    background: #1c4d6b !important;
+    border-color: transparent !important;
+  }
+
+  #sidebarBackdrop.sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: var(--wmo-z-sidebar-backdrop);
+    display: block;
+    background: rgba(15, 39, 66, 0.46);
+  }
+
+  #sidebarBackdrop.sidebar-backdrop.hidden {
+    display: none;
+  }
+}
+
+@media (max-height: 760px) and (min-width: 993px) {
+  body #adminLayout #dashboardSidebar {
+    padding-block: 12px !important;
+  }
+
+  #dashboardSidebar .sidebar-top {
+    gap: 11px;
+  }
+
+  body #adminLayout #dashboardSidebar .nav-btn {
+    min-height: 42px !important;
+  }
+
+  #dashboardSidebar .sidebar-user-card {
+    padding-block: 8px !important;
+  }
+}

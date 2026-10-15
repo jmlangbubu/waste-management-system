@@ -1,0 +1,160 @@
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #F4F7F3;
+  color: #18392B;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.quiz-page {
+  min-height: 100vh;
+  padding: 32px 16px;
+}
+
+.quiz-shell {
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.quiz-header {
+  margin-bottom: 20px;
+}
+
+.quiz-header h1 {
+  margin: 0 0 8px;
+  font-size: 34px;
+  font-weight: 800;
+}
+
+.quiz-header p {
+  margin: 0;
+  color: #5E6E66;
+}
+
+.quiz-panel {
+  background: #FFFFFF;
+  border: 1px solid #D8E4B1;
+  border-radius: 20px;
+  padding: 24px;
+  box-shadow: 0 10px 30px rgba(24, 57, 43, 0.08);
+  margin-bottom: 18px;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.info-item {
+  background: #F7FAF6;
+  border: 1px solid #DDE9DA;
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.info-item span {
+  display: block;
+  font-size: 12px;
+  color: #5E6E66;
+  margin-bottom: 6px;
+}
+
+.info-item strong {
+  font-size: 16px;
+}
+
+.quiz-form {
+  display: grid;
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.quiz-question {
+  border: 1px solid #DDE9DA;
+  border-radius: 16px;
+  padding: 16px;
+  background: #FBFDFC;
+}
+
+.quiz-question h3 {
+  margin: 0 0 12px;
+  font-size: 17px;
+}
+
+.quiz-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.quiz-actions {
+  margin-top: 18px;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+button {
+  border: none;
+  border-radius: 12px;
+  background: #2E8B2F;
+  color: #fff;
+  padding: 12px 20px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button:hover {
+  opacity: 0.95;
+}
+
+.secondary-btn {
+  background: #6B7280;
+}
+
+.certificate-card {
+  border: 2px solid #D8E4B1;
+  border-radius: 20px;
+  padding: 32px;
+  background: #fff;
+  text-align: center;
+}
+
+.certificate-header h2 {
+  margin: 0;
+  font-size: 30px;
+}
+
+.certificate-header p {
+  margin-top: 8px;
+  color: #5E6E66;
+}
+
+.certificate-body h3 {
+  font-size: 34px;
+  margin: 16px 0 8px;
+}
+
+.certificate-body h4 {
+  font-size: 24px;
+  margin: 8px 0 16px;
+}
+
+.certificate-meta {
+  margin-top: 24px;
+  display: grid;
+  gap: 10px;
+}
+
+@media (max-width: 768px) {
+  .info-grid {
+    grid-template-columns: 1fr;
+  }
+}

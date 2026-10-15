@@ -1,0 +1,101 @@
+/* =========================================================
+   ADMIN TABLE FOUNDATION
+   Tables scroll inside their own shell; no global forced width.
+========================================================= */
+
+.table-shell,
+.complaints-table-shell,
+.recent-records-preview {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border: 1px solid var(--wmo-border);
+  border-radius: var(--wmo-radius-lg);
+  background: var(--wmo-surface);
+  -webkit-overflow-scrolling: touch;
+}
+
+.table-shell > table,
+.complaints-table-shell > table,
+.recent-records-preview > table {
+  width: 100%;
+  border-collapse: collapse;
+  border-spacing: 0;
+}
+
+.table-shell thead,
+.complaints-table-shell thead,
+.recent-records-preview thead {
+  background: var(--wmo-surface-muted);
+}
+
+.table-shell th,
+.table-shell td,
+.complaints-table-shell th,
+.complaints-table-shell td,
+.recent-records-preview th,
+.recent-records-preview td {
+  padding: 12px 14px;
+  border-bottom: 1px solid #e7efeb;
+  color: var(--wmo-ink);
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.table-shell th,
+.complaints-table-shell th,
+.recent-records-preview th {
+  color: #3c4d46;
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.table-shell tbody tr:last-child td,
+.complaints-table-shell tbody tr:last-child td,
+.recent-records-preview tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.table-shell tbody tr:hover,
+.complaints-table-shell tbody tr:hover,
+.recent-records-preview tbody tr:hover {
+  background: #f8fbf9;
+}
+
+.filter-bar {
+  display: grid;
+  grid-template-columns: minmax(220px, 2fr) repeat(3, minmax(150px, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.filter-group {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.filter-group label,
+.form-group label {
+  color: #3c4d46;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+@media (max-width: 1100px) {
+  .filter-bar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .filter-bar {
+    grid-template-columns: 1fr;
+  }
+}

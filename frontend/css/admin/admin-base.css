@@ -1,0 +1,124 @@
+/* =========================================================
+   ADMIN BASE
+   Reset, typography, accessibility, and global width safety.
+========================================================= */
+
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  width: 100%;
+  max-width: 100%;
+  min-height: 100%;
+  overflow-x: hidden;
+}
+
+body {
+  width: 100%;
+  max-width: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  font-family: "Inter", Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  background: var(--wmo-page);
+  color: var(--wmo-ink);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  color: var(--wmo-ink);
+  font-family: inherit;
+}
+
+p {
+  color: inherit;
+}
+
+img,
+svg,
+canvas,
+video {
+  max-width: 100%;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--wmo-secondary);
+  outline-offset: 2px;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.loading-state,
+.empty-state,
+.error-state {
+  padding: 20px;
+  color: var(--wmo-text-muted);
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.error-state {
+  color: var(--wmo-danger);
+}
+
+.admin-layout,
+.main-content,
+.content-section,
+.topbar,
+.page-card,
+.panel-card,
+.stat-card,
+.dashboard-card,
+.table-shell,
+.complaints-table-shell {
+  min-width: 0;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #bdcbc4;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #95a9a0;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
