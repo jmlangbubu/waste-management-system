@@ -9,7 +9,8 @@ const cors = require("cors");
 const path = require("path");
 const fs = require("fs");
 const http = require("http");
-const { Server } = require("socket.io");
+const { stagingApiPolicy, preAuthenticateAnalysis, denyUpgrade, stagingError } = require("../middleware/stagingApiPolicy");
+const { Server } = wasteScanOnly ? {} : require("socket.io");
 
 const app = express();
 const server = http.createServer(app);
@@ -21,7 +22,7 @@ if (process.env.NODE_ENV === "production") {
 /* =========================
    SOCKET.IO REAL-TIME SERVER
 ========================= */
-const io = new Server(server, {
+const io = wasteScanOnly ? null : new Server(server, {
   cors: {
     origin: "*",
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE"]
@@ -30,6 +31,7 @@ const io = new Server(server, {
 });
 
 app.set("io", io);
+if (wasteScanOnly) server.on("upgrade", denyUpgrade);
 
 function cleanRoomText(value) {
   if (value === null || value === undefined) return "";
@@ -52,7 +54,7 @@ function getCitizenRoomName(value) {
   return id ? `citizen:${id}` : "";
 }
 
-io.on("connection", (socket) => {
+if (io) io.on("connection", (socket) => {
   console.log("Realtime client connected:", socket.id);
 
   socket.on("join:wmo", () => {
@@ -123,7 +125,7 @@ const COMPLAINT_UPLOADS_DIR = path.join(UPLOADS_DIR, "complaints");
 /* =========================
    ENSURE UPLOAD FOLDERS EXIST
 ========================= */
-if (!fs.existsSync(UPLOADS_DIR)) {
+if (!wasteScanOnly && !fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 
@@ -134,7 +136,18 @@ if (!wasteScanOnly && !fs.existsSync(COMPLAINT_UPLOADS_DIR)) {
 /* =========================
    CORE MIDDLEWARE
 ========================= */
-app.use(cors());
+if (wasteScanOnly) {
+  const abuse = require("../middleware/stagingAbuseLimits").createStagingAbuseControls();
+  app.use(stagingApiPolicy);
+  app.use(abuse.loginIp);
+  app.use(abuse.beforeAuth);
+  app.use(preAuthenticateAnalysis(require("../middleware/mobileSessionAuth").requireMobileSessionReadOnly));
+  app.use(abuse.analysis);
+  app.use("/api/auth/login", express.json({ limit: "16kb", strict: true }),
+    express.urlencoded({ limit: "16kb", extended: false }));
+  app.use(abuse.loginUsername);
+}
+else app.use(cors());
 
 // Apply a smaller, privacy-safe parser before the legacy scan parser.
 app.use("/api/waste/recognize-crops", (req, res, next) => {
@@ -155,10 +168,11 @@ app.use(express.urlencoded({ extended: true, limit: "50mb" }));
    REQUEST LOGGER
 ========================= */
 app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl}`);
+  console.log(`[${new Date().toISOString()}] ${req.method} ${wasteScanOnly ? req.originalUrl.split("?")[0] : req.originalUrl}`);
   next();
 });
 
+if (!wasteScanOnly) {
 // Public browser-consumable key; restrict its allowed domains in CARTO.
 app.get("/runtime-config.js", (req, res) => {
   res.setHeader("Content-Type", "application/javascript; charset=utf-8");
@@ -194,13 +208,15 @@ app.get("/download/app", (req, res) => {
   res.sendFile(path.join(FRONTEND_DIR, "download-app.html"));
 });
 
+}
+
 app.get("/health", (req, res) => {
   db.healthCheck((error) => {
     if (error) {
       console.warn(
         "[Health] Database check failed:",
         error.code || "UNKNOWN_DB_ERROR",
-        error.message
+        wasteScanOnly ? "Database unavailable." : error.message
       );
 
       return res.status(503).json({
@@ -218,6 +234,7 @@ app.get("/health", (req, res) => {
   });
 });
 
+if (!wasteScanOnly) {
 app.get("/api/test", (req, res) => {
   return res.status(200).json({
     success: true,
@@ -232,6 +249,8 @@ app.get("/api/realtime/status", (req, res) => {
     connected_clients: io.engine.clientsCount
   });
 });
+
+}
 
 /* =========================
    DEBUG UPLOAD CHECK
@@ -296,7 +315,7 @@ app.get("/api/debug/file-exists", (req, res) => {
    API ROUTES
 ========================= */
 app.use("/api/auth", authRoutes);
-app.use("/api/app-version", createAppVersionRouter());
+if (!wasteScanOnly) app.use("/api/app-version", createAppVersionRouter());
 app.use("/api/waste", wasteRoutes);
 if (!wasteScanOnly) {
 app.use("/api/web-auth", webAuthRoutes);
@@ -331,7 +350,7 @@ dispatchMonitorService.start(io);
 app.use((req, res) => {
   return res.status(404).json({
     success: false,
-    message: `Route not found: ${req.method} ${req.originalUrl}`
+    message: wasteScanOnly ? "Not found" : `Route not found: ${req.method} ${req.originalUrl}`
   });
 });
 
@@ -339,6 +358,7 @@ app.use((req, res) => {
    GLOBAL ERROR HANDLER
 ========================= */
 app.use((err, req, res, next) => {
+  if (wasteScanOnly) return stagingError(err, req, res, next);
   console.error("=== GLOBAL EXPRESS ERROR ===");
   console.error(err);
   console.error(err.stack);
@@ -354,12 +374,14 @@ app.use((err, req, res, next) => {
    PROCESS-LEVEL ERROR HANDLERS
 ========================= */
 process.on("uncaughtException", (error) => {
+  if (wasteScanOnly) { console.error("[Staging] Uncaught exception."); return; }
   console.error("=== UNCAUGHT EXCEPTION ===");
   console.error(error);
   console.error(error.stack);
 });
 
 process.on("unhandledRejection", (reason) => {
+  if (wasteScanOnly) { console.error("[Staging] Unhandled rejection."); return; }
   console.error("=== UNHANDLED REJECTION ===");
   console.error(reason);
 });
@@ -371,6 +393,7 @@ const PORT = process.env.PORT || 8081;
 const HOST = "0.0.0.0";
 
 server.listen(PORT, HOST, () => {
+  if (wasteScanOnly) { console.log("Staging Waste Scan API listening; realtime disabled."); return; }
   console.log("======================================");
   console.log(`Server running on port ${PORT}`);
   console.log(`Server host binding: ${HOST}`);

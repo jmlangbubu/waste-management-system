@@ -1,4 +1,9 @@
 const wasteScanOnly = require("../config/startupMode").isWasteScanOnly();
+const scanLog = wasteScanOnly ? {
+  log() {},
+  warn() { console.warn("[Staging] Waste Scan warning."); },
+  error() { console.error("[Staging] Waste Scan error."); }
+} : console;
 const express = require("express");
 const router = express.Router();
 const { requireMobileSessionReadOnly: requireMobileSession } = require("../middleware/mobileSessionAuth");
@@ -11,7 +16,11 @@ const wasteController = wasteScanOnly ? null : require("../controllers/wasteCont
 const wasteCorrectionController = wasteScanOnly ? null : require("../controllers/wasteCorrectionController");
 const { requireWebCapability, requireCsrf } = wasteScanOnly ? {} : require("../middleware/webSessionAuth");
 // Restrict all reduced-mode scan/history routes to existing read-only Bearer auth.
-if (wasteScanOnly) router.use(requireMobileSession);
+if (wasteScanOnly) router.use((req, res, next) => {
+  if (req.method === "POST" && req.path === "/analyze"
+      && req[Symbol.for("wmo.staging.analysisAuthenticated")] === true) return next();
+  return requireMobileSession(req, res, next);
+});
 
 /* =========================================
    SCAN IMAGE STORAGE HELPERS
@@ -22,7 +31,7 @@ if (wasteScanOnly) router.use(requireMobileSession);
 const UPLOADS_DIR = path.join(__dirname, "..", "uploads");
 const WASTE_SCAN_UPLOADS_DIR = path.join(UPLOADS_DIR, "waste-scans");
 
-if (!fs.existsSync(WASTE_SCAN_UPLOADS_DIR)) {
+if (!wasteScanOnly && !fs.existsSync(WASTE_SCAN_UPLOADS_DIR)) {
   fs.mkdirSync(WASTE_SCAN_UPLOADS_DIR, { recursive: true });
 }
 
@@ -43,7 +52,7 @@ function getScanHistoryColumnSet(callback) {
 
   db.queryReadOnly(sql, (err, rows) => {
     if (err) {
-      console.warn(
+      scanLog.warn(
         "[DB] Failed to inspect scan_history columns:",
         err.code || "UNKNOWN_DB_ERROR",
         err.message
@@ -72,7 +81,7 @@ function getTableColumnSet(tableName, callback) {
 
   db.query(`SHOW COLUMNS FROM ${safeTableName}`, (err, rows) => {
     if (err) {
-      console.error(`[DB] Failed to inspect ${safeTableName} columns:`, err);
+      scanLog.error(`[DB] Failed to inspect ${safeTableName} columns:`, err);
       return callback(err, new Set());
     }
 
@@ -93,7 +102,7 @@ function getTableIndexSet(tableName, callback) {
 
   db.query(`SHOW INDEX FROM ${safeTableName}`, (err, rows) => {
     if (err) {
-      console.error(`[DB] Failed to inspect ${safeTableName} indexes:`, err);
+      scanLog.error(`[DB] Failed to inspect ${safeTableName} indexes:`, err);
       return callback(err, new Set());
     }
 
@@ -132,7 +141,7 @@ function ensurePendingWasteSyncColumns(callback) {
 
     db.query(alterSql, (alterErr) => {
       if (alterErr && alterErr.code !== "ER_DUP_FIELDNAME") {
-        console.error("[DB] Failed to add pending_waste_records sync columns:", alterErr);
+        scanLog.error("[DB] Failed to add pending_waste_records sync columns:", alterErr);
         return callback(alterErr, columnSet);
       }
 
@@ -158,7 +167,7 @@ function ensurePendingWasteUniqueIndex(callback) {
 
     db.query(indexSql, (alterErr) => {
       if (alterErr && alterErr.code !== "ER_DUP_KEYNAME") {
-        console.error("[DB] Failed to add pending_waste_records unique client_request_id index:", alterErr);
+        scanLog.error("[DB] Failed to add pending_waste_records unique client_request_id index:", alterErr);
         return callback(alterErr, new Set());
       }
 
@@ -375,8 +384,8 @@ function ensureScanHistoryOptionalColumns(callback) {
 
     db.query(alterSql, (alterErr) => {
       if (alterErr) {
-        console.error("[DB] Failed to add optional scan_history columns:", alterErr);
-        console.error("[DB] The API will continue, but captured image URLs may not be saved until columns are added.");
+        scanLog.error("[DB] Failed to add optional scan_history columns:", alterErr);
+        scanLog.error("[DB] The API will continue, but captured image URLs may not be saved until columns are added.");
         return callback(null, columnSet);
       }
 
@@ -385,15 +394,15 @@ function ensureScanHistoryOptionalColumns(callback) {
   });
 }
 
-ensureScanHistoryOptionalColumns((err) => {
+if (!wasteScanOnly) ensureScanHistoryOptionalColumns((err) => {
   if (err) {
-    console.warn(
+    scanLog.warn(
       "[DB] scan_history optional column check failed:",
       err.code || "UNKNOWN_DB_ERROR",
       err.message
     );
   } else {
-    console.log("[DB] scan_history optional columns ready.");
+    scanLog.log("[DB] scan_history optional columns ready.");
   }
 });
 
@@ -461,7 +470,7 @@ function saveScanImageFromBase64(image) {
       sizeBytes: buffer.length
     };
   } catch (err) {
-    console.error("[UPLOAD] Failed to save scan image:", err);
+    scanLog.error("[UPLOAD] Failed to save scan image:", err);
     return null;
   }
 }
@@ -583,11 +592,11 @@ router.get("/analytics/barangay", (req, res) => {
 
   getTableColumnSet("validated_waste_records", (columnErr, columnSet) => {
     if (columnErr) {
-      console.error("[DB] Failed to inspect validated_waste_records columns:", columnErr);
+      scanLog.error("[DB] Failed to inspect validated_waste_records columns:", columnErr);
       return res.status(500).json({
         success: false,
         message: "Failed to inspect waste analytics table",
-        error: columnErr.message
+        ...(wasteScanOnly ? {} : { error: columnErr.message })
       });
     }
 
@@ -609,11 +618,11 @@ router.get("/analytics/barangay", (req, res) => {
 
     db.query(sql, [barangay], (err, results) => {
       if (err) {
-        console.error("[DB] Failed to load barangay analytics:", err);
+        scanLog.error("[DB] Failed to load barangay analytics:", err);
         return res.status(500).json({
           success: false,
           message: "Failed to load barangay analytics",
-          error: err.message
+          ...(wasteScanOnly ? {} : { error: err.message })
         });
       }
 
@@ -657,11 +666,11 @@ router.get("/analytics/barangay/monthly", (req, res) => {
 
   getTableColumnSet("validated_waste_records", (columnErr, columnSet) => {
     if (columnErr) {
-      console.error("[DB] Failed to inspect validated_waste_records columns:", columnErr);
+      scanLog.error("[DB] Failed to inspect validated_waste_records columns:", columnErr);
       return res.status(500).json({
         success: false,
         message: "Failed to inspect waste analytics table",
-        error: columnErr.message
+        ...(wasteScanOnly ? {} : { error: columnErr.message })
       });
     }
 
@@ -712,11 +721,11 @@ router.get("/analytics/barangay/monthly", (req, res) => {
 
     db.query(sql, [barangay], (err, rows) => {
       if (err) {
-        console.error("[DB] Failed to load barangay monthly analytics:", err);
+        scanLog.error("[DB] Failed to load barangay monthly analytics:", err);
         return res.status(500).json({
           success: false,
           message: "Failed to load barangay monthly analytics",
-          error: err.message
+          ...(wasteScanOnly ? {} : { error: err.message })
         });
       }
 
@@ -810,21 +819,23 @@ router.post("/recognize-crops", (req, res, next) => {
 });
 
 router.post("/analyze", (req,res,next)=>{
-  // Read-only mobile authentication is required only for explicitly opted-in discovery.
+  // Reduced staging has already authenticated this request exactly once.
+  if (wasteScanOnly) return next();
+  // Original production behavior: discovery opt-in requires read-only authentication.
   if(process.env.WHOLE_IMAGE_DISCOVERY_ENABLED!=="true" || !req.body?.objectDiscovery) return next();
   return requireMobileSession(req,res,next);
 }, async (req, res) => {
   try {
     const { image, detectedObject, mlKitLabels } = req.body;
 
-    console.log("---- /api/waste/analyze START ----");
-    console.log("detectedObject:", detectedObject);
-    console.log("hasImage:", !!image);
-    console.log("imageLength:", image ? image.length : 0);
-    console.log("mlKitLabels:", Array.isArray(mlKitLabels) ? mlKitLabels : []);
+    scanLog.log("---- /api/waste/analyze START ----");
+    scanLog.log("detectedObject:", detectedObject);
+    scanLog.log("hasImage:", !!image);
+    scanLog.log("imageLength:", image ? image.length : 0);
+    scanLog.log("mlKitLabels:", Array.isArray(mlKitLabels) ? mlKitLabels : []);
 
     if (!image || typeof image !== "string" || image.trim() === "") {
-      console.error("Analyze error: image is missing");
+      scanLog.error("Analyze error: image is missing");
       return res.status(400).json({
         success: false,
         message: "Image is required"
@@ -843,18 +854,20 @@ router.post("/analyze", (req,res,next)=>{
         image,
         detectedObject,
         mlKitLabels: Array.isArray(mlKitLabels) ? mlKitLabels : [],
-        objectDiscovery:req.body.objectDiscovery, principal:req.mobileUser?.id, signal:discoveryController.signal
+        objectDiscovery:req.body.objectDiscovery, principal:req.mobileUser?.id, signal:wasteScanOnly ? req.stagingAnalysisScope?.signal || discoveryController.signal : discoveryController.signal
       });
     } catch (analysisError) {
-      console.error("[SERVICE] analyzeWaste failed:");
-      console.error(analysisError);
-      console.error(analysisError.stack);
+      if (wasteScanOnly && req.stagingAnalysisScope?.signal.aborted) return;
+      scanLog.error("[SERVICE] analyzeWaste failed:");
+      scanLog.error(analysisError);
+      scanLog.error(analysisError.stack);
 
       analysisResult = buildEmergencyResult(detectedObject, mlKitLabels);
     }
 
+    if (wasteScanOnly && req.stagingAnalysisScope?.signal.aborted) return;
     if (!analysisResult || typeof analysisResult !== "object") {
-      console.error("[API] Invalid analysisResult:", analysisResult);
+      scanLog.error("[API] Invalid analysisResult:", analysisResult);
       analysisResult = buildEmergencyResult(detectedObject, mlKitLabels);
     }
 
@@ -873,12 +886,24 @@ router.post("/analyze", (req,res,next)=>{
     const detectedItems = Array.isArray(analysisResult.detectedItems) ? analysisResult.detectedItems : [];
     const multiItemResponse = { detectedItems, scanSummary: buildScanSummary(detectedItems) };
 
+    // Recognition-only staging: return genuine analysis before storage or history access.
+    if (wasteScanOnly) return res.json({
+      success: true,
+      ...multiItemResponse,
+      result: {
+        id: 0, itemName, category, explanation, action, warning,
+        detectedObject: savedDetectedObject,
+        imageUrl: null, image_path: null, image_url: null,
+        aiLabel, aiConfidence, analysisSource
+      }
+    });
+
     const savedScanImage = saveScanImageFromBase64(image);
     const imageUrl = savedScanImage ? savedScanImage.imageUrl : null;
 
     ensureScanHistoryOptionalColumns((columnErr, columnSet) => {
       if (columnErr) {
-        console.error("[DB] Failed to inspect scan_history columns before insert:", columnErr);
+        scanLog.error("[DB] Failed to inspect scan_history columns before insert:", columnErr);
       }
 
       const insertColumns = [
@@ -931,8 +956,8 @@ router.post("/analyze", (req,res,next)=>{
 
       db.query(insertSql, values, (err, result) => {
         if (err) {
-          console.error("[DB] Failed to save scan history:", err);
-          console.error("[DB] Returning success anyway for app stability.");
+          scanLog.error("[DB] Failed to save scan history:", err);
+          scanLog.error("[DB] Returning success anyway for app stability.");
 
           return res.json({
             success: true,
@@ -955,8 +980,8 @@ router.post("/analyze", (req,res,next)=>{
           });
         }
 
-        console.log("[API] Analysis saved with ID:", result.insertId);
-        console.log("[API] Saved scan image URL:", imageUrl || "none");
+        scanLog.log("[API] Analysis saved with ID:", result.insertId);
+        scanLog.log("[API] Saved scan image URL:", imageUrl || "none");
 
         return res.json({
           success: true,
@@ -980,9 +1005,9 @@ router.post("/analyze", (req,res,next)=>{
       });
     });
   } catch (error) {
-    console.error("[API] /analyze fatal error:");
-    console.error(error);
-    console.error(error.stack);
+    scanLog.error("[API] /analyze fatal error:");
+    scanLog.error(error);
+    scanLog.error(error.stack);
 
     const fallbackResult = buildEmergencyResult("", []);
 
@@ -1002,6 +1027,7 @@ router.post("/analyze", (req,res,next)=>{
         detectedObject: fallbackResult.detectedObject,
         aiLabel: null,
         aiConfidence: null,
+        ...(wasteScanOnly ? { imageUrl: null, image_path: null, image_url: null } : {}),
         analysisSource: "fatal_route_fallback"
       }
     });
@@ -1016,11 +1042,11 @@ router.post("/analyze", (req,res,next)=>{
 router.get("/history", (req, res) => {
   ensureScanHistoryOptionalColumns((columnErr, columnSet) => {
     if (columnErr) {
-      console.error("[DB] Failed to inspect scan_history columns:", columnErr);
+      scanLog.error("[DB] Failed to inspect scan_history columns:", columnErr);
       return res.status(500).json({
         success: false,
         message: "Failed to load scan history",
-        error: columnErr.message
+        ...(wasteScanOnly ? {} : { error: columnErr.message })
       });
     }
 
@@ -1060,11 +1086,11 @@ router.get("/history", (req, res) => {
 
     db.query(sql, (err, rows) => {
       if (err) {
-        console.error("[DB] Failed to fetch scan history:", err);
+        scanLog.error("[DB] Failed to fetch scan history:", err);
         return res.status(500).json({
           success: false,
           message: "Failed to load scan history",
-          error: err.message
+          ...(wasteScanOnly ? {} : { error: err.message })
         });
       }
 
@@ -1108,11 +1134,11 @@ router.delete("/history", (req, res) => {
 
   db.query(sql, (err, result) => {
     if (err) {
-      console.error("[DB] Failed to clear scan history:", err);
+      scanLog.error("[DB] Failed to clear scan history:", err);
       return res.status(500).json({
         success: false,
         message: "Failed to clear scan history",
-        error: err.message
+        ...(wasteScanOnly ? {} : { error: err.message })
       });
     }
 
@@ -1143,11 +1169,11 @@ router.delete("/history/:id", (req, res) => {
 
   db.query(sql, [id], (err, result) => {
     if (err) {
-      console.error("[DB] Failed to delete scan history:", err);
+      scanLog.error("[DB] Failed to delete scan history:", err);
       return res.status(500).json({
         success: false,
         message: "Failed to delete scan history",
-        error: err.message
+        ...(wasteScanOnly ? {} : { error: err.message })
       });
     }
 
@@ -1184,7 +1210,7 @@ router.get("/record-qr/:id", async (req, res) => {
     res.setHeader("Content-Type", "image/png");
     res.send(qrBuffer);
   } catch (error) {
-    console.error("QR generation error:", error);
+    scanLog.error("QR generation error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to generate QR"
@@ -1214,7 +1240,7 @@ router.post("/pending-records", (req, res) => {
 
   ensurePendingWasteSyncColumns((syncErr, columnSet) => {
     if (syncErr) {
-      console.error("[DB] Pending waste sync column check failed:", syncErr);
+      scanLog.error("[DB] Pending waste sync column check failed:", syncErr);
       return res.status(500).json({
         success: false,
         message: "Failed to prepare pending waste sync storage",
@@ -1239,20 +1265,20 @@ router.post("/pending-records", (req, res) => {
                 });
               }
 
-              console.error("Create pending waste record duplicate lookup error:", findErr || err);
+              scanLog.error("Create pending waste record duplicate lookup error:", findErr || err);
               return res.status(500).json({
                 success: false,
                 message: "Failed to save pending waste record",
-                error: err.message
+                ...(wasteScanOnly ? {} : { error: err.message })
               });
             });
           }
 
-          console.error("Create pending waste record error:", err);
+          scanLog.error("Create pending waste record error:", err);
           return res.status(500).json({
             success: false,
             message: "Failed to save pending waste record",
-            error: err.message
+            ...(wasteScanOnly ? {} : { error: err.message })
           });
         }
 
@@ -1272,7 +1298,7 @@ router.post("/pending-records", (req, res) => {
 
     findPendingWasteByClientRequestId(clientRequestId, (findErr, existingRow) => {
       if (findErr) {
-        console.error("Find pending waste by client_request_id error:", findErr);
+        scanLog.error("Find pending waste by client_request_id error:", findErr);
         return res.status(500).json({
           success: false,
           message: "Failed to check existing pending waste record",
@@ -1320,11 +1346,11 @@ router.get("/pending-records/:id", (req, res) => {
 
   db.query(sql, [recordId], (err, results) => {
     if (err) {
-      console.error("Fetch pending waste record error:", err);
+      scanLog.error("Fetch pending waste record error:", err);
       return res.status(500).json({
         success: false,
         message: "Failed to fetch pending waste record",
-        error: err.message
+        ...(wasteScanOnly ? {} : { error: err.message })
       });
     }
 
@@ -1342,7 +1368,7 @@ router.get("/pending-records/:id", (req, res) => {
     try {
       rawPayload = row.raw_payload ? JSON.parse(row.raw_payload) : {};
     } catch (parseErr) {
-      console.error("Invalid raw_payload JSON:", parseErr);
+      scanLog.error("Invalid raw_payload JSON:", parseErr);
       rawPayload = {};
     }
 

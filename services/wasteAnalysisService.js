@@ -1,3 +1,8 @@
+const analysisLog = process.env.WMO_DEPLOYMENT_MODE === "staging" && process.env.STAGING_WASTE_SCAN_ONLY === "true" ? {
+  log() {},
+  warn() { console.warn("[Staging] Waste analysis warning."); },
+  error() { console.error("[Staging] Waste analysis error."); }
+} : console;
 const http = require("http");
 const https = require("https");
 const { detectObjectsFromBase64, normalizeBoundingBox, OBJECT_LOCALIZATION_TIMEOUT_MS } = require("./googleVisionService");
@@ -133,7 +138,7 @@ async function localizeObjectsBestEffort(image) {
       new Promise((resolve) => { timer = setTimeout(() => resolve([]), OBJECT_LOCALIZATION_TIMEOUT_MS); })
     ]);
   } catch (_) {
-    console.warn("[WasteAnalysis] Object localization unavailable; keeping primary classification.");
+    analysisLog.warn("[WasteAnalysis] Object localization unavailable; keeping primary classification.");
     return [];
   } finally {
     clearTimeout(timer);
@@ -145,7 +150,7 @@ async function enrichWithGoogleObjects(legacyResult, localizedObjects, preserveL
     const objects = await localizedObjects;
     return withDetectedItems(legacyResult, normalizeDetectedItems(objects, "google_vision_object_localization"), preserveLegacyPrimary);
   } catch (_) {
-    console.warn("[WasteAnalysis] Multi-item enrichment unavailable; keeping legacy result.");
+    analysisLog.warn("[WasteAnalysis] Multi-item enrichment unavailable; keeping legacy result.");
     return withDetectedItems(legacyResult, []);
   }
 }
@@ -171,7 +176,7 @@ let classifyWasteWithGemini = null;
 try {
   classifyWasteWithGemini = require("./geminiWasteClassifierService").classifyWasteWithGemini;
 } catch (error) {
-  console.warn("[WasteAnalysis] Local Gemini service not loaded:", error.message);
+  analysisLog.warn("[WasteAnalysis] Local Gemini service not loaded:", error.message);
 }
 
 function getEnvValue(name) {
@@ -329,7 +334,7 @@ function buildFallbackFromMapper({ detectedObject = "", mlKitLabels = [] } = {})
       objectName: detectedObject
     });
   } catch (error) {
-    console.error("[WasteAnalysis] mapWasteCategory error:", error.message);
+    analysisLog.error("[WasteAnalysis] mapWasteCategory error:", error.message);
     mapped = null;
   }
 
@@ -344,13 +349,13 @@ function buildFallbackFromMapper({ detectedObject = "", mlKitLabels = [] } = {})
       return ruleBased;
     }
   } catch (error) {
-    console.error("[WasteAnalysis] analyzeWasteByObject error:", error.message);
+    analysisLog.error("[WasteAnalysis] analyzeWasteByObject error:", error.message);
   }
 
   return null;
 }
 
-function postJson(urlString, payload, timeoutMs = 35000, invocationHeaders = {}) {
+function postJson(urlString, payload, timeoutMs = 35000, invocationHeaders = {}, signal) {
   return new Promise((resolve, reject) => {
     let parsedUrl = null;
 
@@ -377,17 +382,20 @@ function postJson(urlString, payload, timeoutMs = 35000, invocationHeaders = {})
       timeout: timeoutMs
     };
 
+    if (signal?.aborted) return reject(new Error("Classifier request cancelled."));
     let timer;
+    const abort = () => req.destroy(new Error("Classifier request cancelled."));
+    const cleanup = () => { clearTimeout(timer); signal?.removeEventListener("abort", abort); };
     const req = client.request(options, (res) => {
       let rawData = "";
 
       res.on("data", (chunk) => {
         rawData += chunk;
-        if(Buffer.byteLength(rawData)>64*1024) { clearTimeout(timer); req.destroy(new Error("Classifier response exceeds limit.")); }
+        if(Buffer.byteLength(rawData)>64*1024) { cleanup(); req.destroy(new Error("Classifier response exceeds limit.")); }
       });
 
       res.on("end", () => {
-        clearTimeout(timer);
+        cleanup();
         let parsed = null;
 
         try {
@@ -412,38 +420,40 @@ function postJson(urlString, payload, timeoutMs = 35000, invocationHeaders = {})
     });
 
     req.on("error", (error) => {
-      clearTimeout(timer);
+      cleanup();
       reject(error);
     });
 
     timer=setTimeout(()=>req.destroy(new Error("Classifier request deadline exceeded.")),timeoutMs);
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) { abort(); return; }
     req.write(bodyString);
     req.end();
   });
 }
 
-async function classifyWithExternalGeminiService(image, timeoutMs = 35000) {
+async function classifyWithExternalGeminiService(image, timeoutMs = 35000, signal) {
   const classifierUrl =
     getEnvValue("GEMINI_CLASSIFIER_URL") ||
     getEnvValue("CLOUD_RUN_GEMINI_CLASSIFIER_URL");
 
   if (!classifierUrl) {
-    console.warn("[WasteAnalysis] GEMINI_CLASSIFIER_URL is not set. Skipping external Gemini classifier.");
+    analysisLog.warn("[WasteAnalysis] GEMINI_CLASSIFIER_URL is not set. Skipping external Gemini classifier.");
     return null;
   }
 
   try {
-    console.log("[WasteAnalysis] Calling external Gemini classifier.");
+    analysisLog.log("[WasteAnalysis] Calling external Gemini classifier.");
 
     const deadlineAt = Date.now() + timeoutMs;
     const headers = process.env.CLOUD_RUN_AUTH_MODE || process.env.WMO_DEPLOYMENT_MODE === "staging"
-      ? await require("./cloudRunAuth").invocationHeaders(classifierUrl, { timeoutMs }) : {};
+      ? await require("./cloudRunAuth").invocationHeaders(classifierUrl, { timeoutMs, ...(signal ? { signal } : {}) }) : {};
     if (deadlineAt <= Date.now()) throw new Error("Classifier request deadline exceeded.");
     const response = await postJson(classifierUrl, {
       image
-    }, Math.max(1, deadlineAt-Date.now()), headers);
+    }, Math.max(1, deadlineAt-Date.now()), headers, signal);
 
-    console.log("[WasteAnalysis] External classifier response success:", response?.success);
+    analysisLog.log("[WasteAnalysis] External classifier response success:", response?.success);
 
     if (!response?.success || !response?.result) {
       return {
@@ -459,7 +469,7 @@ async function classifyWithExternalGeminiService(image, timeoutMs = 35000) {
       result: response.result
     };
   } catch (error) {
-    console.error("[WasteAnalysis] External Gemini classifier unavailable; status:", error.statusCode || "unknown");
+    analysisLog.error("[WasteAnalysis] External Gemini classifier unavailable; status:", error.statusCode || "unknown");
 
     return {
       success: false,
@@ -473,20 +483,20 @@ async function classifyWithLocalRenderGemini(image) {
   const allowDirectGemini = getEnvValue("ALLOW_RENDER_GEMINI_DIRECT").toLowerCase() === "true";
 
   if (!allowDirectGemini) {
-    console.warn("[WasteAnalysis] Render direct Gemini disabled. Set ALLOW_RENDER_GEMINI_DIRECT=true only if Render Gemini works.");
+    analysisLog.warn("[WasteAnalysis] Render direct Gemini disabled. Set ALLOW_RENDER_GEMINI_DIRECT=true only if Render Gemini works.");
     return null;
   }
 
   if (typeof classifyWasteWithGemini !== "function") {
-    console.warn("[WasteAnalysis] Local Gemini classifier function is unavailable.");
+    analysisLog.warn("[WasteAnalysis] Local Gemini classifier function is unavailable.");
     return null;
   }
 
   try {
-    console.log("[WasteAnalysis] Trying Render direct Gemini classifier.");
+    analysisLog.log("[WasteAnalysis] Trying Render direct Gemini classifier.");
     return await classifyWasteWithGemini(image);
   } catch (error) {
-    console.error("[WasteAnalysis] Local Gemini classifier fatal error:", error.message);
+    analysisLog.error("[WasteAnalysis] Local Gemini classifier fatal error:", error.message);
 
     return {
       success: false,
@@ -522,12 +532,14 @@ function buildAiResultFromClassifier(classifierResult, sourceFallback) {
   }), itemName: result.itemName || result.detectedObject || category };
 }
 
-async function analyzeWasteLegacy({ image, detectedObject, mlKitLabels = [], boundedDiscovery = false }) {
-  console.log("=== analyzeWaste START ===");
-  console.log("detectedObject:", detectedObject);
-  console.log("mlKitLabels:", mlKitLabels);
-  console.log("image exists:", !!image);
-  console.log("image length:", image ? image.length : 0);
+async function analyzeWasteLegacy({ image, detectedObject, mlKitLabels = [], boundedDiscovery = false, signal }) {
+  const stageSignal = process.env.WMO_DEPLOYMENT_MODE === "staging" && process.env.STAGING_WASTE_SCAN_ONLY === "true" ? signal : undefined;
+  if (stageSignal?.aborted) throw new Error("Analysis request cancelled.");
+  analysisLog.log("=== analyzeWaste START ===");
+  analysisLog.log("detectedObject:", detectedObject);
+  analysisLog.log("mlKitLabels:", mlKitLabels);
+  analysisLog.log("image exists:", !!image);
+  analysisLog.log("image length:", image ? image.length : 0);
 
   /*
     FIRST PRIORITY:
@@ -536,7 +548,7 @@ async function analyzeWasteLegacy({ image, detectedObject, mlKitLabels = [], bou
     This avoids the Render -> Gemini location restriction:
     "User location is not supported for the API use."
   */
-  const externalGeminiResult = await classifyWithExternalGeminiService(image, boundedDiscovery ? 15000 : 35000);
+  const externalGeminiResult = await classifyWithExternalGeminiService(image, boundedDiscovery ? 15000 : 35000, stageSignal);
   let externalItems = [];
   if (externalGeminiResult?.success) {
     externalItems = normalizeDetectedItems(externalGeminiResult.result?.detectedItems, "cloud_run_gemini_vision", true);
@@ -546,11 +558,12 @@ async function analyzeWasteLegacy({ image, detectedObject, mlKitLabels = [], bou
   if (externalItems.length) return withDetectedItems(externalAiResult, externalItems, !!externalAiResult);
   // Do not speculate on Google before Gemini multi-item selection: that would add a needless call.
   // Once that selection is ruled out, overlap localization with the optional local fallback.
+  if (stageSignal?.aborted) throw new Error("Analysis request cancelled.");
   const localizedObjects = localizeObjectsBestEffort(image);
 
 
   if (externalAiResult) {
-    console.log("[WasteAnalysis] RETURNING external Gemini category:", externalAiResult.category);
+    analysisLog.log("[WasteAnalysis] RETURNING external Gemini category:", externalAiResult.category);
     return enrichWithGoogleObjects(externalAiResult, localizedObjects, true);
   }
 
@@ -568,7 +581,7 @@ async function analyzeWasteLegacy({ image, detectedObject, mlKitLabels = [], bou
   );
 
   if (localAiResult) {
-    console.log("[WasteAnalysis] RETURNING local Gemini category:", localAiResult.category);
+    analysisLog.log("[WasteAnalysis] RETURNING local Gemini category:", localAiResult.category);
     return enrichWithGoogleObjects(localAiResult, localizedObjects, true);
   }
 
@@ -588,7 +601,7 @@ async function analyzeWasteLegacy({ image, detectedObject, mlKitLabels = [], bou
   if (mappedFallback && mappedFallback.category) {
     const category = normalizeCategory(mappedFallback.category) || "Residual";
 
-    console.log("[WasteAnalysis] RETURNING local mapper category:", category);
+    analysisLog.log("[WasteAnalysis] RETURNING local mapper category:", category);
 
     return enrichWithGoogleObjects(createSafeResult({
       category,
@@ -614,12 +627,12 @@ async function analyzeWasteLegacy({ image, detectedObject, mlKitLabels = [], bou
   try {
     fallback = getFallbackResult();
   } catch (error) {
-    console.error("[WasteAnalysis] getFallbackResult error:", error.message);
+    analysisLog.error("[WasteAnalysis] getFallbackResult error:", error.message);
   }
 
   const fallbackCategory = normalizeCategory(fallback?.category) || "Residual";
 
-  console.log("[WasteAnalysis] RETURNING final fallback:", fallbackCategory);
+  analysisLog.log("[WasteAnalysis] RETURNING final fallback:", fallbackCategory);
 
   return enrichWithGoogleObjects(createSafeResult({
     category: fallbackCategory,

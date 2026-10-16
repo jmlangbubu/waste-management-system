@@ -1,3 +1,8 @@
+const visionLog = process.env.WMO_DEPLOYMENT_MODE === "staging" && process.env.STAGING_WASTE_SCAN_ONLY === "true" ? {
+  log() {},
+  warn() { console.warn("[Staging] Vision warning."); },
+  error() { console.error("[Staging] Vision error."); }
+} : console;
 let vision = null;
 let cachedClient = null;
 let cachedClientChecked = false;
@@ -36,7 +41,7 @@ function parseServiceAccountJson(rawValue) {
 
     return parsed;
   } catch (error) {
-    console.error("[GoogleVision] Failed to parse credentials JSON:", error.message);
+    visionLog.error("[GoogleVision] Failed to parse credentials JSON:", error.message);
     return null;
   }
 }
@@ -49,7 +54,7 @@ function createVisionClient() {
   cachedClientChecked = true;
 
   if (!hasGoogleVisionCredentials()) {
-    console.warn("[GoogleVision] No Google credentials found. Skipping Google Vision.");
+    visionLog.warn("[GoogleVision] No Google credentials found. Skipping Google Vision.");
     cachedClient = null;
     return null;
   }
@@ -66,7 +71,7 @@ function createVisionClient() {
     const credentials = parseServiceAccountJson(rawCredentials);
 
     if (credentials && credentials.client_email && credentials.private_key) {
-      console.log("[GoogleVision] Using service account JSON from environment variable.");
+      visionLog.log("[GoogleVision] Using service account JSON from environment variable.");
 
       cachedClient = new vision.ImageAnnotatorClient({
         credentials,
@@ -76,12 +81,12 @@ function createVisionClient() {
       return cachedClient;
     }
 
-    console.log("[GoogleVision] Using default Google credentials path.");
+    visionLog.log("[GoogleVision] Using default Google credentials path.");
 
     cachedClient = new vision.ImageAnnotatorClient();
     return cachedClient;
   } catch (error) {
-    console.error("[GoogleVision] Failed to create client:", error.message);
+    visionLog.error("[GoogleVision] Failed to create client:", error.message);
     cachedClient = null;
     return null;
   }
@@ -118,7 +123,7 @@ async function detectLabelsFromBase64(base64Image) {
       return [];
     }
 
-    console.log("[GoogleVision] Image buffer size:", imageBuffer.length);
+    visionLog.log("[GoogleVision] Image buffer size:", imageBuffer.length);
 
     const [result] = await client.annotateImage({
       image: {
@@ -176,11 +181,11 @@ async function detectLabelsFromBase64(base64Image) {
       addLabel(entity.description, entity.score, "web_entity");
     }
 
-    console.log("[GoogleVision] Final labels:", labels);
+    visionLog.log("[GoogleVision] Final labels:", labels);
 
     return labels;
   } catch (error) {
-    console.error("[GoogleVision] Detection failed:", error.message);
+    visionLog.error("[GoogleVision] Detection failed:", error.message);
     return [];
   }
 }
@@ -236,7 +241,7 @@ async function detectObjectsFromBase64(base64Image) {
     });
   } catch (_) {
     // Provider errors can contain request details; do not log the image or credentials.
-    console.warn("[GoogleVision] Object localization unavailable; keeping legacy analysis.");
+    visionLog.warn("[GoogleVision] Object localization unavailable; keeping legacy analysis.");
     return [];
   }
 }
