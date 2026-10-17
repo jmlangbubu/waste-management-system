@@ -21,7 +21,15 @@ function overlapRatio(a, b) {
   return intersection / (area(a) + area(b) - intersection);
 }
 
+function isBottleOrJarName(name) {
+  return /\b(bottles?|jars?)\b/.test(name);
+}
+
 function similarObjectNames(a, b) {
+  // Vision can attach this broad packaging alias to the same bottle or jar.
+  const packagedAlias = "bottled and jarred packaged goods";
+  if ((a === packagedAlias && isBottleOrJarName(b))
+    || (b === packagedAlias && isBottleOrJarName(a))) return true;
   const words = (name) => name.split(" ").map((word) => word.replace(/s$/, ""));
   const first = words(a);
   const second = words(b);

@@ -389,3 +389,132 @@ test("fatal API fallback keeps mandatory result and zero summary", async () => {
   assert.equal(response.scanSummary.totalItems, 0);
   assert.equal(inserts.length, 0);
 });
+
+// Synthetic bottle alias regressions; all provider and database dependencies are mocked above.
+test("bottle hotfix: two bottles with four provider aliases count as two items", async () => {
+  const second = { left: .60, top: .10, right: .85, bottom: .85 };
+  const service = loadAnalysis({ objects: [object("Bottle", .70), object("Bottle", .64, second),
+    object("Bottled and jarred packaged goods", .57, { ...box, left: .11, right: .36 }),
+    object("Bottled and jarred packaged goods", .54, { ...second, left: .61, right: .86 })] });
+  const result = plain(await run(service));
+  assert.equal(result.detectedItems.length, 2);
+  assert.deepEqual(result.detectedItems.map(item => item.itemName), ["Bottle", "Bottle"]);
+  assert.deepEqual(result.detectedItems.map(item => item.boundingBox), [box, second]);
+  assert.deepEqual(result.detectedItems.map(item => item.itemId), ["item_1", "item_2"]);
+  assert.deepEqual(result.scanSummary, { totalItems: 2,
+    categories: { biodegradable: 0, recyclable: 2, residual: 0, specialWaste: 0 } });
+  assert.equal(service.calls.vision, 1);
+  assert.equal(service.calls.external, 0);
+  assert.equal(service.calls.local, 0);
+});
+test("bottle hotfix: packaged alias collapses in either input order and confidence order", () => {
+  for (const name of ["Bottle", "Plastic Bottle", "Glass Bottles", "Jar"]) {
+    for (const confidence of [.60, .95]) {
+      const pair = [object(name, .80), object("Bottled and jarred packaged goods", confidence)];
+      for (const items of [pair, [...pair].reverse()]) {
+        const result = normalize(items);
+        assert.equal(result.length, 1, name);
+        assert.equal(result[0].confidence, Math.max(.80, confidence));
+      }
+    }
+  }
+});
+test("bottle hotfix: normalized polygon aliases collapse", () => {
+  const polygon = { normalizedVertices: [{ x: .1, y: .1 }, { x: .35, y: .1 },
+    { x: .35, y: .85 }, { x: .1, y: .85 }] };
+  assert.equal(normalize([{ name: "Bottle", confidence: .7, boundingPoly: polygon },
+    object("Bottled and jarred packaged goods", .6)]).length, 1);
+});
+test("bottle hotfix: contained duplicates above the committed IoU threshold collapse", () => {
+  for (const name of ["Bottle", "Bottled and jarred packaged goods"]) {
+    assert.equal(normalize([object("Bottle", .7), object(name, .6,
+      { left: .12, top: .14, right: .33, bottom: .81 })]).length, 1);
+  }
+});
+test("bottle hotfix: separate, partial, small nested and off-center instances survive", () => {
+  for (const bounds of [
+    { left: .60, top: .10, right: .85, bottom: .85 },
+    { left: .25, top: .10, right: .50, bottom: .85 },
+    { left: .18, top: .30, right: .25, bottom: .50 },
+    { left: .10, top: .10, right: .27, bottom: .85 }
+  ]) {
+    for (const name of ["Bottle", "Bottled and jarred packaged goods"]) {
+      assert.equal(normalize([object("Bottle", .8), object(name, .7, bounds)]).length, 2);
+    }
+  }
+});
+test("bottle hotfix: unrelated overlapping identities remain independent", () => {
+  for (const name of ["Can", "Jar", "Battery"]) {
+    assert.equal(normalize([object("Bottle", .8), object(name, .7)]).length, 2);
+  }
+  assert.equal(normalize([object("Can", .8), object("Bottled and jarred packaged goods", .7)]).length, 2);
+});
+test("bottle hotfix: existing category conflict and special-waste policy is preserved", () => {
+  assert.equal(normalize([object("Bottle", .95), object("Dirty Plastic Bottle", .90)]).length, 2);
+  const items = normalize([object("Bottle", .95), object("Chemical Bottle", .80)]);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].category, "Special Waste");
+});
+
+// Replay of sanitized client-boundary metadata, not a raw provider response or photo.
+const observedBottleFixture = [
+  { name: "Bottled and jarred packaged goods", category: "Recyclable", confidence: 0.7399570345878601,
+    boundingBox: { left: 0.15234375, top: 0.30859375, right: 0.404296875, bottom: 0.7421875 } },
+  { name: "Bagged packaged goods", category: "Residual", confidence: 0.6282191276550293,
+    boundingBox: { left: 0.44921875, top: 0.353515625, right: 0.9453125, bottom: 0.6640625 } },
+  { name: "Bottle", category: "Recyclable", confidence: 0.5932915806770325,
+    boundingBox: { left: 0.15234375, top: 0.30859375, right: 0.404296875, bottom: 0.7421875 } }
+];
+
+test("alias-only: exact observed three-candidate fixture retains A and B with exact metadata", () => {
+  const items = normalize(observedBottleFixture, true);
+  assert.equal(observedBottleFixture.length, 3);
+  assert.deepEqual(items.map(({ itemId, itemName, category, confidence, boundingBox }) =>
+    ({ itemId, itemName, category, confidence, boundingBox })), observedBottleFixture.slice(0, 2).map((item, index) =>
+    ({ itemId: `item_${index + 1}`, itemName: item.name, category: item.category,
+      confidence: item.confidence, boundingBox: item.boundingBox })));
+  assert.deepEqual(plain(analysis.buildScanSummary(items)), { totalItems: 2,
+    categories: { biodegradable: 0, recyclable: 1, residual: 1, specialWaste: 0 } });
+});
+
+test("alias-only: exact fixture enrichment preserves the independent original primary", async () => {
+  const external = { success: true, result: { itemName: "Original primary", category: "Special Waste", confidence: .96,
+    explanation: "Original explanation", action: "Original action", warning: "Original warning" } };
+  const original = plain(await run(loadAnalysis({ external })));
+  const service = loadAnalysis({ objects: observedBottleFixture, external });
+  const { detectedItems, scanSummary, ...primary } = plain(await run(service));
+  const { detectedItems: originalItems, scanSummary: originalSummary, ...originalPrimary } = original;
+  assert.deepEqual(primary, originalPrimary);
+  assert.deepEqual(detectedItems, normalize(observedBottleFixture).map(item =>
+    ({ ...item, analysisSource: "google_vision_object_localization" })));
+  assert.deepEqual(scanSummary, { totalItems: 2,
+    categories: { biodegradable: 0, recyclable: 1, residual: 1, specialWaste: 0 } });
+  assert.equal(originalItems.length, 0);
+  assert.equal(originalSummary.totalItems, 0);
+  assert.deepEqual(service.calls, { vision: 1, external: 1, local: 0 });
+});
+
+test("alias-only: concentric independent bottles below IoU .70 remain separate", () => {
+  const outer = { left: .1, top: .1, right: .9, bottom: .9 };
+  for (const ratio of [.650001, .69]) {
+    const side = .8 * Math.sqrt(ratio);
+    const inner = { left: .5 - side / 2, top: .5 - side / 2, right: .5 + side / 2, bottom: .5 + side / 2 };
+    const measuredIoU = (inner.right - inner.left) * (inner.bottom - inner.top) / (.8 * .8);
+    assert.ok(measuredIoU < .70);
+    for (const name of ["Bottle", "Bottled and jarred packaged goods"]) {
+      const items = normalize([object("Bottle", .8, outer), object(name, .7, inner)]);
+      assert.equal(items.length, 2, `${name}, measured IoU ${measuredIoU}`);
+      assert.deepEqual(items.map(item => item.boundingBox), [outer, inner]);
+      assert.deepEqual(items.map(item => item.itemId), ["item_1", "item_2"]);
+    }
+  }
+});
+
+test("alias-only: neighboring and touching bags remain independent even with a bottle alias", () => {
+  for (const left of [.4, .39]) {
+    const bags = [object("Bagged packaged goods", .8, { left: .1, top: .1, right: .4, bottom: .8 }),
+      object("Bagged packaged goods", .7, { left, top: .1, right: .7, bottom: .8 })];
+    assert.equal(normalize(bags).length, 2);
+    assert.equal(normalize([bags[0], object("Bottled and jarred packaged goods", .6, bags[0].boundingBox)]).length, 2);
+  }
+});
