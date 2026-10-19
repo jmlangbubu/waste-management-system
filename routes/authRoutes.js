@@ -1627,4 +1627,7 @@ router.post("/login", (req, res) => {
 
 router.use("/mobile", mobileAuthRoutes);
 
+// WMO Forgot Password: dedicated recovery routes (Citizen verified emails only).
+router.use(require("./passwordResetRoutes"));
+
 module.exports = router;
