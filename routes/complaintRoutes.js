@@ -12,6 +12,16 @@ const { requireWebAuth, requireWebRole, requireCsrf } = require("../middleware/w
 const { resolveStrictBarangay } = require("../services/barangayBoundaryService");
 const complaintWorkflow = new ComplaintWorkflowService(db);
 const complaintAuth = buildComplaintAuth(complaintWorkflow);
+const { resolveComplaintMapDestination } = require("../services/complaintMapDestinationService");
+router.get("/:id/map-destination", ...complaintAuth.admin, async (req, res) => {
+  res.set("Cache-Control", "no-store");
+  try {
+    return res.json(await resolveComplaintMapDestination(db, req.params.id));
+  } catch (error) {
+    return res.status(error.statusCode || 503).json({ success: false,
+      message: error.statusCode ? error.message : "Map destination unavailable. Needs Admin Confirmation." });
+  }
+});
 router.get("/assignment-options", ...complaintAuth.admin, async (req, res) => {
   try {
     const rows = await complaintWorkflow.activeBarangays();
