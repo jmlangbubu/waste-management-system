@@ -82,6 +82,38 @@ const complaintDetailsPreviewMapState = {
   tileLayer: null
 };
 
+let complaintMapResolution = null;
+let complaintPreviewRequest = 0;
+let complaintFullMapRequest = 0;
+let complaintRouteGeneration = 0;
+
+function validComplaintMapPoint(lat, lng) {
+  return [lat, lng].every(value => (typeof value === "number" || typeof value === "string")
+    && String(value).trim() !== "" && Number.isFinite(Number(value)))
+    && Math.abs(Number(lat)) <= 90 && Math.abs(Number(lng)) <= 180;
+}
+
+function loadComplaintMapDestination(complaint) {
+  if (complaintMapResolution?.complaint === complaint) return complaintMapResolution.promise;
+  const record = { complaint, promise: null, result: null };
+  const promise = (async () => {
+    try {
+      const response = await webAdminFetch(`${getComplaintsApiUrl()}/${encodeURIComponent(complaint.id)}/map-destination`);
+      const result = await response.json();
+      if (!response.ok || result.success !== true || Number(result.complaint_id) !== Number(complaint.id)) return null;
+      record.result = result;
+      return result;
+    } catch (_) { return null; }
+  })();
+  record.promise = promise;
+  complaintMapResolution = record;
+  return promise;
+}
+
+function complaintMapDestinationLabel(result) {
+  return getComplaintForwardingTargets(result).length ? result.label : "Needs Admin Confirmation";
+}
+
 function formatComplaintStatus(status) {
   if (!status) return "pending";
   return String(status).toLowerCase();
@@ -313,11 +345,7 @@ async function loadComplaintDetailsNearbyOptions(data = {}) {
     if (currentComplaint !== data || request !== complaintAssignmentRequest) return;
     complaintAssignmentNames = [...new Set(result.barangays)];
     renderComplaintDetailsNearbyOptions();
-    const lat = Number(data.latitude), lng = Number(data.longitude);
-    if (Number.isFinite(lat) && Number.isFinite(lng)) {
-      const candidates = await loadNearbyBarangaysForComplaint(lat, lng);
-      if (currentComplaint === data && request === complaintAssignmentRequest) renderComplaintDetailsMapPreview(data, candidates);
-    }
+    renderComplaintDetailsMapPreview(data);
   } catch (error) {
     if (currentComplaint === data && request === complaintAssignmentRequest) {
       complaintAssignmentError = error.message || "Active barangay options unavailable.";
@@ -327,6 +355,12 @@ async function loadComplaintDetailsNearbyOptions(data = {}) {
 }
 
 function selectBarangayCandidate(candidate, candidates = []) {
+  // Legacy reference-list clicks must not route to an unverified nearby point.
+  const trusted = complaintMapResolution?.complaint === currentComplaint
+    ? getComplaintForwardingTargets(complaintMapResolution.result)[0] : null;
+  if (!trusted || trusted.barangay_name !== candidate?.barangay_name
+    || Number(trusted.latitude) !== Number(candidate.latitude)
+    || Number(trusted.longitude) !== Number(candidate.longitude)) return;
   if (!currentComplaint || !complaintMapInstance) return;
 
   if (!window.L || !L.Routing) {
@@ -415,7 +449,10 @@ function selectBarangayCandidate(candidate, candidates = []) {
     }
   }).addTo(complaintMapInstance);
 
+  clearComplaintFullMapRoutes();
+  const generation = complaintRouteGeneration;
   complaintRoutingControl.on("routesfound", function (e) {
+    if (generation !== complaintRouteGeneration) return;
     const route = e.routes && e.routes[0];
     if (!route) return;
 
@@ -441,6 +478,7 @@ function selectBarangayCandidate(candidate, candidates = []) {
   });
 
   complaintRoutingControl.on("routingerror", function (e) {
+    if (generation !== complaintRouteGeneration) return;
     console.error("Routing failed:", e);
 
     const fallbackBounds = L.latLngBounds([
@@ -2188,6 +2226,7 @@ function ensureComplaintDetailsMapPreviewStyles() {
       left: 10px !important;
       bottom: 10px !important;
       z-index: 450 !important;
+      max-width: calc(100% - 20px) !important;
       padding: 6px 9px !important;
       border-radius: 999px !important;
       background: rgba(255, 255, 255, 0.92) !important;
@@ -2262,24 +2301,9 @@ function setComplaintDetailsMapPreviewLoading(isVisible, message = "Loading map 
   loadingEl.classList.toggle("hidden", !isVisible);
 }
 
-function getTopUniqueBarangayCandidates(candidates = [], maxItems = 2) {
-  const seen = new Set();
-
-  return (Array.isArray(candidates) ? candidates : [])
-    .filter((candidate) => {
-      const barangay = String(candidate?.barangay_name || "").trim();
-      if (!barangay) return false;
-
-      const key = barangay.toLowerCase();
-      if (seen.has(key)) return false;
-
-      seen.add(key);
-      return true;
-    })
-    .slice(0, maxItems);
-}
-
-function renderComplaintDetailsMapPreview(data = {}, candidates = []) {
+async function renderComplaintDetailsMapPreview(data = {}) {
+  const request = ++complaintPreviewRequest;
+  clearComplaintDetailsPreviewMapLayers();
   if (!window.L) {
     console.warn("Leaflet is not available for complaint preview map.");
     return;
@@ -2292,15 +2316,17 @@ function renderComplaintDetailsMapPreview(data = {}, candidates = []) {
 
   const mapEl = ensureComplaintDetailsMapPreviewContainer();
   if (!mapEl) return;
+  const badge = document.querySelector("#complaintDetailsModal .complaint-preview-map-badge");
+  if (badge) badge.textContent = "Issue location · Needs Admin Confirmation";
 
-  if (Number.isNaN(lat) || Number.isNaN(lng)) {
+  if (!validComplaintMapPoint(data.latitude, data.longitude)) {
     setComplaintDetailsMapPreviewLoading(true, "Invalid complaint coordinates.");
     return;
   }
 
   setComplaintDetailsMapPreviewLoading(true);
-
-  setTimeout(() => {
+  setTimeout(async () => {
+    if (currentComplaint !== data || request !== complaintPreviewRequest) return;
     try {
       const state = complaintDetailsPreviewMapState;
 
@@ -2336,7 +2362,12 @@ function renderComplaintDetailsMapPreview(data = {}, candidates = []) {
           </div>
         `);
 
-      const topCandidates = getTopUniqueBarangayCandidates(candidates, 2);
+      setComplaintDetailsMapPreviewLoading(false);
+      const resolution = await loadComplaintMapDestination(data);
+      if (currentComplaint !== data || request !== complaintPreviewRequest) return;
+      const topCandidates = getComplaintForwardingTargets(resolution);
+      const badge = document.querySelector("#complaintDetailsModal .complaint-preview-map-badge");
+      if (badge) badge.textContent = `Issue location · ${complaintMapDestinationLabel(resolution)}`;
       const boundsPoints = [[lat, lng]];
 
       topCandidates.forEach((candidate) => {
@@ -2352,6 +2383,7 @@ function renderComplaintDetailsMapPreview(data = {}, candidates = []) {
           .bindPopup(`
             <div>
               <strong>${escapeHtml(candidate.barangay_name || "-")}</strong><br>
+              ${escapeHtml(complaintMapDestinationLabel(resolution))}<br>
               ${escapeHtml(candidate.reference_name || "-")}
             </div>
           `);
@@ -3025,6 +3057,12 @@ function openComplaintModal(data) {
   mountComplaintModalsToBody();
   ensureComplaintRejectRuntimeStyles();
 
+  complaintPreviewRequest++;
+  complaintFullMapRequest++;
+  complaintMapResolution = null;
+  clearComplaintDetailsPreviewMapLayers();
+  clearComplaintMapLayers();
+  clearComplaintFullMapRoutes();
   currentComplaint = data;
   selectedBarangayCandidate = null;
 
@@ -3094,7 +3132,7 @@ function openComplaintModal(data) {
   }
 
   openComplaintModalWithPosition("complaintDetailsModal");
-  renderComplaintDetailsMapPreview(data, forwardingBarangayTargets || []);
+  renderComplaintDetailsMapPreview(data);
 
   /*
     Re-apply after modal render/layout because some modal CSS uses strong
@@ -3106,11 +3144,20 @@ function openComplaintModal(data) {
 }
 
 function closeComplaintModal() {
+  complaintPreviewRequest++;
+  complaintFullMapRequest++;
+  complaintMapResolution = null;
+  clearComplaintDetailsPreviewMapLayers();
+  clearComplaintMapLayers();
+  clearComplaintFullMapRoutes();
   complaintAssignmentRequest++;
   resetComplaintModalDisplay("complaintDetailsModal");
 }
 
 function closeComplaintMapModal() {
+  complaintFullMapRequest++;
+  clearComplaintMapLayers();
+  clearComplaintFullMapRoutes();
   resetComplaintModalDisplay("complaintMapModal");
 }
 
@@ -3241,7 +3288,7 @@ function ensureComplaintFullMapLegend() {
     legend.className = "complaint-full-map-legend";
     legend.innerHTML = `
       <span><i class="complaint-full-map-dot"></i> Issue location</span>
-      <span><i class="complaint-full-map-dot blue"></i> Reference points — not verified assignments</span>
+      <span id="complaintFullMapDestinationLabel"><i class="complaint-full-map-dot blue"></i> Needs Admin Confirmation</span>
     `;
 
     mapPanel.appendChild(legend);
@@ -3249,6 +3296,7 @@ function ensureComplaintFullMapLegend() {
 }
 
 function clearComplaintFullMapRoutes() {
+  complaintRouteGeneration++;
   if (Array.isArray(window.complaintFullMapRouteControls)) {
     window.complaintFullMapRouteControls.forEach((control) => {
       try {
@@ -3278,11 +3326,16 @@ function clearComplaintFullMapRoutes() {
   window.complaintFullMapRouteLines = [];
 }
 
-function getComplaintForwardingTargets(candidates = []) {
-  return getTopUniqueBarangayCandidates(candidates, 2);
+function getComplaintForwardingTargets(resolution) {
+  const destination = resolution?.destination;
+  if (resolution?.success !== true || !["admin_confirmed", "strict_polygon_suggestion"].includes(resolution.basis)
+    || !String(destination?.barangay_name || "").trim()
+    || !validComplaintMapPoint(destination?.latitude, destination?.longitude)) return [];
+  return [destination];
 }
 
 function drawComplaintRouteLineToCandidate(issueLat, issueLng, candidate, index = 0) {
+  const generation = complaintRouteGeneration;
   if (!complaintMapInstance || !window.L || !candidate) return;
 
   const destLat = parseFloat(candidate.latitude);
@@ -3331,7 +3384,11 @@ function drawComplaintRouteLineToCandidate(issueLat, issueLng, candidate, index 
       }
     }).addTo(complaintMapInstance);
 
+    let fallbackDrawn = false;
     routeControl.on("routingerror", () => {
+      if (generation !== complaintRouteGeneration || fallbackDrawn) return;
+      fallbackDrawn = true;
+      complaintMapInstance.removeControl(routeControl);
       const fallbackLine = L.polyline(
         [
           [issueLat, issueLng],
@@ -3368,10 +3425,10 @@ function drawComplaintRouteLineToCandidate(issueLat, issueLng, candidate, index 
   window.complaintFullMapRouteLines.push(fallbackLine);
 }
 
-function renderComplaintFullMapRoutes(issueLat, issueLng, candidates = []) {
+function renderComplaintFullMapRoutes(issueLat, issueLng, resolution) {
   clearComplaintFullMapRoutes();
 
-  const targets = getComplaintForwardingTargets(candidates);
+  const targets = getComplaintForwardingTargets(resolution);
 
   targets.forEach((candidate, index) => {
     drawComplaintRouteLineToCandidate(issueLat, issueLng, candidate, index);
@@ -3384,6 +3441,10 @@ function renderComplaintFullMapRoutes(issueLat, issueLng, candidates = []) {
 // =========================
 
 async function openComplaintMapModal() {
+  const data = currentComplaint;
+  const request = ++complaintFullMapRequest;
+  clearComplaintMapLayers();
+  clearComplaintFullMapRoutes();
   mountComplaintModalsToBody();
   ensureComplaintFullMapOnlyStyles();
 
@@ -3395,7 +3456,7 @@ async function openComplaintMapModal() {
   const lat = parseFloat(currentComplaint.latitude);
   const lng = parseFloat(currentComplaint.longitude);
 
-  if (Number.isNaN(lat) || Number.isNaN(lng)) {
+  if (!validComplaintMapPoint(data.latitude, data.longitude)) {
     alert("Invalid complaint coordinates.");
     return;
   }
@@ -3405,11 +3466,12 @@ async function openComplaintMapModal() {
     - no top subject/barangay/coordinates summary
     - no side chosen barangay/candidate panel
     - map only
-    - two route lines going to the two forwarding/assigned barangay targets
+    - at most one trusted destination, without assigning or forwarding
   */
   openComplaintModalWithPosition("complaintMapModal");
 
   setTimeout(async () => {
+    if (currentComplaint !== data || request !== complaintFullMapRequest) return;
     try {
       if (!window.L) {
         throw new Error("Leaflet map library is not loaded.");
@@ -3430,6 +3492,8 @@ async function openComplaintMapModal() {
       }
 
       ensureComplaintFullMapLegend();
+      const pendingLabel = document.getElementById("complaintFullMapDestinationLabel");
+      if (pendingLabel) pendingLabel.textContent = "Needs Admin Confirmation";
       clearComplaintMapLayers();
       clearComplaintFullMapRoutes();
 
@@ -3438,14 +3502,17 @@ async function openComplaintMapModal() {
 
       complaintMapMarker.bindPopup(`
         <div>
-          <strong>${escapeHtml(currentComplaint.subject || "Complaint Issue")}</strong><br>
+          <strong>${escapeHtml(data.subject || "Complaint Issue")}</strong><br>
           Issue location<br>
           ${escapeHtml(String(lat))}, ${escapeHtml(String(lng))}
         </div>
       `).openPopup();
 
-      const candidates = await loadNearbyBarangaysForComplaint(lat, lng);
-      const forwardingTargets = getComplaintForwardingTargets(candidates);
+      const resolution = await loadComplaintMapDestination(data);
+      if (currentComplaint !== data || request !== complaintFullMapRequest) return;
+      const forwardingTargets = getComplaintForwardingTargets(resolution);
+      const label = document.getElementById("complaintFullMapDestinationLabel");
+      if (label) label.textContent = complaintMapDestinationLabel(resolution);
 
       complaintNearbyMarkers = forwardingTargets.map((candidate) => {
         const markerLat = parseFloat(candidate.latitude);
@@ -3455,7 +3522,7 @@ async function openComplaintMapModal() {
           return null;
         }
 
-        const distanceText = formatDistanceText(candidate.distance_meters);
+        const distanceText = complaintMapDestinationLabel(resolution);
 
         const marker = L.marker(
           [markerLat, markerLng],
@@ -3473,7 +3540,7 @@ async function openComplaintMapModal() {
         return marker;
       }).filter(Boolean);
 
-      renderComplaintFullMapRoutes(lat, lng, forwardingTargets);
+      renderComplaintFullMapRoutes(lat, lng, resolution);
 
       const boundsPoints = [
         [lat, lng],

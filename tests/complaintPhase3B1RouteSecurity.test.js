@@ -32,7 +32,7 @@ function loadSource(relative, dependencies, extras = {}) {
 function harness() {
   const state = { workerCalls: 0, targetQueries: [], sessionQueries: [],
     forbiddenCalls: [], session: "valid", role: "super_admin", active: true,
-    workerError: false, targetError: false, calls: [] };
+    workerError: false, targetError: false, calls: [], mapCalls: 0, mapError: false };
   const forbidden = label => () => {
     state.forbiddenCalls.push(label);
     throw new Error(`Forbidden offline side effect: ${label}`);
@@ -90,6 +90,11 @@ function harness() {
     "../middleware/complaintAuth": complaintAuth,
     "../middleware/webSessionAuth": webAuth,
     "../services/barangayBoundaryService": {},
+    "../services/complaintMapDestinationService": { async resolveComplaintMapDestination(database, id) {
+      assert.equal(database, db); assert.equal(id, "11"); state.mapCalls++;
+      if (state.mapError) throw new Error("Synthetic internal error must not be exposed");
+      return { success: true, complaint_id: 11, destination: null, label: "Needs Admin Confirmation" };
+    } },
     "../controllers/notificationController": { createCitizenNotificationRecord: forbidden("notification") }
   }, { __dirname: path.join(root, "routes"),
     setTimeout: forbidden("timer"), setInterval: forbidden("interval"),
@@ -275,4 +280,31 @@ test("neighboring routes keep their Phase 1 guards and do not collide", () => {
   assert.equal(h.routes.find(r => r.path === "/nearby-barangays").handlers.length, 1);
   assert.equal(h.routes.filter(r => r.method === "USE").length, 0);
   assert.deepEqual(h.state.forbiddenCalls, []);
+});
+
+for (const scenario of [
+  { name: "missing session", options: { signedIn: false }, status: 401 },
+  { name: "expired session", session: "expired", status: 401 },
+  { name: "inactive account", active: false, status: 403 },
+  ...["barangay", "citizen", "personnel", "enforcer", "division_admin"].map(role => ({ name: role, role, status: 403 }))
+]) {
+  test(`map destination denies ${scenario.name} before lookup`, async () => {
+    const h = harness();
+    if (scenario.role) h.state.role = scenario.role;
+    if (scenario.session) h.state.session = scenario.session;
+    if (scenario.active === false) h.state.active = false;
+    const res = await h.request("GET", "/11/map-destination", scenario.options);
+    assert.equal(res.statusCode, scenario.status); assert.equal(h.state.mapCalls, 0);
+  });
+}
+test("map destination is read-only Admin GET with no-store and safe unavailable response", async () => {
+  const h = harness();
+  const res = await h.request("GET", "/11/map-destination", { csrf: false });
+  assert.equal(res.statusCode, 200); assert.equal(h.state.mapCalls, 1);
+  assert.equal(res.headers["Cache-Control"], "no-store");
+  h.state.mapError = true;
+  const failed = await h.request("GET", "/11/map-destination", { csrf: false });
+  assert.equal(failed.statusCode, 503);
+  assert.doesNotMatch(JSON.stringify(failed.body), /Synthetic internal error/);
+  assert.deepEqual(h.state.targetQueries, []); assert.equal(h.state.workerCalls, 0);
 });
