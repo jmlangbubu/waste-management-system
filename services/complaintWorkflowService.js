@@ -109,7 +109,12 @@ class ComplaintWorkflowService {
       if (complaint.status !== "pending") throw failure(409, "STALE_COMPLAINT", "Only pending complaints can be validated and forwarded.");
       const geographic = resolveStrictBarangay({ lat: complaint.latitude, lng: complaint.longitude }, boundaries);
       // Boundary provenance is not attested by the current schema: Admin confirmation is always recorded.
-      const confirmationReason = reason(body.assignment_confirmation_reason);
+      if (body.use_gps_match === true && (!geographic.barangay || geographic.barangay !== target || geographic.barangay !== targets[0])) {
+        throw failure(409, "GPS_ASSIGNMENT_REVIEW_REQUIRED", "No unchanged unique active polygon match. Admin review is required; nothing was forwarded.");
+      }
+      const confirmationReason = body.use_gps_match === true
+        ? "Admin confirmed forwarding to the unique active polygon match for the stored citizen GPS coordinates. Polygon provenance has not been independently verified."
+        : reason(body.assignment_confirmation_reason);
       const notices = await query(connection, "SELECT DISTINCT target_name FROM complaint_notifications WHERE complaint_id = ? AND target_type = 'barangay'", [complaint.id]);
       if (notices.length) throw failure(409, "LEGACY_TARGETS_PRESENT", "Existing forwarding targets require Admin correction; no history was changed.");
       await this.update(connection, `UPDATE complaints SET status = 'forwarded', assigned_barangay = ?,

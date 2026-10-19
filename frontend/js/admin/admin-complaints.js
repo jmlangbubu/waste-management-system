@@ -102,6 +102,7 @@ function loadComplaintMapDestination(complaint) {
       const result = await response.json();
       if (!response.ok || result.success !== true || Number(result.complaint_id) !== Number(complaint.id)) return null;
       record.result = result;
+      if (currentComplaint === complaint && complaintMapResolution === record) updateComplaintAssignmentSummary(result);
       return result;
     } catch (_) { return null; }
   })();
@@ -111,7 +112,23 @@ function loadComplaintMapDestination(complaint) {
 }
 
 function complaintMapDestinationLabel(result) {
-  return getComplaintForwardingTargets(result).length ? result.label : "Needs Admin Confirmation";
+  return result?.success === true && ["admin_confirmed", "admin_review", "strict_polygon_suggestion"].includes(result.basis)
+    && typeof result.label === "string" ? result.label : "Needs Admin Confirmation";
+}
+
+function updateComplaintAssignmentSummary(result) {
+  const status = document.getElementById("complaintAssignmentStatus");
+  if (!status) return;
+  const name = result?.basis === "admin_confirmed" ? result.assigned_barangay
+    : result?.basis === "strict_polygon_suggestion" ? result.geographic_barangay || result.destination?.barangay_name : null;
+  status.textContent = name ? (result.basis === "admin_confirmed" ? "Assigned Barangay: " : "Detected Barangay: ") + name
+    : "Needs Admin Confirmation";
+  const locationName = document.getElementById("complaintModalBarangay");
+  if (locationName) {
+    locationName.textContent = name || "Needs Admin Confirmation";
+    const label = locationName.closest(".complaint-pro-field")?.querySelector("label");
+    if (label) label.textContent = result?.basis === "admin_confirmed" ? "Assigned Barangay" : "Detected Barangay";
+  }
 }
 
 function formatComplaintStatus(status) {
@@ -283,23 +300,19 @@ function renderComplaintDetailsNearbyOptions() {
   const wrap = document.getElementById("complaintModalNearbyOptions");
   if (!wrap || !currentComplaint) return;
   const data = currentComplaint;
-  const confirmed = data.assignment_confirmed_at ? data.assigned_barangay : "Needs Admin confirmation";
-  wrap.innerHTML = '<p><strong>Assigned Barangay:</strong> ' + escapeHtml(confirmed || "Needs Admin confirmation") + '</p>'
-    + '<p><strong>Reported Barangay (citizen input):</strong> ' + escapeHtml(data.reporter_barangay || "Not provided") + '</p>';
-  if (data.status === "pending" && complaintAdminAllowed()) {
-    wrap.innerHTML += '<label for="complaintAssignmentSelect">Confirm one responsible barangay</label>'
-      + '<select id="complaintAssignmentSelect"><option value="">Select one active barangay</option>'
-      + complaintAssignmentNames.map(name => '<option value="' + escapeHtml(name) + '">' + escapeHtml(name) + '</option>').join("")
-      + '</select><label for="complaintAssignmentReason">Assignment confirmation reason</label>'
-      + '<textarea id="complaintAssignmentReason" maxlength="2000" required></textarea>'
-      + '<p>Verify the GPS/map and confirm one recipient. Nearby markers and citizen text are not geographic proof.</p>';
-    if (complaintAssignmentError) wrap.innerHTML += '<p role="alert">' + escapeHtml(complaintAssignmentError) + '</p>';
-  }
+  wrap.className = "complaint-assignment-section";
+  wrap.innerHTML = '<strong id="complaintAssignmentStatus" class="complaint-assignment-name">Needs Admin Confirmation</strong>';
+  const cached = complaintMapResolution?.complaint === data ? complaintMapResolution.result : null;
+  updateComplaintAssignmentSummary(cached);
+  const handlingWrap = document.getElementById("complaintWmoHandlingOptions");
+  if (handlingWrap) handlingWrap.innerHTML = "";
   if (data.status === "wmo_handling") {
-    wrap.innerHTML += '<p><strong>WMO handling — Barangay Cannot Accept</strong></p><p>'
+    const workflowWrap = handlingWrap;
+    if (!workflowWrap) return;
+    workflowWrap.innerHTML += '<p><strong>WMO handling — Barangay Cannot Accept</strong></p><p>'
       + escapeHtml(data.barangay_decline_reason || "Reason unavailable") + '</p>';
     if (complaintAdminAllowed() && data.handling_owner === "wmo") {
-      wrap.innerHTML += '<form id="complaintWmoResolutionForm"><label>WMO resolution report'
+      workflowWrap.innerHTML += '<form id="complaintWmoResolutionForm"><label>WMO resolution report'
         + '<textarea name="resolution_report" required maxlength="2000"></textarea></label>'
         + '<label>Resolution evidence<input name="evidence" type="file" accept="image/jpeg,image/png,image/webp" required></label>'
         + '<button type="submit">Submit WMO resolution</button></form>';
@@ -3015,9 +3028,7 @@ function ensureComplaintProblemBarangayField() {
   if (document.getElementById("complaintModalNearbyOptions")) return;
 
   /*
-    Pending complaint rule:
-    Concern Barangay is only the citizen-reported/selected area.
-    WMO should choose the forwarding/assigned barangay from nearby options.
+    Assignment controls are a separate full-width section, not a submitted-info cell.
   */
   submittedCard.innerHTML = `
     <div class="complaint-pro-two-grid complaint-pro-submitted-grid">
@@ -3029,16 +3040,14 @@ function ensureComplaintProblemBarangayField() {
         </div>
       </div>
 
-      <div class="complaint-pro-field with-icon complaint-forward-options-field">
-        <span class="complaint-mini-icon">📍</span>
-        <div style="width:100%;">
-          <label>Assigned Barangay</label>
-          <div id="complaintModalNearbyOptions" class="complaint-nearby-options">
-            <div class="complaint-nearby-status">Loading nearby options...</div>
-          </div>
-        </div>
-      </div>
     </div>
+    <section class="complaint-assignment-card" aria-label="Barangay assignment">
+      <h4>Barangay Assignment</h4>
+      <div id="complaintModalNearbyOptions" class="complaint-assignment-section">
+        <div class="complaint-nearby-status">Loading assignment options...</div>
+      </div>
+    </section>
+    <div id="complaintWmoHandlingOptions"></div>
   `;
 }
 
@@ -3628,18 +3637,21 @@ async function validateAndForwardComplaint() {
   if (!complaintAdminAllowed() || !currentComplaint?.id || currentComplaint.status !== "pending") {
     alert("Only Admin can validate a pending complaint."); return;
   }
-  const target = document.getElementById("complaintAssignmentSelect")?.value || "";
-  const reason = (document.getElementById("complaintAssignmentReason")?.value || "").trim();
-  if (!complaintAssignmentNames.includes(target) || !reason || reason.length > 2000) {
-    alert("Confirm one active barangay and enter an assignment confirmation reason."); return;
-  }
-  if (!confirm("Validate and forward this complaint only to " + target + "?")) return;
   const complaint = currentComplaint;
   complaintActionInFlight = true;
   try {
+    const resolution = await loadComplaintMapDestination(complaint);
+    if (currentComplaint !== complaint || complaint.status !== "pending") return;
+    const target = resolution?.basis === "strict_polygon_suggestion" && resolution.success === true
+      && Number(resolution.complaint_id) === Number(complaint.id) ? resolution.geographic_barangay : null;
+    if (typeof target !== "string" || !target.trim()) {
+      alert("Needs Admin Confirmation: no valid unique GPS polygon match. Admin review is required; nothing was forwarded."); return;
+    }
+    if (!confirm("Validate and forward this complaint to the GPS-detected Barangay: " + target + "?")) return;
+    if (currentComplaint !== complaint || !complaintAdminAllowed() || complaint.status !== "pending") return;
     const response = await webAdminFetch(getComplaintsApiUrl() + "/" + complaint.id + "/validate-forward", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ selected_barangay: target, confirm_assignment: true, assignment_confirmation_reason: reason })
+      body: JSON.stringify({ selected_barangay: target, confirm_assignment: true, use_gps_match: true })
     });
     const result = await readComplaintActionResponse(response, "Validation unavailable.");
     requireComplaintActionAck(result, complaint.id, "forwarded");
