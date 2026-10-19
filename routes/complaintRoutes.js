@@ -6,6 +6,47 @@ const multer = require("multer");
 const cloudinary = require("cloudinary").v2;
 
 const db = require("../config/db");
+const { ComplaintWorkflowService } = require("../services/complaintWorkflowService");
+const { buildComplaintAuth } = require("../middleware/complaintAuth");
+const { requireWebAuth, requireWebRole, requireCsrf } = require("../middleware/webSessionAuth");
+const { resolveStrictBarangay } = require("../services/barangayBoundaryService");
+const complaintWorkflow = new ComplaintWorkflowService(db);
+const complaintAuth = buildComplaintAuth(complaintWorkflow);
+router.get("/assignment-options", ...complaintAuth.admin, async (req, res) => {
+  try {
+    const rows = await complaintWorkflow.activeBarangays();
+    return res.json({ success: true, barangays: [...new Set(rows.map((row) => row.barangay_name))] });
+  } catch (_) { return res.status(503).json({ success: false, message: "Active barangay registry unavailable." }); }
+});
+const complaintAction = (operation) => async (req, res) => {
+  try {
+    const result = await operation(req);
+    if (!result.idempotent) emitWmoRealtime(req, "wmo:complaint-updated", { complaint_id: result.complaint_id, status: result.status });
+    if (!result.idempotent && result.status === "forwarded") {
+      emitBarangayRealtime(req, result.assigned_barangay, "barangay:complaint-forwarded",
+        { complaint_id: result.complaint_id, status: result.status });
+    }
+    if (!result.idempotent && result.status === "resolved") {
+      db.query("SELECT id, citizen_id, reporter_barangay, subject, assigned_barangay, handled_by_barangay_name FROM complaints WHERE id = ?", [result.complaint_id], (error, rows) => {
+        if (error || !rows?.length) return;
+        if (result.handling_owner === "barangay") createComplaintResolvedCitizenNotifications(result.complaint_id, rows[0]);
+        else createCitizenNotificationSafe({ user_id: rows[0].citizen_id, type: "complaint_resolved",
+          title: "WMO complaint resolution recorded", message: "WMO recorded a resolution report for your complaint.",
+          reference_id: `complaint:${result.complaint_id}:wmo-resolved` });
+      });
+    }
+    return res.json(result);
+  } catch (error) {
+    return res.status(error.statusCode || 503).json({ success: false,
+      code: error.code && error.statusCode ? error.code : "COMPLAINT_WORKFLOW_UNAVAILABLE",
+      message: error.statusCode ? error.message : "Complaint action unavailable. No successful action is claimed." });
+  }
+};
+async function requireComplaintSchema(req, res, next) {
+  try { await complaintWorkflow.checkSchema(); next(); }
+  catch (_) { return res.status(503).json({ success: false, code: "COMPLAINT_FEATURE_UNAVAILABLE",
+    message: "Complaint workflow migration has not been verified. No action was saved." }); }
+}
 const {
   createCitizenNotificationRecord
 } = require("../controllers/notificationController");
@@ -1444,10 +1485,11 @@ router.post("/", upload.single("image"), (req, res) => {
       });
     }
 
-    const lat = parseFloat(latitude);
-    const lng = parseFloat(longitude);
+    const lat = Number(latitude);
+    const lng = Number(longitude);
 
-    if (Number.isNaN(lat) || Number.isNaN(lng)) {
+    if (latitude === null || longitude === null || String(latitude ?? "").trim() === "" || String(longitude ?? "").trim() === ""
+      || !Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
       deleteUploadedFileIfExists(req.file);
 
       return res.status(400).json({
@@ -1602,12 +1644,7 @@ router.post("/", upload.single("image"), (req, res) => {
                     return res.json({
                     success: true,
                     duplicate: false,
-                    message:
-                      assignmentMethod === "user_selected"
-                        ? "Complaint submitted successfully with selected concern barangay."
-                        : assignmentMethod === "polygon"
-                        ? "Complaint submitted successfully and assigned by barangay boundary."
-                        : "Complaint submitted successfully and marked for manual verification.",
+                    message: "Complaint submitted successfully. Admin must confirm the responsible barangay before forwarding.",
                     complaintId,
                     reporter_barangay: reporter_barangay || null,
                     assigned_barangay: finalBarangay,
@@ -1637,113 +1674,11 @@ router.post("/", upload.single("image"), (req, res) => {
             });
         };
 
-        /*
-          If the citizen selected a barangay after the pin preview,
-          respect that selection. This is the practical fallback while
-          barangay boundary polygons are still incomplete.
-        */
-        if (selectedConcernBarangay) {
-          return finishComplaintCreation(
-            selectedConcernBarangay,
-            "user_selected",
-            {
-              source: "android_manual_selection",
-              detected_barangay_preview: detectedBarangayPreview || null,
-              note: "Citizen selected the concern barangay after pinning the issue location."
-            }
-          );
-        }
-
-        /*
-          IMPORTANT FIX:
-          Complaint assignment must NOT be based on the nearest barangay hall/reference point.
-          It must follow barangay jurisdiction/boundary.
-
-          Rules:
-          1. If the issue coordinate is inside a barangay polygon, assign to that barangay.
-          2. If no polygon covers the coordinate, mark as "For Verification".
-          3. WMO can then choose the correct barangay manually from the map modal.
-
-          This prevents a Mabuhay-covered issue from being incorrectly assigned to
-          San Isidro only because the San Isidro reference point is nearer.
-        */
-        const boundarySql = `
-          SELECT barangay_name, polygon_json
-          FROM barangay_boundaries
-          WHERE status = 'active'
-        `;
-
-        db.query(boundarySql, (boundaryErr, boundaryRows) => {
-          if (boundaryErr) {
-            deleteUploadedFileIfExists(req.file);
-
-            console.error("Boundary query error:", boundaryErr);
-            return res.status(500).json({
-              success: false,
-              message: "Failed to load barangay boundaries."
-            });
-          }
-
-          try {
-            const polygonMatchedBarangay = resolveBarangayByPolygon(
-              { lat, lng },
-              boundaryRows || []
-            );
-
-            if (polygonMatchedBarangay) {
-              return finishComplaintCreation(
-                polygonMatchedBarangay,
-                "polygon",
-                {
-                  source: "barangay_boundaries",
-                  note: "Assigned by barangay jurisdiction polygon. Nearest reference point was not used."
-                }
-              );
-            }
-
-            return resolveBarangayFromLearnedComplaints({ lat, lng }, (learnedErr, learnedBarangay) => {
-              if (learnedErr) {
-                deleteUploadedFileIfExists(req.file);
-
-                return res.status(500).json({
-                  success: false,
-                  message: "Failed to check learned barangay records.",
-                  error: learnedErr.message,
-                  code: learnedErr.code
-                });
-              }
-
-              if (learnedBarangay && learnedBarangay.barangay_name) {
-                return finishComplaintCreation(
-                  learnedBarangay.barangay_name,
-                  "learned_previous_complaint",
-                  {
-                    source: "complaints",
-                    note: "No boundary polygon matched. Assigned from a previous selected/verified complaint near this coordinate.",
-                    learned_match: learnedBarangay
-                  }
-                );
-              }
-
-              return finishComplaintCreation(
-                "For Verification",
-                "manual_review",
-                {
-                  source: "manual_review",
-                  note: "No barangay boundary polygon or learned nearby complaint matched this coordinate. Nearest barangay was intentionally not used."
-                }
-              );
-            });
-          } catch (resolutionError) {
-            deleteUploadedFileIfExists(req.file);
-
-            console.error("Complaint barangay resolution error:", resolutionError);
-            return res.status(500).json({
-              success: false,
-              message: "Barangay resolution failed.",
-              error: resolutionError.message
-            });
-          }
+        // Citizen declarations and nearby complaints are not geographic proof.
+        db.query("SELECT barangay_name, polygon_json FROM barangay_boundaries WHERE status = 'active'", (boundaryErr, rows) => {
+          const candidate = boundaryErr ? null : resolveStrictBarangay({ lat, lng }, rows || []).barangay;
+          return finishComplaintCreation(candidate || "For Verification",
+            candidate ? "polygon_candidate" : "manual_review", { source: "admin_confirmation_required" });
         });
       };
 
@@ -1785,7 +1720,7 @@ router.post("/", upload.single("image"), (req, res) => {
 /* =========================
    GET ALL COMPLAINTS (WMO)
 ========================= */
-router.get("/", (req, res) => {
+router.get("/", ...complaintAuth.admin, (req, res) => {
   const sql = `
     SELECT *
     FROM complaints
@@ -1891,220 +1826,23 @@ router.get("/nearby-barangays", (req, res) => {
 /* =========================
    VALIDATE + FORWARD TO BARANGAY
 ========================= */
-router.post("/:id/validate-forward", (req, res) => {
-  const complaintId = req.params.id;
-  const {
-    validated_by,
-    selected_barangay,
-    selected_barangays,
-    target_barangays,
-    forwarding_barangays
-  } = req.body || {};
-
-  const requestedTargets = normalizeBarangayList(
-    target_barangays || selected_barangays || forwarding_barangays || selected_barangay
-  ).slice(0, 2);
-
-  const findSql = `
-    SELECT *
-    FROM complaints
-    WHERE id = ?
-    LIMIT 1
-  `;
-
-  db.query(findSql, [complaintId], (findErr, rows) => {
-    if (findErr) {
-      console.error("Find complaint error:", findErr);
-      return res.status(500).json({
-        success: false,
-        message: "Failed to find complaint."
-      });
-    }
-
-    if (!rows || rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Complaint not found."
-      });
-    }
-
-    const complaint = rows[0];
-
-    if (String(complaint.status || "").toLowerCase() !== "pending") {
-      return res.status(400).json({
-        success: false,
-        message: "Only pending complaints can be forwarded to barangays."
-      });
-    }
-
-    const continueForwardToTargets = (targets) => {
-      const finalTargets = normalizeBarangayList(targets).slice(0, 2);
-
-      if (!finalTargets.length) {
-        return res.status(400).json({
-          success: false,
-          message: "Please choose at least one barangay to forward this complaint."
-        });
-      }
-
-      const updateSql = `
-        UPDATE complaints
-        SET status = 'forwarded',
-            assignment_method = 'multi_forwarded',
-            validated_at = NOW(),
-            validated_by = ?
-        WHERE id = ?
-          AND status = 'pending'
-      `;
-
-      db.query(updateSql, [validated_by || null, complaintId], (updateErr, updateResult) => {
-        if (updateErr) {
-          console.error("Validate+multi-forward update error:", updateErr);
-          return res.status(500).json({
-            success: false,
-            message: "Failed to forward complaint."
-          });
-        }
-
-        if (!updateResult || updateResult.affectedRows === 0) {
-          return res.status(400).json({
-            success: false,
-            message: "Complaint could not be forwarded. It may have already been processed."
-          });
-        }
-
-        const deleteOldBarangayNotifSql = `
-          DELETE FROM complaint_notifications
-          WHERE complaint_id = ?
-            AND target_type = 'barangay'
-        `;
-
-        db.query(deleteOldBarangayNotifSql, [complaintId], (deleteNotifErr) => {
-          if (deleteNotifErr) {
-            console.error("Failed clearing old barangay notifications before multi-forward:", deleteNotifErr);
-            return res.status(500).json({
-              success: false,
-              message: "Complaint was forwarded, but old barangay notifications could not be cleared.",
-              error: deleteNotifErr.message,
-              code: deleteNotifErr.code
-            });
-          }
-
-          const notifSql = buildBarangayNotificationInsertSql(finalTargets.length);
-          const notifValues = [];
-
-          finalTargets.forEach((barangay) => {
-            notifValues.push(complaintId, barangay);
-          });
-
-          db.query(notifSql, notifValues, (notifErr) => {
-          if (notifErr) {
-            console.error("Multi barangay notification insert error:", notifErr);
-            return res.status(500).json({
-              success: false,
-              message: "Complaint was forwarded, but barangay notifications could not be created.",
-              error: notifErr.message,
-              code: notifErr.code
-            });
-          }
-
-            emitBarangayRealtimeMany(req, finalTargets, "barangay:complaint-forwarded", {
-              complaint_id: complaintId,
-              title: "New forwarded concern",
-              message: `WMO forwarded a complaint to your barangay${cleanText(complaint.subject) ? `: ${truncateNotificationText(complaint.subject, 80)}` : ""}.`,
-              subject: complaint.subject || "",
-              concern_barangay: complaint.assigned_barangay || null,
-              forwarded_to_barangays: finalTargets,
-              status: "forwarded"
-            });
-
-            emitWmoRealtime(req, "wmo:complaint-forwarded", {
-              complaint_id: complaintId,
-              title: "Complaint forwarded",
-              message: `Complaint forwarded to ${finalTargets.join(" and ")}.`,
-              forwarded_to_barangays: finalTargets,
-              status: "forwarded"
-            });
-
-            return res.json({
-              success: true,
-              message:
-                finalTargets.length > 1
-                  ? `Complaint forwarded to ${finalTargets.join(" and ")}. The first barangay that accepts will become the assigned barangay.`
-                  : `Complaint forwarded to ${finalTargets[0]}.`,
-              complaint_id: complaintId,
-              concern_barangay: complaint.assigned_barangay || null,
-              forwarded_to_barangays: finalTargets,
-              notification_targets_created: finalTargets.length,
-              assignment_method: "multi_forwarded"
-            });
-          });
-        });
-      });
-    };
-
-    if (requestedTargets.length) {
-      return continueForwardToTargets(requestedTargets);
-    }
-
-    const lat = parseFloat(complaint.latitude);
-    const lng = parseFloat(complaint.longitude);
-
-    if (Number.isNaN(lat) || Number.isNaN(lng)) {
-      return res.status(400).json({
-        success: false,
-        message: "Complaint has invalid coordinates. Please choose barangays manually."
-      });
-    }
-
-    const referenceSql = `
-      SELECT barangay_name, reference_name, latitude, longitude
-      FROM barangay_reference_points
-      WHERE status = 'active'
-    `;
-
-    db.query(referenceSql, (refErr, refRows) => {
-      if (refErr) {
-        console.error("Failed loading reference points for multi-forward:", refErr);
-        return res.status(500).json({
-          success: false,
-          message: "Failed to load nearby barangay options."
-        });
-      }
-
-      const autoTargets = (refRows || [])
-        .map((row) => {
-          const refLat = Number(row.latitude);
-          const refLng = Number(row.longitude);
-
-          if (Number.isNaN(refLat) || Number.isNaN(refLng)) return null;
-
-          return {
-            barangay_name: row.barangay_name,
-            distance_meters: calculateDistanceMeters(
-              { lat, lng },
-              { lat: refLat, lng: refLng }
-            )
-          };
-        })
-        .filter(Boolean)
-        .sort((a, b) => a.distance_meters - b.distance_meters)
-        .map((item) => item.barangay_name);
-
-      return continueForwardToTargets(autoTargets);
-    });
-  });
-});
+router.post("/:id/validate-forward", ...complaintAuth.admin,
+  complaintAction((req) => complaintWorkflow.forward(req.params.id, req.complaintActor, req.body)));
+router.put("/:id/cannot-accept", ...complaintAuth.barangay,
+  complaintAction((req) => complaintWorkflow.decide(req.params.id, req.complaintActor, "cannot_accept", req.body)));
+router.put("/:id/wmo-resolve", ...complaintAuth.admin, upload.single("evidence"),
+  complaintAction((req) => complaintWorkflow.resolve(req.params.id, req.complaintActor, req.body,
+    () => saveUploadedComplaintImage(req.file, "resolutions"))));
 
 /* =========================
    REJECT COMPLAINT BY WMO
 ========================= */
-router.patch("/:id/reject", (req, res) => {
+router.patch("/:id/reject", ...complaintAuth.admin, (req, res) => {
   const complaintId = req.params.id;
   const { rejection_reason, rejected_by } = req.body || {};
 
   const reason = cleanText(rejection_reason);
-  const rejectedBy = parseOptionalInt(rejected_by);
+  const rejectedBy = req.user.id;
 
   if (!reason || reason.length < 10) {
     return res.status(400).json({
@@ -2234,434 +1972,20 @@ router.put("/:id/reject", (req, res, next) => {
 /* =========================
    ACCEPT BY BARANGAY
 ========================= */
-router.put("/:id/accept", (req, res) => {
-  const complaintId = req.params.id;
-  const {
-    accepted_by,
-    accepted_barangay,
-    barangay,
-    target_barangay,
-    handled_by_barangay_name
-  } = req.body || {};
-
-  const acceptedBy = parseOptionalInt(accepted_by);
-  const acceptingBarangay = normalizeBarangayName(
-    accepted_barangay || barangay || target_barangay || handled_by_barangay_name
-  );
-
-  const findSql = `
-    SELECT *
-    FROM complaints
-    WHERE id = ?
-    LIMIT 1
-  `;
-
-  db.query(findSql, [complaintId], (findErr, rows) => {
-    if (findErr) {
-      console.error("Find complaint before accept error:", findErr);
-      return res.status(500).json({
-        success: false,
-        message: "Failed to find complaint before accepting.",
-        error: findErr.message,
-        code: findErr.code
-      });
-    }
-
-    if (!rows || !rows.length) {
-      return res.status(404).json({
-        success: false,
-        message: "Complaint not found."
-      });
-    }
-
-    const complaint = rows[0];
-    const currentStatus = String(complaint.status || "").toLowerCase();
-
-    if (!["forwarded", "in_progress"].includes(currentStatus)) {
-      return res.status(400).json({
-        success: false,
-        message: "Only forwarded complaints can be accepted by a barangay."
-      });
-    }
-
-    const continueAccept = (finalBarangay) => {
-      const cleanBarangay = normalizeBarangayName(finalBarangay);
-
-      if (!cleanBarangay) {
-        return res.status(400).json({
-          success: false,
-          message: "Accepting barangay is required."
-        });
-      }
-
-      const verifySql = `
-        SELECT id
-        FROM complaint_notifications
-        WHERE complaint_id = ?
-          AND target_type = 'barangay'
-          AND ${getBarangayMatchWhereSql("target_name")}
-        LIMIT 1
-      `;
-
-      db.query(verifySql, [complaintId, getBarangayMatchParam(cleanBarangay)], (verifyErr, verifyRows) => {
-        if (verifyErr) {
-          console.error("Accept verify notification error:", verifyErr);
-          return res.status(500).json({
-            success: false,
-            message: "Failed to verify forwarded barangay.",
-            error: verifyErr.message,
-            code: verifyErr.code
-          });
-        }
-
-        if (!verifyRows || !verifyRows.length) {
-          return res.status(400).json({
-            success: false,
-            message: "This complaint was not forwarded to the selected barangay."
-          });
-        }
-
-        getComplaintBarangayNotificationTargets(complaintId, (targetErr, allTargets) => {
-          if (targetErr) {
-            return res.status(500).json({
-              success: false,
-              message: "Failed to read forwarded barangay targets.",
-              error: targetErr.message,
-              code: targetErr.code
-            });
-          }
-
-          const otherBarangays = (allTargets || []).filter((target) => {
-            return getBarangayMatchParam(target) !== getBarangayMatchParam(cleanBarangay);
-          });
-
-          const updateSql = `
-            UPDATE complaints
-            SET status = 'accepted_by_barangay',
-                assigned_barangay = ?,
-                assignment_method = 'accepted_by_barangay',
-                accepted_by = ?,
-                accepted_at = NOW()
-            WHERE id = ?
-              AND status IN ('forwarded', 'in_progress')
-          `;
-
-          db.query(updateSql, [cleanBarangay, acceptedBy, complaintId], (updateErr, updateResult) => {
-            if (updateErr) {
-              console.error("Accept complaint error:", updateErr);
-              return res.status(500).json({
-                success: false,
-                message: "Failed to accept complaint.",
-                error: updateErr.message,
-                code: updateErr.code
-              });
-            }
-
-            if (!updateResult || updateResult.affectedRows === 0) {
-              return res.status(400).json({
-                success: false,
-                message: "Complaint could not be accepted. Another barangay may have already accepted it."
-              });
-            }
-
-            markOtherBarangayNotificationsCleared(complaintId, cleanBarangay, () => {
-              const subject = truncateNotificationText(complaint.subject || "Forwarded concern", 80);
-              const infoTitle = `Accepted by ${cleanBarangay}`;
-              const infoMessage = `${cleanBarangay} accepted the WMO-forwarded complaint${subject ? `: ${subject}` : ""}. No action is needed from your barangay.`;
-
-              insertBarangayInfoNotifications(
-                complaintId,
-                otherBarangays,
-                "accepted_by_other_barangay",
-                infoTitle,
-                infoMessage,
-                () => {
-                  emitBarangayRealtime(req, cleanBarangay, "barangay:complaint-accepted", {
-                    complaint_id: complaintId,
-                    title: "Complaint accepted",
-                    message: `Your barangay accepted the forwarded complaint${subject ? `: ${subject}` : ""}.`,
-                    accepted_by_barangay: cleanBarangay,
-                    assigned_barangay: cleanBarangay,
-                    status: "accepted_by_barangay"
-                  });
-
-                  emitBarangayRealtimeMany(req, otherBarangays, "barangay:complaint-accepted-by-other", {
-                    complaint_id: complaintId,
-                    title: infoTitle,
-                    message: infoMessage,
-                    accepted_by_barangay: cleanBarangay,
-                    assigned_barangay: cleanBarangay,
-                    status: "accepted_by_barangay"
-                  });
-
-                  emitWmoRealtime(req, "wmo:complaint-accepted", {
-                    complaint_id: complaintId,
-                    title: "Complaint accepted by barangay",
-                    message: `${cleanBarangay} accepted the forwarded complaint${subject ? `: ${subject}` : ""}.`,
-                    accepted_by_barangay: cleanBarangay,
-                    assigned_barangay: cleanBarangay,
-                    status: "accepted_by_barangay"
-                  });
-
-                  return res.json({
-                    success: true,
-                    message: `Complaint accepted by ${cleanBarangay}.`,
-                    complaint_id: complaintId,
-                    assigned_barangay: cleanBarangay,
-                    notified_barangays: otherBarangays,
-                    status: "accepted_by_barangay"
-                  });
-                }
-              );
-            });
-          });
-        });
-      });
-    };
-
-    if (acceptingBarangay) {
-      return continueAccept(acceptingBarangay);
-    }
-
-    const fallbackSql = `
-      SELECT target_name
-      FROM complaint_notifications
-      WHERE complaint_id = ?
-        AND target_type = 'barangay'
-      ORDER BY created_at ASC
-      LIMIT 1
-    `;
-
-    db.query(fallbackSql, [complaintId], (fallbackErr, fallbackRows) => {
-      if (fallbackErr) {
-        console.error("Accept fallback lookup error:", fallbackErr);
-        return res.status(500).json({
-          success: false,
-          message: "Failed to determine accepting barangay.",
-          error: fallbackErr.message,
-          code: fallbackErr.code
-        });
-      }
-
-      return continueAccept(fallbackRows && fallbackRows[0] ? fallbackRows[0].target_name : "");
-    });
-  });
-});
+router.put("/:id/accept", ...complaintAuth.barangay,
+  complaintAction((req) => complaintWorkflow.decide(req.params.id, req.complaintActor, "accept", req.body)));
 
 /* =========================
    RESOLVE BY BARANGAY
 ========================= */
-router.put("/:id/resolve", upload.single("evidence"), (req, res) => {
-  const complaintId = req.params.id;
-
-  const {
-    handled_by_barangay_name,
-    resolution_report,
-    resolved_by,
-    resolver_latitude,
-    resolver_longitude
-  } = req.body;
-
-  const handledBy = cleanText(handled_by_barangay_name);
-  const report = cleanText(resolution_report);
-  const resolvedBy = parseOptionalInt(resolved_by);
-
-  if (!handledBy || !report) {
-    return res.status(400).json({
-      success: false,
-      message: "Personnel name and resolution report are required."
-    });
-  }
-
-  const resolverLat = parseOptionalCoordinate(resolver_latitude);
-  const resolverLng = parseOptionalCoordinate(resolver_longitude);
-
-  getComplaintColumnSet((columnErr, columnSet) => {
-    if (columnErr) {
-      return res.status(500).json({
-        success: false,
-        message: "Failed to inspect complaint table columns.",
-        error: columnErr.message
-      });
-    }
-
-    saveUploadedComplaintImage(req.file, "resolutions")
-      .then((evidenceUrl) => {
-        const setClauses = [
-          "status = 'resolved'",
-          "handled_by_barangay_name = ?",
-          "resolution_report = ?",
-          "resolution_evidence_url = ?",
-          "resolved_by = ?",
-          "resolved_at = NOW()"
-        ];
-
-        const values = [
-          handledBy,
-          report,
-          evidenceUrl,
-          resolvedBy
-        ];
-
-        const canSaveResolverLatitude = hasColumn(columnSet, "resolver_latitude");
-        const canSaveResolverLongitude = hasColumn(columnSet, "resolver_longitude");
-
-        if (resolverLat !== null && canSaveResolverLatitude) {
-          setClauses.push("resolver_latitude = ?");
-          values.push(resolverLat);
-        }
-
-        if (resolverLng !== null && canSaveResolverLongitude) {
-          setClauses.push("resolver_longitude = ?");
-          values.push(resolverLng);
-        }
-
-        const sql = `
-          UPDATE complaints
-          SET ${setClauses.join(",\n              ")}
-          WHERE id = ?
-            AND status IN ('forwarded', 'in_progress', 'accepted_by_barangay', 'accepted_overdue')
-        `;
-
-        values.push(complaintId);
-
-        db.query(sql, values, (err, result) => {
-          if (err) {
-            console.error("Resolve complaint error:", err);
-            return res.status(500).json({
-              success: false,
-              message: "Failed to resolve complaint.",
-              error: err.message,
-              code: err.code
-            });
-          }
-
-          if (!result || result.affectedRows === 0) {
-            return res.status(400).json({
-              success: false,
-              message: "Complaint could not be resolved. It may already be resolved or not forwarded yet."
-            });
-          }
-
-          logUploadedFile("=== RESOLUTION UPLOAD DEBUG ===", req.file);
-
-          const notifySql = `
-            SELECT
-              id,
-              citizen_id,
-              citizen_name,
-              reporter_barangay,
-              subject,
-              assigned_barangay,
-              handled_by_barangay_name
-            FROM complaints
-            WHERE id = ?
-            LIMIT 1
-          `;
-
-          db.query(notifySql, [complaintId], (notifyLookupErr, notifyRows) => {
-            const notifyComplaint = notifyRows && notifyRows[0] ? notifyRows[0] : {};
-            const notifyBarangay = normalizeBarangayName(
-              notifyComplaint.assigned_barangay || handledBy
-            );
-            const subject = truncateNotificationText(notifyComplaint.subject || "Resolved complaint", 80);
-            const notificationTitle = "Resolution submitted to WMO";
-            const notificationMessage = `Your barangay submitted the resolution report${subject ? ` for: ${subject}` : ""}. It was sent back to WMO for review.`;
-
-            if (notifyLookupErr) {
-              console.error("Resolution notification lookup error:", notifyLookupErr);
-            }
-
-            createComplaintResolvedCitizenNotifications(complaintId, notifyComplaint);
-
-            insertBarangayInfoNotifications(
-              complaintId,
-              notifyBarangay ? [notifyBarangay] : [],
-              "resolution_submitted_to_wmo",
-              notificationTitle,
-              notificationMessage,
-              () => {
-                const wmoResolutionTitle = "Resolved complaint submitted";
-                const wmoResolutionMessage = `${notifyBarangay || handledBy || "A barangay"} submitted a resolution report${subject ? ` for: ${subject}` : ""}. Review the resolved complaint report.`;
-
-                return insertWmoComplaintNotification(
-                  complaintId,
-                  "barangay_resolution_submitted",
-                  wmoResolutionTitle,
-                  wmoResolutionMessage,
-                  () => {
-                    emitBarangayRealtime(req, notifyBarangay || handledBy, "barangay:resolution-submitted", {
-                      complaint_id: complaintId,
-                      title: notificationTitle,
-                      message: notificationMessage,
-                      assigned_barangay: notifyBarangay || handledBy || "",
-                      status: "resolved"
-                    });
-
-                    emitWmoRealtime(req, "wmo:complaint-resolution-submitted", {
-                      complaint_id: complaintId,
-                      title: wmoResolutionTitle,
-                      message: wmoResolutionMessage,
-                      assigned_barangay: notifyBarangay || handledBy || "",
-                      status: "resolved"
-                    });
-
-                    if (notifyComplaint && notifyComplaint.citizen_id) {
-                      emitCitizenRealtime(req, notifyComplaint.citizen_id, "citizen:complaint-resolved", {
-                        complaint_id: complaintId,
-                        title: "Your complaint was resolved",
-                        message: `${notifyBarangay || handledBy || "The assigned barangay"} submitted a resolution report${subject ? ` for: ${subject}` : ""}.`,
-                        assigned_barangay: notifyBarangay || handledBy || "",
-                        status: "resolved"
-                      });
-                    }
-
-                    return res.json({
-                  success: true,
-                  message: "Complaint resolved successfully.",
-                  complaint_id: complaintId,
-                  barangay_notification_target: notifyBarangay,
-                  resolution_evidence_url: evidenceUrl,
-                  storage: isCloudinaryConfigured ? "cloudinary" : "local",
-                  resolved_by_saved: resolvedBy,
-                  resolver_location_received: resolverLat !== null && resolverLng !== null,
-                  resolver_location_saved:
-                    resolverLat !== null &&
-                    resolverLng !== null &&
-                    canSaveResolverLatitude &&
-                    canSaveResolverLongitude,
-                  missing_columns:
-                    !canSaveResolverLatitude || !canSaveResolverLongitude
-                      ? {
-                          resolver_latitude: !canSaveResolverLatitude,
-                          resolver_longitude: !canSaveResolverLongitude
-                        }
-                      : null
-                    });
-                  }
-                );
-              }
-            );
-          });
-        });
-      })
-      .catch((uploadErr) => {
-        console.error("Resolution evidence upload error:", uploadErr);
-
-        return res.status(500).json({
-          success: false,
-          message: "Failed to upload resolution evidence.",
-          error: uploadErr.message,
-          storage: isCloudinaryConfigured ? "cloudinary" : "local"
-        });
-      });
-  });
-});
+router.put("/:id/resolve", ...complaintAuth.barangay, upload.single("evidence"),
+  complaintAction((req) => complaintWorkflow.resolve(req.params.id, req.complaintActor, req.body,
+    () => saveUploadedComplaintImage(req.file, "resolutions"))));
 
 /* =========================
    COMPLAINT HISTORY (WMO)
 ========================= */
-router.get("/history/resolved", (req, res) => {
+router.get("/history/resolved", ...complaintAuth.admin, (req, res) => {
   const sql = `
     SELECT
       c.*,
@@ -2687,7 +2011,7 @@ router.get("/history/resolved", (req, res) => {
       GROUP BY complaint_id
     ) forwarded
       ON forwarded.complaint_id = c.id
-    WHERE c.status IN ('resolved', 'rejected', 'forwarded', 'accepted_by_barangay', 'accepted_overdue', 'in_progress')
+    WHERE c.status IN ('resolved', 'rejected', 'forwarded', 'accepted_by_barangay', 'accepted_overdue', 'in_progress', 'wmo_handling')
     ORDER BY
       CASE
         WHEN c.status = 'rejected' THEN COALESCE(c.rejected_at, c.created_at)
@@ -2888,7 +2212,7 @@ router.get("/barangay-analytics/:barangay", (req, res) => {
    Actual active concerns count/list.
    Do not use this as the notification badge source.
 ========================= */
-router.get("/barangay/:barangayName", (req, res) => {
+router.get("/barangay/:barangayName", ...complaintAuth.barangay, complaintAuth.ownBarangay, requireComplaintSchema, (req, res) => {
   const barangayName = decodeURIComponent(req.params.barangayName || "").trim();
 
   const sql = `
@@ -2930,7 +2254,9 @@ router.get("/barangay/:barangayName", (req, res) => {
       });
     }
 
-    const normalizedRows = (rows || []).map((row) => {
+    const normalizedRows = (rows || []).filter((row) => row.assignment_confirmed_at
+      && normalizeBarangayKey(row.assigned_barangay) === normalizeBarangayKey(barangayName)
+      && row.handling_owner === "barangay").map((row) => {
       if (String(row.status || "").toLowerCase() === "forwarded") {
         return {
           ...row,
@@ -2953,7 +2279,7 @@ router.get("/barangay/:barangayName", (req, res) => {
    WMO NOTIFICATIONS
    Source for web admin notification bell complaint feed.
 ========================= */
-router.get("/notifications/wmo", (req, res) => {
+router.get("/notifications/wmo", ...complaintAuth.admin, (req, res) => {
   ensureComplaintNotificationClearColumns((ensureErr) => {
     if (ensureErr) {
       return res.status(500).json({
@@ -3028,7 +2354,7 @@ router.get("/notifications/wmo", (req, res) => {
    Source of truth for the barangay bell badge/dropdown.
    Cleared notifications stay in MySQL with cleared_at and will not appear again.
 ========================= */
-router.get("/notifications/barangay/:barangayName", (req, res) => {
+router.get("/notifications/barangay/:barangayName", ...complaintAuth.barangay, complaintAuth.ownBarangay, (req, res) => {
   const barangayName = decodeURIComponent(req.params.barangayName || "").trim();
 
   maybeCreateBarangayNotAcceptedExplanationRequest(req, barangayName, (explainErr) => {
@@ -3108,7 +2434,7 @@ router.get("/notifications/barangay/:barangayName", (req, res) => {
    User must select one notification first.
    This only clears one notification row.
 ========================= */
-router.post("/notifications/barangay/:barangayName/:notificationId/clear", (req, res) => {
+router.post("/notifications/barangay/:barangayName/:notificationId/clear", ...complaintAuth.barangay, complaintAuth.ownBarangay, (req, res) => {
   const barangayName = decodeURIComponent(req.params.barangayName || "").trim();
   const notificationId = parseOptionalInt(req.params.notificationId);
   const clearedBy = cleanText(req.body && req.body.cleared_by) || barangayName || "barangay";
@@ -3178,7 +2504,7 @@ router.post("/notifications/barangay/:barangayName/:notificationId/clear", (req,
   });
 });
 
-router.patch("/notifications/barangay/:barangayName/:notificationId/clear", (req, res, next) => {
+router.patch("/notifications/barangay/:barangayName/:notificationId/clear", ...complaintAuth.barangay, complaintAuth.ownBarangay, (req, res, next) => {
   req.method = "POST";
   router.handle(req, res, next);
 });
@@ -3188,7 +2514,7 @@ router.patch("/notifications/barangay/:barangayName/:notificationId/clear", (req
    This only clears the notification badge/dropdown.
    It does NOT delete complaints and does NOT remove actual forwarded concerns.
 ========================= */
-router.post("/notifications/barangay/:barangayName/clear", (req, res) => {
+router.post("/notifications/barangay/:barangayName/clear", ...complaintAuth.barangay, complaintAuth.ownBarangay, (req, res) => {
   const barangayName = decodeURIComponent(req.params.barangayName || "").trim();
   const clearedBy = cleanText(req.body && req.body.cleared_by) || barangayName || "barangay";
 
@@ -3241,7 +2567,7 @@ router.post("/notifications/barangay/:barangayName/clear", (req, res) => {
   });
 });
 
-router.patch("/notifications/barangay/:barangayName/clear", (req, res, next) => {
+router.patch("/notifications/barangay/:barangayName/clear", ...complaintAuth.barangay, complaintAuth.ownBarangay, (req, res, next) => {
   req.method = "POST";
   router.handle(req, res, next);
 });
@@ -3253,7 +2579,7 @@ router.patch("/notifications/barangay/:barangayName/clear", (req, res, next) => 
    - not-accepted forwarded concern explanation request
    - accepted complaint overdue resolution explanation request
 ========================= */
-router.post("/notifications/barangay/:barangayName/not-accepted-explanation/reply", (req, res) => {
+router.post("/notifications/barangay/:barangayName/not-accepted-explanation/reply", ...complaintAuth.barangay, complaintAuth.ownBarangay, (req, res) => {
   const barangay = normalizeBarangayName(
     decodeURIComponent(String(req.params.barangayName || "").trim())
   );
@@ -3424,7 +2750,7 @@ router.post("/notifications/barangay/:barangayName/not-accepted-explanation/repl
   continueReply();
 });
 
-router.patch("/notifications/barangay/:barangayName/not-accepted-explanation/reply", (req, res, next) => {
+router.patch("/notifications/barangay/:barangayName/not-accepted-explanation/reply", ...complaintAuth.barangay, complaintAuth.ownBarangay, (req, res, next) => {
   req.method = "POST";
   router.handle(req, res, next);
 });
@@ -3433,91 +2759,10 @@ router.patch("/notifications/barangay/:barangayName/not-accepted-explanation/rep
 /* =========================
    MARK AS IN PROGRESS
 ========================= */
-router.put("/:id/in-progress", (req, res) => {
-  const complaintId = req.params.id;
-  const {
-    viewed_by,
-    viewed_by_barangay,
-    barangay,
-    target_barangay,
-    assigned_barangay
-  } = req.body || {};
-
-  const actingBarangay = normalizeBarangayName(
-    viewed_by_barangay || barangay || target_barangay || assigned_barangay
-  );
-
-  const continueMarkInProgress = (finalBarangay) => {
-    const cleanBarangay = normalizeBarangayName(finalBarangay);
-
-    const setClauses = [
-      "status = 'in_progress'",
-      "in_progress_at = NOW()"
-    ];
-
-    const values = [];
-
-    if (cleanBarangay) {
-      setClauses.push("assigned_barangay = ?");
-      setClauses.push("assignment_method = 'accepted_by_barangay'");
-      values.push(cleanBarangay);
-    }
-
-    values.push(complaintId);
-
-    const sql = `
-      UPDATE complaints
-      SET ${setClauses.join(",\n          ")}
-      WHERE id = ?
-        AND status = 'forwarded'
-    `;
-
-    db.query(sql, values, (err, result) => {
-      if (err) {
-        console.error("Mark in progress error:", err);
-        return res.status(500).json({
-          success: false,
-          message: "Failed to update complaint status."
-        });
-      }
-
-      if (result && result.affectedRows > 0 && cleanBarangay) {
-        return markOtherBarangayNotificationsCleared(complaintId, cleanBarangay, () => {
-          emitBarangayRealtime(req, cleanBarangay, "barangay:complaint-in-progress", {
-            complaint_id: complaintId,
-            title: "Complaint in progress",
-            message: "A forwarded complaint was opened and marked in progress.",
-            assigned_barangay: cleanBarangay,
-            status: "in_progress"
-          });
-
-          return res.json({
-            success: true,
-            message: "Complaint marked as in progress.",
-            complaint_id: complaintId,
-            viewed_by: viewed_by || null,
-            assigned_barangay: cleanBarangay
-          });
-        });
-      }
-
-      return res.json({
-        success: true,
-        message: "Complaint marked as in progress.",
-        complaint_id: complaintId,
-        viewed_by: viewed_by || null,
-        assigned_barangay: cleanBarangay || null
-      });
-    });
-  };
-
-  if (actingBarangay) {
-    return continueMarkInProgress(actingBarangay);
-  }
-
-  return continueMarkInProgress("");
+router.put("/:id/in-progress", ...complaintAuth.barangay, (req, res) => {
+  return res.status(409).json({ success: false, code: "EXPLICIT_ACCEPT_REQUIRED",
+    message: "Opening a complaint does not accept it. Use the explicit Accept action." });
 });
-
 
 /* =========================
    DETECT BARANGAY BY COORDINATES
@@ -3881,7 +3126,20 @@ function createAcceptedOverdueExplanationRequestAsync(complaintId, barangay, tit
   });
 }
 
-async function processOverdueAcceptedComplaint(app, complaint) {
+function getOverdueAcceptedStatusCondition(columns) {
+  const names = new Set((columns || []).map((column) => column.Field));
+  if (names.has("assignment_confirmed_at") && names.has("handling_owner")) {
+    // Phase 1 resolution requires confirmed Barangay work to stay in_progress.
+    // COALESCE keeps unconfirmed/legacy NULL ownership eligible as before.
+    return `status IN ('accepted_by_barangay', 'in_progress')
+      AND NOT (status = 'in_progress' AND assignment_confirmed_at IS NOT NULL
+        AND COALESCE(handling_owner, '') = 'barangay')`;
+  }
+  // Without both columns, the schema-gated Phase 1 flow cannot accept work.
+  return "status IN ('accepted_by_barangay', 'in_progress')";
+}
+
+async function processOverdueAcceptedComplaint(app, complaint, statusCondition) {
   const complaintId = complaint.id;
   const barangay = normalizeBarangayName(
     complaint.assigned_barangay || complaint.handled_by_barangay_name || ""
@@ -3905,7 +3163,9 @@ async function processOverdueAcceptedComplaint(app, complaint) {
         accepted_overdue_reason = ?,
         accepted_overdue_at = NOW()
     WHERE id = ?
-      AND status IN ('accepted_by_barangay', 'in_progress')
+      AND ${statusCondition}
+      AND assigned_barangay <=> ?
+      AND handled_by_barangay_name <=> ?
       AND accepted_at IS NOT NULL
       AND NULLIF(CAST(accepted_at AS CHAR), '0000-00-00 00:00:00') IS NOT NULL
       AND STR_TO_DATE(
@@ -3919,7 +3179,9 @@ async function processOverdueAcceptedComplaint(app, complaint) {
     `,
     [
       reason,
-      complaintId
+      complaintId,
+      complaint.assigned_barangay ?? null,
+      complaint.handled_by_barangay_name ?? null
     ]
   );
 
@@ -3996,6 +3258,10 @@ async function processOverdueAcceptedComplaint(app, complaint) {
 async function markOverdueAcceptedComplaints(app = null) {
   await prepareAcceptedComplaintDeadlineData();
 
+  const statusCondition = getOverdueAcceptedStatusCondition(
+    await dbQueryAsync("SHOW COLUMNS FROM complaints")
+  );
+
   const rows = await dbQueryAsync(
     `
     SELECT
@@ -4009,7 +3275,7 @@ async function markOverdueAcceptedComplaints(app = null) {
       accepted_at,
       status
     FROM complaints
-    WHERE status IN ('accepted_by_barangay', 'in_progress')
+    WHERE ${statusCondition}
       AND accepted_at IS NOT NULL
       AND NULLIF(CAST(accepted_at AS CHAR), '0000-00-00 00:00:00') IS NOT NULL
       AND STR_TO_DATE(
@@ -4029,7 +3295,7 @@ async function markOverdueAcceptedComplaints(app = null) {
 
   for (const complaint of rows || []) {
     try {
-      const result = await processOverdueAcceptedComplaint(app, complaint);
+      const result = await processOverdueAcceptedComplaint(app, complaint, statusCondition);
       results.push(result);
     } catch (error) {
       console.error("processOverdueAcceptedComplaint error:", error);
@@ -4144,18 +3410,22 @@ async function handleManualOverdueAcceptedCheck(req, res) {
 
 /*
   Manual maintenance endpoint.
-  POST is used by tools/Postman.
-  GET is intentionally supported too so the team can test it directly from a browser.
+  Maintenance is an authenticated, CSRF-protected Admin mutation.
+  GET also covers Express's automatic HEAD fallback without running the worker.
 */
-router.post("/maintenance/check-overdue-accepted", handleManualOverdueAcceptedCheck);
-router.get("/maintenance/check-overdue-accepted", handleManualOverdueAcceptedCheck);
+router.get("/maintenance/check-overdue-accepted", (req, res) => {
+  res.set("Allow", "POST");
+  return res.status(405).json({ success: false, message: "Method not allowed. Use POST." });
+});
+router.post("/maintenance/check-overdue-accepted",
+  requireWebAuth, requireWebRole("super_admin"), requireCsrf, handleManualOverdueAcceptedCheck);
 
 
 /* =========================
    DEBUG COMPLAINT NOTIFICATION TARGETS
    Use this to verify if both barangays received notification rows.
 ========================= */
-router.get("/:id/notification-targets", (req, res) => {
+router.get("/:id/notification-targets", requireWebAuth, requireWebRole("super_admin"), (req, res) => {
   const complaintId = req.params.id;
 
   const sql = `
@@ -4198,7 +3468,7 @@ router.get("/:id/notification-targets", (req, res) => {
    GET SINGLE COMPLAINT
    KEEP THIS LAST
 ========================= */
-router.get("/:id", (req, res) => {
+router.get("/:id", ...complaintAuth.reader, (req, res) => {
   const complaintId = req.params.id;
 
   const sql = `
@@ -4232,6 +3502,15 @@ router.get("/:id", (req, res) => {
       });
     }
 
+    const actor = req.complaintActor;
+    if ((actor.kind === "citizen" && Number(rows[0].citizen_id) !== Number(actor.id))
+      || (actor.kind === "barangay" && String(rows[0].assigned_barangay || "").trim().toLowerCase() !== actor.barangay.toLowerCase())) {
+      return res.status(403).json({ success: false, message: "This complaint is not assigned to your barangay." });
+    }
+    if (actor.kind === "citizen") {
+      delete rows[0].barangay_decline_reason;
+      delete rows[0].assignment_confirmation_reason;
+    }
     return res.json({
       success: true,
       complaint: rows[0]

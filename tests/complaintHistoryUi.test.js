@@ -240,7 +240,7 @@ test("history GET loading and error states span all eight columns without any re
   const { context, nodes } = loadUi();
   context.getComplaintsApiUrl = () => "/api/complaints";
   let respond;
-  context.fetch = (url, options) => {
+  context.webAdminFetch = (url, options) => {
     assert.equal(url, "/api/complaints/history/resolved");
     assert.equal(options, undefined);
     return new Promise((resolve) => { respond = resolve; });
@@ -250,7 +250,7 @@ test("history GET loading and error states span all eight columns without any re
   respond({ ok: true, json: async () => ({ success: true, complaints: [record(902)] }) });
   await pending;
   assert.match(nodes.complaintHistoryTableBody.innerHTML, /complaint-history-id-column">902<\/td>/);
-  context.fetch = async () => ({ ok: false, json: async () => ({ success: false }) });
+  context.webAdminFetch = async () => ({ ok: false, json: async () => ({ success: false }) });
   await context.loadComplaintHistory();
   assert.match(nodes.complaintHistoryTableBody.innerHTML, /colspan="8".*Failed to load complaint history/);
 });
