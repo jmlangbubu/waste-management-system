@@ -366,7 +366,53 @@ function resolveNearestBarangay(point, boundaries) {
   return nearestBarangay;
 }
 
+// Complaint-only strict lookup: no nearest/area tie-break, no coordinate-order guessing.
+// This returns a candidate, not an attestation of the dataset's geographic provenance.
+function resolveStrictBarangay(point, boundaries) {
+  const numeric = (value) => (typeof value === "number" || typeof value === "string")
+    && String(value).trim() !== "" && Number.isFinite(Number(value));
+  if (!numeric(point?.lat) || !numeric(point?.lng) || Math.abs(Number(point.lat)) > 90 || Math.abs(Number(point.lng)) > 180) {
+    return { barangay: null, reason: "invalid_coordinates" };
+  }
+  const p = { lat: Number(point.lat), lng: Number(point.lng) }, matches = new Set();
+  let uncertain = false;
+  const ringState = (ring) => {
+    if (!Array.isArray(ring) || ring.length < 3) return "invalid";
+    const points = ring.map((v) => Array.isArray(v) ? { lng: v[0], lat: v[1] } : v);
+    if (points.some((v) => !v || !numeric(v.lat) || !numeric(v.lng) || Math.abs(Number(v.lat)) > 90 || Math.abs(Number(v.lng)) > 180)) return "invalid";
+    let area = 0;
+    for (let i = 0; i < points.length; i++) {
+      const a = points[i], b = points[(i + 1) % points.length];
+      const ax = Number(a.lng), ay = Number(a.lat), bx = Number(b.lng), by = Number(b.lat);
+      area += ax * by - bx * ay;
+      if (Math.abs((p.lng - ax) * (by - ay) - (p.lat - ay) * (bx - ax)) < 1e-10
+        && p.lng >= Math.min(ax, bx) - 1e-10 && p.lng <= Math.max(ax, bx) + 1e-10
+        && p.lat >= Math.min(ay, by) - 1e-10 && p.lat <= Math.max(ay, by) + 1e-10) return "edge";
+    }
+    if (Math.abs(area) < 1e-12) return "invalid";
+    return isPointInPolygon(p, points) ? "inside" : "outside";
+  };
+  for (const boundary of boundaries || []) {
+    if (boundary.status && boundary.status !== "active") continue;
+    let geometry = boundary.polygon_json;
+    try { if (typeof geometry === "string") geometry = JSON.parse(geometry); } catch (_) { uncertain = true; continue; }
+    const polygons = geometry?.type === "MultiPolygon" ? geometry.coordinates
+      : geometry?.type === "Polygon" ? [geometry.coordinates] : Array.isArray(geometry) ? [[geometry]] : [];
+    if (!Array.isArray(polygons) || !polygons.length) { uncertain = true; continue; }
+    for (const rings of polygons) {
+      if (!Array.isArray(rings) || !rings.length) { uncertain = true; continue; }
+      const states = rings.map(ringState);
+      if (states.includes("invalid") || states.includes("edge")) { uncertain = true; continue; }
+      if (states[0] === "inside" && !states.slice(1).includes("inside")) matches.add(String(boundary.barangay_name || "").trim());
+    }
+  }
+  if (uncertain || matches.size > 1 || matches.has("")) return { barangay: null, reason: "ambiguous_or_invalid_boundary" };
+  return matches.size === 1 ? { barangay: [...matches][0], reason: "single_polygon_candidate" }
+    : { barangay: null, reason: "no_verified_coverage" };
+}
+
 module.exports = {
+  resolveStrictBarangay,
   normalizePolygon,
   isPointInPolygon,
   resolveBarangayByPolygon,

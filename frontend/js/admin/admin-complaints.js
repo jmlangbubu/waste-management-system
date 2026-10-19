@@ -1,3 +1,31 @@
+// Complaint-only use of the existing authenticated/CSRF fetch wrapper; shared API file stays untouched.
+function complaintAdminAllowed() { return String(currentUser?.role || "").trim().toLowerCase() === "super_admin"; }
+let complaintAssignmentNames = [];
+let complaintAssignmentError = "";
+let complaintAssignmentRequest = 0;
+let complaintActionInFlight = false;
+let complaintHistorySearchQuery = "";
+let complaintHistoryBarangayFilter = "all";
+
+async function readComplaintActionResponse(response, fallback) {
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || result?.success !== true) {
+    const messages = {
+      401: "Your session expired. Sign in again.",
+      403: "You are not authorized for this complaint action.",
+      409: "Complaint state changed. Refresh before trying again.",
+      503: "Complaint workflow is unavailable. No successful action is confirmed."
+    };
+    throw new Error(result?.message || messages[response.status] || fallback);
+  }
+  return result;
+}
+
+function requireComplaintActionAck(result, complaintId, status) {
+  if (String(result.complaint_id) !== String(complaintId) || result.status !== status) {
+    throw new Error("The server response did not confirm this action. Refresh the complaint before trying again.");
+  }
+}
 // =========================
 // COMPLAINT MAP HELPERS
 // =========================
@@ -62,6 +90,7 @@ function formatComplaintStatus(status) {
 function getComplaintStatusBadge(status) {
   const s = String(status || "").toLowerCase();
 
+  if (s === "wmo_handling") return '<span class="status-badge in-progress">WMO handling</span>';
   if (s === "pending") return `<span class="status-badge pending">Pending</span>`;
   if (s === "validated") return `<span class="status-badge forwarded">Validated</span>`;
   if (s === "forwarded") return `<span class="status-badge forwarded">Forwarded</span>`;
@@ -201,25 +230,10 @@ function getComplaintConcernBarangayLabel(data = {}) {
   );
 }
 
-function updateComplaintModalBarangayLabel(data = {}) {
-  const valueEl = document.getElementById("complaintModalBarangay");
-  if (!valueEl) return;
-
-  const labelEl = valueEl.closest(".complaint-pro-field")?.querySelector("label");
-
-  if (!labelEl) return;
-
-  const status = String(data.status || "").toLowerCase();
-
-  /*
-    For pending complaints, assigned_barangay is only the reported/concern barangay.
-    The real forwarding/assigned barangay should be selected by WMO from nearby options.
-  */
-  if (status === "pending") {
-    labelEl.textContent = "Reported Concern";
-  } else {
-    labelEl.textContent = "Assigned Barangay";
-  }
+function updateComplaintModalBarangayLabel() {
+  const el = document.getElementById("complaintModalBarangay");
+  const label = el?.closest(".complaint-pro-field")?.querySelector("label");
+  if (label) label.textContent = "Assigned Barangay";
 }
 
 function setComplaintDetailsNearbyLoading(message = "Loading nearby options...") {
@@ -233,70 +247,84 @@ function setComplaintDetailsNearbyLoading(message = "Loading nearby options...")
   `;
 }
 
-function renderComplaintDetailsNearbyOptions(candidates = []) {
+function renderComplaintDetailsNearbyOptions() {
   const wrap = document.getElementById("complaintModalNearbyOptions");
-  if (!wrap) return;
-
-  forwardingBarangayTargets = [];
-
-  const seen = new Set();
-  const topCandidates = (Array.isArray(candidates) ? candidates : [])
-    .filter((candidate) => {
-      const barangay = String(candidate?.barangay_name || "").trim();
-      if (!barangay) return false;
-
-      const key = barangay.toLowerCase();
-      if (seen.has(key)) return false;
-
-      seen.add(key);
-      return true;
-    })
-    .slice(0, 2);
-
-  forwardingBarangayTargets = topCandidates;
-
-  if (!topCandidates.length) {
-    wrap.innerHTML = `
-      <div class="complaint-nearby-status">
-        No nearby barangay options found. Open the map to verify manually.
-      </div>
-    `;
-    return;
+  if (!wrap || !currentComplaint) return;
+  const data = currentComplaint;
+  const confirmed = data.assignment_confirmed_at ? data.assigned_barangay : "Needs Admin confirmation";
+  wrap.innerHTML = '<p><strong>Assigned Barangay:</strong> ' + escapeHtml(confirmed || "Needs Admin confirmation") + '</p>'
+    + '<p><strong>Reported Barangay (citizen input):</strong> ' + escapeHtml(data.reporter_barangay || "Not provided") + '</p>';
+  if (data.status === "pending" && complaintAdminAllowed()) {
+    wrap.innerHTML += '<label for="complaintAssignmentSelect">Confirm one responsible barangay</label>'
+      + '<select id="complaintAssignmentSelect"><option value="">Select one active barangay</option>'
+      + complaintAssignmentNames.map(name => '<option value="' + escapeHtml(name) + '">' + escapeHtml(name) + '</option>').join("")
+      + '</select><label for="complaintAssignmentReason">Assignment confirmation reason</label>'
+      + '<textarea id="complaintAssignmentReason" maxlength="2000" required></textarea>'
+      + '<p>Verify the GPS/map and confirm one recipient. Nearby markers and citizen text are not geographic proof.</p>';
+    if (complaintAssignmentError) wrap.innerHTML += '<p role="alert">' + escapeHtml(complaintAssignmentError) + '</p>';
   }
-
-  wrap.innerHTML = `
-    <div class="complaint-forwarding-inline">
-      ${topCandidates.map((candidate, index) => {
-        return `
-          <span class="complaint-forwarding-chip">
-            ${escapeHtml(candidate.barangay_name || "-")}
-          </span>
-          ${index < topCandidates.length - 1 ? `<span class="complaint-forwarding-separator">&amp;</span>` : ""}
-        `;
-      }).join("")}
-    </div>
-  `;
+  if (data.status === "wmo_handling") {
+    wrap.innerHTML += '<p><strong>WMO handling — Barangay Cannot Accept</strong></p><p>'
+      + escapeHtml(data.barangay_decline_reason || "Reason unavailable") + '</p>';
+    if (complaintAdminAllowed() && data.handling_owner === "wmo") {
+      wrap.innerHTML += '<form id="complaintWmoResolutionForm"><label>WMO resolution report'
+        + '<textarea name="resolution_report" required maxlength="2000"></textarea></label>'
+        + '<label>Resolution evidence<input name="evidence" type="file" accept="image/jpeg,image/png,image/webp" required></label>'
+        + '<button type="submit">Submit WMO resolution</button></form>';
+      document.getElementById("complaintWmoResolutionForm").addEventListener("submit", async event => {
+        event.preventDefault();
+        const form = event.currentTarget, button = form.querySelector("button");
+        if (complaintActionInFlight) return;
+        if (!complaintAdminAllowed() || currentComplaint !== data || data.status !== "wmo_handling" || data.handling_owner !== "wmo") return;
+        const report = String(form.elements.resolution_report.value || "").trim();
+        if (!report || report.length > 2000 || !form.elements.evidence.files.length) {
+          alert("Enter a WMO resolution report of 1–2000 characters and attach image evidence."); return;
+        }
+        if (!confirm("Submit WMO resolution with this report and evidence?")) return;
+        complaintActionInFlight = true;
+        button.disabled = true;
+        try {
+          const response = await webAdminFetch(getComplaintsApiUrl() + "/" + data.id + "/wmo-resolve",
+            { method: "PUT", body: new FormData(form) });
+          const result = await readComplaintActionResponse(response, "Resolution unavailable.");
+          requireComplaintActionAck(result, data.id, "resolved");
+          if (result.handling_owner !== "wmo" || result.assigned_barangay !== data.assigned_barangay
+            || typeof result.evidence_url !== "string" || !result.evidence_url.trim()) {
+            throw new Error("WMO resolution was not confirmed. Refresh the complaint before trying again.");
+          }
+          if (currentComplaint === data) closeComplaintModal();
+          await loadComplaints();
+        } catch (error) { alert(error.message); } finally { complaintActionInFlight = false; button.disabled = false; }
+      });
+    }
+  }
 }
 
 async function loadComplaintDetailsNearbyOptions(data = {}) {
-  const lat = parseFloat(data.latitude);
-  const lng = parseFloat(data.longitude);
-
-  if (Number.isNaN(lat) || Number.isNaN(lng)) {
-    setComplaintDetailsNearbyLoading("Invalid coordinates. Open the map to verify manually.");
-    renderComplaintDetailsMapPreview(data, []);
-    return;
+  const request = ++complaintAssignmentRequest;
+  complaintAssignmentNames = [];
+  complaintAssignmentError = "";
+  try {
+    const response = await webAdminFetch(getComplaintsApiUrl() + "/assignment-options");
+    const result = await readComplaintActionResponse(response, "Active barangay options unavailable.");
+    if (!Array.isArray(result.barangays) || result.barangays.some(name => typeof name !== "string" || !name.trim())) {
+      throw new Error("Active barangay registry response is invalid. Refresh before forwarding.");
+    }
+    if (currentComplaint !== data || request !== complaintAssignmentRequest) return;
+    complaintAssignmentNames = [...new Set(result.barangays)];
+    renderComplaintDetailsNearbyOptions();
+    const lat = Number(data.latitude), lng = Number(data.longitude);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      const candidates = await loadNearbyBarangaysForComplaint(lat, lng);
+      if (currentComplaint === data && request === complaintAssignmentRequest) renderComplaintDetailsMapPreview(data, candidates);
+    }
+  } catch (error) {
+    if (currentComplaint === data && request === complaintAssignmentRequest) {
+      complaintAssignmentError = error.message || "Active barangay options unavailable.";
+      complaintAssignmentNames = []; renderComplaintDetailsNearbyOptions();
+    }
   }
-
-  setComplaintDetailsNearbyLoading();
-
-  const candidates = await loadNearbyBarangaysForComplaint(lat, lng);
-
-  renderComplaintDetailsNearbyOptions(candidates);
-  renderComplaintDetailsMapPreview(data, candidates);
 }
-
-
 
 function selectBarangayCandidate(candidate, candidates = []) {
   if (!currentComplaint || !complaintMapInstance) return;
@@ -1659,6 +1687,11 @@ function updateComplaintSummary(complaints = []) {
 }
 
 async function loadComplaints() {
+  if (!complaintAdminAllowed()) return;
+  const filter = document.getElementById("complaintsStatusFilter");
+  if (filter && !Array.from(filter.options).some(option => option.value === "wmo_handling")) {
+    const option = document.createElement("option"); option.value = "wmo_handling"; option.textContent = "WMO handling"; filter.appendChild(option);
+  }
   const tableBody = document.getElementById("complaintsTableBody");
   if (!tableBody) return;
 
@@ -1669,7 +1702,7 @@ async function loadComplaints() {
   `;
 
   try {
-    const response = await fetch(getComplaintsApiUrl(), {
+    const response = await webAdminFetch(getComplaintsApiUrl(), {
       method: "GET",
       headers: {
         "Accept": "application/json"
@@ -1682,7 +1715,6 @@ async function loadComplaints() {
     try {
       data = rawText ? JSON.parse(rawText) : {};
     } catch (parseError) {
-      console.error("Complaints raw response:", rawText);
       throw new Error("Complaints API did not return valid JSON.");
     }
 
@@ -1707,7 +1739,7 @@ async function loadComplaints() {
         Rejected complaints are no longer shown in the active Complaints Management table.
         They are kept in View History / reports instead.
       */
-      return ["pending", "validated", "forwarded", "in_progress"].includes(status);
+      return ["pending", "validated", "forwarded", "in_progress", "wmo_handling"].includes(status);
     });
 
     renderComplaintsTable(activeComplaints);
@@ -1746,7 +1778,7 @@ function getFilteredComplaints() {
     /*
       Rejected complaints are history/report records, not active validation items.
     */
-    return ["pending", "validated", "forwarded", "in_progress"].includes(status);
+    return ["pending", "validated", "forwarded", "in_progress", "wmo_handling"].includes(status);
   });
 
   return activeComplaints.filter((item) => {
@@ -1775,6 +1807,7 @@ function applyComplaintFilters() {
 
 
 function getComplaintTableAssignedDisplay(complaint = {}) {
+  if (!complaint.assignment_confirmed_at) return "Needs Admin confirmation";
   const status = String(complaint.status || "").trim().toLowerCase();
 
   /*
@@ -1860,7 +1893,7 @@ function renderComplaintsTable(complaints) {
     /*
       Rejected complaints must move to View History after rejection.
     */
-    return ["pending", "validated", "forwarded", "in_progress"].includes(status);
+    return ["pending", "validated", "forwarded", "in_progress", "wmo_handling"].includes(status);
   });
 
   if (!activeComplaints.length) {
@@ -2358,6 +2391,7 @@ function formatComplaintStatusLabel(status) {
     validated: "Validated",
     forwarded: "Forwarded",
     in_progress: "In Progress",
+    wmo_handling: "WMO handling",
     resolved: "Resolved",
     rejected: "Rejected"
   };
@@ -2382,14 +2416,11 @@ function updateManualBarangayVisibility(complaint) {
 
   if (!container) return;
 
-  const assignedBarangay = String(complaint?.assigned_barangay || "").trim();
-  const needsManualSelection =
-    !assignedBarangay || assignedBarangay.toLowerCase() === "for verification";
-
-  container.style.display = needsManualSelection ? "block" : "none";
-
-  if (select && !needsManualSelection) {
+  // The old hardcoded picker cannot assign a recipient; use the active registry above.
+  container.style.display = "none";
+  if (select) {
     select.value = "";
+    select.disabled = true;
   }
 }
 
@@ -2563,7 +2594,7 @@ function syncComplaintDetailsActionButtons(status) {
     Once the complaint is forwarded/accepted/in-progress/resolved/rejected,
     Validate Complaint and Reject Complaint must disappear from the details modal.
   */
-  const canReview = normalized === "pending";
+  const canReview = normalized === "pending" && complaintAdminAllowed();
 
   const applyReviewButtonState = (button) => {
     if (!button) return;
@@ -2641,9 +2672,14 @@ function closeComplaintRejectModal() {
 }
 
 async function submitComplaintRejection() {
+  if (complaintActionInFlight) return;
   if (!currentComplaint || !currentComplaint.id) {
     alert("No complaint selected.");
     return;
+  }
+
+  if (!complaintAdminAllowed() || !isComplaintPendingForWmoReview()) {
+    alert("Only Admin can reject a pending complaint."); return;
   }
 
   const reasonEl = document.getElementById("complaintRejectReason");
@@ -2664,6 +2700,8 @@ async function submitComplaintRejection() {
 
   const confirmed = confirm("Reject this complaint? This action will mark the complaint as rejected.");
   if (!confirmed) return;
+  const complaint = currentComplaint;
+  complaintActionInFlight = true;
 
   try {
     if (confirmBtn) {
@@ -2671,8 +2709,8 @@ async function submitComplaintRejection() {
       confirmBtn.textContent = "Rejecting...";
     }
 
-    const response = await fetch(
-      `${getComplaintsApiUrl()}/${currentComplaint.id}/reject`,
+    const response = await webAdminFetch(
+      `${getComplaintsApiUrl()}/${complaint.id}/reject`,
       {
         method: "PATCH",
         headers: {
@@ -2686,20 +2724,20 @@ async function submitComplaintRejection() {
       }
     );
 
-    const data = await response.json().catch(() => ({}));
-
-    if (!response.ok || data.success === false) {
-      throw new Error(data.message || "Failed to reject complaint.");
+    const data = await readComplaintActionResponse(response, "Failed to reject complaint.");
+    if (String(data.complaint_id) !== String(complaint.id)) {
+      throw new Error("Rejection was not confirmed. Refresh the complaint before trying again.");
     }
 
     alert(data.message || "Complaint rejected successfully.");
 
-    resetComplaintModalDisplay("complaintRejectModal");
-    resetComplaintModalDisplay("complaintMapModal");
-    resetComplaintModalDisplay("complaintDetailsModal");
-
-    selectedBarangayCandidate = null;
-    currentComplaint = null;
+    if (currentComplaint === complaint) {
+      resetComplaintModalDisplay("complaintRejectModal");
+      resetComplaintModalDisplay("complaintMapModal");
+      resetComplaintModalDisplay("complaintDetailsModal");
+      selectedBarangayCandidate = null;
+      currentComplaint = null;
+    }
 
     await loadComplaints();
 
@@ -2714,6 +2752,7 @@ async function submitComplaintRejection() {
     console.error("submitComplaintRejection error:", error);
     alert(error.message || "Failed to reject complaint.");
   } finally {
+    complaintActionInFlight = false;
     if (confirmBtn) {
       confirmBtn.disabled = false;
       confirmBtn.textContent = "Confirm Reject";
@@ -2732,32 +2771,8 @@ async function requestComplaintReviewFromDetails() {
 }
 
 async function validateComplaintFromDetails() {
-  if (!currentComplaint || !currentComplaint.id) {
-    alert("No complaint selected.");
-    return;
-  }
-
-  if (!isComplaintPendingForWmoReview(currentComplaint)) {
-    syncComplaintDetailsActionButtons(currentComplaint.status);
-    alert("This complaint is already forwarded or processed. Validation is no longer available.");
-    return;
-  }
-
-  if (!Array.isArray(forwardingBarangayTargets) || !forwardingBarangayTargets.length) {
-    const proceedToMap = confirm(
-      "No nearby barangay targets are loaded yet. Open the map to verify barangay options?"
-    );
-
-    if (proceedToMap) {
-      await openComplaintMapModal();
-    }
-
-    return;
-  }
-
   await validateAndForwardComplaint();
 }
-
 
 
 
@@ -3025,7 +3040,7 @@ function openComplaintModal(data) {
   setText("complaintModalDescription", data.description || "-");
   setText("complaintModalCitizenName", data.citizen_name || "-");
   setText("complaintModalUsername", data.username || "-");
-  setText("complaintModalBarangay", getComplaintConcernBarangayLabel(data));
+  setText("complaintModalBarangay", data.assignment_confirmed_at ? data.assigned_barangay : "Needs Admin confirmation");
   updateComplaintModalBarangayLabel(data);
   setComplaintDetailsNearbyLoading();
   loadComplaintDetailsNearbyOptions(data);
@@ -3091,6 +3106,7 @@ function openComplaintModal(data) {
 }
 
 function closeComplaintModal() {
+  complaintAssignmentRequest++;
   resetComplaintModalDisplay("complaintDetailsModal");
 }
 
@@ -3225,7 +3241,7 @@ function ensureComplaintFullMapLegend() {
     legend.className = "complaint-full-map-legend";
     legend.innerHTML = `
       <span><i class="complaint-full-map-dot"></i> Issue location</span>
-      <span><i class="complaint-full-map-dot blue"></i> Forwarding barangays</span>
+      <span><i class="complaint-full-map-dot blue"></i> Reference points — not verified assignments</span>
     `;
 
     mapPanel.appendChild(legend);
@@ -3488,7 +3504,7 @@ async function openComplaintMapModal() {
 
 async function loadNearbyBarangaysForComplaint(lat, lng) {
   try {
-    const response = await fetch(
+    const response = await webAdminFetch(
       `${getComplaintsApiUrl()}/nearby-barangays?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lng)}`,
       {
         headers: {
@@ -3538,120 +3554,42 @@ async function loadNearbyBarangaysForComplaint(lat, lng) {
 // COMPLAINT VALIDATION
 // =========================
 
-async function validateComplaint() {
-  if (!currentComplaint) return;
-
-  if (!confirm("Validate and forward this complaint?")) return;
-
-  try {
-    const res = await fetch(
-      `${getComplaintsApiUrl()}/${currentComplaint.id}/validate`,
-      {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          validated_by: currentUser?.id || null
-        })
-      }
-    );
-
-    const data = await res.json();
-
-    if (!res.ok || !data.success) {
-      throw new Error(data.message || "Failed to validate complaint.");
-    }
-
-    alert("Complaint forwarded successfully.");
-    resetComplaintModalDisplay("complaintDetailsModal");
-    await loadComplaints();
-  } catch (err) {
-    console.error("validateComplaint error:", err);
-    alert(err.message || "Error validating complaint.");
-  }
-}
+async function validateComplaint() { return validateAndForwardComplaint(); }
 
 async function validateAndForwardComplaint() {
-  if (!currentComplaint || !currentComplaint.id) {
-    alert("No complaint selected.");
-    return;
+  if (complaintActionInFlight) return;
+  if (!complaintAdminAllowed() || !currentComplaint?.id || currentComplaint.status !== "pending") {
+    alert("Only Admin can validate a pending complaint."); return;
   }
-
-  if (!isComplaintPendingForWmoReview(currentComplaint)) {
-    syncComplaintDetailsActionButtons(currentComplaint.status);
-    alert("This complaint is already forwarded or processed. Validation is no longer available.");
-    return;
+  const target = document.getElementById("complaintAssignmentSelect")?.value || "";
+  const reason = (document.getElementById("complaintAssignmentReason")?.value || "").trim();
+  if (!complaintAssignmentNames.includes(target) || !reason || reason.length > 2000) {
+    alert("Confirm one active barangay and enter an assignment confirmation reason."); return;
   }
-
-  const targets = (Array.isArray(forwardingBarangayTargets) ? forwardingBarangayTargets : [])
-    .map((candidate) => String(candidate?.barangay_name || "").trim())
-    .filter(Boolean)
-    .filter((value, index, array) =>
-      array.findIndex(item => item.toLowerCase() === value.toLowerCase()) === index
-    )
-    .slice(0, 2);
-
-  if (!targets.length) {
-    alert("No forwarding barangay targets found. Please open the map or refresh nearby options.");
-    return;
-  }
-
-  const confirmMessage =
-    targets.length > 1
-      ? `Forward this complaint to ${targets[0]} and ${targets[1]}?\n\nThe first barangay that accepts will become the assigned barangay.`
-      : `Forward this complaint to ${targets[0]}?`;
-
-  if (!confirm(confirmMessage)) return;
-
+  if (!confirm("Validate and forward this complaint only to " + target + "?")) return;
+  const complaint = currentComplaint;
+  complaintActionInFlight = true;
   try {
-    const response = await fetch(
-      `${getComplaintsApiUrl()}/${currentComplaint.id}/validate-forward`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Accept": "application/json"
-        },
-        body: JSON.stringify({
-          target_barangays: targets,
-          forwarding_barangays: targets,
-          validated_by: currentUser?.id || null
-        })
-      }
-    );
-
-    const data = await response.json();
-
-    if (!response.ok || !data.success) {
-      throw new Error(data.message || "Failed to validate complaint.");
+    const response = await webAdminFetch(getComplaintsApiUrl() + "/" + complaint.id + "/validate-forward", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ selected_barangay: target, confirm_assignment: true, assignment_confirmation_reason: reason })
+    });
+    const result = await readComplaintActionResponse(response, "Validation unavailable.");
+    requireComplaintActionAck(result, complaint.id, "forwarded");
+    if (result.assigned_barangay !== target || (result.handling_owner !== undefined && result.handling_owner !== "barangay")) {
+      throw new Error("The selected assignment was not confirmed. Refresh the complaint before trying again.");
     }
-
-    alert(data.message || "Complaint forwarded to nearby barangays.");
-
-    resetComplaintModalDisplay("complaintMapModal");
-    resetComplaintModalDisplay("complaintDetailsModal");
-
-    selectedBarangayCandidate = null;
-    forwardingBarangayTargets = [];
-
+    if (currentComplaint === complaint) { resetComplaintModalDisplay("complaintMapModal"); closeComplaintModal(); }
     await loadComplaints();
-  } catch (error) {
-    console.error("Validate complaint error:", error);
-    alert(error.message || "Failed to validate complaint.");
-  }
+  } catch (error) { alert(error.message); } finally { complaintActionInFlight = false; }
 }
 
-// =========================
-// COMPLAINT HISTORY
-// =========================
 
-let complaintHistorySearchQuery = "";
-let complaintHistoryBarangayFilter = "all";
 
 function formatComplaintHistoryStatus(status) {
   const normalized = String(status || "").toLowerCase().trim();
 
+  if (normalized === "wmo_handling") return "WMO handling";
   if (normalized === "forwarded") return "Forwarded";
   if (normalized === "accepted_by_barangay") return "Accepted";
   if (normalized === "accepted_overdue") return "Overdue";
@@ -3925,6 +3863,7 @@ function ensureComplaintHistoryForwardedColumnStyles() {
 
 
 function getComplaintHistoryBarangayValue(item = {}) {
+  if (item.assignment_confirmed_at) return String(item.assigned_barangay || "");
   const status = String(item.status || "").trim().toLowerCase();
 
   /*
@@ -4162,7 +4101,7 @@ async function loadComplaintHistory() {
   `;
 
   try {
-    const response = await fetch(`${getComplaintsApiUrl()}/history/resolved`);
+    const response = await webAdminFetch(`${getComplaintsApiUrl()}/history/resolved`);
     const data = await response.json();
 
     if (!response.ok || !data.success) {
