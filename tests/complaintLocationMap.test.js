@@ -12,14 +12,15 @@ const reference = (name = "Fixture A") => ({ barangay_name: name, latitude: 1.4,
 function fixture(overrides = {}) {
   const state = { complaint: { id: 11, latitude: 1, longitude: 1, status: "pending",
     assigned_barangay: "Citizen text is not proof", assignment_confirmed_at: null },
-    boundaries: [boundary("Fixture A")], references: [reference()], calls: [], ...overrides };
+    boundaries: [boundary("Fixture A")], references: [reference()], targets: null, calls: [], ...overrides };
   const db = { query(sql, params, callback) {
     assert.match(sql.trim(), /^SELECT\b/);
     assert.doesNotMatch(sql, /FOR UPDATE|detect-barangay|ORDER BY|distance/i);
     state.calls.push({ sql, params });
     if (state.fail) return callback(new Error("Synthetic unavailable registry"));
     callback(null, sql.includes("FROM complaints") ? [state.complaint]
-      : sql.includes("FROM barangay_boundaries") ? state.boundaries : state.references);
+      : sql.includes("FROM barangay_boundaries") ? state.boundaries
+      : sql.includes("FROM complaint_notifications") ? (state.targets || [{ target_name: state.complaint.assigned_barangay }]) : state.references);
   } };
   return { state, run: () => resolveComplaintMapDestination(db, 11) };
 }
@@ -40,7 +41,7 @@ test("confirmed assignment takes priority over polygon and citizen text", async 
   const result = await h.run();
   assert.equal(result.basis, "admin_confirmed");
   assert.equal(result.destination.barangay_name, "Fixture B");
-  assert.equal(h.state.calls.length, 2);
+  assert.equal(h.state.calls.length, 3);
 });
 for (const scenario of ["unmatched", "ambiguous polygon", "invalid polygon", "invalid GPS", "empty GPS",
   "legacy unconfirmed", "missing reference", "two references", "wrong reference", "invalid reference"]) {
@@ -57,12 +58,50 @@ for (const scenario of ["unmatched", "ambiguous polygon", "invalid polygon", "in
     if (scenario === "wrong reference") h.state.references = [reference("Fixture B")];
     if (scenario === "invalid reference") h.state.references[0].longitude = null;
     const result = await h.run();
-    assert.equal(result.destination, null); assert.equal(result.label, "Needs Admin Confirmation");
+    assert.equal(result.destination, null);
+    if (scenario === "legacy unconfirmed") assert.match(result.label, /Requires Admin review/);
+    else assert.match(result.label, /Needs Admin Confirmation/);
   });
 }
 test("unavailable lookup propagates safely to the HTTP fail-closed handler", async () => {
   await assert.rejects(fixture({ fail: true }).run(), /Synthetic unavailable/);
 });
+
+for (const kind of ["missing", "ambiguous", "invalid"]) {
+  test(`confirmed assignment survives ${kind} reference coordinates and reload`, async () => {
+    const h = fixture(); Object.assign(h.state.complaint, { status: "forwarded", assigned_barangay: "Fixture A",
+      assignment_confirmed_at: "2026-10-19" });
+    h.state.references = kind === "missing" ? [] : kind === "ambiguous" ? [reference(), reference()] : [{ ...reference(), latitude: null }];
+    for (let reload = 0; reload < 2; reload++) {
+      const result = await h.run();
+      assert.equal(result.basis, "admin_confirmed"); assert.equal(result.assigned_barangay, "Fixture A");
+      assert.equal(result.destination, null);
+      assert.equal(result.label, "Assigned Barangay: Fixture A — Reference location unavailable");
+      const map = mapHarness(); map.state.response = result;
+      await map.preview(); await map.flush(); await map.full(); await map.flush();
+      assert.ok(map.state.maps.every(value => map.red(value).length === 1 && map.blue(value).length === 0));
+      assert.equal(map.elements.complaintFullMapDestinationLabel.textContent, result.label);
+    }
+  });
+}
+test("confirmed record persists with exactly one marker/route after reopening and fresh reload", async () => {
+  const h = fixture(); Object.assign(h.state.complaint, { status: "forwarded", assigned_barangay: "Fixture A", assignment_confirmed_at: "2026-10-19" });
+  for (let reload = 0; reload < 2; reload++) {
+    const map = mapHarness(); map.state.response = await h.run();
+    await map.full(); await map.flush(); map.context.closeComplaintMapModal(); await map.full(); await map.flush();
+    const value = map.state.maps[0];
+    assert.equal(map.blue(value).length, 1); assert.equal(map.red(value).length, 1);
+    assert.equal([...value.layers].filter(layer => layer.kind === "route").length, 1);
+  }
+});
+for (const targets of [[], [{ target_name: "Fixture B" }], [{ target_name: "Fixture A" }, { target_name: "Fixture B" }]]) {
+  test(`notification targets require review (${JSON.stringify(targets)}) without auto-correction`, async () => {
+    const h = fixture({ targets }); Object.assign(h.state.complaint, { status: "forwarded", assigned_barangay: "Fixture A", assignment_confirmed_at: "2026-10-19" });
+    const result = await h.run();
+    assert.equal(result.basis, "admin_review"); assert.equal(result.destination, null);
+    assert.match(result.label, /Requires Admin review/); assert.equal(h.state.complaint.assigned_barangay, "Fixture A");
+  });
+}
 
 function mapHarness() {
   const state = { timers: [], maps: [], requests: [], response: null, alerts: [] };
@@ -160,4 +199,28 @@ test("map lookup uses the existing Admin guards and cannot forward/assign", () =
   assert.doesNotMatch(block, /validate.forward|UPDATE|INSERT|DELETE|ALTER|CREATE/);
   assert.match(source, /confirm_assignment: true/);
   assert.match(source, /confirm\(/);
+});
+
+test("assignment summary updates do not replace selected values or typed reasons", () => {
+  const h = mapHarness();
+  h.elements.complaintAssignmentStatus = {};
+  h.elements.complaintGeographicSuggestion = {};
+  h.elements.complaintAssignmentSelect = { value: "Fixture A" };
+  h.elements.complaintAssignmentReason = { value: "Admin checked GPS manually." };
+  h.context.updateComplaintAssignmentSummary({ ...resolved("strict_polygon_suggestion"), geographic_barangay: "Fixture A" });
+  assert.equal(h.elements.complaintAssignmentStatus.textContent, "Detected Barangay: Fixture A");
+  h.context.updateComplaintAssignmentSummary({ ...resolved("admin_confirmed"), assigned_barangay: "Fixture A", destination: null });
+  assert.equal(h.elements.complaintAssignmentStatus.textContent, "Assigned Barangay: Fixture A");
+  h.context.updateComplaintAssignmentSummary(null);
+  assert.equal(h.elements.complaintAssignmentStatus.textContent, "Needs Admin Confirmation");
+  assert.equal(h.elements.complaintAssignmentSelect.value, "Fixture A");
+  assert.equal(h.elements.complaintAssignmentReason.value, "Admin checked GPS manually.");
+});
+test("compact assignment display and modal have scoped responsive styling", () => {
+  const markup = source.slice(source.indexOf("function ensureComplaintProblemBarangayField"), source.indexOf("function getComplaintProblemBarangayLabel"));
+  assert.match(markup, /<\/div>\s*<section class="complaint-assignment-card"/);
+  assert.doesNotMatch(markup, /complaint-forward-options-field/);
+  const css = fs.readFileSync(path.join(__dirname, "../frontend/css/admin/admin-complaints.css"), "utf8");
+  assert.match(css, /complaint-assignment-name/);
+  assert.doesNotMatch(source, /complaintAssignmentSelect|complaintAssignmentReason|complaintAssignmentDialog/);
 });

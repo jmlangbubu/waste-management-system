@@ -5,6 +5,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 const { ComplaintWorkflowService, REQUIRED_COLUMNS } = require("../services/complaintWorkflowService");
 const { resolveStrictBarangay } = require("../services/barangayBoundaryService");
+const { resolveComplaintMapDestination } = require("../services/complaintMapDestinationService");
 const root = path.join(__dirname, "..");
 // Abstract squares are offline geometry fixtures, NOT real Bula/GenSan coordinates or boundaries.
 const square = (name = "Fixture A", offset = 0) => ({ barangay_name: name,
@@ -102,6 +103,18 @@ test("Admin confirms one recipient; one notice and evidence/GPS retained", async
   assert.equal(result.assigned_barangay, "Fixture A"); assert.equal(state.notifications.length, 1);
   assert.equal(state.complaint.image_url, "/synthetic/original.jpg"); assert.equal(state.complaint.latitude, 1);
   await service.forward(11, admin, forwardBody); assert.equal(state.notifications.length, 1);
+  // Reload through the map's read model after the real forwarding transaction.
+  const readDb = { query(sql, params, callback) {
+    assert.match(sql.trim(), /^SELECT/);
+    callback(null, sql.includes("FROM complaints") ? [structuredClone(state.complaint)]
+      : sql.includes("FROM complaint_notifications") ? state.notifications.filter(row => row.target_type === "barangay")
+        .map(row => ({ target_name: row.target_name }))
+      : [{ barangay_name: "Fixture A", reference_name: "Synthetic reference", latitude: 1.4, longitude: 1.6 }]);
+  } };
+  const reloaded = await resolveComplaintMapDestination(readDb, 11);
+  assert.equal(reloaded.basis, "admin_confirmed");
+  assert.equal(reloaded.assigned_barangay, "Fixture A");
+  assert.equal(reloaded.destination.barangay_name, "Fixture A");
 });
 test("ambiguous/no geometry still requires explicit Admin confirmation and reason", async () => {
   const { service, state } = fixture({ pending: true });
@@ -110,6 +123,37 @@ test("ambiguous/no geometry still requires explicit Admin confirmation and reaso
   const result = await service.forward(11, admin, forwardBody);
   assert.equal(result.geographic_candidate, null); assert.equal(result.assigned_barangay, "Fixture A");
 });
+
+test("GPS forwarding recomputes the stored point and generates accurate server audit text", async () => {
+  const {service,state} = fixture({pending:true});
+  const result = await service.forward(11, admin, {selected_barangay:"Fixture A",confirm_assignment:true,use_gps_match:true,
+    assignment_confirmation_reason:"Spoofed independently verified claim"});
+  assert.equal(result.assigned_barangay,"Fixture A");
+  assert.equal(state.complaint.assignment_confirmed_by,admin.id);
+  assert.match(state.complaint.assignment_confirmation_reason,/stored citizen GPS/);
+  assert.match(state.complaint.assignment_confirmation_reason,/not been independently verified/);
+  assert.doesNotMatch(state.complaint.assignment_confirmation_reason,/Spoofed/);
+  assert.equal(state.complaint.latitude,1); assert.equal(state.notifications.length,1);
+  const reloaded = await resolveComplaintMapDestination({query(sql, params, callback) {
+    assert.match(sql.trim(), /^SELECT/);
+    callback(null, sql.includes("FROM complaints") ? [structuredClone(state.complaint)]
+      : sql.includes("FROM complaint_notifications") ? [{target_name:state.complaint.assigned_barangay}]
+      : [{barangay_name:"Fixture A",reference_name:"Synthetic reference",latitude:1.4,longitude:1.6}]);
+  }},11);
+  assert.equal(reloaded.basis,"admin_confirmed"); assert.equal(reloaded.assigned_barangay,"Fixture A");
+});
+for (const scenario of ["missing", "overlap", "invalid GPS", "different target", "unconfirmed"]) {
+  test(`GPS forwarding rejects ${scenario} without an assignment or notification`, async () => {
+    const {service,state} = fixture({pending:true});
+    if (scenario === "missing") state.boundaries = [square("Fixture A",10)];
+    if (scenario === "overlap") state.boundaries.push(square("Fixture B",.5));
+    if (scenario === "invalid GPS") state.complaint.latitude = null;
+    const body = {selected_barangay:scenario === "different target"?"Fixture B":"Fixture A",confirm_assignment:scenario !== "unconfirmed",use_gps_match:true};
+    await assert.rejects(service.forward(11,admin,body), error => [400,409].includes(error.statusCode));
+    assert.equal(state.complaint.status,"pending"); assert.equal(state.complaint.assignment_confirmed_at,null);
+    assert.equal(state.notifications.length,0);
+  });
+}
 test("two names, absent confirmation/reason, and unknown active name cannot forward", async () => {
   const { service } = fixture({ pending: true });
   for (const body of [{ ...forwardBody, target_barangays: ["Fixture A", "Fixture B"] },
