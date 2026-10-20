@@ -1,5 +1,6 @@
 const express = require("express");
 const router = express.Router();
+const { requireMobileSession } = require("../middleware/mobileSessionAuth");
 const path = require("path");
 const fs = require("fs");
 const db = require("../config/db");
@@ -776,7 +777,10 @@ router.get("/analytics/barangay/monthly", (req, res) => {
 /* =========================================
    AI ANALYZE
 ========================================= */
-router.post("/analyze", async (req, res) => {
+router.post("/analyze", (req, res, next) => {
+  if (process.env.WHOLE_IMAGE_DISCOVERY_ENABLED !== "true" || !req.body?.objectDiscovery) return next();
+  return requireMobileSession(req, res, next);
+}, async (req, res) => {
   try {
     const { image, detectedObject, mlKitLabels } = req.body;
 
@@ -795,12 +799,18 @@ router.post("/analyze", async (req, res) => {
     }
 
     let analysisResult;
+    const discoveryController = new AbortController();
+    const cancelDiscovery = () => discoveryController.abort();
+    req.once?.("aborted", cancelDiscovery);
+    res.once?.("close", cancelDiscovery);
+    res.once?.("finish", () => { req.removeListener?.("aborted", cancelDiscovery); res.removeListener?.("close", cancelDiscovery); });
 
     try {
       analysisResult = await analyzeWaste({
         image,
         detectedObject,
-        mlKitLabels: Array.isArray(mlKitLabels) ? mlKitLabels : []
+        mlKitLabels: Array.isArray(mlKitLabels) ? mlKitLabels : [],
+        objectDiscovery: req.body.objectDiscovery, principal: req.mobileUser?.id, signal: discoveryController.signal
       });
     } catch (analysisError) {
       console.error("[SERVICE] analyzeWaste failed:");

@@ -1,6 +1,6 @@
 const http = require("http");
 const https = require("https");
-const { detectObjectsFromBase64, normalizeBoundingBox } = require("./googleVisionService");
+const { detectObjectsFromBase64, normalizeBoundingBox, OBJECT_LOCALIZATION_TIMEOUT_MS } = require("./googleVisionService");
 const { getWasteLearningGuide } = require("./wasteLearningGuideService");
 
 const {
@@ -21,19 +21,44 @@ function overlapRatio(a, b) {
   return intersection / (area(a) + area(b) - intersection);
 }
 
-function isBottleOrJarName(name) {
-  return /\b(bottles?|jars?)\b/.test(name);
+// Provider aliases describe the same bottle/container silhouette, not its material.
+const GENERIC_CONTAINER_NAMES = new Set(["bottle", "bottles", "jar", "jars", "container", "can", "bottled and jarred packaged goods"]);
+function identityFamily(name) {
+  if (name === "bottled and jarred packaged goods") return "packaged-container";
+  if (/\bbottles?\b/.test(name)) return "bottle";
+  if (/\bjars?\b/.test(name)) return "jar";
+  return name;
 }
-
 function similarObjectNames(a, b) {
-  // Vision can attach this broad packaging alias to the same bottle or jar.
-  const packagedAlias = "bottled and jarred packaged goods";
-  if ((a === packagedAlias && isBottleOrJarName(b))
-    || (b === packagedAlias && isBottleOrJarName(a))) return true;
+  const firstFamily = identityFamily(a), secondFamily = identityFamily(b);
+  if (firstFamily === secondFamily) return true;
+  if ((firstFamily === "packaged-container" && ["bottle", "jar"].includes(secondFamily))
+      || (secondFamily === "packaged-container" && ["bottle", "jar"].includes(firstFamily))) return true;
   const words = (name) => name.split(" ").map((word) => word.replace(/s$/, ""));
-  const first = words(a);
-  const second = words(b);
+  const first = words(a), second = words(b);
   return first.every((word) => second.includes(word)) || second.every((word) => first.includes(word));
+}
+function samePhysicalObject(a, b) {
+  const x = a.boundingBox, y = b.boundingBox;
+  if (!x || !y) return false;
+  // Independent providers can disagree on identity while localizing the same
+  // object. Require nearly identical extents and centers for a name-free match;
+  // different-size nested objects and partial overlaps must remain independent.
+  const sources = new Set([a.analysisSource, b.analysisSource]);
+  if (sources.has("gemini_whole_image") && sources.has("google_vision_object_localization")
+      && overlapRatio(x, y) >= .90
+      && Math.abs((x.left + x.right - y.left - y.right) / 2) <= .05 * Math.min(x.right - x.left, y.right - y.left)
+      && Math.abs((x.top + x.bottom - y.top - y.bottom) / 2) <= .05 * Math.min(x.bottom - x.top, y.bottom - y.top)) return true;
+  if (!similarObjectNames(a.canonicalItem, b.canonicalItem)) return false;
+  if (overlapRatio(x, y) >= DUPLICATE_OVERLAP_THRESHOLD) return true;
+  const area = (box) => (box.right - box.left) * (box.bottom - box.top);
+  const intersection = Math.max(0, Math.min(x.right, y.right) - Math.max(x.left, y.left))
+    * Math.max(0, Math.min(x.bottom, y.bottom) - Math.max(x.top, y.top));
+  const small = Math.min(area(x), area(y)), large = Math.max(area(x), area(y));
+  // Similar-size, almost-contained, centered aliases. Small nested objects survive.
+  return small / large >= .65 && intersection / small >= .90
+    && Math.abs((x.left + x.right - y.left - y.right) / 2) <= .15 * Math.min(x.right - x.left, y.right - y.left)
+    && Math.abs((x.top + x.bottom - y.top - y.bottom) / 2) <= .15 * Math.min(x.bottom - x.top, y.bottom - y.top);
 }
 
 function normalizeDetectedItems(objects, analysisSource, allowClassifierCategory = false) {
@@ -50,27 +75,30 @@ function normalizeDetectedItems(objects, analysisSource, allowClassifierCategory
     // Banana is a common localized object name; map its waste form through the existing rules.
     const mapped = analyzeWasteByObject(canonicalItem === "banana" ? "banana peel" : canonicalItem);
     const classifierCategory = allowClassifierCategory ? normalizeCategory(object.category) : null;
-    const category = mapped?.category === "Special Waste" || classifierCategory === "Special Waste"
+    let category = mapped?.category === "Special Waste" || classifierCategory === "Special Waste"
       ? "Special Waste" : classifierCategory || mapped?.category;
-    if (!isValidCategory(category)) return [];
+    // A generic localized silhouette does not establish material or contamination.
+    if (!category || (allowClassifierCategory && object.category === "Unknown")
+      || (!classifierCategory && GENERIC_CONTAINER_NAMES.has(canonicalItem))) category = "Unknown";
+    if (!isValidCategory(category) && category !== "Unknown") return [];
     const details = allowClassifierCategory ? Object.fromEntries(
       ["explanation", "action", "warning"].filter((key) => typeof object[key] === "string" && object[key].trim())
         .map((key) => [key, object[key]])
     ) : {};
-    const { modelKey, modelHotspots, ...guidance } = getWasteLearningGuide(canonicalItem, category);
+    const { modelKey = "", modelHotspots = [], ...guidance } = category === "Unknown" ? {} : getWasteLearningGuide(canonicalItem, category);
     return [{ index, itemName: name, canonicalItem, category, confidence,
-      analysisSource, boundingBox, modelKey, guidance, modelHotspots, ...details }];
+      analysisSource, boundingBox, modelKey, guidance, modelHotspots, ...details,
+      ...(category === "Unknown" ? { requiresConfirmation: true } : {}) }];
   });
-  // Safety first for overlapping duplicates; same-category ties favor the more specific name.
+  // Safety and supported specificity precede confidence; geometry decides duplication.
   candidates.sort((a, b) => Number(b.category === "Special Waste") - Number(a.category === "Special Waste")
+    || Number(GENERIC_CONTAINER_NAMES.has(a.canonicalItem)) - Number(GENERIC_CONTAINER_NAMES.has(b.canonicalItem))
     || b.confidence - a.confidence
     || b.canonicalItem.split(" ").length - a.canonicalItem.split(" ").length
     || a.index - b.index);
   const retained = [];
   for (const candidate of candidates) {
-    if (retained.some((other) => (candidate.category === other.category || other.category === "Special Waste")
-      && similarObjectNames(candidate.canonicalItem, other.canonicalItem)
-      && overlapRatio(candidate.boundingBox, other.boundingBox) >= DUPLICATE_OVERLAP_THRESHOLD)) continue;
+    if (retained.some((other) => samePhysicalObject(candidate, other))) continue;
     retained.push(candidate);
     if (retained.length === MAX_DETECTED_ITEMS) break;
   }
@@ -87,7 +115,8 @@ function buildScanSummary(detectedItems = []) {
 }
 
 function withDetectedItems(legacyResult, detectedItems, preserveLegacyPrimary = false) {
-  const primary = detectedItems.reduce((best, item) => !best || item.confidence > best.confidence ? item : best, null);
+  const primary = detectedItems.filter((item) => isValidCategory(item.category))
+    .reduce((best, item) => !best || item.confidence > best.confidence ? item : best, null);
   const result = primary && !preserveLegacyPrimary ? {
     ...createSafeResult({ category: primary.category, detectedObject: primary.itemName,
       aiLabel: primary.itemName, aiConfidence: toSafeNumberText(primary.confidence), analysisSource: primary.analysisSource,
@@ -97,9 +126,25 @@ function withDetectedItems(legacyResult, detectedItems, preserveLegacyPrimary = 
   return { ...result, detectedItems, scanSummary: buildScanSummary(detectedItems) };
 }
 
-async function enrichWithGoogleObjects(legacyResult, image, preserveLegacyPrimary = false) {
+async function localizeObjectsBestEffort(image) {
+  let timer;
   try {
-    const objects = await detectObjectsFromBase64(image);
+    // A slow localization provider must not indefinitely hold a valid primary result.
+    return await Promise.race([
+      Promise.resolve().then(() => detectObjectsFromBase64(image)),
+      new Promise((resolve) => { timer = setTimeout(() => resolve([]), OBJECT_LOCALIZATION_TIMEOUT_MS); })
+    ]);
+  } catch (_) {
+    console.warn("[WasteAnalysis] Object localization unavailable; keeping primary classification.");
+    return [];
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function enrichWithGoogleObjects(legacyResult, localizedObjects, preserveLegacyPrimary = false) {
+  try {
+    const objects = await localizedObjects;
     return withDetectedItems(legacyResult, normalizeDetectedItems(objects, "google_vision_object_localization"), preserveLegacyPrimary);
   } catch (_) {
     console.warn("[WasteAnalysis] Multi-item enrichment unavailable; keeping legacy result.");
@@ -307,7 +352,7 @@ function buildFallbackFromMapper({ detectedObject = "", mlKitLabels = [] } = {})
   return null;
 }
 
-function postJson(urlString, payload, timeoutMs = 35000) {
+function postJson(urlString, payload, timeoutMs = 35000, invocationHeaders = {}) {
   return new Promise((resolve, reject) => {
     let parsedUrl = null;
 
@@ -328,19 +373,23 @@ function postJson(urlString, payload, timeoutMs = 35000) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Content-Length": Buffer.byteLength(bodyString)
+        "Content-Length": Buffer.byteLength(bodyString),
+        ...invocationHeaders
       },
       timeout: timeoutMs
     };
 
+    let timer;
     const req = client.request(options, (res) => {
       let rawData = "";
 
       res.on("data", (chunk) => {
         rawData += chunk;
+        if(Buffer.byteLength(rawData)>64*1024) { clearTimeout(timer); req.destroy(new Error("Classifier response exceeds limit.")); }
       });
 
       res.on("end", () => {
+        clearTimeout(timer);
         let parsed = null;
 
         try {
@@ -365,15 +414,17 @@ function postJson(urlString, payload, timeoutMs = 35000) {
     });
 
     req.on("error", (error) => {
+      clearTimeout(timer);
       reject(error);
     });
 
+    timer=setTimeout(()=>req.destroy(new Error("Classifier request deadline exceeded.")),timeoutMs);
     req.write(bodyString);
     req.end();
   });
 }
 
-async function classifyWithExternalGeminiService(image) {
+async function classifyWithExternalGeminiService(image, timeoutMs = 35000) {
   const classifierUrl =
     getEnvValue("GEMINI_CLASSIFIER_URL") ||
     getEnvValue("CLOUD_RUN_GEMINI_CLASSIFIER_URL");
@@ -386,9 +437,13 @@ async function classifyWithExternalGeminiService(image) {
   try {
     console.log("[WasteAnalysis] Calling external Gemini classifier.");
 
+    const deadlineAt = Date.now() + timeoutMs;
+    const headers = process.env.CLOUD_RUN_AUTH_MODE
+      ? await require("./cloudRunAuth").invocationHeaders(classifierUrl, { timeoutMs }) : {};
+    if (deadlineAt <= Date.now()) throw new Error("Classifier request deadline exceeded.");
     const response = await postJson(classifierUrl, {
       image
-    });
+    }, Math.max(1, deadlineAt-Date.now()), headers);
 
     console.log("[WasteAnalysis] External classifier response success:", response?.success);
 
@@ -469,7 +524,7 @@ function buildAiResultFromClassifier(classifierResult, sourceFallback) {
   }), itemName: result.itemName || result.detectedObject || category };
 }
 
-async function analyzeWaste({ image, detectedObject, mlKitLabels = [] }) {
+async function analyzeWasteLegacy({ image, detectedObject, mlKitLabels = [], boundedDiscovery = false }) {
   console.log("=== analyzeWaste START ===");
   console.log("detectedObject:", detectedObject);
   console.log("mlKitLabels:", mlKitLabels);
@@ -483,21 +538,22 @@ async function analyzeWaste({ image, detectedObject, mlKitLabels = [] }) {
     This avoids the Render -> Gemini location restriction:
     "User location is not supported for the API use."
   */
-  const externalGeminiResult = await classifyWithExternalGeminiService(image);
+  const externalGeminiResult = await classifyWithExternalGeminiService(image, boundedDiscovery ? 15000 : 35000);
   let externalItems = [];
   if (externalGeminiResult?.success) {
     externalItems = normalizeDetectedItems(externalGeminiResult.result?.detectedItems, "cloud_run_gemini_vision", true);
     if (!externalItems.length) externalItems = normalizeDetectedItems(externalGeminiResult.result?.items, "cloud_run_gemini_vision", true);
   }
-  if (externalItems.length) return withDetectedItems(null, externalItems);
-  const externalAiResult = buildAiResultFromClassifier(
-    externalGeminiResult,
-    "cloud_run_gemini_vision"
-  );
+  const externalAiResult = buildAiResultFromClassifier(externalGeminiResult, "cloud_run_gemini_vision");
+  if (externalItems.length) return withDetectedItems(externalAiResult, externalItems, !!externalAiResult);
+  // Do not speculate on Google before Gemini multi-item selection: that would add a needless call.
+  // Once that selection is ruled out, overlap localization with the optional local fallback.
+  const localizedObjects = localizeObjectsBestEffort(image);
+
 
   if (externalAiResult) {
     console.log("[WasteAnalysis] RETURNING external Gemini category:", externalAiResult.category);
-    return enrichWithGoogleObjects(externalAiResult, image, true);
+    return enrichWithGoogleObjects(externalAiResult, localizedObjects, true);
   }
 
   /*
@@ -507,7 +563,7 @@ async function analyzeWaste({ image, detectedObject, mlKitLabels = [] }) {
     Disabled by default because Render direct Gemini is currently failing.
     Only enable with ALLOW_RENDER_GEMINI_DIRECT=true if you confirm it works.
   */
-  const localGeminiResult = await classifyWithLocalRenderGemini(image);
+  const localGeminiResult = boundedDiscovery || !!process.env.CLOUD_RUN_AUTH_MODE ? null : await classifyWithLocalRenderGemini(image);
   const localAiResult = buildAiResultFromClassifier(
     localGeminiResult,
     "gemini_vision"
@@ -515,7 +571,7 @@ async function analyzeWaste({ image, detectedObject, mlKitLabels = [] }) {
 
   if (localAiResult) {
     console.log("[WasteAnalysis] RETURNING local Gemini category:", localAiResult.category);
-    return enrichWithGoogleObjects(localAiResult, image, true);
+    return enrichWithGoogleObjects(localAiResult, localizedObjects, true);
   }
 
   /*
@@ -547,7 +603,7 @@ async function analyzeWaste({ image, detectedObject, mlKitLabels = [] }) {
       warning: mappedFallback.warning || null,
       visionLabels: [],
       mlKitLabels: Array.isArray(mlKitLabels) ? mlKitLabels : []
-    }), image);
+    }), localizedObjects);
   }
 
   /*
@@ -581,10 +637,23 @@ async function analyzeWaste({ image, detectedObject, mlKitLabels = [] }) {
       "Please retake the photo with one clear waste item centered in the frame, then analyze again.",
     warning:
       "This is a fallback result and may not be accurate. Do not rely on it if the item is clearly recyclable, biodegradable, or special waste."
-  }), image);
+  }), localizedObjects);
+}
+
+async function analyzeWaste(input) {
+  if(process.env.WHOLE_IMAGE_DISCOVERY_ENABLED!=="true" || !input.objectDiscovery || !input.principal) return analyzeWasteLegacy(input);
+  const discovery=require("./wholeImageRecognitionService");
+  // One attempt per capture, concurrently with primary classification; optional failure is isolated.
+  const observations=discovery.discoverObjects({...input.objectDiscovery,image:input.image},{principal:input.principal,signal:input.signal})
+    .then(result=>result.objects).catch(()=>[]);
+  const primary=await analyzeWasteLegacy({...input,boundedDiscovery:true});
+  const objects=await observations;
+  const detectedItems=discovery.merge(primary.detectedItems || [],objects,samePhysicalObject);
+  return {...primary,detectedItems,scanSummary:buildScanSummary(detectedItems),identityObservations:objects.filter(item=>!item.boundingBox)};
 }
 
 module.exports = {
+  samePhysicalObject,
   analyzeWaste,
   normalizeDetectedItems,
   buildScanSummary,

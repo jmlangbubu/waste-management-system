@@ -2,6 +2,28 @@ const express = require("express");
 const https = require("https");
 
 const app = express();
+const cropContract = require("./cropRecognition");
+
+let wholeImageHandler;
+app.post("/discover-objects", (req,res,next)=> {
+  const scope=cropContract.httpScope(req,res,{deadlineMs:12000});
+  const token=process.env.WHOLE_IMAGE_DISCOVERY_SHARED_TOKEN;
+  if(process.env.WHOLE_IMAGE_DISCOVERY_ENABLED!=="true" || !process.env.GEMINI_API_KEY || !token || token.length<32)
+    return res.status(503).json(cropContract.errorResponse(new cropContract.RecognitionError("RECOGNITION_UNAVAILABLE",503)).body);
+  if(!cropContract.tokenMatches(req.get("X-Whole-Image-Token"),token))
+    return res.status(401).json(cropContract.errorResponse(new cropContract.RecognitionError("RECOGNITION_UNAUTHORIZED",401)).body);
+  if(!scope.signal.aborted) next();
+}, (req,res,next)=>express.json({limit:3*1024*1024,strict:true})(req,res,error=>{
+  if(req.cropRecognitionScope.signal.aborted) return;
+  if(!error) return next();
+  const safe=cropContract.errorResponse(new cropContract.RecognitionError(error.type==="entity.too.large"?"RECOGNITION_PAYLOAD_TOO_LARGE":"INVALID_RECOGNITION_REQUEST",error.type==="entity.too.large"?413:400));
+  res.status(safe.status).json(safe.body);
+}), (req,res)=>{
+  if(!wholeImageHandler) wholeImageHandler=require("./wholeImageRecognition").createCloudHandler();
+  return wholeImageHandler(req,res);
+});
+
+
 
 app.use(express.json({ limit: "15mb" }));
 
