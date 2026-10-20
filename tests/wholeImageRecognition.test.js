@@ -105,6 +105,7 @@ function serviceFixture({enabled=true,objects=[object("Pen",[100,400,800,450])],
  const transport={request(options,callback){const req=new EventEmitter();req.write=()=>{};req.destroy=e=>req.emit("error",e);req.end=()=>{calls.primary++;const res=new EventEmitter();res.statusCode=200;callback(res);res.emit("data",JSON.stringify(primary));res.emit("end");return req;};return req;}};
  const module={exports:{}};
  vm.runInNewContext(fs.readFileSync(path.join(__dirname,"../services/wasteAnalysisService.js"),"utf8"),{module,Buffer,URL,setTimeout,clearTimeout,console:{log(){},warn(){},error(){}},process:{env:{GEMINI_CLASSIFIER_URL:env.GEMINI_CLASSIFIER_URL,...(enabled?{WHOLE_IMAGE_DISCOVERY_ENABLED:"true"}:{})}},require(id){
+  if(id==="./cloudRunDiagnostics")return require("../services/cloudRunDiagnostics");
   if(id==="http"||id==="https")return transport;
   if(id==="./googleVisionService")return {...require("../services/googleVisionService"),async detectObjectsFromBase64(){calls.vision++;return visionObjects || [vision()];}};
   if(id==="./geminiWasteClassifierService")return {};
@@ -146,6 +147,7 @@ async function routeFixture({enabled=true,authenticated=true}={}) {
  const handlers={},writes={history:0,image:0,auth:0},module={exports:{}},service=serviceFixture({enabled});
  const router=Object.fromEntries(["get","post","patch","delete"].map(method=>[method,(url,...chain)=>{handlers[method+" "+url]=chain;}]));
  vm.runInNewContext(fs.readFileSync(path.join(__dirname,"../routes/wasteRoutes.js"),"utf8"),{module,Buffer,AbortController,process:{env:enabled?{WHOLE_IMAGE_DISCOVERY_ENABLED:"true"}:{}},__dirname:path.join(__dirname,"../routes"),console:{log(){},warn(){},error(){}},require(id){
+  if(id==="./cloudRunDiagnostics")return require("../services/cloudRunDiagnostics");
   if(id==="express")return {Router:()=>router};if(id==="path")return path;if(id==="qrcode")return {};
   if(id==="fs")return {existsSync:()=>true,mkdirSync(){throw Error("No new directory");},writeFileSync(){writes.image++;}};
   if(id==="../config/db")return {queryReadOnly(sql,callback){callback(null,["image_url","analysis_source","ai_label","ai_confidence"].map(Field=>({Field})));},query(sql,values,callback){assert.match(sql,/INSERT INTO scan_history/);writes.history++;callback(null,{insertId:123});}};

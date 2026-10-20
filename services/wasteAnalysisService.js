@@ -1,5 +1,6 @@
 const http = require("http");
 const https = require("https");
+const diagnostics = require("./cloudRunDiagnostics");
 const { detectObjectsFromBase64, normalizeBoundingBox, OBJECT_LOCALIZATION_TIMEOUT_MS } = require("./googleVisionService");
 const { getWasteLearningGuide } = require("./wasteLearningGuideService");
 
@@ -402,6 +403,7 @@ function postJson(urlString, payload, timeoutMs = 35000, invocationHeaders = {})
           const error = new Error(`Classifier request failed with status ${res.statusCode}`);
           error.statusCode = res.statusCode;
           error.response = parsed;
+          diagnostics.mark(error, "classifier_http_response", res.statusCode);
           return reject(error);
         }
 
@@ -410,15 +412,15 @@ function postJson(urlString, payload, timeoutMs = 35000, invocationHeaders = {})
     });
 
     req.on("timeout", () => {
-      req.destroy(new Error("Classifier request timed out."));
+      req.destroy(diagnostics.mark(new Error("Classifier request timed out."), "timeout"));
     });
 
     req.on("error", (error) => {
       clearTimeout(timer);
-      reject(error);
+      reject(diagnostics.has(error) ? error : diagnostics.mark(error, "classifier_network_transport"));
     });
 
-    timer=setTimeout(()=>req.destroy(new Error("Classifier request deadline exceeded.")),timeoutMs);
+    timer=setTimeout(()=>req.destroy(diagnostics.mark(new Error("Classifier request deadline exceeded."), "timeout")),timeoutMs);
     req.write(bodyString);
     req.end();
   });
@@ -434,6 +436,7 @@ async function classifyWithExternalGeminiService(image, timeoutMs = 35000) {
     return null;
   }
 
+  let failureStage = "iam_authentication";
   try {
     console.log("[WasteAnalysis] Calling external Gemini classifier.");
 
@@ -441,6 +444,7 @@ async function classifyWithExternalGeminiService(image, timeoutMs = 35000) {
     const headers = process.env.CLOUD_RUN_AUTH_MODE
       ? await require("./cloudRunAuth").invocationHeaders(classifierUrl, { timeoutMs }) : {};
     if (deadlineAt <= Date.now()) throw new Error("Classifier request deadline exceeded.");
+    failureStage = "classifier_network_transport";
     const response = await postJson(classifierUrl, {
       image
     }, Math.max(1, deadlineAt-Date.now()), headers);
@@ -448,6 +452,7 @@ async function classifyWithExternalGeminiService(image, timeoutMs = 35000) {
     console.log("[WasteAnalysis] External classifier response success:", response?.success);
 
     if (!response?.success || !response?.result) {
+      console.error("[WasteAnalysis] classifier failure", diagnostics.diagnostic(null, "classifier_response_validation"));
       return {
         success: false,
         message: response?.message || "External classifier returned no valid result.",
@@ -461,7 +466,7 @@ async function classifyWithExternalGeminiService(image, timeoutMs = 35000) {
       result: response.result
     };
   } catch (error) {
-    console.error("[WasteAnalysis] External Gemini classifier unavailable; status:", error.statusCode || "unknown");
+    console.error("[WasteAnalysis] classifier failure", diagnostics.diagnostic(error, failureStage));
 
     return {
       success: false,
