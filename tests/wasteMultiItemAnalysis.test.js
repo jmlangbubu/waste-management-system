@@ -13,7 +13,8 @@ const object = (name = "Plastic Bottle", confidence = .92, boundingBox = box) =>
 const synthetic = [object(), object("Banana", .88, { left: .40, top: .35, right: .65, bottom: .78 }),
   object("Battery", .90, { left: .70, top: .40, right: .88, bottom: .72 })];
 
-function loadAnalysis({ objects = [], external = null, local = null, visionFailure = false, externalStatus = 200 } = {}) {
+function loadAnalysis({ objects = [], external = null, local = null, visionFailure = false, externalStatus = 200,
+  visionImplementation = null, localImplementation = null, fastLocalizationTimeout = false } = {}) {
   const logs = [], calls = { vision: 0, external: 0, local: 0 };
   const logger = Object.fromEntries(["log", "warn", "error"].map((key) => [key, (...args) => logs.push(args.join(" "))]));
   const transport = { request(options, callback) {
@@ -33,6 +34,7 @@ function loadAnalysis({ objects = [], external = null, local = null, visionFailu
   const module = { exports: {} };
   const context = {
     module, exports: module.exports, console: logger, URL, Buffer,
+    setTimeout: (callback, delay) => setTimeout(callback, fastLocalizationTimeout ? Math.min(delay, 5) : delay), clearTimeout,
     process: { env: { ...(external ? { GEMINI_CLASSIFIER_URL: "https://synthetic.invalid/classify" } : {}),
       ...(local ? { ALLOW_RENDER_GEMINI_DIRECT: "true" } : {}) } },
     require(id) {
@@ -42,9 +44,12 @@ function loadAnalysis({ objects = [], external = null, local = null, visionFailu
       if (id === "./googleVisionService") return { ...visionHelpers, async detectObjectsFromBase64() {
         calls.vision++;
         if (visionFailure) throw new Error("sensitive-provider-request-must-not-log");
+        if (visionImplementation) return visionImplementation();
         return objects;
       } };
-      if (id === "./geminiWasteClassifierService") return { async classifyWasteWithGemini() { calls.local++; return local; } };
+      if (id === "./geminiWasteClassifierService") return { async classifyWasteWithGemini() {
+        calls.local++; return localImplementation ? localImplementation() : local;
+      } };
       throw new Error(`Unexpected dependency: ${id}`);
     }
   };
@@ -90,9 +95,11 @@ test("malformed, reversed and degenerate boxes are discarded", () => {
     assert.equal(normalize([object("Paper", .8, boundingBox)]).length, 0);
   }
 });
-test("rectangle coordinates clamp to the normalized range", () => {
-  assert.deepEqual(normalize([object("Paper", .8, { left: -2, top: -.1, right: 4, bottom: 2 })])[0].boundingBox,
-    { left: 0, top: 0, right: 1, bottom: 1 });
+test("out-of-range rectangle coordinates are rejected rather than fabricated into valid boxes", () => {
+  assert.equal(normalize([object("Paper", .8, { left: -2, top: -.1, right: 4, bottom: 2 })]).length, 0);
+  for (const boundingBox of [{ ...box, left: -.001 }, { ...box, bottom: 1.001 }]) {
+    assert.equal(normalize([object("Paper", .8, boundingBox)]).length, 0);
+  }
 });
 test("Google vertices normalize omitted zeros and reject malformed polygons", () => {
   assert.deepEqual(visionHelpers.normalizeBoundingBox({ normalizedVertices: [{}, { x: .5 }, { x: .5, y: .7 }, { y: .7 }] }),
@@ -220,14 +227,15 @@ test("same-category overlap ties prefer more specific names then original order"
     for (const objects of [[object(generic, .80), object(specific, .80)], [object(specific, .80), object(generic, .80)]]) {
       assert.equal(normalize(objects)[0].itemName, specific);
     }
-    assert.equal(normalize([object(generic, .90), object(specific, .80)])[0].itemName, generic);
+    assert.equal(normalize([object(generic, .90), object(specific, .80)])[0].itemName, specific);
   }
   assert.equal(normalize([object("Bottle", .8), object("bottle", .8)])[0].itemName, "Bottle");
 });
-test("different non-special categories with subset names remain separate", () => {
+test("same-object generic bottle does not mask its specific contaminated identity", () => {
   const items = normalize([object("Bottle", .95), object("Dirty Plastic Bottle", .90)]);
-  assert.equal(items.length, 2);
-  assert.deepEqual(items.map((item) => item.category), ["Recyclable", "Residual"]);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].itemName, "Dirty Plastic Bottle");
+  assert.equal(items[0].category, "Residual");
 });
 test("Case D: without Gemini, highest-confidence Google object still supplies the primary", async () => {
   const result = await run(loadAnalysis({ objects: [synthetic[0], synthetic[2], synthetic[1]] }));
@@ -251,8 +259,9 @@ test("malformed explicit vertex axes are rejected while omitted zeros remain sup
     assert.equal(visionHelpers.normalizeBoundingBox({ normalizedVertices: [{}, { x: invalid, y: 0 }, { x: .7, y: .8 }, { y: .8 }] }), null);
   }
   assert.equal(visionHelpers.normalizeBoundingBox({ normalizedVertices: [[], { x: .7 }, { y: .8 }] }), null);
-  const valid = visionHelpers.normalizeBoundingBox({ normalizedVertices: [{}, { x: 2 }, { x: 2, y: 3 }, { y: 3 }] });
-  assert.deepEqual(valid, { left: 0, top: 0, right: 1, bottom: 1 });
+  assert.equal(visionHelpers.normalizeBoundingBox({ normalizedVertices: [{}, { x: 2 }, { x: 2, y: 3 }, { y: 3 }] }), null);
+  assert.deepEqual(visionHelpers.normalizeBoundingBox({ normalizedVertices: [{}, { x: 1 }, { x: 1, y: 1 }, { y: 1 }] }),
+    { left: 0, top: 0, right: 1, bottom: 1 });
 });
 test("unusable Gemini array falls back to Google objects", async () => {
   const result = await run(loadAnalysis({ external: { success: true, result: { items: [object("Paper", .1)] } }, objects: synthetic }));
@@ -285,8 +294,8 @@ test("global labels do not contaminate per-object classification", async () => {
   const result = await run(loadAnalysis({ objects: synthetic }), { mlKitLabels: ["battery", "plastic", "food"] });
   assert.deepEqual(plain(result.detectedItems.map((item) => item.category)), ["Recyclable", "Biodegradable", "Special Waste"]);
 });
-test("unknown localized objects are ignored; classified unknown Gemini objects use a generic model", () => {
-  assert.equal(normalize([object("Unknown shape")]).length, 0);
+test("unmapped localized identities remain Unknown; explicitly classified objects keep existing guidance", () => {
+  assert.equal(normalize([object("Unknown shape")])[0].category, "Unknown");
   assert.equal(normalize([{ ...object("Unknown shape"), category: "Recyclable" }], true)[0].modelKey, "generic_recyclable");
 });
 test("no provider result preserves the original fallback fields", async () => {
@@ -297,20 +306,21 @@ test("no provider result preserves the original fallback fields", async () => {
 });
 
 function loadVision(annotations, failure = false) {
-  const requests = [], logs = [], module = { exports: {} };
+  const requests = [], options = [], logs = [], module = { exports: {} };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../services/googleVisionService.js"), "utf8"), {
     module, Buffer, process: { env: { GOOGLE_APPLICATION_CREDENTIALS: "synthetic-only" } },
     console: Object.fromEntries(["log", "warn", "error"].map((key) => [key, (...args) => logs.push(args.join(" "))])),
     require(id) {
       assert.equal(id, "@google-cloud/vision");
-      return { ImageAnnotatorClient: class { async annotateImage(request) {
+      return { ImageAnnotatorClient: class { async annotateImage(request, callOptions) {
         requests.push(request);
+        options.push(callOptions);
         if (failure) throw new Error("secret-request-image");
         return [annotations];
       } } };
     }
   });
-  return { ...module.exports, requests, logs };
+  return { ...module.exports, requests, options, logs };
 }
 test("Google object helper retains boxes and legacy label helper remains intact", async () => {
   const service = loadVision({ localizedObjectAnnotations: [{ name: "Plastic Bottle", score: .92,
@@ -320,6 +330,64 @@ test("Google object helper retains boxes and legacy label helper remains intact"
   const labels = plain(await service.detectLabelsFromBase64("c3ludGhldGlj"));
   assert.deepEqual(labels.map((item) => item.source), ["label_detection", "object_localization", "web_best_guess"]);
   assert.deepEqual(plain(service.requests[0].features), [{ type: "OBJECT_LOCALIZATION", maxResults: 20 }]);
+  assert.deepEqual(plain(service.options[0]), { timeout: 5000, retry: null });
+  assert.equal(service.options[1], undefined); // Legacy label helper call is untouched.
+});
+
+test("two independent plastic bottles retain separate per-scan identities and boxes", async () => {
+  const objects = [object("Plastic Bottle", .91, { left: .05, top: .15, right: .3, bottom: .85 }),
+    object("Plastic Bottle", .89, { left: .65, top: .15, right: .95, bottom: .85 })];
+  const result = await run(loadAnalysis({ objects }));
+  assert.equal(result.detectedItems.length, 2);
+  assert.deepEqual(plain(result.detectedItems.map((item) => item.itemId)), ["item_1", "item_2"]);
+  assert.deepEqual(plain(result.detectedItems.map((item) => item.boundingBox)), objects.map((item) => item.boundingBox));
+  assert.deepEqual(plain(result.detectedItems.map((item) => item.category)), ["Recyclable", "Recyclable"]);
+  assert.deepEqual(normalize(objects).map((item) => item.itemId), normalize(objects).map((item) => item.itemId));
+});
+test("portrait and landscape boxes retain normalized x/y without dimension swapping", () => {
+  for (const boundingBox of [{ left: .1, top: .05, right: .3, bottom: .95 },
+    { left: .05, top: .3, right: .95, bottom: .7 }]) {
+    const vertices = [{ x: boundingBox.left, y: boundingBox.top }, { x: boundingBox.right, y: boundingBox.top },
+      { x: boundingBox.right, y: boundingBox.bottom }, { x: boundingBox.left, y: boundingBox.bottom }];
+    assert.deepEqual(visionHelpers.normalizeBoundingBox({ normalizedVertices: vertices }), boundingBox);
+    assert.deepEqual(normalize([object("Plastic Bottle", .9, boundingBox)])[0].boundingBox, boundingBox);
+  }
+});
+test("slow localization cannot indefinitely block a preserved Gemini primary", async () => {
+  const external = { success: true, result: { itemName: "Plastic Bottle", category: "Recyclable", confidence: .95,
+    explanation: "Primary evidence", action: "Primary action", warning: "Primary warning" } };
+  let completeVision;
+  const service = loadAnalysis({ external, fastLocalizationTimeout: true,
+    visionImplementation: () => new Promise((resolve) => { completeVision = resolve; }) });
+  const result = await run(service);
+  assert.equal(result.itemName, "Plastic Bottle");
+  assert.equal(result.explanation, external.result.explanation);
+  assert.equal(result.detectedItems.length, 0);
+  completeVision(synthetic);
+  await Promise.resolve();
+  assert.equal(result.detectedItems.length, 0); // Late localization cannot rewrite a response.
+});
+test("Google localization overlaps optional local classification instead of waiting for it", async () => {
+  const local = { success: true, result: { itemName: "Plastic Bottle", category: "Recyclable", confidence: .95 } };
+  let service;
+  service = loadAnalysis({ local, objects: synthetic, localImplementation: async () => {
+    await Promise.resolve();
+    assert.equal(service.calls.vision, 1);
+    return local;
+  } });
+  const result = await run(service);
+  assert.equal(result.itemName, "Plastic Bottle");
+  assert.equal(result.analysisSource, "gemini_vision");
+  assert.equal(result.detectedItems.length, 3);
+  assert.equal(service.calls.vision, 1);
+});
+test("invalid geometry in localization is omitted without losing the legacy primary", async () => {
+  const external = { success: true, result: { itemName: "Plastic Bottle", category: "Recyclable", confidence: .95 } };
+  const result = await run(loadAnalysis({ external, objects: [object("Bottle", .8, { left: -2, top: -1, right: 4, bottom: 3 })] }));
+  assert.equal(result.detectedItems.length, 0);
+  assert.equal(result.scanSummary.totalItems, 0);
+  assert.equal(result.itemName, "Plastic Bottle");
+  assert.equal(result.aiConfidence, "0.95");
 });
 test("Google object failure returns an empty array and never logs its request", async () => {
   const service = loadVision({}, true);
@@ -348,7 +416,7 @@ async function routeResponse({ failInsert = false, fatal = false } = {}) {
     }
   };
   const source = fs.readFileSync(path.join(__dirname, "../routes/wasteRoutes.js"), "utf8");
-  vm.runInNewContext(source, { module, __dirname: path.join(__dirname, "../routes"), Buffer, console: { log() {}, warn() {}, error() {} },
+  vm.runInNewContext(source, { module, AbortController, __dirname: path.join(__dirname, "../routes"), Buffer, console: { log() {}, warn() {}, error() {} },
     require(id) {
       if (id === "express") return { Router: () => router };
       if (id === "path") return path;
@@ -357,6 +425,8 @@ async function routeResponse({ failInsert = false, fatal = false } = {}) {
       if (id === "../config/db") return database;
       if (id === "../services/wasteAnalysisService") return { analyzeWaste: async () => serviceResult, buildScanSummary: analysis.buildScanSummary };
       if (id.includes("Controller")) return new Proxy({}, { get: () => () => {} });
+      if (id.includes("mobileSessionAuth")) return { requireMobileSession() {} };
+      if (id === "../gemini-waste-classifier-cloudrun/cropRecognition") return require(id);
       if (id.includes("webSessionAuth")) return { requireWebCapability: () => () => {}, requireCsrf() {} };
       throw new Error(`Unexpected route dependency: ${id}`);
     }
@@ -390,131 +460,70 @@ test("fatal API fallback keeps mandatory result and zero summary", async () => {
   assert.equal(inserts.length, 0);
 });
 
-// Synthetic bottle alias regressions; all provider and database dependencies are mocked above.
-test("bottle hotfix: two bottles with four provider aliases count as two items", async () => {
-  const second = { left: .60, top: .10, right: .85, bottom: .85 };
-  const service = loadAnalysis({ objects: [object("Bottle", .70), object("Bottle", .64, second),
+// Synthetic geometry only: no device photos or provider requests.
+test("two bottles with four alias labels produce two independent review items", () => {
+  const second = { left: .60, top: .1, right: .85, bottom: .85 };
+  const items = normalize([object("Bottle", .70), object("Bottle", .64, second),
     object("Bottled and jarred packaged goods", .57, { ...box, left: .11, right: .36 }),
-    object("Bottled and jarred packaged goods", .54, { ...second, left: .61, right: .86 })] });
-  const result = plain(await run(service));
-  assert.equal(result.detectedItems.length, 2);
-  assert.deepEqual(result.detectedItems.map(item => item.itemName), ["Bottle", "Bottle"]);
-  assert.deepEqual(result.detectedItems.map(item => item.boundingBox), [box, second]);
-  assert.deepEqual(result.detectedItems.map(item => item.itemId), ["item_1", "item_2"]);
-  assert.deepEqual(result.scanSummary, { totalItems: 2,
-    categories: { biodegradable: 0, recyclable: 2, residual: 0, specialWaste: 0 } });
-  assert.equal(service.calls.vision, 1);
-  assert.equal(service.calls.external, 0);
-  assert.equal(service.calls.local, 0);
+    object("Bottled and jarred packaged goods", .54, { ...second, left: .61, right: .86 })]);
+  assert.equal(items.length, 2);
+  assert.deepEqual(items.map(item => item.itemName), ["Bottle", "Bottle"]);
+  assert.deepEqual(items.map(item => item.category), ["Unknown", "Unknown"]);
+  assert.notEqual(items[0].itemId, items[1].itemId);
 });
-test("bottle hotfix: packaged alias collapses in either input order and confidence order", () => {
-  for (const name of ["Bottle", "Plastic Bottle", "Glass Bottles", "Jar"]) {
-    for (const confidence of [.60, .95]) {
-      const pair = [object(name, .80), object("Bottled and jarred packaged goods", confidence)];
-      for (const items of [pair, [...pair].reverse()]) {
-        const result = normalize(items);
-        assert.equal(result.length, 1, name);
-        assert.equal(result[0].confidence, Math.max(.80, confidence));
-      }
-    }
-  }
+test("alias specificity outranks confidence only when geometry identifies the same object", () => {
+  const items = normalize([object("Bottled and jarred packaged goods", .95), object("Plastic Bottle", .6)]);
+  assert.equal(items.length, 1); assert.equal(items[0].itemName, "Plastic Bottle");
 });
-test("bottle hotfix: normalized polygon aliases collapse", () => {
-  const polygon = { normalizedVertices: [{ x: .1, y: .1 }, { x: .35, y: .1 },
-    { x: .35, y: .85 }, { x: .1, y: .85 }] };
-  assert.equal(normalize([{ name: "Bottle", confidence: .7, boundingPoly: polygon },
-    object("Bottled and jarred packaged goods", .6)]).length, 1);
+test("same-object normalized polygons and centered containment suppress duplicate aliases", () => {
+  const polygon = { normalizedVertices: [{ x: .1, y: .1 }, { x: .35, y: .1 }, { x: .35, y: .85 }, { x: .1, y: .85 }] };
+  assert.equal(normalize([{ name: "Bottle", confidence: .7, boundingPoly: polygon }, object("Bottled and jarred packaged goods", .6)]).length, 1);
+  assert.equal(normalize([object("Bottle", .7), object("Bottled and jarred packaged goods", .6,
+    { left: .12, top: .14, right: .33, bottom: .81 })]).length, 1);
 });
-test("bottle hotfix: contained duplicates above the committed IoU threshold collapse", () => {
-  for (const name of ["Bottle", "Bottled and jarred packaged goods"]) {
-    assert.equal(normalize([object("Bottle", .7), object(name, .6,
-      { left: .12, top: .14, right: .33, bottom: .81 })]).length, 1);
-  }
+test("partially overlapping and small nested legitimate instances survive", () => {
+  assert.equal(normalize([object("Bottle", .8), object("Bottle", .7,
+    { left: .25, top: .1, right: .5, bottom: .85 })]).length, 2);
+  assert.equal(normalize([object("Bottle", .8), object("Bottle", .7,
+    { left: .18, top: .3, right: .25, bottom: .5 })]).length, 2);
+  assert.equal(normalize([object("Plastic Bottle", .8), object("Battery", .7,
+    { left: .18, top: .3, right: .25, bottom: .5 })]).length, 2);
 });
-test("bottle hotfix: separate, partial, small nested and off-center instances survive", () => {
-  for (const bounds of [
-    { left: .60, top: .10, right: .85, bottom: .85 },
-    { left: .25, top: .10, right: .50, bottom: .85 },
-    { left: .18, top: .30, right: .25, bottom: .50 },
-    { left: .10, top: .10, right: .27, bottom: .85 }
-  ]) {
-    for (const name of ["Bottle", "Bottled and jarred packaged goods"]) {
-      assert.equal(normalize([object("Bottle", .8), object(name, .7, bounds)]).length, 2);
-    }
-  }
+test("generic container material requires verification while unsupported identities are not fabricated", () => {
+  assert.equal(normalize([object("Bottled and jarred packaged goods")])[0].category, "Unknown");
+  assert.equal(normalize([object("Unrecognized shape")])[0].category, "Unknown");
 });
-test("bottle hotfix: unrelated overlapping identities remain independent", () => {
-  for (const name of ["Can", "Jar", "Battery"]) {
-    assert.equal(normalize([object("Bottle", .8), object(name, .7)]).length, 2);
-  }
-  assert.equal(normalize([object("Can", .8), object("Bottled and jarred packaged goods", .7)]).length, 2);
-});
-test("bottle hotfix: existing category conflict and special-waste policy is preserved", () => {
-  assert.equal(normalize([object("Bottle", .95), object("Dirty Plastic Bottle", .90)]).length, 2);
-  const items = normalize([object("Bottle", .95), object("Chemical Bottle", .80)]);
-  assert.equal(items.length, 1);
-  assert.equal(items[0].category, "Special Waste");
+test("Gemini primary is preserved even when it also returns localized items", async () => {
+  const external = { success: true, result: { itemName: "Used Battery", category: "Special Waste", confidence: .91,
+    explanation: "original explanation", action: "original action", warning: "original warning",
+    detectedItems: [{ ...object("Plastic Bottle", .98), category: "Recyclable" }] } };
+  const result = await run(loadAnalysis({ external }));
+  assert.equal(result.itemName, "Used Battery"); assert.equal(result.category, "Special Waste");
+  assert.equal(result.explanation, "original explanation"); assert.equal(result.action, "original action");
+  assert.equal(result.warning, "original warning"); assert.equal(result.detectedItems.length, 1);
 });
 
-// Replay of sanitized client-boundary metadata, not a raw provider response or photo.
-const observedBottleFixture = [
-  { name: "Bottled and jarred packaged goods", category: "Recyclable", confidence: 0.7399570345878601,
-    boundingBox: { left: 0.15234375, top: 0.30859375, right: 0.404296875, bottom: 0.7421875 } },
-  { name: "Bagged packaged goods", category: "Residual", confidence: 0.6282191276550293,
-    boundingBox: { left: 0.44921875, top: 0.353515625, right: 0.9453125, bottom: 0.6640625 } },
-  { name: "Bottle", category: "Recyclable", confidence: 0.5932915806770325,
-    boundingBox: { left: 0.15234375, top: 0.30859375, right: 0.404296875, bottom: 0.7421875 } }
-];
-
-test("alias-only: exact observed three-candidate fixture retains A and B with exact metadata", () => {
-  const items = normalize(observedBottleFixture, true);
-  assert.equal(observedBottleFixture.length, 3);
-  assert.deepEqual(items.map(({ itemId, itemName, category, confidence, boundingBox }) =>
-    ({ itemId, itemName, category, confidence, boundingBox })), observedBottleFixture.slice(0, 2).map((item, index) =>
-    ({ itemId: `item_${index + 1}`, itemName: item.name, category: item.category,
-      confidence: item.confidence, boundingBox: item.boundingBox })));
-  assert.deepEqual(plain(analysis.buildScanSummary(items)), { totalItems: 2,
-    categories: { biodegradable: 0, recyclable: 1, residual: 1, specialWaste: 0 } });
+test("different container identities do not collapse solely because their boxes overlap", () => {
+  assert.equal(normalize([object("Bottle", .8), object("Can", .7)]).length, 2);
+  assert.equal(normalize([object("Bottle", .8), object("Jar", .7)]).length, 2);
+});
+test("unclassified bottle silhouette cannot replace the existing fallback primary category", async () => {
+  const result = await run(loadAnalysis({ objects: [object("Bottle", .8)] }));
+  assert.equal(result.category, "Residual");
+  assert.equal(result.detectedItems[0].category, "Unknown");
 });
 
-test("alias-only: exact fixture enrichment preserves the independent original primary", async () => {
-  const external = { success: true, result: { itemName: "Original primary", category: "Special Waste", confidence: .96,
-    explanation: "Original explanation", action: "Original action", warning: "Original warning" } };
-  const original = plain(await run(loadAnalysis({ external })));
-  const service = loadAnalysis({ objects: observedBottleFixture, external });
-  const { detectedItems, scanSummary, ...primary } = plain(await run(service));
-  const { detectedItems: originalItems, scanSummary: originalSummary, ...originalPrimary } = original;
-  assert.deepEqual(primary, originalPrimary);
-  assert.deepEqual(detectedItems, normalize(observedBottleFixture).map(item =>
-    ({ ...item, analysisSource: "google_vision_object_localization" })));
-  assert.deepEqual(scanSummary, { totalItems: 2,
-    categories: { biodegradable: 0, recyclable: 1, residual: 1, specialWaste: 0 } });
-  assert.equal(originalItems.length, 0);
-  assert.equal(originalSummary.totalItems, 0);
-  assert.deepEqual(service.calls, { vision: 1, external: 1, local: 0 });
-});
-
-test("alias-only: concentric independent bottles below IoU .70 remain separate", () => {
-  const outer = { left: .1, top: .1, right: .9, bottom: .9 };
-  for (const ratio of [.650001, .69]) {
-    const side = .8 * Math.sqrt(ratio);
-    const inner = { left: .5 - side / 2, top: .5 - side / 2, right: .5 + side / 2, bottom: .5 + side / 2 };
-    const measuredIoU = (inner.right - inner.left) * (inner.bottom - inner.top) / (.8 * .8);
-    assert.ok(measuredIoU < .70);
-    for (const name of ["Bottle", "Bottled and jarred packaged goods"]) {
-      const items = normalize([object("Bottle", .8, outer), object(name, .7, inner)]);
-      assert.equal(items.length, 2, `${name}, measured IoU ${measuredIoU}`);
-      assert.deepEqual(items.map(item => item.boundingBox), [outer, inner]);
-      assert.deepEqual(items.map(item => item.itemId), ["item_1", "item_2"]);
-    }
+// Synthetic localized identities only; no user photo, provider or database calls.
+test("unmapped localized identities retain boxes and Unknown without unsafe guidance", () => {
+  const result = normalize([object("Blue-handled object")]);
+  assert.equal(result.length, 1);assert.equal(result[0].category,"Unknown");assert.equal(result[0].requiresConfirmation,true);
+  assert.deepEqual(result[0].boundingBox,box);assert.deepEqual(result[0].guidance,{});assert.equal(result[0].modelKey,"");
+  for (const confidence of [undefined,null,"0.8",true,NaN,Infinity,-1,1.1]) {
+    assert.equal(normalize([{name:"Blue-handled object",confidence,boundingBox:box}]).length,0);
   }
+  assert.equal(normalize([object("Blue-handled object",.8,null)]).length,0);
 });
-
-test("alias-only: neighboring and touching bags remain independent even with a bottle alias", () => {
-  for (const left of [.4, .39]) {
-    const bags = [object("Bagged packaged goods", .8, { left: .1, top: .1, right: .4, bottom: .8 }),
-      object("Bagged packaged goods", .7, { left, top: .1, right: .7, bottom: .8 })];
-    assert.equal(normalize(bags).length, 2);
-    assert.equal(normalize([bags[0], object("Bottled and jarred packaged goods", .6, bags[0].boundingBox)]).length, 2);
-  }
+test("explicit unresolved classifier category never becomes a guessed recycling policy", () => {
+  const result=normalize([{...object("Plastic Bottle"),category:"Unknown"}],true);
+  assert.equal(result.length,1);assert.equal(result[0].category,"Unknown");assert.equal(result[0].modelKey,"");
 });

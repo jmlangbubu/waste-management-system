@@ -1,6 +1,7 @@
 let vision = null;
 let cachedClient = null;
 let cachedClientChecked = false;
+const OBJECT_LOCALIZATION_TIMEOUT_MS = 5000;
 
 function hasGoogleVisionCredentials() {
   return Boolean(
@@ -189,7 +190,7 @@ function normalizeBoundingBox(box) {
   const coordinate = (value) => {
     if ((typeof value !== "number" && typeof value !== "string") || String(value).trim() === "") return null;
     const number = Number(value);
-    return Number.isFinite(number) ? Math.max(0, Math.min(1, number)) : null;
+    return Number.isFinite(number) && number >= 0 && number <= 1 ? number : null;
   };
   let values;
   if (Array.isArray(box?.normalizedVertices)) {
@@ -223,7 +224,7 @@ async function detectObjectsFromBase64(base64Image) {
     const [result] = await client.annotateImage({
       image: { content },
       features: [{ type: "OBJECT_LOCALIZATION", maxResults: 20 }]
-    });
+    }, { timeout: OBJECT_LOCALIZATION_TIMEOUT_MS, retry: null });
     if (result?.error) return [];
     return (result?.localizedObjectAnnotations || []).flatMap((object) => {
       if (!object || typeof object !== "object") return [];
@@ -243,5 +244,6 @@ async function detectObjectsFromBase64(base64Image) {
 module.exports = {
   detectLabelsFromBase64,
   detectObjectsFromBase64,
-  normalizeBoundingBox
+  normalizeBoundingBox,
+  OBJECT_LOCALIZATION_TIMEOUT_MS
 };
