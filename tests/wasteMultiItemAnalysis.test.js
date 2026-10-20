@@ -38,6 +38,7 @@ function loadAnalysis({ objects = [], external = null, local = null, visionFailu
     process: { env: { ...(external ? { GEMINI_CLASSIFIER_URL: "https://synthetic.invalid/classify" } : {}),
       ...(local ? { ALLOW_RENDER_GEMINI_DIRECT: "true" } : {}) } },
     require(id) {
+      if(id==="./cloudRunDiagnostics") return require("../services/cloudRunDiagnostics");
       if (id === "http" || id === "https") return transport;
       if (id === "../utils/wasteMapper") return mapper;
       if (id === "./wasteLearningGuideService") return guide;
@@ -311,6 +312,7 @@ function loadVision(annotations, failure = false) {
     module, Buffer, process: { env: { GOOGLE_APPLICATION_CREDENTIALS: "synthetic-only" } },
     console: Object.fromEntries(["log", "warn", "error"].map((key) => [key, (...args) => logs.push(args.join(" "))])),
     require(id) {
+      if(id==="./cloudRunDiagnostics") return require("../services/cloudRunDiagnostics");
       assert.equal(id, "@google-cloud/vision");
       return { ImageAnnotatorClient: class { async annotateImage(request, callOptions) {
         requests.push(request);
@@ -418,6 +420,7 @@ async function routeResponse({ failInsert = false, fatal = false } = {}) {
   const source = fs.readFileSync(path.join(__dirname, "../routes/wasteRoutes.js"), "utf8");
   vm.runInNewContext(source, { module, AbortController, __dirname: path.join(__dirname, "../routes"), Buffer, console: { log() {}, warn() {}, error() {} },
     require(id) {
+      if(id==="./cloudRunDiagnostics") return require("../services/cloudRunDiagnostics");
       if (id === "express") return { Router: () => router };
       if (id === "path") return path;
       if (id === "qrcode") return {};
