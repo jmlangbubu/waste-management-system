@@ -25,6 +25,9 @@ app.post("/discover-objects", (req,res,next)=> {
 
 
 
+// Separate optional versioned route; existing discovery/classification are unchanged.
+require("./wasteItemAssessment").mount(app,express);
+
 app.use(express.json({ limit: "15mb" }));
 
 const PORT = process.env.PORT || 8080;

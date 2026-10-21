@@ -60,6 +60,7 @@ function merge(vision,proposals,samePhysicalObject) {
       }
     } else if(retained.length<8) retained.push(proposal);
   }
+  // Keep the discovery v1 mobile contract intact; assessments travel separately.
   return retained;
 }
 module.exports={createDiscoveryService,discoverObjects:createDiscoveryService(),merge};

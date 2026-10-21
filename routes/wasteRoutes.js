@@ -838,7 +838,8 @@ router.post("/analyze", (req, res, next) => {
     const aiConfidence = analysisResult.aiConfidence || null;
     const analysisSource = analysisResult.analysisSource || "fallback";
     const detectedItems = Array.isArray(analysisResult.detectedItems) ? analysisResult.detectedItems : [];
-    const multiItemResponse = { detectedItems, scanSummary: buildScanSummary(detectedItems) };
+    const multiItemResponse = { detectedItems, scanSummary: buildScanSummary(detectedItems),
+      ...(analysisResult.categoryAssessments ? { categoryAssessments: analysisResult.categoryAssessments } : {}) };
 
     const savedScanImage = saveScanImageFromBase64(image);
     const imageUrl = savedScanImage ? savedScanImage.imageUrl : null;
