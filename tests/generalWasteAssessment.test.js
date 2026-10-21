@@ -99,9 +99,15 @@ test("separate captures and principals cannot share assessments; concurrent iden
  const {assess,calls}=service(),s=scene();await Promise.all([assess(s),assess(s)]);assert.equal(calls.filter(c=>c.input).length,1);
  await assess({...s,principal:43});await assess(scene());assert.equal(calls.filter(c=>c.input).length,3);
 });
-test("Vision-backed categories, confidence and geometry are never replaced from AI",async()=>{
- const s=scene();s.items[0]={...s.items[0],analysisSource:"google_vision_object_localization",category:"Unknown",confidence:.87};const before=structuredClone(s.items),{assess,calls}=service();const result=await assess(s);
- assert.equal(calls.length,0);assert.deepEqual(s.items,before);assert.equal(result.items[0].category,"Unknown");assert.equal(result.items[0].assessmentSource,"existing_category");
+test("Vision Unknown items receive sidecar suggestions but established categories/recognition remain unchanged",async()=>{
+ for(const category of ["Unknown","Recyclable"]) {
+  const s=scene();s.items[0]={...s.items[0],analysisSource:"google_vision_object_localization",category,confidence:.87};
+  const before=structuredClone(s.items),{assess,calls}=service(),result=await assess(s);
+  assert.deepEqual(s.items,before);
+  assert.equal(calls.filter(c=>c.input).length,category==="Unknown"?1:0);
+  assert.equal(result.items[0].category,category==="Unknown"?"Special Waste":"Recyclable");
+  assert.equal(result.items[0].itemId,s.items[0].itemId);
+ }
 });
 function response(){const res=new EventEmitter();res.status=c=>{res.statusCode=c;return res;};res.json=x=>{res.body=x;res.writableEnded=true;res.emit("finish");return res;};return res;}
 test("new Cloud endpoint authenticates before inference, pins model and bounds one full-image batch",async()=>{

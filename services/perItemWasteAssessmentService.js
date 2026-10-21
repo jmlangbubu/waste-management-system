@@ -26,6 +26,36 @@ function deterministic(items) {
   return assessment(item,classified.category,classified.category==="Unknown"?"insufficient_evidence":"reviewed_identity_rule");
  });
 }
+function originalEvidence(item) {
+ const gemini=item.analysisSource==="gemini_whole_image",vision=item.analysisSource==="google_vision_object_localization";
+ if(!gemini&&!vision)return null;
+ // Never fall back to itemName: it may already be a shortened display label.
+ const identity=gemini?item.observedIdentity:item.observedIdentity||item.originalItemName||item.canonicalItem;
+ const b=item.boundingBox;
+ if(typeof identity!=="string"||!identity.trim()||identity.length>128||/[\x00-\x1f<>]/.test(identity)
+  ||!b||Object.keys(b).sort().join(",")!=="bottom,left,right,top"
+  ||![b.left,b.top,b.right,b.bottom].every(n=>typeof n==="number"&&Number.isFinite(n)&&n>=0&&n<=1)
+  ||b.left>=b.right||b.top>=b.bottom)return null;
+ return identity;
+}
+function assessmentBatch(capture,unknown,allItems) {
+ const originalIds=new Set(),wireIds=new Map();
+ for(const item of allItems) {
+  if(typeof item.itemId!=="string"||!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(item.itemId)||originalIds.has(item.itemId)
+   ||(item.captureId!==undefined&&item.captureId!==capture.captureId))
+   throw new shared.RecognitionError("INVALID_RECOGNITION_REQUEST",400);
+  originalIds.add(item.itemId);
+ }
+ const items=unknown.map(item=>{
+  const wireId=item.analysisSource==="google_vision_object_localization"
+   ?"region_"+crypto.createHash("sha256").update(JSON.stringify(["vision-assessment-v1",capture.captureId,item.itemId])).digest("hex").slice(0,32)
+   :item.itemId;
+  if(wireIds.has(wireId))throw new shared.RecognitionError("INVALID_RECOGNITION_REQUEST",400);
+  wireIds.set(wireId,item.itemId);
+  return {itemId:wireId,observedIdentity:originalEvidence(item),boundingBox:item.boundingBox};
+ });
+ return {items,wireIds};
+}
 function createAssessmentService({env=process.env,transport=shared.postJson,authHeaders,budget=shared.createBudget(),now=Date.now}={}) {
  const attempts=new Map();let authenticate=authHeaders;
  async function remote(capture,items,principal,signal) {
@@ -56,11 +86,14 @@ function createAssessmentService({env=process.env,transport=shared.postJson,auth
  }
  return async({capture,items,principal,signal})=>{
   if(env.WASTE_ITEM_ASSESSMENT_ENABLED!=="true")return null;
-  const assessments=deterministic(items),unknown=items.filter((item,index)=>assessments[index].category==="Unknown"&&item.analysisSource==="gemini_whole_image"&&item.boundingBox);
+  const assessments=deterministic(items),unknown=items.filter((item,index)=>assessments[index].category==="Unknown"&&originalEvidence(item));
   let aiStatus="not_requested";
   if(env.WASTE_ITEM_ASSESSMENT_AI_ENABLED==="true"&&unknown.length){
    try{
-    const result=await remote(capture,unknown,principal,signal);const byId=new Map(result.assessments.map(a=>[a.itemId,a]));
+    const batch=assessmentBatch(capture,unknown,items);
+    const result=await remote(capture,batch.items,principal,signal);
+    // validateResponse has already rejected duplicate/foreign IDs and stale capture/request IDs.
+    const byId=new Map(result.assessments.map(a=>[batch.wireIds.get(a.itemId),a]));
     for(let i=0;i<items.length;i++)if(byId.has(items[i].itemId))assessments[i]=assessment(items[i],contract.categoryFromEvidence(byId.get(items[i].itemId)),"ai_assisted");
     aiStatus="complete";
    }catch(_){aiStatus="unavailable";}
