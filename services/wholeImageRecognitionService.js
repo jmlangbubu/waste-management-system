@@ -41,20 +41,50 @@ function createDiscoveryService({env=process.env,transport=shared.postJson,budge
     return pending;
   };
 }
+const genericNames=new Set(["object","item","household object","household item","bottle","bottles","jar","jars",
+  "container","can","packaging","packaged goods","bottled and jarred packaged goods"]);
+const identityKey=name=>String(name||"").trim().toLowerCase().replace(/[\s_-]+/g," ");
+const generic=item=>{
+  const key=identityKey(item.itemName);
+  const shapeOnly=key.replace(/\b(?:white|black|blue|green|red|yellow|brown|gray|grey|clear|small|large|round)\s+/g,"").trim();
+  return genericNames.has(key)||genericNames.has(shapeOnly);
+};
+function alignedRegion(a,b) {
+  const x=a.boundingBox,y=b.boundingBox;if(!x||!y)return false;
+  const area=b=>(b.right-b.left)*(b.bottom-b.top);
+  const intersection=Math.max(0,Math.min(x.right,y.right)-Math.max(x.left,y.left))
+    *Math.max(0,Math.min(x.bottom,y.bottom)-Math.max(x.top,y.top));
+  return intersection/(area(x)+area(y)-intersection)>=.90
+    && Math.abs((x.left+x.right-y.left-y.right)/2)<=.05*Math.min(x.right-x.left,y.right-y.left)
+    && Math.abs((x.top+x.bottom-y.top-y.bottom)/2)<=.05*Math.min(x.bottom-x.top,y.bottom-y.top);
+}
+function compatibleIdentity(a,b) {
+  const words=item=>identityKey(item.itemName).split(" ");
+  const x=words(a),y=words(b);
+  return x.every(word=>y.includes(word))||y.every(word=>x.includes(word));
+}
 function merge(vision,proposals,samePhysicalObject) {
   const retained=vision.slice(0,8).map(item=>({...item}));
+  // Broad taxonomy phrases are not specific just because they contain more words.
   const ranked=proposals.map((item,index)=>({...item,index})).sort((a,b)=>Number(b.category!=="Unknown")-Number(a.category!=="Unknown")
-    || b.itemName.split(" ").length-a.itemName.split(" ").length || a.index-b.index);
+    || Number(generic(a))-Number(generic(b)) || a.index-b.index);
   for(const {index,...proposal} of ranked) {
     // Identity-only observations are carried separately, never promoted into localized cards.
     if(!proposal.boundingBox) continue;
     const match=retained.find(item=>samePhysicalObject(item,proposal));
     if(match) {
       if(match.analysisSource==="gemini_whole_image") continue;
-      // Vision's box, ID and score remain authoritative. A safe identity suggestion is separate.
-      // Observed identity remains useful without a supported disposal category.
-      // Preserve the first (ranked) observation and all authoritative Vision data.
-      if(!match.identityObservation) {
+      const observations=ranked.filter(item=>!generic(item)&&alignedRegion(match,item)&&samePhysicalObject(match,item));
+      const conflicting=observations.some((item,i)=>observations.slice(i+1).some(other=>!compatibleIdentity(item,other)));
+      if(conflicting) {match.requiresConfirmation=true;continue;}
+      // Refine only a generic, unconfirmed Vision identity with uniquely aligned evidence.
+      // Do not transfer categories/scores or regenerate IDs, geometry or assessment inputs.
+      const refined=match.analysisSource==="google_vision_object_localization" && proposal.analysisSource==="gemini_whole_image"
+          && match.category==="Unknown" && !match.confirmed
+          && generic(match) && !generic(proposal) && alignedRegion(match,proposal)
+          && vision.filter(item=>samePhysicalObject(item,proposal)).length===1;
+      if(refined) match.itemName=proposal.itemName;
+      if(!match.identityObservation || refined) {
         match.identityObservation=proposal.itemName; match.identitySource="gemini_whole_image";
         match.requiresConfirmation=true;
       }
