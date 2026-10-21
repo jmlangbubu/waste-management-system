@@ -193,13 +193,14 @@ test("actual four Gemini objects remain distinct Unknown observations without sc
 });
 test("actual two separate Vision bottles plus four Gemini observations remain four",()=>{
  const v=realVision(),before=JSON.stringify(v),result=merged(v,realFour);assert.equal(result.length,4);assert.equal(JSON.stringify(v),before);
- for(let i=0;i<v.length;i++){const matched=result.find(x=>x.itemId===v[i].itemId);assert.deepEqual(matched.boundingBox,v[i].boundingBox);assert.equal(matched.confidence,v[i].confidence);assert.equal(matched.category,"Unknown");assert.equal(matched.itemName,"Bottle");assert.equal(matched.identityObservation,realFour[i===0?0:3].label);}
+ for(let i=0;i<v.length;i++){const matched=result.find(x=>x.itemId===v[i].itemId);assert.deepEqual(matched.boundingBox,v[i].boundingBox);assert.equal(matched.confidence,v[i].confidence);assert.equal(matched.category,"Unknown");assert.equal(matched.itemName,realFour[i===0?0:3].label);assert.equal(matched.identityObservation,realFour[i===0?0:3].label);}
 });
 for(const label of ["Packaging","Plastic box"]){
  test("actual package plus mocked Vision "+label+" does not create a fifth item",()=>{
  const v=realVision(label),original=JSON.parse(JSON.stringify(v)),result=merged(v,realFour);assert.equal(v.length,3);assert.equal(result.length,4);
  const packageItem=result.find(x=>x.itemId===v[2].itemId);assert.equal(packageItem.identityObservation,"blue plastic container");assert.equal(packageItem.identitySource,"gemini_whole_image");assert.equal(packageItem.requiresConfirmation,true);
- for(const key of ["itemId","itemName","confidence","category","analysisSource","boundingBox","guidance","modelKey"])assert.deepEqual(packageItem[key],original[2][key]);
+ for(const key of ["itemId","confidence","category","analysisSource","boundingBox","guidance","modelKey"])assert.deepEqual(packageItem[key],original[2][key]);
+ assert.equal(packageItem.itemName,label==="Packaging" && original[2].category==="Unknown"?"blue plastic container":original[2].itemName);
  assert.deepEqual(v,original);assert.equal(result.filter(x=>JSON.stringify(x.boundingBox)===JSON.stringify(realBoxes[2])).length,1);
  });
 }
@@ -271,4 +272,58 @@ test("even assessment module failure cannot trigger fallback or replace primary 
  const pending=service.analyzeWaste({image:request.image,objectDiscovery:request,principal:42});await new Promise(resolve=>setImmediate(resolve));service.complete();const result=await pending;
  assert.equal(result.itemName,"Original Bottle");assert.equal(result.explanation,"Original explanation");assert.equal(result.analysisSource,"original");assert.equal(result.detectedItems.length,1);assert.equal(Object.hasOwn(result,"categoryAssessments"),false);assert.deepEqual(service.calls,{primary:1,vision:1,discovery:1});
  assert.doesNotMatch(JSON.stringify(result),/SYNTHETIC_PRIVATE_ASSESSMENT_FAILURE/);
+});
+
+test("long generic taxonomy cannot outrank a specific identity for the same region",()=>{
+ const v=vision("Bottled and jarred packaged goods");
+ for(const labels of [["Bottled and jarred packaged goods","Ballpoint Pen"],["Ballpoint Pen","Bottled and jarred packaged goods"]]) {
+  const result=merged([v],labels.map(label=>object(label)));
+  assert.equal(result.length,1);assert.equal(result[0].itemName,"Ballpoint Pen");
+  assert.equal(result[0].identityObservation,"Ballpoint Pen");assert.equal(result[0].requiresConfirmation,true);
+  for(const key of ["itemId","boundingBox","confidence","canonicalItem","category","analysisSource"])assert.deepEqual(result[0][key],v[key]);
+ }
+});
+test("refining three independent generic detections preserves all boxes IDs capture metadata and categories",()=>{
+ const v=[vision("Packaging"),vision("Packaging",{left:.4,top:.1,right:.6,bottom:.9}),vision("Packaging",{left:.75,top:.1,right:.95,bottom:.9})]
+  .map(item=>({...item,captureId:"synthetic-capture",regionId:item.itemId,observedIdentity:item.itemName}));
+ const before=JSON.parse(JSON.stringify(v));
+ const proposals=v.map(item=>({...normalize([object("Wooden spoon")]).objects[0],boundingBox:{...item.boundingBox}}));
+ const result=merge(v,proposals,analysis.samePhysicalObject);
+ assert.equal(result.length,3);assert.equal(new Set(result.map(item=>item.itemId)).size,3);
+ for(let i=0;i<3;i++) {
+  assert.equal(result[i].itemName,"Wooden spoon");
+  for(const key of Object.keys(v[i]).filter(key=>key!=="itemName"))assert.deepEqual(result[i][key],v[i][key]);
+ }
+ assert.deepEqual(v,before);
+});
+test("conflicting specific identities retain generic uncertainty regardless of order",()=>{
+ for(const labels of [["Wooden spoon","Metal fork"],["Metal fork","Wooden spoon"]]) {
+  const v=vision("Packaging"),result=merged([v],labels.map(label=>object(label)));
+  assert.equal(result.length,1);assert.equal(result[0].itemName,"Packaging");
+  assert.equal(result[0].category,"Unknown");assert.equal(result[0].requiresConfirmation,true);
+  assert.equal(result[0].identityObservation,undefined);
+ }
+});
+test("identity refinement needs tight alignment, not only the legacy duplicate overlap threshold",()=>{
+ const v=vision("Bottle"),proposal=normalize([object("Plastic Bottle")]).objects[0];
+ proposal.boundingBox={...v.boundingBox,left:.07,right:.27};
+ assert.equal(analysis.samePhysicalObject(v,proposal),true);
+ assert.equal(merge([v],[proposal],analysis.samePhysicalObject)[0].itemName,"Bottle");
+});
+test("one proposal matching multiple localized objects cannot relabel either",()=>{
+ const v=[vision("Packaging"),vision("Packaging")];
+ const result=merged(v,[object("Wooden spoon")]);
+ assert.equal(result.length,2);assert.ok(result.every(item=>item.itemName==="Packaging"));
+});
+test("specific or confirmed Vision identities and established categories are never replaced",()=>{
+ for(const v of [vision("Metal fork"),{...vision("Packaging"),confirmed:true},{...vision("Packaging"),category:"Special Waste"}]) {
+  const result=merged([v],[object("Wooden spoon")])[0];
+  assert.equal(result.itemName,v.itemName);assert.equal(result.category,v.category);
+ }
+});
+test("generic-only and unlocalized observations never invent a specific name",()=>{
+ const v=vision("Packaging");
+ for(const proposals of [[object("Bottled and jarred packaged goods")],[object("Blue object")],[object("Round container")],[object("Wooden spoon",null)],[]]) {
+  assert.equal(merged([v],proposals)[0].itemName,"Packaging");
+ }
 });
