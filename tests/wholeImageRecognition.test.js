@@ -110,6 +110,7 @@ function serviceFixture({enabled=true,objects=[object("Pen",[100,400,800,450])],
   if(id==="./googleVisionService")return {...require("../services/googleVisionService"),async detectObjectsFromBase64(){calls.vision++;return visionObjects || [vision()];}};
   if(id==="./geminiWasteClassifierService")return {};
   if(id==="./wasteLearningGuideService")return require("../services/wasteLearningGuideService");
+  if(id==="./wasteDisplayNameService")return require("../services/wasteDisplayNameService");
   if(id==="./perItemWasteAssessmentService"){if(assessmentFailure)throw Error("SYNTHETIC_PRIVATE_ASSESSMENT_FAILURE");return {assessCapture:require("../services/perItemWasteAssessmentService").createAssessmentService({env:{WASTE_ITEM_ASSESSMENT_ENABLED:"true"}})};}
   if(id==="../utils/wasteMapper")return require("../utils/wasteMapper");
   if(id==="./wholeImageRecognitionService")return {merge,discoverObjects:async(input)=>{calls.discovery++;if(failure)throw new shared.RecognitionError("RECOGNITION_TIMEOUT",504);return new Promise(resolve=>{resolveDiscovery=()=>resolve(normalize(objects,input));});}};

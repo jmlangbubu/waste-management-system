@@ -1,6 +1,7 @@
 const http = require("http");
 const https = require("https");
 const diagnostics = require("./cloudRunDiagnostics");
+const { withDisplayNames } = require("./wasteDisplayNameService");
 const { detectObjectsFromBase64, normalizeBoundingBox, OBJECT_LOCALIZATION_TIMEOUT_MS } = require("./googleVisionService");
 const { getWasteLearningGuide } = require("./wasteLearningGuideService");
 
@@ -646,7 +647,7 @@ async function analyzeWasteLegacy({ image, detectedObject, mlKitLabels = [], bou
 }
 
 async function analyzeWaste(input) {
-  if(process.env.WHOLE_IMAGE_DISCOVERY_ENABLED!=="true" || !input.objectDiscovery || !input.principal) return analyzeWasteLegacy(input);
+  if(process.env.WHOLE_IMAGE_DISCOVERY_ENABLED!=="true" || !input.objectDiscovery || !input.principal) return withDisplayNames(await analyzeWasteLegacy(input));
   const discovery=require("./wholeImageRecognitionService");
   // One attempt per capture, concurrently with primary classification; optional failure is isolated.
   const observations=discovery.discoverObjects({...input.objectDiscovery,image:input.image},{principal:input.principal,signal:input.signal})
@@ -660,7 +661,7 @@ async function analyzeWaste(input) {
     try {categoryAssessments=await require("./perItemWasteAssessmentService").assessCapture({capture:{...input.objectDiscovery,image:input.image},items:detectedItems,principal:input.principal,signal:input.signal});}
     catch(_) { /* Optional assessment failure must never replace a valid primary scan. */ }
   }
-  return {...primary,detectedItems,scanSummary:buildScanSummary(detectedItems),identityObservations:objects.filter(item=>!item.boundingBox),...(categoryAssessments?{categoryAssessments}:{})};
+  return withDisplayNames({...primary,detectedItems,scanSummary:buildScanSummary(detectedItems),identityObservations:objects.filter(item=>!item.boundingBox),...(categoryAssessments?{categoryAssessments}:{})});
 }
 
 module.exports = {
