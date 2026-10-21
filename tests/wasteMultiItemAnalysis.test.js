@@ -115,7 +115,8 @@ test("overlapping duplicates retain higher confidence including similar names", 
   assert.equal(items.length, 1);
   assert.equal(items[0].confidence, .9);
 });
-test("overlapping different object names remain separate", () => assert.equal(normalize([object(), object("Battery", .8)]).length, 2));
+test("ordinary overlap between different object names remains separate", () => assert.equal(normalize([object(),
+  object("Battery", .8, { ...box, left: .2, right: .45 })]).length, 2));
 test("plastic bottle maps through existing recyclable rules", () => assert.equal(normalize([object()])[0].category, "Recyclable"));
 test("banana peel and localized Banana are biodegradable", () => {
   for (const name of ["Banana", "banana peel"]) assert.equal(normalize([object(name)])[0].category, "Biodegradable");
@@ -479,11 +480,11 @@ test("alias specificity outranks confidence only when geometry identifies the sa
   const items = normalize([object("Bottled and jarred packaged goods", .95), object("Plastic Bottle", .6)]);
   assert.equal(items.length, 1); assert.equal(items[0].itemName, "Plastic Bottle");
 });
-test("same-object normalized polygons and centered containment suppress duplicate aliases", () => {
+test("same-object polygons suppress aliases but containment alone does not", () => {
   const polygon = { normalizedVertices: [{ x: .1, y: .1 }, { x: .35, y: .1 }, { x: .35, y: .85 }, { x: .1, y: .85 }] };
   assert.equal(normalize([{ name: "Bottle", confidence: .7, boundingPoly: polygon }, object("Bottled and jarred packaged goods", .6)]).length, 1);
   assert.equal(normalize([object("Bottle", .7), object("Bottled and jarred packaged goods", .6,
-    { left: .12, top: .14, right: .33, bottom: .81 })]).length, 1);
+    { left: .12, top: .14, right: .33, bottom: .81 })]).length, 2);
 });
 test("partially overlapping and small nested legitimate instances survive", () => {
   assert.equal(normalize([object("Bottle", .8), object("Bottle", .7,
@@ -508,8 +509,9 @@ test("Gemini primary is preserved even when it also returns localized items", as
 });
 
 test("different container identities do not collapse solely because their boxes overlap", () => {
-  assert.equal(normalize([object("Bottle", .8), object("Can", .7)]).length, 2);
-  assert.equal(normalize([object("Bottle", .8), object("Jar", .7)]).length, 2);
+  for (const name of ["Can", "Jar"]) {
+    assert.equal(normalize([object("Bottle", .8), object(name, .7, { ...box, left: .2, right: .45 })]).length, 2);
+  }
 });
 test("unclassified bottle silhouette cannot replace the existing fallback primary category", async () => {
   const result = await run(loadAnalysis({ objects: [object("Bottle", .8)] }));
@@ -530,4 +532,36 @@ test("unmapped localized identities retain boxes and Unknown without unsafe guid
 test("explicit unresolved classifier category never becomes a guessed recycling policy", () => {
   const result=normalize([{...object("Plastic Bottle"),category:"Unknown"}],true);
   assert.equal(result.length,1);assert.equal(result[0].category,"Unknown");assert.equal(result[0].modelKey,"");
+});
+
+test("one localized bottle with a conflicting contents alias remains one Unknown physical item", () => {
+  for (const names of [["Bottle", "Soap"], ["Soap", "Bottle"]]) {
+    const detections = names.map(name => object(name, name === "Soap" ? .99 : .7));
+    const items = normalize(detections);
+    assert.equal(items.length, 1);
+    assert.equal(items[0].itemName, "Bottle");
+    assert.equal(items[0].canonicalItem, "bottle");
+    assert.equal(items[0].category, "Unknown");
+    assert.equal(items[0].requiresConfirmation, true);
+    assert.deepEqual(items[0].boundingBox, box);
+    assert.equal(items[0].itemId, "item_1");
+    assert.equal(analysis.buildScanSummary(items).totalItems, 1);
+    assert.deepEqual(normalize(detections), items);
+  }
+});
+
+test("two bottles and separate soap retain independent IDs even with matching names", () => {
+  const detections = [object("Bottle"), object("Bottle", .8, { ...box, left: .5, right: .7 }),
+    object("Soap", .9, { left: .75, top: .2, right: .95, bottom: .4 })];
+  const items = normalize(detections);
+  assert.equal(items.length, 3);
+  assert.equal(new Set(items.map(item => item.itemId)).size, 3);
+  assert.deepEqual(items.map(item => item.boundingBox), detections.map(item => item.boundingBox));
+});
+
+test("ordinary high overlap and centered nested boxes alone do not collapse same-name objects", () => {
+  for (const other of [{ ...box, left: .13, right: .38 },
+    { left: .12, top: .14, right: .33, bottom: .81 }]) {
+    assert.equal(normalize([object("Bottle"), object("Bottle", .8, other)]).length, 2);
+  }
 });

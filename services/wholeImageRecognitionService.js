@@ -63,17 +63,34 @@ function compatibleIdentity(a,b) {
   const x=words(a),y=words(b);
   return x.every(word=>y.includes(word))||y.every(word=>x.includes(word));
 }
+const containerIdentity=item=>/\b(bottles?|jars?|containers?|cans?|cups?|box(?:es)?|bags?)\b/.test(identityKey(item.itemName));
 function merge(vision,proposals,samePhysicalObject) {
-  const retained=vision.slice(0,8).map(item=>({...item}));
+  const retained=[];
+  // The initial list can itself contain conflicting observations of one region.
+  // Keep the survivor's entire ID/geometry/evidence contract, never synthesize a box.
+  for(const item of vision) {
+    const index=retained.findIndex(other=>samePhysicalObject(other,item));
+    if(index<0) {if(retained.length<8)retained.push({...item});continue;}
+    const match=retained[index];
+    if(!compatibleIdentity(match,item)) {
+      if(!match.confirmed && match.category==="Unknown" && item.category==="Unknown"
+          && containerIdentity(item) && !containerIdentity(match)) retained[index]={...item};
+      retained[index].requiresConfirmation=true;
+    }
+  }
   // Broad taxonomy phrases are not specific just because they contain more words.
   const ranked=proposals.map((item,index)=>({...item,index})).sort((a,b)=>Number(b.category!=="Unknown")-Number(a.category!=="Unknown")
+    || Number(containerIdentity(b))-Number(containerIdentity(a))
     || Number(generic(a))-Number(generic(b)) || a.index-b.index);
   for(const {index,...proposal} of ranked) {
     // Identity-only observations are carried separately, never promoted into localized cards.
     if(!proposal.boundingBox) continue;
     const match=retained.find(item=>samePhysicalObject(item,proposal));
     if(match) {
-      if(match.analysisSource==="gemini_whole_image") continue;
+      if(match.analysisSource==="gemini_whole_image") {
+        if(!compatibleIdentity(match,proposal))match.requiresConfirmation=true;
+        continue;
+      }
       const observations=ranked.filter(item=>!generic(item)&&alignedRegion(match,item)&&samePhysicalObject(match,item));
       const conflicting=observations.some((item,i)=>observations.slice(i+1).some(other=>!compatibleIdentity(item,other)));
       if(conflicting) {match.requiresConfirmation=true;continue;}
@@ -82,9 +99,13 @@ function merge(vision,proposals,samePhysicalObject) {
       const refined=match.analysisSource==="google_vision_object_localization" && proposal.analysisSource==="gemini_whole_image"
           && match.category==="Unknown" && !match.confirmed
           && generic(match) && !generic(proposal) && alignedRegion(match,proposal)
+          && (!containerIdentity(match) || compatibleIdentity(match,proposal))
           && vision.filter(item=>samePhysicalObject(item,proposal)).length===1;
-      if(refined) match.itemName=proposal.itemName;
-      if(!match.identityObservation || refined) {
+      const physicalIdentity=match.category==="Unknown" && !match.confirmed && !generic(match)
+        && alignedRegion(match,proposal) && containerIdentity(proposal) && !containerIdentity(match)
+        && vision.filter(item=>samePhysicalObject(item,proposal)).length===1;
+      if(refined || physicalIdentity) match.itemName=proposal.itemName;
+      if(!match.identityObservation || refined || physicalIdentity) {
         match.identityObservation=proposal.itemName; match.identitySource="gemini_whole_image";
         match.requiresConfirmation=true;
       }
