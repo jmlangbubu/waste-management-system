@@ -100,16 +100,17 @@ test("Cloud handler is gated authenticated bounded and uses only the pinned mode
  const req=new EventEmitter();req.body=request;req.get=()=>env.WHOLE_IMAGE_DISCOVERY_SHARED_TOKEN;const res=response();await handler(req,res);assert.equal(res.body.objects.length,1);assert.equal(calls,1);
  for(const config of [{...env,WHOLE_IMAGE_DISCOVERY_ENABLED:"false"},{...env,WHOLE_IMAGE_DISCOVERY_MODEL:"unverified-model"}]){const bad=response();await whole.createCloudHandler({env:config,transport:async()=>{throw Error("must not call");}})(req,bad);assert.equal(bad.statusCode,503);}
 });
-function serviceFixture({enabled=true,objects=[object("Pen",[100,400,800,450])],failure=false,visionObjects=null}={}) {
+function serviceFixture({enabled=true,objects=[object("Pen",[100,400,800,450])],failure=false,visionObjects=null,assessmentEnabled=true,assessmentFailure=false}={}) {
  let resolveDiscovery;const calls={primary:0,vision:0,discovery:0};const primary={success:true,source:"original",result:{itemName:"Original Bottle",category:"Recyclable",confidence:.91,explanation:"Original explanation",action:"Original action",warning:"Original warning"}};
  const transport={request(options,callback){const req=new EventEmitter();req.write=()=>{};req.destroy=e=>req.emit("error",e);req.end=()=>{calls.primary++;const res=new EventEmitter();res.statusCode=200;callback(res);res.emit("data",JSON.stringify(primary));res.emit("end");return req;};return req;}};
  const module={exports:{}};
- vm.runInNewContext(fs.readFileSync(path.join(__dirname,"../services/wasteAnalysisService.js"),"utf8"),{module,Buffer,URL,setTimeout,clearTimeout,console:{log(){},warn(){},error(){}},process:{env:{GEMINI_CLASSIFIER_URL:env.GEMINI_CLASSIFIER_URL,...(enabled?{WHOLE_IMAGE_DISCOVERY_ENABLED:"true"}:{})}},require(id){
+ vm.runInNewContext(fs.readFileSync(path.join(__dirname,"../services/wasteAnalysisService.js"),"utf8"),{module,Buffer,URL,setTimeout,clearTimeout,console:{log(){},warn(){},error(){}},process:{env:{GEMINI_CLASSIFIER_URL:env.GEMINI_CLASSIFIER_URL,...(enabled?{WHOLE_IMAGE_DISCOVERY_ENABLED:"true",...(assessmentEnabled?{WASTE_ITEM_ASSESSMENT_ENABLED:"true"}:{})}:{})}},require(id){
   if(id==="./cloudRunDiagnostics")return require("../services/cloudRunDiagnostics");
   if(id==="http"||id==="https")return transport;
   if(id==="./googleVisionService")return {...require("../services/googleVisionService"),async detectObjectsFromBase64(){calls.vision++;return visionObjects || [vision()];}};
   if(id==="./geminiWasteClassifierService")return {};
   if(id==="./wasteLearningGuideService")return require("../services/wasteLearningGuideService");
+  if(id==="./perItemWasteAssessmentService"){if(assessmentFailure)throw Error("SYNTHETIC_PRIVATE_ASSESSMENT_FAILURE");return {assessCapture:require("../services/perItemWasteAssessmentService").createAssessmentService({env:{WASTE_ITEM_ASSESSMENT_ENABLED:"true"}})};}
   if(id==="../utils/wasteMapper")return require("../utils/wasteMapper");
   if(id==="./wholeImageRecognitionService")return {merge,discoverObjects:async(input)=>{calls.discovery++;if(failure)throw new shared.RecognitionError("RECOGNITION_TIMEOUT",504);return new Promise(resolve=>{resolveDiscovery=()=>resolve(normalize(objects,input));});}};
   throw Error("Unexpected dependency "+id);
@@ -240,7 +241,10 @@ test("three distinct discovery objects survive full analyze with primary fallbac
  await new Promise(resolve=>setImmediate(resolve));service.complete();const result=await pending;
  assert.equal(result.itemName,"Original Bottle");assert.equal(result.detectedItems.length,3);assert.equal(result.scanSummary.totalItems,3);
  assert.equal(new Set(result.detectedItems.map(x=>x.itemId)).size,3);assert.equal(new Set(result.detectedItems.map(x=>JSON.stringify(x.boundingBox))).size,3);
- for(const item of result.detectedItems){assert.equal(item.category,"Unknown");assert.equal(item.requiresConfirmation,true);assert.equal(Object.hasOwn(item,"confidence"),false);}
+ assert.equal(result.detectedItems.find(item=>item.observedIdentity==="White power adapter").category,"Unknown");
+ assert.equal(result.categoryAssessments.items.find(item=>item.itemId===result.detectedItems.find(i=>i.observedIdentity==="White power adapter").itemId).category,"Special Waste");
+ assert.ok(result.detectedItems.filter(item=>item.observedIdentity!=="White power adapter").every(item=>item.category==="Unknown"));
+ for(const item of result.detectedItems){assert.equal(item.requiresConfirmation,true);assert.equal(Object.hasOwn(item,"confidence"),false);}
  assert.deepEqual(JSON.parse(JSON.stringify(result.scanSummary.categories)),{biodegradable:0,recyclable:0,residual:0,specialWaste:0});
  assert.equal(service.calls.discovery,1);assert.equal(service.calls.vision,1);assert.equal(service.calls.primary,1);
 });
@@ -249,4 +253,22 @@ test("forged discovery IDs fail response validation and repeated identical propo
  assert.throws(()=>whole.validateResponse(request,{...response,objects:[{...response.objects[0],itemId:"item_forged"}]}));
  const result=merged([],[object("Blue-handled object"),object("Blue-handled object")]);
  assert.equal(result.length,1);assert.equal(new Set(result.map(x=>x.itemId)).size,1);
+});
+
+test("assessment flag off preserves the original full analyze response and billing counts",async()=>{
+ const request=input(),service=serviceFixture({assessmentEnabled:false,visionObjects:[],objects:[object("white power adapter"),object("gray round container",[100,500,800,900])]});
+ const pending=service.analyzeWaste({image:request.image,objectDiscovery:request,principal:42});await new Promise(resolve=>setImmediate(resolve));service.complete();const result=await pending;
+ assert.equal(Object.hasOwn(result,"categoryAssessments"),false);assert.equal(result.itemName,"Original Bottle");assert.equal(result.detectedItems.length,2);
+ assert.ok(result.detectedItems.every(i=>i.category==="Unknown"&&!Object.hasOwn(i,"guidance")));assert.deepEqual(service.calls,{primary:1,vision:1,discovery:1});
+});
+test("versioned deterministic assessments reach authenticated API response without extra history or image writes",async()=>{
+ const {res,writes,calls}=await routeFixture();assert.equal(res.body.categoryAssessments.schemaVersion,1);assert.equal(res.body.categoryAssessments.aiStatus,"not_requested");
+ assert.equal(res.body.categoryAssessments.items.length,res.body.detectedItems.length);assert.equal(writes.history,1);assert.equal(writes.image,1);assert.equal(writes.auth,1);assert.deepEqual(calls,{primary:1,vision:1,discovery:1});
+});
+
+test("even assessment module failure cannot trigger fallback or replace primary fields/detections",async()=>{
+ const request=input(),service=serviceFixture({assessmentFailure:true,visionObjects:[],objects:[object("white power adapter")]});
+ const pending=service.analyzeWaste({image:request.image,objectDiscovery:request,principal:42});await new Promise(resolve=>setImmediate(resolve));service.complete();const result=await pending;
+ assert.equal(result.itemName,"Original Bottle");assert.equal(result.explanation,"Original explanation");assert.equal(result.analysisSource,"original");assert.equal(result.detectedItems.length,1);assert.equal(Object.hasOwn(result,"categoryAssessments"),false);assert.deepEqual(service.calls,{primary:1,vision:1,discovery:1});
+ assert.doesNotMatch(JSON.stringify(result),/SYNTHETIC_PRIVATE_ASSESSMENT_FAILURE/);
 });

@@ -654,7 +654,13 @@ async function analyzeWaste(input) {
   const primary=await analyzeWasteLegacy({...input,boundedDiscovery:true});
   const objects=await observations;
   const detectedItems=discovery.merge(primary.detectedItems || [],objects,samePhysicalObject);
-  return {...primary,detectedItems,scanSummary:buildScanSummary(detectedItems),identityObservations:objects.filter(item=>!item.boundingBox)};
+  // A versioned sidecar never changes detection v1 IDs, categories or metadata.
+  let categoryAssessments=null;
+  if(process.env.WASTE_ITEM_ASSESSMENT_ENABLED==="true") {
+    try {categoryAssessments=await require("./perItemWasteAssessmentService").assessCapture({capture:{...input.objectDiscovery,image:input.image},items:detectedItems,principal:input.principal,signal:input.signal});}
+    catch(_) { /* Optional assessment failure must never replace a valid primary scan. */ }
+  }
+  return {...primary,detectedItems,scanSummary:buildScanSummary(detectedItems),identityObservations:objects.filter(item=>!item.boundingBox),...(categoryAssessments?{categoryAssessments}:{})};
 }
 
 module.exports = {
