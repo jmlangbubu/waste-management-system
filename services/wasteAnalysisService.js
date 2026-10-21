@@ -659,6 +659,7 @@ async function analyzeWaste(input) {
   if(process.env.WASTE_ITEM_ASSESSMENT_ENABLED==="true") {
     try {categoryAssessments=await require("./perItemWasteAssessmentService").assessCapture({capture:{...input.objectDiscovery,image:input.image},items:detectedItems,principal:input.principal,signal:input.signal});}
     catch(_) { /* Optional assessment failure must never replace a valid primary scan. */ }
+    require("./wasteAssessmentDiagnostics").logAssessment(categoryAssessments,detectedItems.length);
   }
   return withDisplayNames({...primary,detectedItems,scanSummary:buildScanSummary(detectedItems),identityObservations:objects.filter(item=>!item.boundingBox),...(categoryAssessments?{categoryAssessments}:{})});
 }

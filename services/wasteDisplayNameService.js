@@ -4,6 +4,9 @@ const types = [
   [/\b(?:chargers?|power adapters?)\b/, "Charger"],
   [/\b(?:batter(?:y|ies))\b/, "Battery"],
   [/\bbottles?\b/, "Bottle"], [/\b(?:spray cans?|cans?)\b/, "Can"],
+  [/\b(?:wrappers?|wrappings?)\b/, "Wrapper"],
+  [/\b(?:sachets?|packets?)\b/, "Packet"],
+  [/\b(?:cosmetics?|makeup|powder)\s+(?:cases?|compacts?)\b/, "Container"],
   [/\b(?:containers?|jars?|boxes|box|tubs?|pots?|cartons?|packages?|packaging|sachets?|packets?|tubes?)\b/, "Container"],
   [/\b(?:compact|palette)\b.*\b(?:powder|cosmetics?|makeup|blush|eyeshadow|foundation)\b|\b(?:powder|cosmetics?|makeup|blush|eyeshadow|foundation)\b.*\b(?:compact|palette)\b/, "Container"],
   [/\b(?:pens?|ballpens?|ballpoint pens?)\b/, "Pen"], [/\bpencils?\b/, "Pencil"],
@@ -36,7 +39,14 @@ function shortObjectName(value) {
 function withDisplayNames(result) {
   return { ...result, detectedItems: (result.detectedItems || []).map(item => ({ ...item,
     originalItemName: item.originalItemName || item.itemName,
-    itemName: shortObjectName(item.originalItemName || item.itemName)
+    itemName: (() => {
+      const original = item.originalItemName || item.itemName;
+      const primary = shortObjectName(original);
+      // Only use another observation when the original was merely "item" or "object".
+      // Explicitly uncertain/negated provider labels must never be overridden.
+      if (primary !== "Item" || !/^(?:items?|objects?|household items?|household objects?)$/i.test(String(original || "").trim())) return primary;
+      return shortObjectName(item.observedIdentity);
+    })()
   })) };
 }
 module.exports = { shortObjectName, withDisplayNames };
