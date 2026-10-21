@@ -11,6 +11,9 @@ for(const [raw,display] of [
  ["gray heavy duty hammer","Gray Hammer"],["wireless computer keyboard","Keyboard"],
  ["black USB charging cable","Black Cable"],["brown cardboard box","Brown Container"],
  ["red bottle with blue cap","Bottle"],["unidentified white shape","Item"],
+ ["orange snack wrapper","Orange Wrapper"],["snack sachet","Packet"],
+ ["green cosmetics case","Green Container"],["gray powder compact","Gray Container"],
+ ["foil chocolate wrapper","Wrapper"],["blue plastic packet","Blue Packet"],
  ["possibly a glass bottle","Item"],["unlisted product name","Item"],[null,"Item"]
 ]) test(`short display: ${raw} -> ${display}`,()=>assert.equal(shortObjectName(raw),display));
 function scene(labels) {
@@ -58,4 +61,17 @@ test("Vision evidence is retained when no original observedIdentity field exists
  const display=withDisplayNames({detectedItems:[item]}).detectedItems[0];
  assert.equal(display.originalItemName,item.itemName);assert.equal(display.itemName,"Brown Container");
  assert.equal(display.observedIdentity,undefined);assert.equal(display.canonicalItem,item.canonicalItem);
+});
+
+test("generic placeholder uses explicit observation without changing underlying evidence",()=>{
+ const item={itemId:"item_2",itemName:"Item",observedIdentity:"green makeup case",canonicalItem:"unresolved",category:"Unknown",boundingBox:{left:0,top:0,right:1,bottom:1}};
+ const display=withDisplayNames({detectedItems:[item]}).detectedItems[0];
+ assert.equal(display.itemName,"Green Container");assert.equal(display.originalItemName,"Item");
+ assert.equal(display.observedIdentity,item.observedIdentity);assert.equal(display.canonicalItem,item.canonicalItem);
+ assert.equal(display.category,"Unknown");assert.deepEqual(display.boundingBox,item.boundingBox);
+ assert.equal(withDisplayNames({detectedItems:[display]}).detectedItems[0].itemName,"Green Container");
+ for(const raw of ["unknown item","unidentified bottle","possibly a glass bottle","not a bottle"]){
+  assert.equal(withDisplayNames({detectedItems:[{itemName:raw,observedIdentity:"green container"}]}).detectedItems[0].itemName,"Item");
+ }
+ assert.equal(withDisplayNames({detectedItems:[{itemName:"Item",observedIdentity:"green round shape"}]}).detectedItems[0].itemName,"Item");
 });
