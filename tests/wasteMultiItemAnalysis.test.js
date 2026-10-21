@@ -42,6 +42,7 @@ function loadAnalysis({ objects = [], external = null, local = null, visionFailu
       if (id === "http" || id === "https") return transport;
       if (id === "../utils/wasteMapper") return mapper;
       if (id === "./wasteLearningGuideService") return guide;
+      if (id === "./wasteDisplayNameService") return require("../services/wasteDisplayNameService");
       if (id === "./googleVisionService") return { ...visionHelpers, async detectObjectsFromBase64() {
         calls.vision++;
         if (visionFailure) throw new Error("sensitive-provider-request-must-not-log");

@@ -9,7 +9,7 @@ const EXTRA_IDENTITIES = new Map([
   ["empty aluminum can", "Recyclable"], ["electronic circuit board", "Special Waste"]
 ]);
 const ELECTRICAL_IDENTITIES = new Set([
-  "white power adapter", "power adapter", "phone charger", "usb wall charger"
+  "white power adapter", "power adapter", "phone charger", "usb wall charger", "charger", "wall charger", "usb charger"
 ]);
 function enrichDiscoveryItem(item) {
   // A coincident Vision region keeps ALL its authoritative classification data.
@@ -18,7 +18,7 @@ function enrichDiscoveryItem(item) {
       || item.recognitionState !== "localized_observation" || !item.boundingBox) return item;
   const label = item.observedIdentity.trim().toLowerCase().replace(/\s+/g, " ");
   const supported = matchIdentity(item.observedIdentity)
-    || (ELECTRICAL_IDENTITIES.has(label) ? { category: "Special Waste" }
+    || (ELECTRICAL_IDENTITIES.has(label.replace(/^(?:black|white|red|green|blue|yellow|gray|grey)\s+/, "")) ? { category: "Special Waste" }
       : EXTRA_IDENTITIES.has(label) ? { category: EXTRA_IDENTITIES.get(label) } : null);
   if (!supported) {
     if (item.category !== "Unknown") return item;
