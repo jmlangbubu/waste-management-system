@@ -14,7 +14,6 @@ const {
 
 const MIN_OBJECT_CONFIDENCE = 0.40;
 const MAX_DETECTED_ITEMS = 8;
-const DUPLICATE_OVERLAP_THRESHOLD = 0.70;
 
 function overlapRatio(a, b) {
   const intersection = Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left))
@@ -42,25 +41,13 @@ function similarObjectNames(a, b) {
 }
 function samePhysicalObject(a, b) {
   const x = a.boundingBox, y = b.boundingBox;
-  if (!x || !y) return false;
-  // Independent providers can disagree on identity while localizing the same
+  if (!normalizeBoundingBox(x) || !normalizeBoundingBox(y)) return false;
+  // Both same-provider and independent observations can disagree on the same
   // object. Require nearly identical extents and centers for a name-free match;
   // different-size nested objects and partial overlaps must remain independent.
-  const sources = new Set([a.analysisSource, b.analysisSource]);
-  if (sources.has("gemini_whole_image") && sources.has("google_vision_object_localization")
-      && overlapRatio(x, y) >= .90
+  return overlapRatio(x, y) >= .90
       && Math.abs((x.left + x.right - y.left - y.right) / 2) <= .05 * Math.min(x.right - x.left, y.right - y.left)
-      && Math.abs((x.top + x.bottom - y.top - y.bottom) / 2) <= .05 * Math.min(x.bottom - x.top, y.bottom - y.top)) return true;
-  if (!similarObjectNames(a.canonicalItem, b.canonicalItem)) return false;
-  if (overlapRatio(x, y) >= DUPLICATE_OVERLAP_THRESHOLD) return true;
-  const area = (box) => (box.right - box.left) * (box.bottom - box.top);
-  const intersection = Math.max(0, Math.min(x.right, y.right) - Math.max(x.left, y.left))
-    * Math.max(0, Math.min(x.bottom, y.bottom) - Math.max(x.top, y.top));
-  const small = Math.min(area(x), area(y)), large = Math.max(area(x), area(y));
-  // Similar-size, almost-contained, centered aliases. Small nested objects survive.
-  return small / large >= .65 && intersection / small >= .90
-    && Math.abs((x.left + x.right - y.left - y.right) / 2) <= .15 * Math.min(x.right - x.left, y.right - y.left)
-    && Math.abs((x.top + x.bottom - y.top - y.bottom) / 2) <= .15 * Math.min(x.bottom - x.top, y.bottom - y.top);
+      && Math.abs((x.top + x.bottom - y.top - y.bottom) / 2) <= .05 * Math.min(x.bottom - x.top, y.bottom - y.top);
 }
 
 function normalizeDetectedItems(objects, analysisSource, allowClassifierCategory = false) {
@@ -100,7 +87,19 @@ function normalizeDetectedItems(objects, analysisSource, allowClassifierCategory
     || a.index - b.index);
   const retained = [];
   for (const candidate of candidates) {
-    if (retained.some((other) => samePhysicalObject(candidate, other))) continue;
+    const duplicate = retained.findIndex((other) => samePhysicalObject(candidate, other));
+    if (duplicate !== -1) {
+      const other = retained[duplicate];
+      // Prefer an observed physical container over an incompatible contents label,
+      // without inferring material/category or replacing established safety evidence.
+      const container = (item) => /\b(bottles?|jars?|containers?|cans?|cups?|box(?:es)?|bags?)\b/.test(item.canonicalItem);
+      if (candidate.category === "Unknown" && other.category === "Unknown"
+          && !similarObjectNames(candidate.canonicalItem, other.canonicalItem)) {
+        if (container(candidate) && !container(other)) retained[duplicate] = candidate;
+        retained[duplicate].requiresConfirmation = true;
+      }
+      continue;
+    }
     retained.push(candidate);
     if (retained.length === MAX_DETECTED_ITEMS) break;
   }

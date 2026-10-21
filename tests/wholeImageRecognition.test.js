@@ -209,8 +209,8 @@ test("strong cross-provider coincidence tolerates small localization differences
  const v=vision("Packaging",realBoxes[2]),proposal=normalize([realFour[2]]).objects[0];
  proposal.boundingBox={...proposal.boundingBox,left:proposal.boundingBox.left+.001,right:proposal.boundingBox.right+.001};
  assert.equal(merge([v],[proposal],analysis.samePhysicalObject).length,1);
- // Identity-independent matching is not enabled for unrelated/same providers.
- assert.equal(analysis.samePhysicalObject(v,{...proposal,analysisSource:v.analysisSource}),false);
+ // The same strict geometry applies to aliases from a single provider too.
+ assert.equal(analysis.samePhysicalObject(v,{...proposal,analysisSource:v.analysisSource}),true);
 });
 test("partial overlaps, different extents and small nested objects remain independent",()=>{
  const v=vision("Packaging",{left:.2,top:.2,right:.8,bottom:.8});
@@ -305,16 +305,17 @@ test("conflicting specific identities retain generic uncertainty regardless of o
   assert.equal(result[0].identityObservation,undefined);
  }
 });
-test("identity refinement needs tight alignment, not only the legacy duplicate overlap threshold",()=>{
+test("ordinary overlap does not establish duplication or permit identity refinement",()=>{
  const v=vision("Bottle"),proposal=normalize([object("Plastic Bottle")]).objects[0];
  proposal.boundingBox={...v.boundingBox,left:.07,right:.27};
- assert.equal(analysis.samePhysicalObject(v,proposal),true);
+ assert.equal(analysis.samePhysicalObject(v,proposal),false);
+ assert.equal(merge([v],[proposal],analysis.samePhysicalObject).length,2);
  assert.equal(merge([v],[proposal],analysis.samePhysicalObject)[0].itemName,"Bottle");
 });
-test("one proposal matching multiple localized objects cannot relabel either",()=>{
+test("duplicate initial localized regions are deduplicated without ambiguous relabeling",()=>{
  const v=[vision("Packaging"),vision("Packaging")];
  const result=merged(v,[object("Wooden spoon")]);
- assert.equal(result.length,2);assert.ok(result.every(item=>item.itemName==="Packaging"));
+ assert.equal(result.length,1);assert.equal(result[0].itemId,v[0].itemId);assert.equal(result[0].itemName,"Packaging");
 });
 test("specific or confirmed Vision identities and established categories are never replaced",()=>{
  for(const v of [vision("Metal fork"),{...vision("Packaging"),confirmed:true},{...vision("Packaging"),category:"Special Waste"}]) {
@@ -326,5 +327,74 @@ test("generic-only and unlocalized observations never invent a specific name",()
  const v=vision("Packaging");
  for(const proposals of [[object("Bottled and jarred packaged goods")],[object("Blue object")],[object("Round container")],[object("Wooden spoon",null)],[]]) {
   assert.equal(merged([v],proposals)[0].itemName,"Packaging");
+ }
+});
+
+test("same-provider bottle/contents aliases share one strongly aligned physical region",()=>{
+ for(const labels of [["Bottle","Soap"],["Soap","Bottle"],["Spray Bottle","Soap"],["Soap","Spray Bottle"]]) {
+  const request=input(),proposals=normalize(labels.map(label=>object(label)),request).objects;
+  const survivor=proposals.find(item=>/bottle/i.test(item.itemName));
+  const result=merge([],proposals,analysis.samePhysicalObject);
+  assert.equal(result.length,1);assert.equal(result[0].itemName,survivor.itemName);
+  for(const key of ["itemId","captureId","observedIdentity","canonicalItem","boundingBox","category"])
+   assert.deepEqual(result[0][key],survivor[key]);
+  assert.equal(result[0].category,"Unknown");assert.equal(result[0].requiresConfirmation,true);
+ }
+});
+
+test("cross-provider conflicting identities retain an observed container without transferring categories",()=>{
+ for(const [localName,remoteName] of [["Bottle","Soap"],["Soap","Bottle"]]) {
+  const local={...vision(localName),captureId:"local-capture",observedIdentity:localName};
+  const before=JSON.parse(JSON.stringify(local));
+  const result=merged([local],[object(remoteName)]);
+  assert.equal(result.length,1);assert.equal(result[0].itemName,"Bottle");
+  for(const key of Object.keys(local).filter(key=>key!=="itemName"))assert.deepEqual(result[0][key],before[key]);
+  assert.equal(result[0].category,"Unknown");assert.deepEqual(local,before);
+ }
+});
+
+test("initial duplicate observations are resolved in either order before discovery merging",()=>{
+ const bottle={...vision("Bottle"),captureId:"capture"},soap=vision("Soap");
+ for(const initial of [[soap,bottle],[bottle,soap]]) {
+  const result=merge(initial,[],analysis.samePhysicalObject);
+  assert.equal(result.length,1);assert.equal(result[0].itemName,"Bottle");
+  assert.equal(result[0].itemId,bottle.itemId);assert.equal(result[0].captureId,"capture");
+  assert.deepEqual(result[0].boundingBox,bottle.boundingBox);
+ }
+});
+
+test("separate and nested soap is not treated as the bottle's contents alias",()=>{
+ for(const region of [[100,400,900,600],[300,100,600,200],[100,150,900,350]]) {
+  const result=merged([vision("Bottle")],[object("Soap",region)]);
+  assert.equal(result.length,2);assert.equal(new Set(result.map(item=>item.itemId)).size,2);
+ }
+});
+
+test("strong region matching rejects invalid geometry and tolerates only tiny localization drift",()=>{
+ const bottle=vision("Bottle"),soap={...vision("Soap"),boundingBox:{...vision().boundingBox,left:.051,right:.251}};
+ assert.equal(analysis.samePhysicalObject(bottle,soap),true);
+ for(const boundingBox of [{...soap.boundingBox,left:NaN},{...soap.boundingBox,right:.01},
+  {...soap.boundingBox,left:-.1},{...soap.boundingBox,top:null}]) {
+  assert.equal(analysis.samePhysicalObject(bottle,{...soap,boundingBox}),false);
+ }
+});
+
+test("final physical count and assessments agree before any per-item assessment, preserving primary",async()=>{
+ for(const visionObjects of [[],[{name:"Bottle",confidence:.8,boundingBox:vision().boundingBox},
+  {name:"Soap",confidence:.99,boundingBox:vision().boundingBox}]]) {
+  const request=input(),service=serviceFixture({objects:[object("Soap"),object("Bottle")],visionObjects});
+  const pending=service.analyzeWaste({image:request.image,objectDiscovery:request,principal:42});
+  await new Promise(resolve=>setImmediate(resolve));service.complete();const result=await pending;
+  assert.equal(result.detectedItems.length,1);assert.equal(result.detectedItems[0].itemName,"Bottle");
+  assert.equal(result.scanSummary.totalItems,1);assert.equal(result.detectedItems[0].category,"Unknown");
+  assert.equal(result.categoryAssessments.captureId,request.captureId);
+  assert.equal(result.categoryAssessments.items.length,1);
+  assert.equal(result.categoryAssessments.items[0].itemId,result.detectedItems[0].itemId);
+  assert.equal(result.categoryAssessments.items[0].category,"Unknown");
+  assert.equal(result.categoryAssessments.aiStatus,"not_requested");
+  assert.equal(result.itemName,"Original Bottle");assert.equal(result.category,"Recyclable");
+  assert.equal(result.explanation,"Original explanation");assert.equal(result.action,"Original action");
+  assert.equal(result.warning,"Original warning");assert.equal(result.aiConfidence,"0.91");
+  assert.deepEqual(service.calls,{primary:1,vision:1,discovery:1});
  }
 });
