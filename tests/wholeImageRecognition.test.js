@@ -106,6 +106,7 @@ function serviceFixture({enabled=true,objects=[object("Pen",[100,400,800,450])],
  const module={exports:{}};
  vm.runInNewContext(fs.readFileSync(path.join(__dirname,"../services/wasteAnalysisService.js"),"utf8"),{module,Buffer,URL,setTimeout,clearTimeout,console:{log(){},warn(){},error(){}},process:{env:{GEMINI_CLASSIFIER_URL:env.GEMINI_CLASSIFIER_URL,...(enabled?{WHOLE_IMAGE_DISCOVERY_ENABLED:"true",...(assessmentEnabled?{WASTE_ITEM_ASSESSMENT_ENABLED:"true"}:{})}:{})}},require(id){
   if(id==="./cloudRunDiagnostics")return require("../services/cloudRunDiagnostics");
+   if(id==="./automaticWasteCategoryMapper")return require("../services/automaticWasteCategoryMapper");
   if(id==="http"||id==="https")return transport;
   if(id==="./googleVisionService")return {...require("../services/googleVisionService"),async detectObjectsFromBase64(){calls.vision++;return visionObjects || [vision()];}};
   if(id==="./geminiWasteClassifierService")return {};

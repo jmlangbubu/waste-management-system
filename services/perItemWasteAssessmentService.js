@@ -3,7 +3,7 @@ const crypto=require("node:crypto");
 const shared=require("../gemini-waste-classifier-cloudrun/cropRecognition");
 const contract=require("../gemini-waste-classifier-cloudrun/wasteItemAssessment");
 const {enrichDiscoveryItem}=require("./discoveryItemClassificationService");
-const {automaticCategory,unsafeProviderEvidence,unsafeIdentity,corroboratedCategory,providerIdentityConflict}=require("./automaticWasteCategoryMapper");
+const {automaticCategory,unsafeProviderEvidence,unsafeIdentity,corroboratedCategory,providerIdentityConflict,requiresWasteIdentityReview,physicalSpecialWasteIdentity,unreliablePhysicalIdentity}=require("./automaticWasteCategoryMapper");
 const {alignedIdentity,identityConflict}=require("./wholeImageRecognitionService");
 const {getWasteLearningGuide}=require("./wasteLearningGuideService");
 const {createAssessmentReasons,recordAssessmentReasons}=require("./wasteAssessmentDiagnostics");
@@ -32,6 +32,8 @@ function deterministic(items,captureId) {
   if(item.analysisSource!=="gemini_whole_image")return assessment(item,item.category,"existing_category");
   const classified=enrichDiscoveryItem(item);
   const mapped=classified.category==="Unknown"?automaticCategory(item):null;
+  if(["Residual","Recyclable"].includes(mapped||classified.category) && productNotDiscarded(item,captureId))
+   return assessment(item,"Unknown","insufficient_evidence");
   return assessment(item,mapped||classified.category,mapped?"reviewed_identity_rule":
    classified.category==="Unknown"?"insufficient_evidence":"reviewed_identity_rule",!!mapped);
  });
@@ -48,6 +50,18 @@ function originalEvidence(item,captureId) {
   ||![b.left,b.top,b.right,b.bottom].every(n=>typeof n==="number"&&Number.isFinite(n)&&n>=0&&n<=1)
   ||b.left>=b.right||b.top>=b.bottom)return null;
  return identity;
+}
+function productNotDiscarded(item,captureId) {
+ // Check both the immutable localized owner evidence and capture-bound aligned
+ // evidence. Never use itemName: reconciliation/display may have changed it.
+ const aligned=originalEvidence(item,captureId);
+ if(!aligned)return false;
+ const original=item.analysisSource==="google_vision_object_localization"
+  ? item.originalItemName||item.observedIdentity||item.canonicalItem : item.observedIdentity;
+ return [original,aligned].some(identity=>typeof identity==="string"
+  && identity.length<=128 && !/[\x00-\x1f<>]/.test(identity)
+  && /\b(?:unopened|sealed|full|filled|containing|contains|not empty)\b/i.test(identity)
+  && /\b(?:packet|sachet|wrapper|packag(?:e|ed|ing)|pouch|bottle|container|jar|can)\b/i.test(identity));
 }
 function assessmentBatch(capture,unknown,allItems) {
  const originalIds=new Set(),wireIds=new Map();
@@ -148,12 +162,37 @@ function createAssessmentService({env=process.env,transport=shared.postJson,auth
      const primaryHazard=items.length===1 && primary?.analysisSource==="cloud_run_gemini_vision"
       && (primary.category==="Special Waste" || unsafeIdentity(primaryItem)) && supported!=="Special Waste";
      const conflictingIdentity=identityConflict(items[i],capture.captureId);
-     const unsafeRecognition=unsafeIdentity(items[i]) || unsafeIdentity(evidenceItem);
+     // Preserve exact independently localized safety identities when optional
+     // assessment adds no contrary facts. This is not an exemption for a model
+     // category claim, an unrecognized hazardous object, or conflicting evidence.
+     const exactSpecial=supported==="Special Waste" && mapped==="Special Waste"
+      && !!physicalSpecialWasteIdentity(evidenceItem) && !conflictingIdentity && !contradictory
+      && (!unsafeIdentity(items[i]) || !!physicalSpecialWasteIdentity(items[i]))
+      && (provider.evidence==="insufficient" || provider.kind==="unknown" || !unsafeIdentity(evidenceItem));
+     // A neutral missing-identity label is not contradictory physical evidence.
+     // Only strict, visible electrical/battery facts may supply provisional
+     // Special Waste routing here; no identity or material is rewritten.
+     const neutralIdentity=value=>/^(?:(?:unknown|unclassified|unidentified|generic)\s+)?(?:household\s+)?(?:item|object|container)$/i.test(String(value||"").trim());
+     const validatedElectrical=verified==="Special Waste" && ["electrical","battery"].includes(provider.kind)
+      && !conflictingIdentity && !contradictory && neutralIdentity(identity)
+      && neutralIdentity(items[i].observedIdentity||items[i].originalItemName||items[i].canonicalItem)
+      && !unsafeIdentity(items[i]) && !unsafeIdentity(evidenceItem);
+     const unsafeRecognition=((unsafeIdentity(items[i]) || unsafeIdentity(evidenceItem)) && !exactSpecial)
+      || (!validatedElectrical && (unreliablePhysicalIdentity(items[i]) || unreliablePhysicalIdentity(evidenceItem)));
+     // A visible unopened/filled product is not established as discarded
+     // empty packaging, even when structured model facts suggest a stream.
+     const protectedProduct=productNotDiscarded(items[i],capture.captureId);
      // Unlike the overlapping legacy safety_veto counter, these identify the
      // specific predicates that blocked a suggestion or forced Unknown.
      const providerVeto=suggested==="Unknown" && ((mapped && unsafeProviderEvidence(provider,mapped))
       || (consistentPrimary && unsafeProviderEvidence(provider,primary.category)));
+     // Original or capture-bound reconciled identity must establish waste form.
+     // Neither validated provider facts nor a scene-primary category can supply
+     // that missing identity for generic food packaging or whole fruit.
+     const unprovenWasteForm=requiresWasteIdentityReview(evidenceItem,items[i]);
      const category=conflictingIdentity || contradictory || unprovenContainer || primaryHazard || unsafeRecognition
+      || unprovenWasteForm
+      || (protectedProduct && ["Residual","Recyclable"].includes(supported))
       ? "Unknown" : supported;
      // Observe the existing decision only; do not broaden identity or safety gates.
      if(category==="Unknown") {
@@ -177,7 +216,7 @@ function createAssessmentService({env=process.env,transport=shared.postJson,auth
      else if(evidenceCategory!=="Unknown"||consistentPrimary||items[i].analysisSource==="google_vision_object_localization")
       // Keep the v1 ai_assisted/complete pairing and original owner ID/category.
       // Vision-capable Android parser support must be verified on the installed app.
-      assessments[i]=assessment(items[i],category,"ai_assisted",verified==="Unknown");
+      assessments[i]=assessment(items[i],category,"ai_assisted",verified==="Unknown"||validatedElectrical);
      // Otherwise retain Gemini's reviewed_identity_rule mapping suggestion.
     }
     aiStatus="complete";

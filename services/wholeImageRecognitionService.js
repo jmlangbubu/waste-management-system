@@ -2,7 +2,7 @@
 const shared=require("../gemini-waste-classifier-cloudrun/cropRecognition");
 const crypto=require("node:crypto");
 const whole=require("../gemini-waste-classifier-cloudrun/wholeImageRecognition");
-const {unsafeIdentity}=require("./automaticWasteCategoryMapper");
+const {unsafeIdentity,unreliablePhysicalIdentity}=require("./automaticWasteCategoryMapper");
 function createDiscoveryService({env=process.env,transport=shared.postJson,budget=shared.createBudget(),authHeaders}={}) {
   const attempts=new Map();
   let authenticate=authHeaders;
@@ -43,7 +43,8 @@ function createDiscoveryService({env=process.env,transport=shared.postJson,budge
   };
 }
 const genericNames=new Set(["object","item","household object","household item","bottle","bottles","jar","jars",
-  "container","can","packaging","packaged goods","bottled and jarred packaged goods"]);
+  "container","can","packaging","packaged goods","bottled and jarred packaged goods",
+  "packet","packets","sachet","sachets"]);
 const identityKey=name=>String(name||"").trim().toLowerCase().replace(/[\s_-]+/g," ");
 const generic=item=>{
   const key=identityKey(item.itemName);
@@ -62,7 +63,17 @@ function alignedRegion(a,b) {
 function compatibleIdentity(a,b) {
   const words=item=>identityKey(item.itemName).split(" ");
   const x=words(a),y=words(b);
-  return x.every(word=>y.includes(word))||y.every(word=>x.includes(word));
+  if(x.every(word=>y.includes(word))||y.every(word=>x.includes(word)))return true;
+  // Only simple, image-localized packaging aliases. Geometry, uniqueness,
+  // capture ownership, hazardous-identity checks and category safeguards are
+  // enforced separately by merge(); these names alone prove no category.
+  const name=item=>identityKey(item.observedIdentity||item.itemName);
+  const n=[name(a),name(b)];
+  const broad=/^(?:packet|sachet|food packet|food sachet)$/;
+  const specific=/^(?:(?:snack|food|instant noodle|coffee)\s+)(?:packet|sachet)$/;
+  const forbidden=/\b(?:medicine|medication|medical|chemical|pesticide|hazard|unknown|unidentified|picture|printed|unopened|sealed|full|filled)\b/;
+  return !n.some(label=>forbidden.test(label))
+    && ((broad.test(n[0])&&specific.test(n[1]))||(broad.test(n[1])&&specific.test(n[0])));
 }
 const containerIdentity=item=>/\b(bottles?|jars?|containers?|cans?|cups?|box(?:es)?|bags?)\b/.test(identityKey(item.itemName));
 // Server-only provenance; never add fields to Android's strict discovery schema.
@@ -142,6 +153,18 @@ function merge(vision,proposals,samePhysicalObject,capture) {
   const uniqueAlias=(a,b)=>nearAlias(a,b)&&!all.some(other=>other.itemId!==a.itemId&&other.itemId!==b.itemId
     &&(related(a,other)||related(b,other)));
   const matchesRegion=(a,b)=>currentObservation(a)&&currentObservation(b)&&(samePhysicalObject(a,b)||uniqueAlias(a,b));
+  // An exact generic Can observation adds no contrary contents evidence to a
+  // uniquely localized Paint Can. Never extend this exception to other hazards,
+  // nearby/nested regions, stale captures, or a third competing observation.
+  const paintCanRefinement=(a,b)=>{
+    const names=[a,b].map(item=>identityKey(item.observedIdentity));
+    return !!capture?.captureId && [a,b].every(item=>item.analysisSource==="gemini_whole_image"
+      && item.category==="Unknown" && !item.confirmed && currentObservation(item))
+      && names.includes("can") && names.includes("paint can")
+      && alignedRegion(a,b) && samePhysicalObject(a,b)
+      && !all.some(other=>other.itemId!==a.itemId && other.itemId!==b.itemId
+        && (related(other,a)||related(other,b)));
+  };
   const recordConflict=item=>{
     if(capture?.captureId && item.category==="Unknown")classificationEvidence.set(item,
       {captureId:capture.captureId,conflict:true,snapshot:evidenceSnapshot(item)});
@@ -153,13 +176,18 @@ function merge(vision,proposals,samePhysicalObject,capture) {
     const index=matches.length===1?retained.indexOf(matches[0]):-1;
     if(index<0) {if(retained.length<8)retained.push({...item});continue;}
     const match=retained[index];
+    if(paintCanRefinement(match,item)) {
+      if(identityKey(item.observedIdentity)==="paint can")retained[index]={...item};
+      continue;
+    }
     if(!samePhysicalObject(match,item)) {
       if(unsafeIdentity(match)||unsafeIdentity(item))recordConflict(match);
       continue;
     }
     if(!compatibleIdentity(match,item) || unsafeIdentity(match)!==unsafeIdentity(item)) {
       if(!match.confirmed && match.category==="Unknown" && item.category==="Unknown"
-          && containerIdentity(item) && !containerIdentity(match)) retained[index]={...item};
+          && ((containerIdentity(item) && !containerIdentity(match))
+            || (generic(match) && !generic(item) && unsafeIdentity(item)))) retained[index]={...item};
       retained[index].requiresConfirmation=true;
       recordConflict(retained[index]);
     }
@@ -181,6 +209,7 @@ function merge(vision,proposals,samePhysicalObject,capture) {
         continue;
       }
       if(match.analysisSource==="gemini_whole_image") {
+        if(paintCanRefinement(match,proposal))continue;
         if(!compatibleIdentity(match,proposal) || unsafeIdentity(match)!==unsafeIdentity(proposal)) {
           match.requiresConfirmation=true;
           if(capture?.captureId && proposal.analysisSource==="gemini_whole_image" && belongsToCapture(proposal,capture))recordConflict(match);
@@ -219,6 +248,37 @@ function merge(vision,proposals,samePhysicalObject,capture) {
         match.requiresConfirmation=true;
       }
     } else if(retained.length<8) retained.push(proposal);
+  }
+  // A known Vision suggestion must not discard a uniquely corresponding Gemini
+  // observation that the product is still unopened/full. This can only veto a
+  // stream, never grant a category or replace the localized owner identity.
+  for(const owner of retained) {
+    if(!capture?.captureId || owner.analysisSource!=="google_vision_object_localization"
+        || owner.confirmed || !["Residual","Recyclable"].includes(owner.category)
+        || !currentObservation(owner))continue;
+    const physicalName=item=>identityKey(item.analysisSource==="gemini_whole_image"
+      ? item.observedIdentity : item.originalItemName||item.observedIdentity||item.canonicalItem);
+    const safe=item=>!unsafeIdentity({...item,category:"Unknown"})
+      && !unreliablePhysicalIdentity({...item,category:"Unknown"});
+    const base=item=>({...item,itemName:physicalName(item).replace(/^(?:(?:unopened|sealed|full|filled|empty|opened|discarded)\s+)+/,"")});
+    const candidates=proposals.filter(proposal=>proposal.analysisSource==="gemini_whole_image"
+      && currentObservation(proposal) && !proposal.confirmed && safe(owner) && safe(proposal)
+      && /^(?:unopened|sealed|full|filled)\s+/.test(physicalName(proposal))
+      && /\b(?:packet|sachet|wrapper|packag(?:e|ed|ing)|pouch|bottle|container|jar|can)\b/.test(physicalName(proposal))
+      && alignedRegion(owner,proposal) && samePhysicalObject(owner,proposal)
+      && compatibleIdentity(base(owner),base(proposal))
+      && all.filter(item=>item.itemId===owner.itemId).length===1
+      && all.filter(item=>item.itemId===proposal.itemId).length===1
+      && !all.some(other=>other.itemId!==owner.itemId && other.itemId!==proposal.itemId
+        && (related(other,owner)||related(other,proposal))));
+    if(candidates.length!==1)continue;
+    const prior=classificationEvidence.get(owner);
+    owner.category="Unknown";
+    owner.requiresConfirmation=true;
+    for(const field of ["guidance","modelKey","modelHotspots","explanation","action","warning"])delete owner[field];
+    // Snapshot AFTER mutation; keep existing conflicts rather than overwrite them.
+    classificationEvidence.set(owner,{captureId:capture.captureId,identity:candidates[0].observedIdentity,
+      conflict:!!prior?.conflict,snapshot:evidenceSnapshot(owner)});
   }
   // Keep the discovery v1 mobile contract intact; assessments travel separately.
   // A frame-sized generic Gemini proposal is scene/background evidence only

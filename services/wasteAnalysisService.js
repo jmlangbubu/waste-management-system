@@ -4,6 +4,7 @@ const diagnostics = require("./cloudRunDiagnostics");
 const { withDisplayNames } = require("./wasteDisplayNameService");
 const { detectObjectsFromBase64, normalizeBoundingBox, OBJECT_LOCALIZATION_TIMEOUT_MS } = require("./googleVisionService");
 const { getWasteLearningGuide } = require("./wasteLearningGuideService");
+const { automaticCategory } = require("./automaticWasteCategoryMapper");
 
 const {
   analyzeWasteByObject,
@@ -74,13 +75,23 @@ function normalizeDetectedItems(objects, analysisSource, allowClassifierCategory
     const boundingBox = normalizeBoundingBox(object.boundingBox || object.boundingPoly);
     if (!canonicalItem || !Number.isFinite(confidence) || confidence < MIN_OBJECT_CONFIDENCE
       || confidence > 1 || !boundingBox) return [];
-    // Banana is a common localized object name; map its waste form through the existing rules.
-    const mapped = analyzeWasteByObject(canonicalItem === "banana" ? "banana peel" : canonicalItem);
+    // Google Vision OBJECT_LOCALIZATION supplies object labels, not evidence
+    // of waste condition. Never apply the broad legacy word-score mapper to it.
+    // The existing narrow identity rules are provisional suggestions only.
+    const visionLocalization = analysisSource === "google_vision_object_localization";
+    const packagedProductState = /\b(?:unopened|sealed|full|filled|containing|contains|not empty)\b/i.test(name)
+      && /\b(?:packet|sachet|wrapper|packag(?:e|ed|ing)|pouch|bottle|container|jar|can)\b/i.test(name);
+    const mapped = visionLocalization
+      ? { category: packagedProductState ? null : automaticCategory({
+        analysisSource, observedIdentity: name, category: "Unknown", boundingBox
+      }) }
+      : analyzeWasteByObject(canonicalItem);
     const classifierCategory = allowClassifierCategory ? normalizeCategory(object.category) : null;
     let category = mapped?.category === "Special Waste" || classifierCategory === "Special Waste"
       ? "Special Waste" : classifierCategory || mapped?.category;
-    // A generic localized silhouette does not establish material or contamination.
+    // No whole-banana-to-peel conversion or category from broad packaging words.
     if (!category || (allowClassifierCategory && object.category === "Unknown")
+      || (visionLocalization && packagedProductState)
       || (!classifierCategory && GENERIC_CONTAINER_NAMES.has(canonicalItem))) category = "Unknown";
     if (!isValidCategory(category) && category !== "Unknown") return [];
     const details = allowClassifierCategory ? Object.fromEntries(
