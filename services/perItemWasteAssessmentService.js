@@ -3,7 +3,8 @@ const crypto=require("node:crypto");
 const shared=require("../gemini-waste-classifier-cloudrun/cropRecognition");
 const contract=require("../gemini-waste-classifier-cloudrun/wasteItemAssessment");
 const {enrichDiscoveryItem}=require("./discoveryItemClassificationService");
-const {automaticCategory,unsafeProviderEvidence,hazardousIdentity}=require("./automaticWasteCategoryMapper");
+const {automaticCategory,unsafeProviderEvidence,unsafeIdentity}=require("./automaticWasteCategoryMapper");
+const {alignedIdentity,identityConflict}=require("./wholeImageRecognitionService");
 const {getWasteLearningGuide}=require("./wasteLearningGuideService");
 function questions(category) {
  return category==="Unknown"?["Confirm the physical object's identity.","Confirm its material/composition and any contamination or hazardous contents."]
@@ -31,11 +32,12 @@ function deterministic(items) {
    classified.category==="Unknown"?"insufficient_evidence":"reviewed_identity_rule",!!mapped);
  });
 }
-function originalEvidence(item) {
+function originalEvidence(item,captureId) {
  const gemini=item.analysisSource==="gemini_whole_image",vision=item.analysisSource==="google_vision_object_localization";
  if(!gemini&&!vision)return null;
  // Never fall back to itemName: it may already be a shortened display label.
- const identity=gemini?item.observedIdentity:item.observedIdentity||item.originalItemName||item.canonicalItem;
+ const identity=(!unsafeIdentity(item) && alignedIdentity(item,captureId))
+  || (gemini?item.observedIdentity:item.observedIdentity||item.originalItemName||item.canonicalItem);
  const b=item.boundingBox;
  if(typeof identity!=="string"||!identity.trim()||identity.length>128||/[\x00-\x1f<>]/.test(identity)
   ||!b||Object.keys(b).sort().join(",")!=="bottom,left,right,top"
@@ -57,7 +59,7 @@ function assessmentBatch(capture,unknown,allItems) {
    :item.itemId;
   if(wireIds.has(wireId))throw new shared.RecognitionError("INVALID_RECOGNITION_REQUEST",400);
   wireIds.set(wireId,item.itemId);
-  return {itemId:wireId,observedIdentity:originalEvidence(item),boundingBox:item.boundingBox};
+  return {itemId:wireId,observedIdentity:originalEvidence(item,capture.captureId),boundingBox:item.boundingBox};
  });
  return {items,wireIds};
 }
@@ -89,10 +91,10 @@ function createAssessmentService({env=process.env,transport=shared.postJson,auth
   }finally{release();}})();
   attempts.set(key,{fingerprint,pending,expires:time+5*60*1000});return pending;
  }
- return async({capture,items,principal,signal})=>{
+ return async({capture,items,primary,principal,signal})=>{
   if(env.WASTE_ITEM_ASSESSMENT_ENABLED!=="true")return null;
   const assessments=deterministic(items),unknown=items.filter((item,index)=>{
-   if(!originalEvidence(item))return false;
+   if(!originalEvidence(item,capture.captureId))return false;
    if(assessments[index].category==="Unknown")return true;
    // Keep one bounded AI safety review for freshly mapped suggestions.
    // Do not re-assess pre-existing, established item categories.
@@ -108,14 +110,36 @@ function createAssessmentService({env=process.env,transport=shared.postJson,auth
     const byId=new Map(result.assessments.map(a=>[batch.wireIds.get(a.itemId),a]));
     for(let i=0;i<items.length;i++)if(byId.has(items[i].itemId)) {
      const provider=byId.get(items[i].itemId),verified=contract.categoryFromEvidence(provider);
-     const mapped=automaticCategory(items[i]);
+     const identity=originalEvidence(items[i],capture.captureId);
+     const evidenceItem={...items[i],observedIdentity:identity};
+     const mapped=automaticCategory(evidenceItem);
      const suggested=verified!=="Unknown"?verified:
       mapped&&!unsafeProviderEvidence(provider,mapped)?mapped:"Unknown";
-     const category=suggested==="Recyclable"&&hazardousIdentity(items[i])?"Unknown":suggested;
+     // Scene primary is never copied to multiple items. It may corroborate an
+     // matching, safely recognized single identity only after a valid AI batch.
+     const primaryItem={...items[i],observedIdentity:primary?.aiLabel || primary?.itemName};
+     const family=label=>String(label||"").toLowerCase().match(/\b(?:bottle|charger|power adapter|banana peel|snack wrapper)\b/g);
+     const localFamily=family(identity),primaryFamily=family(primaryItem.observedIdentity);
+     const consistentPrimary=items.length===1 && primary?.analysisSource==="cloud_run_gemini_vision"
+      && Number(primary.aiConfidence)>=.8 && Number(primary.aiConfidence)<=1
+      && primary.category===automaticCategory(primaryItem) && !unsafeIdentity(primaryItem)
+      && localFamily?.length===1 && primaryFamily?.length===1 && localFamily[0]===primaryFamily[0]
+      && !/\b(?:unknown|unidentified|ambiguous|generic|maybe|possibly|not|picture|printed|packaging)\b/i.test(identity);
+     const supported=suggested==="Unknown" && consistentPrimary && !unsafeProviderEvidence(provider,primary.category)
+      ? primary.category : suggested;
+     const contradictory=verified!=="Unknown" && ((mapped && mapped!==verified)
+      || (consistentPrimary && primary.category!==verified));
+     const unprovenContainer=supported==="Recyclable" && !mapped
+      && /\b(?:container|item|object)\b/i.test(identity)
+      && !/\b(?:glass|paper|cardboard|aluminum|pet|hdpe|marked)\b/i.test(identity);
+     const primaryHazard=items.length===1 && primary?.analysisSource==="cloud_run_gemini_vision"
+      && (primary.category==="Special Waste" || unsafeIdentity(primaryItem)) && supported!=="Special Waste";
+     const category=identityConflict(items[i],capture.captureId) || contradictory || unprovenContainer || primaryHazard || unsafeIdentity(items[i]) || unsafeIdentity(evidenceItem)
+      ? "Unknown" : supported;
      if(category==="Unknown")assessments[i]=assessment(items[i],"Unknown","ai_assisted");
-     else if(verified!=="Unknown"||items[i].analysisSource==="google_vision_object_localization")
-      // Existing Android accepts Vision suggestions as ai_assisted only after
-      // status=complete, with exact capture/item ID and original Unknown category.
+     else if(verified!=="Unknown"||consistentPrimary||items[i].analysisSource==="google_vision_object_localization")
+      // Keep the v1 ai_assisted/complete pairing and original owner ID/category.
+      // Vision-capable Android parser support must be verified on the installed app.
       assessments[i]=assessment(items[i],category,"ai_assisted",verified==="Unknown");
      // Otherwise retain Gemini's reviewed_identity_rule mapping suggestion.
     }

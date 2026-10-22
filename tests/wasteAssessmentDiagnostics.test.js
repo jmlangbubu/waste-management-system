@@ -20,3 +20,11 @@ test("disabled/not requested and missing assessment remain diagnostically distin
   {status:"unavailable",total:4,assessed:0,classified:0,unknown:4,aiAssisted:0});
  assert.equal(summarizeAssessment({aiStatus:"arbitrary secret",items:[{category:"fake"}]},1).status,"unavailable");
 });
+test("pipeline diagnostics emit aggregate provider/source counters only",()=>{
+ const emitted=[],secret="PRIVATE_LABEL_CAPTURE_TOKEN";
+ logAssessment({aiStatus:"complete",items:[{category:"Special Waste",assessmentSource:"ai_assisted",itemId:secret}]},1,
+  {info:line=>emitted.push(line)},[{analysisSource:"google_vision_object_localization",itemName:secret,boundingBox:{secret}}]);
+ assert.equal(emitted.length,2);assert.match(emitted[1],/physical=1 vision=1 gemini=0/);
+ assert.match(emitted[1],/unknown_evidence=0 ai_unavailable=0/);
+ assert.doesNotMatch(emitted.join(""),/PRIVATE|boundingBox|itemId/);
+});

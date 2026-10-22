@@ -45,9 +45,22 @@ function samePhysicalObject(a, b) {
   // Both same-provider and independent observations can disagree on the same
   // object. Require nearly identical extents and centers for a name-free match;
   // different-size nested objects and partial overlaps must remain independent.
-  return overlapRatio(x, y) >= .90
+  const strict = overlapRatio(x, y) >= .90
       && Math.abs((x.left + x.right - y.left - y.right) / 2) <= .05 * Math.min(x.right - x.left, y.right - y.left)
       && Math.abs((x.top + x.bottom - y.top - y.bottom) / 2) <= .05 * Math.min(x.bottom - x.top, y.bottom - y.top);
+  if (strict) return true;
+  // Only independent providers with compatible physical identities may tolerate
+  // small translation error. Containment and same-provider overlap are not proof.
+  const sources = new Set([a.analysisSource, b.analysisSource]);
+  const contains = (a, b) => a.left <= b.left && a.top <= b.top && a.right >= b.right && a.bottom >= b.bottom;
+  if (!sources.has("gemini_whole_image") || !sources.has("google_vision_object_localization")
+      || contains(x, y) || contains(y, x)
+      || !similarObjectNames(a.canonicalItem || "", b.canonicalItem || "")) return false;
+  const closeSize = (a, b) => Math.min(a, b) / Math.max(a, b) >= .90;
+  return overlapRatio(x, y) >= .80 && closeSize(x.right - x.left, y.right - y.left)
+    && closeSize(x.bottom - x.top, y.bottom - y.top)
+    && Math.abs((x.left + x.right - y.left - y.right) / 2) <= .08 * Math.min(x.right - x.left, y.right - y.left)
+    && Math.abs((x.top + x.bottom - y.top - y.bottom) / 2) <= .08 * Math.min(x.bottom - x.top, y.bottom - y.top);
 }
 
 function normalizeDetectedItems(objects, analysisSource, allowClassifierCategory = false) {
@@ -531,10 +544,6 @@ function buildAiResultFromClassifier(classifierResult, sourceFallback) {
 
 async function analyzeWasteLegacy({ image, detectedObject, mlKitLabels = [], boundedDiscovery = false }) {
   console.log("=== analyzeWaste START ===");
-  console.log("detectedObject:", detectedObject);
-  console.log("mlKitLabels:", mlKitLabels);
-  console.log("image exists:", !!image);
-  console.log("image length:", image ? image.length : 0);
 
   /*
     FIRST PRIORITY:
@@ -653,13 +662,13 @@ async function analyzeWaste(input) {
     .then(result=>result.objects).catch(()=>[]);
   const primary=await analyzeWasteLegacy({...input,boundedDiscovery:true});
   const objects=await observations;
-  const detectedItems=discovery.merge(primary.detectedItems || [],objects,samePhysicalObject);
+  const detectedItems=discovery.merge(primary.detectedItems || [],objects,samePhysicalObject,input.objectDiscovery);
   // A versioned sidecar never changes detection v1 IDs, categories or metadata.
   let categoryAssessments=null;
   if(process.env.WASTE_ITEM_ASSESSMENT_ENABLED==="true") {
-    try {categoryAssessments=await require("./perItemWasteAssessmentService").assessCapture({capture:{...input.objectDiscovery,image:input.image},items:detectedItems,principal:input.principal,signal:input.signal});}
+    try {categoryAssessments=await require("./perItemWasteAssessmentService").assessCapture({capture:{...input.objectDiscovery,image:input.image},items:detectedItems,primary,principal:input.principal,signal:input.signal});}
     catch(_) { /* Optional assessment failure must never replace a valid primary scan. */ }
-    require("./wasteAssessmentDiagnostics").logAssessment(categoryAssessments,detectedItems.length);
+    require("./wasteAssessmentDiagnostics").logAssessment(categoryAssessments,detectedItems.length,undefined,detectedItems);
   }
   return withDisplayNames({...primary,detectedItems,scanSummary:buildScanSummary(detectedItems),identityObservations:objects.filter(item=>!item.boundingBox),...(categoryAssessments?{categoryAssessments}:{})});
 }

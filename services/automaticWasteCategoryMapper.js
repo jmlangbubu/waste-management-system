@@ -6,6 +6,7 @@ const CATEGORIES = new Set(["Biodegradable", "Recyclable", "Residual", "Special 
 const HAZARD = /\b(?:chemical(?:s)?|pesticide|insecticide|herbicide|bleach|disinfectant|solvent|paint(?:\s+thinner)?|thinner|motor\s+oil|engine\s+oil|fuel|gasoline|kerosene|acid|pharmaceutical|medicine|medication|medical\s+waste|sharps?|syringes?|aerosol|spray\s+paint|unknown\s+contents?|contaminat\w*|hazard\w*)\b/;
 const REPRESENTATION = /\b(?:picture|drawing|photo(?:graph)?|printed\s+(?:image|picture)|illustration|logo|advertisement|toy|replica|label\s+showing)\b/;
 const UNCERTAIN = /\b(?:maybe|possibly|probably|looks\s+like|appears\s+to\s+be|unidentified|unclassified|unknown|unclear|unsure|ambiguous|generic|could\s+be)\b/;
+const INSTRUCTION = /\b(?:ignore\s+(?:all|previous|prior)|system\s+prompt|follow\s+instructions|classify\s+as|return\s+(?:json|category))\b|```/;
 const COLOR = /^(?:(?:light|dark)\s+)?(?:black|white|red|green|blue|yellow|orange|gray|grey|brown|clear|transparent|pink|purple)\s+/;
 function observedIdentity(item) {
  if(!item || !TRUSTED.has(item.analysisSource) || item.recognitionState === "unlocalized_observation"
@@ -23,7 +24,7 @@ function hazardousIdentity(item) {
 }
 function automaticCategory(item) {
  const identity = observedIdentity(item);
- if(!identity || HAZARD.test(identity) || REPRESENTATION.test(identity) || UNCERTAIN.test(identity))return null;
+ if(!identity || HAZARD.test(identity) || REPRESENTATION.test(identity) || UNCERTAIN.test(identity) || INSTRUCTION.test(identity))return null;
  // Specific recognition of electrical waste must take priority over packaging.
  if(/^(?:(?:mobile|cell|phone|usb|wall|power)\s+)?(?:charger|power adapter|usb adapter|electrical adapter)$/.test(identity)
   || /^(?:used\s+)?(?:battery|batteries|lithium battery|phone battery|electronic circuit board|light bulb|fluorescent lamp|electronic device|mobile phone|cell phone)$/.test(identity))
@@ -58,4 +59,9 @@ function unsafeProviderEvidence(provider,category) {
  if(category === "Biodegradable" && provider.kind === "battery")return true;
  return false;
 }
-module.exports = {automaticCategory,unsafeProviderEvidence,hazardousIdentity};
+function unsafeIdentity(item) {
+ const identity=observedIdentity(item);
+ const contents=/\b(?:spray|pump|nozzle|cosmetic|detergent|soap|shampoo|lotion|oil)\b.*\b(?:bottle|container)\b|\b(?:bottle|container)\b.*\b(?:spray|pump|nozzle|cosmetic|detergent|soap|shampoo|lotion|oil)\b/;
+ return !!identity && (HAZARD.test(identity)||REPRESENTATION.test(identity)||INSTRUCTION.test(identity)||contents.test(identity));
+}
+module.exports = {automaticCategory,unsafeProviderEvidence,hazardousIdentity,unsafeIdentity};

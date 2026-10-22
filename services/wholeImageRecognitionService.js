@@ -64,7 +64,27 @@ function compatibleIdentity(a,b) {
   return x.every(word=>y.includes(word))||y.every(word=>x.includes(word));
 }
 const containerIdentity=item=>/\b(bottles?|jars?|containers?|cans?|cups?|box(?:es)?|bags?)\b/.test(identityKey(item.itemName));
-function merge(vision,proposals,samePhysicalObject) {
+// Server-only provenance; never add fields to Android's strict discovery schema.
+const classificationEvidence=new WeakMap();
+const evidenceSnapshot=item=>JSON.stringify([item.itemId,item.category,item.canonicalItem,item.observedIdentity,
+  item.originalItemName,item.analysisSource,item.boundingBox]);
+function alignedIdentity(item,captureId) {
+  const evidence=classificationEvidence.get(item);
+  return evidence && !evidence.conflict && evidence.captureId===captureId && evidence.snapshot===evidenceSnapshot(item)
+    ? evidence.identity : null;
+}
+function identityConflict(item,captureId) {
+  const evidence=classificationEvidence.get(item);
+  return !!(evidence?.conflict && evidence.captureId===captureId && evidence.snapshot===evidenceSnapshot(item));
+}
+function belongsToCapture(item,capture) {
+  if(item.captureId!==undefined && item.captureId!==capture.captureId)return false;
+  const b=item.boundingBox;
+  const rebuilt=whole.normalize(capture,{objects:[{label:item.observedIdentity,
+    box_2d:[b.top,b.left,b.bottom,b.right].map(n=>Math.round(n*1000))}]}).objects[0];
+  return rebuilt.itemId===item.itemId;
+}
+function merge(vision,proposals,samePhysicalObject,capture) {
   const retained=[];
   // The initial list can itself contain conflicting observations of one region.
   // Keep the survivor's entire ID/geometry/evidence contract, never synthesize a box.
@@ -85,7 +105,10 @@ function merge(vision,proposals,samePhysicalObject) {
   for(const {index,...proposal} of ranked) {
     // Identity-only observations are carried separately, never promoted into localized cards.
     if(!proposal.boundingBox) continue;
-    const match=retained.find(item=>samePhysicalObject(item,proposal));
+    const matches=retained.filter(item=>samePhysicalObject(item,proposal));
+    // Never choose the first of multiple possible physical regions.
+    if(matches.length>1)continue;
+    const match=matches[0];
     if(match) {
       if(match.analysisSource==="gemini_whole_image") {
         if(!compatibleIdentity(match,proposal))match.requiresConfirmation=true;
@@ -93,9 +116,21 @@ function merge(vision,proposals,samePhysicalObject) {
       }
       const observations=ranked.filter(item=>!generic(item)&&alignedRegion(match,item)&&samePhysicalObject(match,item));
       const conflicting=observations.some((item,i)=>observations.slice(i+1).some(other=>!compatibleIdentity(item,other)));
+      const broad=generic(match) && !/\b(bottles?|jars?|cans?|cups?|bags?|box(?:es)?)\b/.test(identityKey(match.itemName));
+      const identityMismatch=!broad && !compatibleIdentity(match,proposal);
+      if(capture?.captureId && (conflicting || identityMismatch) && belongsToCapture(proposal,capture)) {
+        classificationEvidence.set(match,{captureId:capture.captureId,conflict:true,snapshot:evidenceSnapshot(match)});
+      }
       if(conflicting) {match.requiresConfirmation=true;continue;}
+      if(capture?.captureId && match.category==="Unknown" && !match.confirmed
+          && proposal.analysisSource==="gemini_whole_image" && !generic(proposal)
+          && alignedRegion(match,proposal) && vision.filter(item=>samePhysicalObject(item,proposal)).length===1
+          && !identityMismatch && belongsToCapture(proposal,capture) && !identityConflict(match,capture.captureId)) {
+        classificationEvidence.set(match,{captureId:capture.captureId,identity:proposal.observedIdentity,
+          snapshot:evidenceSnapshot(match)});
+      }
       // Refine only a generic, unconfirmed Vision identity with uniquely aligned evidence.
-      // Do not transfer categories/scores or regenerate IDs, geometry or assessment inputs.
+      // Do not transfer categories/scores or regenerate IDs or geometry.
       const refined=match.analysisSource==="google_vision_object_localization" && proposal.analysisSource==="gemini_whole_image"
           && match.category==="Unknown" && !match.confirmed
           && generic(match) && !generic(proposal) && alignedRegion(match,proposal)
@@ -114,4 +149,4 @@ function merge(vision,proposals,samePhysicalObject) {
   // Keep the discovery v1 mobile contract intact; assessments travel separately.
   return retained;
 }
-module.exports={createDiscoveryService,discoverObjects:createDiscoveryService(),merge};
+module.exports={createDiscoveryService,discoverObjects:createDiscoveryService(),merge,alignedIdentity,identityConflict};
