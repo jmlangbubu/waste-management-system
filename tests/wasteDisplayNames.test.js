@@ -57,9 +57,9 @@ for(const [raw,display] of [
  ["bottled and jarred packaged goods","Container"],["yellow plastic bottle","Yellow Bottle"],
  ["long handled wooden spoon","Spoon"],["blue ballpoint pen with printed text","Blue Pen"],
  ["gray heavy duty hammer","Gray Hammer"],["wireless computer keyboard","Keyboard"],
- ["black USB charging cable","Black Cable"],["brown cardboard box","Brown Container"],
+ ["black USB charging cable","Black Cable"],["brown cardboard box","Brown Cardboard"],
  ["red bottle with blue cap","Bottle"],["unidentified white shape","Item"],
- ["orange snack wrapper","Orange Wrapper"],["snack sachet","Packet"],
+ ["orange snack wrapper","Orange Snack Wrapper"],["snack sachet","Snack Wrapper"],
  ["green cosmetics case","Green Container"],["gray powder compact","Gray Container"],
  ["foil chocolate wrapper","Wrapper"],["blue plastic packet","Blue Packet"],
  ["possibly a glass bottle","Item"],["unlisted product name","Item"],[null,"Item"]
