@@ -2,6 +2,13 @@
 // Display only: never use these broad names as classification evidence.
 const { matchIdentity } = require("../gemini-waste-classifier-cloudrun/cropRecognition");
 const types = [
+  [/\binstant noodle (?:packet|packaging|sachet)\b/, "Instant Noodle Packet"],
+  [/\bsnack (?:wrapper|wrapping|sachet|packet|packaging)\b/, "Snack Wrapper"],
+  [/\bfood (?:wrapper|wrapping|sachet|packet|packaging)\b/, "Food Wrapper"],
+  [/\b(?:sunscreen|sunblock|cosmetic) (?:product )?(?:container|bottle|tube|jar)\b/, "Cosmetic Container"],
+  [/\bpaper envelope\b/, "Paper Envelope"],
+  [/\bcardboard\b/, "Cardboard"],
+  [/\bplant (?:scraps|stems|trimmings)\b/, "Plant Scraps"],
   [/\b(?:chargers?|power adapters?)\b/, "Charger"],
   [/\b(?:batter(?:y|ies))\b/, "Battery"],
   [/\bbottles?\b/, "Bottle"], [/\b(?:spray cans?|cans?)\b/, "Can"],
@@ -35,7 +42,7 @@ function shortObjectName(value) {
   const colors = [...new Set((text.match(/\b(?:black|white|red|green|blue|yellow|orange|purple|pink|brown|gray|grey|clear|transparent)\b/g) || [])
     .map(color => color === "grey" ? "gray" : color === "transparent" ? "clear" : color))];
   if (type === "Item") return type;
-  return (colors.length === 1 ? colors[0][0].toUpperCase() + colors[0].slice(1) + " " : "") + type;
+  return (colors.length === 1 && type.split(" ").length < 3 ? colors[0][0].toUpperCase() + colors[0].slice(1) + " " : "") + type;
 }
 function withDisplayNames(result) {
   return { ...result, detectedItems: (result.detectedItems || []).map(item => ({ ...item,

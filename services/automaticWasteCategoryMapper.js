@@ -35,7 +35,7 @@ function automaticCategory(item) {
   || /^(?:dry\s+)?leaves$/.test(identity) || /^(?:grass\s+clippings|garden\s+trimmings)$/.test(identity))
   return "Biodegradable";
  // Common multi-layer food wrappers: a *suggestion*, not a disposal guarantee.
- if(/^(?:(?:empty|opened|torn)\s+)?(?:snack|food|candy|chocolate|biscuit|chips)\s+(?:wrapper|sachet|packet)$/.test(identity)
+ if(/^(?:(?:empty|opened|torn)\s+)?(?:snack|food|candy|chocolate|biscuit|chips|instant noodle)\s+(?:wrapper|sachet|packet)$/.test(identity)
   || /^(?:(?:plastic|foil|metalized|metallized|food|snack|candy|chocolate|biscuit|chips|chip|instant noodle)\s+)*(?:snack wrapper|food wrapper|candy wrapper|chocolate wrapper|biscuit wrapper|chip wrapper|chips wrapper|foil wrapper|plastic wrapper|sachet|snack sachet|snack packet|food packet|chips packet)$/.test(identity)
   || /^(?:snack|candy|chocolate|biscuit|chips|food)\s+(?:packaging|wrapper|sachet|packet)$/.test(identity))
   return "Residual";
