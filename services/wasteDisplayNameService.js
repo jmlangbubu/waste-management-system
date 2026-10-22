@@ -1,5 +1,6 @@
 "use strict";
 // Display only: never use these broad names as classification evidence.
+const { matchIdentity } = require("../gemini-waste-classifier-cloudrun/cropRecognition");
 const types = [
   [/\b(?:chargers?|power adapters?)\b/, "Charger"],
   [/\b(?:batter(?:y|ies))\b/, "Battery"],
@@ -41,6 +42,12 @@ function withDisplayNames(result) {
     originalItemName: item.originalItemName || item.itemName,
     itemName: (() => {
       const original = item.originalItemName || item.itemName;
+      // Android v5 validates known Gemini categories against the exact catalog
+      // name before it binds sidecar IDs. Compacting that name rejects the owner.
+      const catalog = item.analysisSource === "gemini_whole_image" ? matchIdentity(original) : null;
+      const observed = catalog ? matchIdentity(item.observedIdentity) : null;
+      if (catalog && catalog.itemName === original && catalog.category === item.category
+          && observed?.itemName === original && observed.category === item.category) return original;
       const primary = shortObjectName(original);
       // Only use another observation when the original was merely "item" or "object".
       // Explicitly uncertain/negated provider labels must never be overridden.
