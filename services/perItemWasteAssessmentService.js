@@ -3,7 +3,7 @@ const crypto=require("node:crypto");
 const shared=require("../gemini-waste-classifier-cloudrun/cropRecognition");
 const contract=require("../gemini-waste-classifier-cloudrun/wasteItemAssessment");
 const {enrichDiscoveryItem}=require("./discoveryItemClassificationService");
-const {automaticCategory,unsafeProviderEvidence,unsafeIdentity}=require("./automaticWasteCategoryMapper");
+const {automaticCategory,unsafeProviderEvidence,unsafeIdentity,corroboratedCategory,providerIdentityConflict}=require("./automaticWasteCategoryMapper");
 const {alignedIdentity,identityConflict}=require("./wholeImageRecognitionService");
 const {getWasteLearningGuide}=require("./wasteLearningGuideService");
 const {createAssessmentReasons,recordAssessmentReasons}=require("./wasteAssessmentDiagnostics");
@@ -121,7 +121,9 @@ function createAssessmentService({env=process.env,transport=shared.postJson,auth
      const identity=originalEvidence(items[i],capture.captureId);
      const evidenceItem={...items[i],observedIdentity:identity};
      const mapped=automaticCategory(evidenceItem);
-     const suggested=verified!=="Unknown"?verified:
+     const provisional=verified==="Unknown"?corroboratedCategory(evidenceItem,provider):null;
+     const evidenceCategory=verified!=="Unknown"?verified:provisional||"Unknown";
+     const suggested=evidenceCategory!=="Unknown"?evidenceCategory:
       mapped&&!unsafeProviderEvidence(provider,mapped)?mapped:"Unknown";
      // Scene primary is never copied to multiple items. It may corroborate an
      // matching, safely recognized single identity only after a valid AI batch.
@@ -137,9 +139,9 @@ function createAssessmentService({env=process.env,transport=shared.postJson,auth
       && !/\b(?:unknown|unidentified|ambiguous|generic|maybe|possibly|not|picture|printed|packaging)\b/i.test(identity);
      const supported=suggested==="Unknown" && consistentPrimary && !unsafeProviderEvidence(provider,primary.category)
       ? primary.category : suggested;
-     const contradictory=verified!=="Unknown" && ((mapped && mapped!==verified)
+     const contradictory=providerIdentityConflict(evidenceItem,provider) || evidenceCategory!=="Unknown" && ((mapped && mapped!==evidenceCategory)
       || (/\bbottle\b/i.test(identity) && !["single_material","unknown"].includes(provider.kind))
-      || (consistentPrimary && primary.category!==verified));
+      || (consistentPrimary && primary.category!==evidenceCategory));
      const unprovenContainer=supported==="Recyclable" && !mapped
       && /\b(?:container|item|object)\b/i.test(identity)
       && !/\b(?:glass|paper|cardboard|aluminum|pet|hdpe|marked)\b/i.test(identity);
@@ -172,7 +174,7 @@ function createAssessmentService({env=process.env,transport=shared.postJson,auth
       }
      }
      if(category==="Unknown")assessments[i]=assessment(items[i],"Unknown","ai_assisted");
-     else if(verified!=="Unknown"||consistentPrimary||items[i].analysisSource==="google_vision_object_localization")
+     else if(evidenceCategory!=="Unknown"||consistentPrimary||items[i].analysisSource==="google_vision_object_localization")
       // Keep the v1 ai_assisted/complete pairing and original owner ID/category.
       // Vision-capable Android parser support must be verified on the installed app.
       assessments[i]=assessment(items[i],category,"ai_assisted",verified==="Unknown");

@@ -71,7 +71,48 @@ function unsafeProviderEvidence(provider,category) {
 }
 function unsafeIdentity(item) {
  const identity=observedIdentity(item);
- const contents=/\b(?:spray|pump|nozzle|cosmetic|detergent|soap|shampoo|lotion|oil)\b.*\b(?:bottle|container)\b|\b(?:bottle|container)\b.*\b(?:spray|pump|nozzle|cosmetic|detergent|soap|shampoo|lotion|oil)\b/;
+ const contents=/\b(?:spray|pump|nozzle|cosmetic|sunscreen|sunblock|spf|detergent|soap|shampoo|lotion|cream|oil)\b.*\b(?:bottle|container|tube|jar|vial|canister)\b|\b(?:bottle|container|tube|jar|vial|canister)\b.*\b(?:spray|pump|nozzle|cosmetic|sunscreen|sunblock|spf|detergent|soap|shampoo|lotion|cream|oil)\b/;
  return !!identity && (HAZARD.test(identity)||REPRESENTATION.test(identity)||INSTRUCTION.test(identity)||contents.test(identity));
 }
-module.exports = {automaticCategory,unsafeProviderEvidence,hazardousIdentity,unsafeIdentity};
+// An optional model category is not proof by itself. Bridge the strict facts
+// validator only when the ORIGINAL localized identity independently corroborates
+// the structured kind/material without requiring hidden condition/material
+// assertions. Never rewrite unknown attributes into asserted facts.
+const identityMaterials=identity=>new Set([["paper","paper"],["cardboard","cardboard"],
+ ["glass","glass"],["aluminum","aluminum"],["aluminium","aluminum"]]
+ .filter(([word])=>new RegExp("\\b"+word+"\\b").test(identity)).map(([,material])=>material));
+function providerIdentityConflict(item,provider) {
+ const identity=observedIdentity(item);
+ if(!identity || provider?.evidence!=="visible")return false;
+ const materials=identityMaterials(identity),electrical=/\b(?:electric|electrical|electronic|batter(?:y|ies)|charger|circuit|light bulb|fluorescent)\b/.test(identity);
+ if(materials.size===1 && ["electrical","battery"].includes(provider.kind) && !electrical)return true;
+ if(materials.size===1 && provider.kind==="single_material" && provider.material!=="unknown"
+  && !materials.has(provider.material))return true;
+ if(electrical && !["electrical","battery","unknown"].includes(provider.kind))return true;
+ return false;
+}
+function corroboratedCategory(item,provider) {
+ const identity=observedIdentity(item);
+ if(!identity || unsafeIdentity(item) || UNCERTAIN.test(identity)
+  || /\b(?:uncertain|not|used|dirty|soiled|tissue|contaminated|label|logo|printed|containing|contains|filled|with)\b/.test(identity)
+  || !provider || provider.evidence!=="visible" || provider.condition!=="unknown"
+  || !CATEGORIES.has(provider.category) || providerIdentityConflict(item,provider))return null;
+ if(provider.category==="Recyclable" && provider.kind==="single_material") {
+  // No polymer inference: general plastic, shape, color and brand are not cues.
+  // Mixed/laminated constructions cannot be promoted as single-material waste.
+  if(/\b(?:plastic|rubber|ceramic|metal|foil|laminated)\b/.test(identity))return null;
+  const materials=identityMaterials(identity);
+  if(materials.size===1 && (provider.material==="unknown" || materials.has(provider.material)))return "Recyclable";
+ }
+ if(provider.category==="Biodegradable" && provider.kind==="plant_food_scraps"
+  && ["plant_matter","unknown"].includes(provider.material)
+  && /\b(?:plant|fruit|vegetable|garden|grass|leaves|leaf)\b/.test(identity)
+  && /\b(?:peels?|scraps|stems?|trimmings|grass|leaves|leaf)\b/.test(identity)
+  && !/\b(?:plastic|meat|fish|bones?|dairy)\b/.test(identity))return "Biodegradable";
+ if(provider.category==="Residual" && provider.kind==="wrapper"
+  && ["mixed","unknown"].includes(provider.material)
+  && /\b(?:food|snack|candy|chocolate|biscuit|chips)\b/.test(identity)
+  && /\b(?:wrapper|sachet|packet|packaging)\b/.test(identity))return "Residual";
+ return null;
+}
+module.exports = {automaticCategory,unsafeProviderEvidence,hazardousIdentity,unsafeIdentity,corroboratedCategory,providerIdentityConflict};
