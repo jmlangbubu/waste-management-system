@@ -5,6 +5,7 @@ const {merge,alignedIdentity}=require("../services/wholeImageRecognitionService"
 const {samePhysicalObject,buildScanSummary}=require("../services/wasteAnalysisService");
 const {createAssessmentService}=require("../services/perItemWasteAssessmentService");
 const {withDisplayNames}=require("../services/wasteDisplayNameService");
+const {assessmentReasonCounts}=require("../services/wasteAssessmentDiagnostics");
 const env={WASTE_ITEM_ASSESSMENT_ENABLED:"true",WASTE_ITEM_ASSESSMENT_AI_ENABLED:"true",CLOUD_RUN_AUTH_MODE:"iam",
  CLOUD_RUN_AUDIENCE:"https://synthetic.invalid",GEMINI_CLASSIFIER_URL:"https://synthetic.invalid/classify-waste",
  WASTE_ITEM_ASSESSMENT_SHARED_TOKEN:"synthetic-offline-assessment-token-long-enough"};
@@ -151,4 +152,99 @@ test("assessment disabled causes no inference and preserves established categori
  const {assess,calls}=fixture(undefined,{WASTE_ITEM_ASSESSMENT_AI_ENABLED:"false"});
  const items=[{...vision("Bottle"),category:"Special Waste"}],result=await assess({capture:capture(),items,principal:5});
  assert.equal(result.items[0].category,"Special Waste");assert.equal(calls.length,0);
+});
+
+test("explicit Green Bottle with insufficient provider facts already maps safely despite a branded primary",async()=>{
+ for(const p of [primary("Plastic water bottle"),primary("C2 tea beverage")]) {
+  const {assess,calls}=fixture(),items=[vision("Green Bottle")],saved=structuredClone(items);
+  const result=await assess({capture:capture(),items,primary:p,principal:5});
+  assert.equal(result.items[0].category,"Recyclable");assert.equal(result.aiStatus,"complete");
+  assert.equal(assessmentReasonCounts(result).classification_accepted,1);
+  assert.equal(assessmentReasonCounts(result).primary_mismatch,0);
+  assert.deepEqual(items,saved);assert.equal(calls.length,1);
+ }
+});
+
+test("branded primary alone cannot corroborate an unmapped bottle description: expose failed gates",async()=>{
+ for(const [label,expected] of [["Plastic water bottle","Recyclable"],["C2 tea beverage","Unknown"]]) {
+  const {assess}=fixture(),result=await assess({capture:capture(),items:[vision("Green bottle with cap")],primary:primary(label),principal:5});
+  assert.equal(result.items[0].category,expected);
+  const reasons=assessmentReasonCounts(result);
+  assert.equal(reasons.classification_accepted,Number(expected!=="Unknown"));
+  assert.equal(reasons.primary_mismatch,Number(expected==="Unknown"));
+  assert.equal(reasons.primary_identity_mismatch,Number(expected==="Unknown"));
+  assert.equal(reasons.primary_category_unproven,Number(expected==="Unknown"));
+  assert.equal(reasons.provider_insufficient,Number(expected==="Unknown"));
+ }
+});
+
+test("provider safety veto can produce complete/Unknown even with an explicit Green Bottle",async()=>{
+ const facts={category:"Unknown",kind:"single_material",material:"mixed",condition:"unknown",evidence:"visible"};
+ const {assess}=fixture(()=>facts),result=await assess({capture:capture(),items:[vision("Green Bottle")],primary:primary(),principal:5});
+ assert.equal(result.aiStatus,"complete");assert.equal(result.items[0].category,"Unknown");
+ assert.equal(assessmentReasonCounts(result).safety_veto,1);
+ assert.equal(assessmentReasonCounts(result).provider_insufficient,1);
+ assert.equal(assessmentReasonCounts(result).primary_mismatch,0);
+});
+
+test("five Gemini-only objects reproduce classified one and unknown four without category contamination",async()=>{
+ const c=capture(),labels=["White charger","Green container","Gray container","Unidentified item","Packaging"];
+ const items=whole.normalize(c,{objects:labels.map((label,i)=>({label,box_2d:[100,20+i*190,850,170+i*190]}))}).objects;
+ const saved=structuredClone(items),{assess,calls}=fixture();
+ const result=await assess({capture:c,items,primary:primary(),principal:5});
+ assert.deepEqual(result.items.map(i=>i.category),["Special Waste","Unknown","Unknown","Unknown","Unknown"]);
+ assert.equal(assessmentReasonCounts(result).classification_accepted,1);
+ assert.equal(assessmentReasonCounts(result).provider_insufficient,4);
+ assert.equal(assessmentReasonCounts(result).identity_unproven,4);
+ assert.deepEqual(items,saved);assert.equal(calls.length,1);assert.equal(calls[0].items.length,4);
+});
+
+test("Vision bottle and wrapper receive independent suggestions with a single unchanged batch",async()=>{
+ const items=[vision("Green Bottle"),vision("Snack wrapper","item_2",{...box,left:.6,right:.8})],saved=structuredClone(items),{assess,calls}=fixture();
+ const result=await assess({capture:capture(),items,primary:primary(),principal:5});
+ assert.deepEqual(result.items.map(i=>i.category),["Recyclable","Residual"]);
+ assert.equal(assessmentReasonCounts(result).classification_accepted,2);
+ assert.equal(assessmentReasonCounts(result).primary_mismatch,0);
+ assert.deepEqual(items,saved);assert.equal(calls.length,1);
+});
+
+test("hazard and represented identities keep Unknown with fixed safety counters",async()=>{
+ for(const label of ["Bleach bottle","Chemical bottle","Aerosol can","Spray bottle","Bottle with nozzle",
+  "Bottle with unknown contents","Printed picture of bottle"]) {
+  const {assess}=fixture(()=>recyclable),result=await assess({capture:capture(),items:[vision(label)],primary:primary(),principal:5});
+  assert.equal(result.items[0].category,"Unknown",label);assert.equal(assessmentReasonCounts(result).safety_veto,1);
+ }
+});
+
+test("identity conflict, category contradiction and generic containers have distinct reason flags",async()=>{
+ const c=capture(),conflict=merge([vision("Bottle")],[proposal(c,"Soap")],samePhysicalObject,c);
+ const {assess}=fixture(()=>recyclable);
+ const r=await assess({capture:c,items:conflict,principal:5});assert.equal(assessmentReasonCounts(r).identity_conflict,1);
+ const contradiction=fixture(()=>recyclable),r2=await contradiction.assess({capture:capture(),items:[vision("White charger")],principal:5});
+ assert.equal(assessmentReasonCounts(r2).category_contradiction,1);
+ const generic=fixture(()=>recyclable),r3=await generic.assess({capture:capture(),items:[vision("Container")],principal:5});
+ assert.equal(assessmentReasonCounts(r3).generic_container,1);assert.equal(r3.items[0].category,"Unknown");
+});
+
+test("low confidence is diagnosed, not relaxed to classify an unproven single item",async()=>{
+ const {assess}=fixture(),result=await assess({capture:capture(),items:[vision("Bottle with cap")],primary:{...primary(),aiConfidence:"0.79"},principal:5});
+ assert.equal(result.items[0].category,"Unknown");assert.equal(assessmentReasonCounts(result).primary_confidence_unproven,1);
+});
+
+test("request correlation failure and unavailable AI remain internal and preserve the v1 response",async()=>{
+ const c=capture(),items=[{...vision("Bottle"),captureId:crypto.randomUUID()}],{assess,calls}=fixture();
+ const result=await assess({capture:c,items,principal:5});
+ assert.equal(result.aiStatus,"unavailable");assert.equal(calls.length,0);
+ assert.equal(assessmentReasonCounts(result).request_rejected,1);assert.equal(assessmentReasonCounts(result).ai_unavailable,1);
+ assert.deepEqual(Object.keys(result).sort(),["schemaVersion","captureId","aiStatus","items"].sort());
+ assert.equal(JSON.stringify(result).includes("request_rejected"),false);
+});
+
+test("AI-disabled and failed-provider diagnostics preserve existing flag and retry behavior",async()=>{
+ const disabled=fixture(undefined,{WASTE_ITEM_ASSESSMENT_AI_ENABLED:"false"});
+ const r=await disabled.assess({capture:capture(),items:[vision("Bottle")],principal:5});
+ assert.equal(r.items[0].category,"Unknown");assert.equal(assessmentReasonCounts(r).ai_not_requested,1);assert.equal(disabled.calls.length,0);
+ const assess=createAssessmentService({env,authHeaders:async()=>({}),transport:async()=>{throw Error("PRIVATE_ERROR_TOKEN");}});
+ const failed=await assess({capture:capture(),items:[vision("Bottle")],principal:5});
+ assert.equal(assessmentReasonCounts(failed).ai_unavailable,1);assert.equal(JSON.stringify(failed).includes("PRIVATE_ERROR_TOKEN"),false);
 });

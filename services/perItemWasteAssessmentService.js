@@ -6,6 +6,7 @@ const {enrichDiscoveryItem}=require("./discoveryItemClassificationService");
 const {automaticCategory,unsafeProviderEvidence,unsafeIdentity}=require("./automaticWasteCategoryMapper");
 const {alignedIdentity,identityConflict}=require("./wholeImageRecognitionService");
 const {getWasteLearningGuide}=require("./wasteLearningGuideService");
+const {createAssessmentReasons,recordAssessmentReasons}=require("./wasteAssessmentDiagnostics");
 function questions(category) {
  return category==="Unknown"?["Confirm the physical object's identity.","Confirm its material/composition and any contamination or hazardous contents."]
   :["Confirm identity, material and condition before disposal.","Confirm local acceptance and collection arrangements with WMO."];
@@ -93,8 +94,12 @@ function createAssessmentService({env=process.env,transport=shared.postJson,auth
  }
  return async({capture,items,primary,principal,signal})=>{
   if(env.WASTE_ITEM_ASSESSMENT_ENABLED!=="true")return null;
+  const reasons=createAssessmentReasons();
   const assessments=deterministic(items),unknown=items.filter((item,index)=>{
-   if(!originalEvidence(item,capture.captureId))return false;
+   if(!originalEvidence(item,capture.captureId)){
+    if(assessments[index].category==="Unknown")reasons.identity_unproven++;
+    return false;
+   }
    if(assessments[index].category==="Unknown")return true;
    // Keep one bounded AI safety review for freshly mapped suggestions.
    // Do not re-assess pre-existing, established item categories.
@@ -134,8 +139,25 @@ function createAssessmentService({env=process.env,transport=shared.postJson,auth
       && !/\b(?:glass|paper|cardboard|aluminum|pet|hdpe|marked)\b/i.test(identity);
      const primaryHazard=items.length===1 && primary?.analysisSource==="cloud_run_gemini_vision"
       && (primary.category==="Special Waste" || unsafeIdentity(primaryItem)) && supported!=="Special Waste";
-     const category=identityConflict(items[i],capture.captureId) || contradictory || unprovenContainer || primaryHazard || unsafeIdentity(items[i]) || unsafeIdentity(evidenceItem)
+     const conflictingIdentity=identityConflict(items[i],capture.captureId);
+     const unsafeRecognition=unsafeIdentity(items[i]) || unsafeIdentity(evidenceItem);
+     const category=conflictingIdentity || contradictory || unprovenContainer || primaryHazard || unsafeRecognition
       ? "Unknown" : supported;
+     // Observe the existing decision only; do not broaden identity or safety gates.
+     if(category==="Unknown") {
+      if(verified==="Unknown")reasons.provider_insufficient++;
+      if(primaryHazard || unsafeRecognition || unsafeProviderEvidence(provider,mapped||primary?.category))reasons.safety_veto++;
+      if(conflictingIdentity)reasons.identity_conflict++;
+      if(contradictory)reasons.category_contradiction++;
+      if(unprovenContainer || (!mapped && /\b(?:container|item|object|packaging)\b/i.test(identity||"")))reasons.generic_container++;
+      if(!mapped)reasons.identity_unproven++;
+      if(items.length===1 && primary && !consistentPrimary) {
+       reasons.primary_mismatch++;
+       if(!(Number(primary.aiConfidence)>=.8 && Number(primary.aiConfidence)<=1))reasons.primary_confidence_unproven++;
+       if(!(localFamily?.length===1 && primaryFamily?.length===1 && localFamily[0]===primaryFamily[0]))reasons.primary_identity_mismatch++;
+       if(primary.analysisSource!=="cloud_run_gemini_vision" || primary.category!==automaticCategory(primaryItem))reasons.primary_category_unproven++;
+      }
+     }
      if(category==="Unknown")assessments[i]=assessment(items[i],"Unknown","ai_assisted");
      else if(verified!=="Unknown"||consistentPrimary||items[i].analysisSource==="google_vision_object_localization")
       // Keep the v1 ai_assisted/complete pairing and original owner ID/category.
@@ -144,9 +166,13 @@ function createAssessmentService({env=process.env,transport=shared.postJson,auth
      // Otherwise retain Gemini's reviewed_identity_rule mapping suggestion.
     }
     aiStatus="complete";
-   }catch(_){aiStatus="unavailable";}
+   }catch(error){aiStatus="unavailable";reasons.ai_unavailable=1;
+    if(error?.code==="INVALID_RECOGNITION_REQUEST")reasons.request_rejected=1;
+   }
   }
-  return {schemaVersion:1,captureId:capture.captureId,aiStatus,items:assessments};
+  if(aiStatus==="not_requested" && unknown.length)reasons.ai_not_requested=1;
+  reasons.classification_accepted=assessments.filter(item=>["Biodegradable","Recyclable","Residual","Special Waste"].includes(item.category)).length;
+  return recordAssessmentReasons({schemaVersion:1,captureId:capture.captureId,aiStatus,items:assessments},reasons);
  };
 }
 module.exports={createAssessmentService,assessCapture:createAssessmentService(),deterministic};

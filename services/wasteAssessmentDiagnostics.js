@@ -2,6 +2,24 @@
 // Operational counters only: no capture IDs, usernames, images, original labels or secrets.
 const STATUSES=new Set(["complete","unavailable","not_requested"]);
 const CATEGORIES=new Set(["Biodegradable","Recyclable","Residual","Special Waste"]);
+// Private per-capture gate counters, never serialized into Android's strict v1 sidecar.
+// Counters may overlap: they describe failed gates, not exclusive object counts.
+const REASONS=Object.freeze(["provider_insufficient","safety_veto","identity_conflict","category_contradiction",
+ "primary_mismatch","generic_container","identity_unproven","classification_accepted",
+ "primary_confidence_unproven","primary_identity_mismatch","primary_category_unproven",
+ "request_rejected","ai_unavailable","ai_not_requested"]);
+const privateReasons=new WeakMap();
+function createAssessmentReasons() {return Object.fromEntries(REASONS.map(reason=>[reason,0]));}
+function recordAssessmentReasons(result,counts) {
+ const safe=createAssessmentReasons();
+ for(const reason of REASONS)if(Number.isInteger(counts?.[reason])&&counts[reason]>=0&&counts[reason]<=8)safe[reason]=counts[reason];
+ privateReasons.set(result,Object.freeze(safe));
+ return result;
+}
+function assessmentReasonCounts(result) {
+ const counts=result && privateReasons.get(result);
+ return counts?{...counts}:null;
+}
 function summarizeAssessment(result,totalItems) {
  const total=Number.isInteger(totalItems)&&totalItems>=0&&totalItems<=8?totalItems:0;
  const items=Array.isArray(result?.items)?result.items.slice(0,total):[];
@@ -21,6 +39,8 @@ function logAssessment(result,totalItems,logger=console,physicalItems=[]) {
   const existing=assessed.filter(i=>i.assessmentSource==="existing_category").length;
   logger.info(`[WasteScanStages] discovery=requested physical=${items.length} vision=${vision} gemini=${gemini} reviewed=${reviewed} existing=${existing} unknown_evidence=${s.unknown} ai_unavailable=${Number(s.status==="unavailable")}`);
  }
+ const reasons=assessmentReasonCounts(result);
+ if(reasons)logger.info(`[WasteScanReasons] ${REASONS.map(reason=>`${reason}=${reasons[reason]}`).join(" ")}`);
  return s;
 }
-module.exports={summarizeAssessment,logAssessment};
+module.exports={summarizeAssessment,logAssessment,createAssessmentReasons,recordAssessmentReasons,assessmentReasonCounts};
