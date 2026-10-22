@@ -100,6 +100,7 @@ test("deduplication, ranking and eight-item selection are identical to the pre-e
  const module={exports:{}},source=fs.readFileSync(path.join(__dirname,"../services/wholeImageRecognitionService.js"),"utf8");
  vm.runInNewContext(source,{module,process:{env:{}},require(id){
   if(id==="./discoveryItemClassificationService")return {enrichDiscoveryItem:item=>item};
+  if(id==="./automaticWasteCategoryMapper")return require("../services/automaticWasteCategoryMapper");
   if(id.startsWith("../"))return require(id);if(id==="node:crypto")return crypto;throw Error("Unexpected dependency");
  }});
  const input=request(),items=whole.normalize(input,{objects:[object("Bottle"),object("Plastic Bottle"),object("Plastic Bottle",[100,400,900,600]),object("white power adapter",[200,700,500,900])]}).objects;

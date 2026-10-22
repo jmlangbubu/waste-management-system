@@ -220,3 +220,21 @@ test("specific capped beverage and wrapper suggestions keep strict v5 mixed-owne
  assert.deepEqual(s.items,original);assert.equal(response.categoryAssessments,sidecar);
  assert.deepEqual(Object.keys(sidecar).sort(),["schemaVersion","captureId","aiStatus","items"].sort());
 });
+
+test("deduplicated simple aliases preserve strict v5 owners, sidecar count and selected-item geometry",async()=>{
+ const c={captureId:crypto.randomUUID(),requestId:crypto.randomUUID(),image:Buffer.from("ffd8ffc0000b080190025801011100ffd9","hex").toString("base64"),width:600,height:400,orientation:"upright"};
+ const raw=whole.normalize(c,{objects:[{label:"Container",box_2d:[100,100,500,300]},
+  {label:"Clear bottle",box_2d:[112,106,512,306]},{label:"Snack Sachet",box_2d:[600,100,900,300]},
+  {label:"Used Battery",box_2d:[600,500,900,700]}]}).objects;
+ const {merge}=require("../services/wholeImageRecognitionService"),{samePhysicalObject}=require("../services/wasteAnalysisService");
+ const items=merge([],raw,samePhysicalObject,c);
+ const assess=createAssessmentService({env:{WASTE_ITEM_ASSESSMENT_ENABLED:"true",WASTE_ITEM_ASSESSMENT_AI_ENABLED:"false"}});
+ const sidecar=await assess({capture:c,items,principal:5}),primary={itemName:"Original primary",category:"Residual"};
+ const result=withDisplayNames({...primary,detectedItems:items,categoryAssessments:sidecar});
+ assert.equal(items.length,3);assert.equal(sidecar.items.length,3);assert.equal(v5SidecarAccepted(result,c.captureId),true);
+ assert.equal(result.itemName,primary.itemName);assert.equal(result.category,primary.category);
+ for(const item of items) {
+  const owner=raw.find(i=>i.itemId===item.itemId);assert.deepEqual(item.boundingBox,owner.boundingBox);
+  assert.equal(item.category,owner.category);assert.equal(item.observedIdentity,owner.observedIdentity);
+ }
+});

@@ -22,8 +22,10 @@ function assessment(item,category,source,identityMapped=false) {
  }
  return {itemId:item.itemId,category,assessmentSource:source,requiresConfirmation:true,confirmationRequirements:questions(category),guidance};
 }
-function deterministic(items) {
+function deterministic(items,captureId) {
  return items.map(item=>{
+  if(item.category==="Unknown" && identityConflict(item,captureId))return assessment(item,"Unknown",
+   item.analysisSource==="gemini_whole_image"?"insufficient_evidence":"existing_category");
   // Android assessment v1 only accepts reviewed_identity_rule for Gemini.
   // Keep Vision's established/Unknown category as existing_category until AI succeeds.
   if(item.analysisSource!=="gemini_whole_image")return assessment(item,item.category,"existing_category");
@@ -95,7 +97,7 @@ function createAssessmentService({env=process.env,transport=shared.postJson,auth
  return async({capture,items,primary,principal,signal})=>{
   if(env.WASTE_ITEM_ASSESSMENT_ENABLED!=="true")return null;
   const reasons=createAssessmentReasons();
-  const assessments=deterministic(items),unknown=items.filter((item,index)=>{
+  const assessments=deterministic(items,capture.captureId),unknown=items.filter((item,index)=>{
    if(!originalEvidence(item,capture.captureId)){
     if(assessments[index].category==="Unknown")reasons.identity_unproven++;
     return false;
@@ -141,10 +143,17 @@ function createAssessmentService({env=process.env,transport=shared.postJson,auth
       && (primary.category==="Special Waste" || unsafeIdentity(primaryItem)) && supported!=="Special Waste";
      const conflictingIdentity=identityConflict(items[i],capture.captureId);
      const unsafeRecognition=unsafeIdentity(items[i]) || unsafeIdentity(evidenceItem);
+     // Unlike the overlapping legacy safety_veto counter, these identify the
+     // specific predicates that blocked a suggestion or forced Unknown.
+     const providerVeto=suggested==="Unknown" && ((mapped && unsafeProviderEvidence(provider,mapped))
+      || (consistentPrimary && unsafeProviderEvidence(provider,primary.category)));
      const category=conflictingIdentity || contradictory || unprovenContainer || primaryHazard || unsafeRecognition
       ? "Unknown" : supported;
      // Observe the existing decision only; do not broaden identity or safety gates.
      if(category==="Unknown") {
+      if(unsafeRecognition)reasons.veto_observed_identity++;
+      if(primaryHazard)reasons.veto_primary_hazard++;
+      if(providerVeto)reasons.veto_provider_evidence++;
       if(verified==="Unknown")reasons.provider_insufficient++;
       if(primaryHazard || unsafeRecognition || unsafeProviderEvidence(provider,mapped||primary?.category))reasons.safety_veto++;
       if(conflictingIdentity)reasons.identity_conflict++;

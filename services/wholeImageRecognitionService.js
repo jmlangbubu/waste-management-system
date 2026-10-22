@@ -2,6 +2,7 @@
 const shared=require("../gemini-waste-classifier-cloudrun/cropRecognition");
 const crypto=require("node:crypto");
 const whole=require("../gemini-waste-classifier-cloudrun/wholeImageRecognition");
+const {unsafeIdentity}=require("./automaticWasteCategoryMapper");
 function createDiscoveryService({env=process.env,transport=shared.postJson,budget=shared.createBudget(),authHeaders}={}) {
   const attempts=new Map();
   let authenticate=authHeaders;
@@ -86,16 +87,57 @@ function belongsToCapture(item,capture) {
 }
 function merge(vision,proposals,samePhysicalObject,capture) {
   const retained=[];
+  // Additional correspondence is geometry-only reconciliation of simple aliases,
+  // never permission to refine identity or transfer a category. Both observations
+  // must be trusted, unconfirmed and independently localized in this capture.
+  const nearAlias=(a,b)=>{
+    if(!capture?.captureId || [a,b].some(item=>item.confirmed || item.category!=="Unknown"
+        || !["gemini_whole_image","google_vision_object_localization"].includes(item.analysisSource)
+        || (item.captureId!==undefined && item.captureId!==capture.captureId) || unsafeIdentity(item)))return false;
+    const valid=item=>{
+      const r=item.boundingBox;
+      return r && [r.left,r.top,r.right,r.bottom].every(n=>typeof n==="number"&&Number.isFinite(n)&&n>=0&&n<=1)
+        && r.left<r.right && r.top<r.bottom && (item.analysisSource!=="gemini_whole_image" || belongsToCapture(item,capture));
+    };
+    if(!valid(a)||!valid(b))return false;
+    const shape=item=>identityKey(item.observedIdentity||item.originalItemName||item.canonicalItem)
+      .replace(/^(?:black|white|red|green|blue|yellow|gray|grey|clear|transparent)\s+/,"");
+    const names=[shape(a),shape(b)];
+    if(!names.every(name=>["container","bottle","jar"].includes(name))
+        || (names[0]!==names[1]&&!names.includes("container")))return false;
+    const x=a.boundingBox,y=b.boundingBox,area=r=>(r.right-r.left)*(r.bottom-r.top);
+    const contains=(p,q)=>p.left<=q.left&&p.top<=q.top&&p.right>=q.right&&p.bottom>=q.bottom;
+    if(contains(x,y)||contains(y,x))return false;
+    const intersection=Math.max(0,Math.min(x.right,y.right)-Math.max(x.left,y.left))
+      *Math.max(0,Math.min(x.bottom,y.bottom)-Math.max(x.top,y.top));
+    const close=(p,q)=>Math.min(p,q)/Math.max(p,q)>=.95;
+    return intersection/(area(x)+area(y)-intersection)>=.85
+      && close(x.right-x.left,y.right-y.left)&&close(x.bottom-x.top,y.bottom-y.top)
+      && Math.abs((x.left+x.right-y.left-y.right)/2)<=.04*Math.min(x.right-x.left,y.right-y.left)
+      && Math.abs((x.top+x.bottom-y.top-y.bottom)/2)<=.04*Math.min(x.bottom-x.top,y.bottom-y.top);
+  };
+  const all=vision.concat(proposals);
+  const related=(a,b)=>samePhysicalObject(a,b)||nearAlias(a,b);
+  const uniqueAlias=(a,b)=>nearAlias(a,b)&&!all.some(other=>other.itemId!==a.itemId&&other.itemId!==b.itemId
+    &&(related(a,other)||related(b,other)));
+  const matchesRegion=(a,b)=>samePhysicalObject(a,b)||uniqueAlias(a,b);
+  const recordConflict=item=>{
+    if(capture?.captureId && item.category==="Unknown")classificationEvidence.set(item,
+      {captureId:capture.captureId,conflict:true,snapshot:evidenceSnapshot(item)});
+  };
   // The initial list can itself contain conflicting observations of one region.
   // Keep the survivor's entire ID/geometry/evidence contract, never synthesize a box.
   for(const item of vision) {
-    const index=retained.findIndex(other=>samePhysicalObject(other,item));
+    const matches=retained.filter(other=>matchesRegion(other,item));
+    const index=matches.length===1?retained.indexOf(matches[0]):-1;
     if(index<0) {if(retained.length<8)retained.push({...item});continue;}
     const match=retained[index];
-    if(!compatibleIdentity(match,item)) {
+    if(!samePhysicalObject(match,item))continue;
+    if(!compatibleIdentity(match,item) || unsafeIdentity(match)!==unsafeIdentity(item)) {
       if(!match.confirmed && match.category==="Unknown" && item.category==="Unknown"
           && containerIdentity(item) && !containerIdentity(match)) retained[index]={...item};
       retained[index].requiresConfirmation=true;
+      recordConflict(retained[index]);
     }
   }
   // Broad taxonomy phrases are not specific just because they contain more words.
@@ -105,13 +147,17 @@ function merge(vision,proposals,samePhysicalObject,capture) {
   for(const {index,...proposal} of ranked) {
     // Identity-only observations are carried separately, never promoted into localized cards.
     if(!proposal.boundingBox) continue;
-    const matches=retained.filter(item=>samePhysicalObject(item,proposal));
+    const matches=retained.filter(item=>matchesRegion(item,proposal));
     // Never choose the first of multiple possible physical regions.
     if(matches.length>1)continue;
     const match=matches[0];
     if(match) {
+      if(!samePhysicalObject(match,proposal))continue;
       if(match.analysisSource==="gemini_whole_image") {
-        if(!compatibleIdentity(match,proposal))match.requiresConfirmation=true;
+        if(!compatibleIdentity(match,proposal) || unsafeIdentity(match)!==unsafeIdentity(proposal)) {
+          match.requiresConfirmation=true;
+          if(capture?.captureId && proposal.analysisSource==="gemini_whole_image" && belongsToCapture(proposal,capture))recordConflict(match);
+        }
         continue;
       }
       const observations=ranked.filter(item=>!generic(item)&&alignedRegion(match,item)&&samePhysicalObject(match,item));

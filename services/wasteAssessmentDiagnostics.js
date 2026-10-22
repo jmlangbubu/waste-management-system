@@ -7,7 +7,8 @@ const CATEGORIES=new Set(["Biodegradable","Recyclable","Residual","Special Waste
 const REASONS=Object.freeze(["provider_insufficient","safety_veto","identity_conflict","category_contradiction",
  "primary_mismatch","generic_container","identity_unproven","classification_accepted",
  "primary_confidence_unproven","primary_identity_mismatch","primary_category_unproven",
- "request_rejected","ai_unavailable","ai_not_requested"]);
+ "request_rejected","ai_unavailable","ai_not_requested",
+ "veto_observed_identity","veto_primary_hazard","veto_provider_evidence"]);
 const privateReasons=new WeakMap();
 function createAssessmentReasons() {return Object.fromEntries(REASONS.map(reason=>[reason,0]));}
 function recordAssessmentReasons(result,counts) {
