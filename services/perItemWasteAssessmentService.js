@@ -19,6 +19,7 @@ function assessment(item,category,source,identityMapped=false) {
   guidance=approved;
   // General assessments must not attach a tutorial based on fuzzy asset aliases.
   if(source==="ai_assisted"||identityMapped)guidance={...guidance,reuseIdeas:[]};
+  if(identityMapped)guidance={...guidance,whatItIs:"Provisional suggestion from the observed object identity. Material, contents and condition are not verified."};
  }
  return {itemId:item.itemId,category,assessmentSource:source,requiresConfirmation:true,confirmationRequirements:questions(category),guidance};
 }
@@ -127,7 +128,9 @@ function createAssessmentService({env=process.env,transport=shared.postJson,auth
      const primaryItem={...items[i],observedIdentity:primary?.aiLabel || primary?.itemName};
      const family=label=>String(label||"").toLowerCase().match(/\b(?:bottle|charger|power adapter|banana peel|snack wrapper)\b/g);
      const localFamily=family(identity),primaryFamily=family(primaryItem.observedIdentity);
+     const genericIdentity=/^(?:(?:black|white|red|green|blue|yellow|gray|grey|clear|transparent)\s+)?(?:bottle|container|item|object)$/i.test(identity);
      const consistentPrimary=items.length===1 && primary?.analysisSource==="cloud_run_gemini_vision"
+      && !genericIdentity
       && Number(primary.aiConfidence)>=.8 && Number(primary.aiConfidence)<=1
       && primary.category===automaticCategory(primaryItem) && !unsafeIdentity(primaryItem)
       && localFamily?.length===1 && primaryFamily?.length===1 && localFamily[0]===primaryFamily[0]
@@ -135,6 +138,7 @@ function createAssessmentService({env=process.env,transport=shared.postJson,auth
      const supported=suggested==="Unknown" && consistentPrimary && !unsafeProviderEvidence(provider,primary.category)
       ? primary.category : suggested;
      const contradictory=verified!=="Unknown" && ((mapped && mapped!==verified)
+      || (/\bbottle\b/i.test(identity) && !["single_material","unknown"].includes(provider.kind))
       || (consistentPrimary && primary.category!==verified));
      const unprovenContainer=supported==="Recyclable" && !mapped
       && /\b(?:container|item|object)\b/i.test(identity)

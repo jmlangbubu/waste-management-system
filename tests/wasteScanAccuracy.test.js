@@ -27,7 +27,7 @@ const primary=(label="Plastic water bottle",category="Recyclable")=>({itemName:l
  category,analysisSource:"cloud_run_gemini_vision",explanation:"Original primary",action:"Original action",warning:"Original warning"});
 
 test("seven proposals resolve to five physical items before a single bounded assessment",async()=>{
- const c=capture(),names=["Bottle","White charger","Snack wrapper","Banana peel","Green container"];
+ const c=capture(),names=["Water bottle","White charger","Snack wrapper","Banana peel","Green container"];
  const v=names.map((name,i)=>vision(name,`item_${i+1}`,{left:.01+i*.2,top:.1,right:.15+i*.2,bottom:.8}));
  const g=[proposal(c,"Bottle",{...v[0].boundingBox,left:.02,right:.16}),
   proposal(c,"Green container",{...v[4].boundingBox,left:.82,right:.96})];
@@ -154,13 +154,13 @@ test("assessment disabled causes no inference and preserves established categori
  assert.equal(result.items[0].category,"Special Waste");assert.equal(calls.length,0);
 });
 
-test("explicit Green Bottle with insufficient provider facts already maps safely despite a branded primary",async()=>{
+test("color-only Green Bottle stays Unknown without structured evidence even with a branded or specific primary",async()=>{
  for(const p of [primary("Plastic water bottle"),primary("C2 tea beverage")]) {
   const {assess,calls}=fixture(),items=[vision("Green Bottle")],saved=structuredClone(items);
   const result=await assess({capture:capture(),items,primary:p,principal:5});
-  assert.equal(result.items[0].category,"Recyclable");assert.equal(result.aiStatus,"complete");
-  assert.equal(assessmentReasonCounts(result).classification_accepted,1);
-  assert.equal(assessmentReasonCounts(result).primary_mismatch,0);
+  assert.equal(result.items[0].category,"Unknown");assert.equal(result.aiStatus,"complete");
+  assert.equal(assessmentReasonCounts(result).classification_accepted,0);
+  assert.equal(assessmentReasonCounts(result).primary_mismatch,1);
   assert.deepEqual(items,saved);assert.equal(calls.length,1);
  }
 });
@@ -178,9 +178,9 @@ test("branded primary alone cannot corroborate an unmapped bottle description: e
  }
 });
 
-test("provider safety veto can produce complete/Unknown even with an explicit Green Bottle",async()=>{
+test("provider safety veto can produce complete/Unknown even with an explicit water bottle",async()=>{
  const facts={category:"Unknown",kind:"single_material",material:"mixed",condition:"unknown",evidence:"visible"};
- const {assess}=fixture(()=>facts),result=await assess({capture:capture(),items:[vision("Green Bottle")],primary:primary(),principal:5});
+ const {assess}=fixture(()=>facts),result=await assess({capture:capture(),items:[vision("Water bottle")],primary:primary(),principal:5});
  assert.equal(result.aiStatus,"complete");assert.equal(result.items[0].category,"Unknown");
  assert.equal(assessmentReasonCounts(result).safety_veto,1);
  assert.equal(assessmentReasonCounts(result).provider_insufficient,1);
@@ -200,7 +200,7 @@ test("five Gemini-only objects reproduce classified one and unknown four without
 });
 
 test("Vision bottle and wrapper receive independent suggestions with a single unchanged batch",async()=>{
- const items=[vision("Green Bottle"),vision("Snack wrapper","item_2",{...box,left:.6,right:.8})],saved=structuredClone(items),{assess,calls}=fixture();
+ const items=[vision("Green water bottle"),vision("Snack wrapper","item_2",{...box,left:.6,right:.8})],saved=structuredClone(items),{assess,calls}=fixture();
  const result=await assess({capture:capture(),items,primary:primary(),principal:5});
  assert.deepEqual(result.items.map(i=>i.category),["Recyclable","Residual"]);
  assert.equal(assessmentReasonCounts(result).classification_accepted,2);

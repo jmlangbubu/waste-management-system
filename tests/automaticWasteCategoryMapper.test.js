@@ -5,7 +5,7 @@ const box={left:.1,top:.2,right:.6,bottom:.8};
 function item(label,src="gemini_whole_image",extra={}) {return {analysisSource:src,category:"Unknown",boundingBox:box,
  ...(src==="gemini_whole_image" ? {observedIdentity:label,recognitionState:"localized_observation"}:{originalItemName:label,canonicalItem:label.toLowerCase(),itemName:"Item"}),...extra};}
 for(const [label,category] of [
- ["Bottle","Recyclable"],["Clear bottle","Recyclable"],["Plastic bottle","Recyclable"],
+ ["Bottle",null],["Clear bottle",null],["Plastic bottle","Recyclable"],
  ["plastic water bottle","Recyclable"],["glass bottle","Recyclable"],["PET container","Recyclable"],
  ["empty aluminum can","Recyclable"],["cardboard","Recyclable"],["clean dry paper","Recyclable"],
  ["green snack wrapper","Residual"],["foil chocolate wrapper","Residual"],["snack sachet","Residual"],

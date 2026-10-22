@@ -193,6 +193,30 @@ function merge(vision,proposals,samePhysicalObject,capture) {
     } else if(retained.length<8) retained.push(proposal);
   }
   // Keep the discovery v1 mobile contract intact; assessments travel separately.
-  return retained;
+  // A frame-sized generic Gemini proposal is scene/background evidence only
+  // when three separate small physical regions corroborate a spread-out scene.
+  // Never remove a named large object, a single object, or a nested cluster.
+  return retained.filter(item=>{
+    const b=item.boundingBox,area=r=>(r.right-r.left)*(r.bottom-r.top);
+    if(!capture?.captureId || item.analysisSource!=="gemini_whole_image" || item.category!=="Unknown" || item.confirmed
+        || !/^(?:item|object|household item|household object)$/.test(identityKey(item.observedIdentity))
+        || !b || b.left>.02 || b.top>.02 || b.right<.98 || b.bottom<.98 || area(b)<.90
+        || !belongsToCapture(item,capture))return true;
+    const small=retained.filter(other=>{
+      const r=other.boundingBox;
+      return other!==item && r && other.analysisSource==="gemini_whole_image" && belongsToCapture(other,capture)
+        && !/^(?:item|object|household item|household object)$/.test(identityKey(other.observedIdentity))
+        && r.left>=b.left && r.top>=b.top && r.right<=b.right && r.bottom<=b.bottom
+        && area(r)<=.12*area(b) && r.right-r.left<=.4*(b.right-b.left) && r.bottom-r.top<=.4*(b.bottom-b.top);
+    });
+    const separate=(x,y)=>x.right<=y.left||y.right<=x.left||x.bottom<=y.top||y.bottom<=x.top;
+    for(let i=0;i<small.length;i++)for(let j=i+1;j<small.length;j++)for(let k=j+1;k<small.length;k++) {
+      const regions=[small[i],small[j],small[k]].map(other=>other.boundingBox);
+      if(!separate(regions[0],regions[1])||!separate(regions[0],regions[2])||!separate(regions[1],regions[2]))continue;
+      const xs=regions.map(r=>(r.left+r.right)/2),ys=regions.map(r=>(r.top+r.bottom)/2);
+      if(Math.max(...xs)-Math.min(...xs)>=.4*(b.right-b.left) && Math.max(...ys)-Math.min(...ys)>=.4*(b.bottom-b.top))return false;
+    }
+    return true;
+  });
 }
 module.exports={createDiscoveryService,discoverObjects:createDiscoveryService(),merge,alignedIdentity,identityConflict};
