@@ -13,16 +13,16 @@ function service(make=()=>({category:"Unknown",kind:"unknown",material:"unknown"
  return {assess,calls:()=>calls};
 }
 test("one capture five independent physical detections preserve exact IDs and useful generic suggestions",async()=>{
- const items=[vision('Bottle'),gemini('white charger'),vision('foil chocolate wrapper','item_2'),gemini('Green Container','region_'+'b'.repeat(32)),vision('Banana peel','item_3')],ids=items.map(i=>i.itemId);
+ const items=[vision('Water bottle'),gemini('white charger'),vision('foil chocolate wrapper','item_2'),gemini('Green Container','region_'+'b'.repeat(32)),vision('Banana peel','item_3')],ids=items.map(i=>i.itemId);
  const a=deterministic(items);assert.deepEqual(a.map(x=>x.category),['Unknown','Special Waste','Unknown','Unknown','Unknown']);
  assert.ok(a[0].guidance.reuseIdeas.length===0);
  const {assess,calls}=service();const response=await assess({capture:capture(),items,principal:5});
  assert.equal(calls(),1);assert.equal(response.aiStatus,'complete');assert.deepEqual(response.items.map(i=>i.category),['Recyclable','Special Waste','Residual','Unknown','Biodegradable']);
  assert.deepEqual(response.items.map(i=>i.itemId),ids);assert.equal(new Set(ids).size,5);
 });
-test("single Bottle requires no user form and gets a provisional recyclable suggestion",async()=>{
+test("single generic Bottle remains Unknown rather than inventing a recycling suggestion",async()=>{
  const items=[vision('Bottle')],{assess}=service();const result=await assess({capture:capture(),items,principal:5});
- assert.equal(result.items[0].category,'Recyclable');assert.equal(result.items[0].assessmentSource,'ai_assisted');
+ assert.equal(result.items[0].category,'Unknown');assert.equal(result.items[0].assessmentSource,'ai_assisted');
  assert.equal(result.items[0].requiresConfirmation,true);
 });
 test("visible hazardous evidence blocks the broad bottle mapping",async()=>{
@@ -49,14 +49,14 @@ test("AI disabled still uses generic automatic mappings without extra calls",asy
  const result=await assess({capture:capture(),items:[vision('Bottle'),vision('unidentified object','item_2'),gemini('Bottle')],principal:5});
  assert.equal(result.aiStatus,'not_requested');assert.equal(calls(),0);
  // Android v1 cannot display Vision identity mappings without a completed AI batch.
- assert.deepEqual(result.items.map(x=>x.category),['Unknown','Unknown','Recyclable']);
+ assert.deepEqual(result.items.map(x=>x.category),['Unknown','Unknown','Unknown']);
 });
 test("full assessment disabled remains fully off",async()=>{
  const {assess,calls}=service(undefined,{WASTE_ITEM_ASSESSMENT_ENABLED:'false'});
  const result=await assess({capture:capture(),items:[vision('Bottle')],principal:5});assert.equal(result,null);assert.equal(calls(),0);
 });
 test("pre-AI sources remain within existing Android category sidecar parser contract",async()=>{
- const v=vision('Bottle'),g=gemini('Bottle'),initial=deterministic([v,g]);
+ const v=vision('Water bottle'),g=gemini('Water bottle'),initial=deterministic([v,g]);
  assert.equal(initial[0].assessmentSource,'existing_category');assert.equal(initial[0].category,'Unknown');
  assert.equal(initial[1].assessmentSource,'reviewed_identity_rule');assert.equal(initial[1].category,'Recyclable');
  const {assess}=service();const live=await assess({capture:capture(),items:[v,g],principal:5});
@@ -66,7 +66,7 @@ test("pre-AI sources remain within existing Android category sidecar parser cont
 });
 test("AI failure keeps Vision Unknown under Android v1 while retaining Gemini mapping",async()=>{
  const assess=createAssessmentService({env,authHeaders:async()=>({}),transport:async()=>{throw Error('offline')}});
- const result=await assess({capture:capture(),items:[vision('Bottle'),gemini('Bottle')],principal:5});
+ const result=await assess({capture:capture(),items:[vision('Water bottle'),gemini('Water bottle')],principal:5});
  assert.equal(result.aiStatus,'unavailable');
  assert.deepEqual(result.items.map(x=>x.category),['Unknown','Recyclable']);
  assert.deepEqual(result.items.map(x=>x.assessmentSource),['existing_category','reviewed_identity_rule']);

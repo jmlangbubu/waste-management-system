@@ -44,12 +44,18 @@ function automaticCategory(item) {
  // A cap is not a nozzle/pump. Require the original beverage identity, not
  // color, brand text or a generic bottle silhouette, for these extra phrases.
  if(/^(?:(?:empty|clean|ordinary)\s+)*(?:(?:plastic|pet|hdpe|glass)\s+)?(?:water|drinking water|beverage|soda)\s+bottle(?:\s+with\s+(?:a\s+)?(?:screw\s+)?cap)?$/.test(identity)
-  || /^(?:(?:empty|clean|ordinary)\s+)*(?:plastic water|plastic|pet|hdpe|glass|water|drinking water|beverage|soda)?\s*bottle$/.test(identity)
+  || /^(?:(?:empty|clean|ordinary)\s+)*(?:plastic water|plastic|pet|hdpe|glass|water|drinking water|beverage|soda)\s+bottle$/.test(identity)
   || /^(?:(?:empty|clean)\s+)?(?:plastic|pet|hdpe|glass)\s+(?:jar|container)$/.test(identity)
   || /^(?:(?:clean|dry|clean dry|unused|empty)\s+)?(?:cardboard|cardboard box|paperboard|corrugated cardboard)$/.test(identity)
   || /^(?:(?:clean|dry|clean dry|unused)\s+)(?:paper|newspaper|office paper|magazine)$/.test(identity)
+  || /^(?:sheet of paper|paper sheet|cardboard carton)$/.test(identity)
   || /^(?:(?:empty|clean)\s+)?(?:aluminum|aluminium|tin|steel|metal)\s+(?:can|food can|beverage can)$/.test(identity))
   return "Recyclable";
+ // Ordinary, specifically identified non-recoverable household objects. This is
+ // deliberately not a catch-all for generic objects, contents or contamination.
+ // Existing hazard/representation/uncertainty gates above still take priority.
+ if(/^(?:rubber band|(?:broken\s+)?ceramic\s+(?:cup|mug|plate|shard))$/.test(identity))
+  return "Residual";
  return null;
 }
 // The external provider's structured evidence can veto a broad identity-based

@@ -65,6 +65,9 @@ function geminiBody(input) {
     "Find up to eight independently visible physical household objects, including small pens and packaging. "
     +"Do not describe printed pictures, logos, text or imagined/occluded objects as separate objects. "
     +"Use short, specific image-supported object identities; do not infer unobservable materials. "
+    +"Prefer specific physical household identities (such as a snack wrapper, charger, paper sheet or beverage bottle) over Item/Container only when visually supported. "
+    +"Do not guess contents, polymer type, cleanliness or brand implications. Keep a generic identity when uncertain. "
+    +"Do not box the whole scene, background or collection of objects as an extra Item/Object. A real single large object may still have a large box. "
     +"Return objects with label and, only when localized, box_2d as [ymin,xmin,ymax,xmax], integers normalized 0..1000 in the upright supplied image. "
     +"Omit box_2d if localization is uncertain. Do not return confidence, categories or disposal advice."},
     {inlineData:{mimeType:"image/jpeg",data:input.image}}]}],generationConfig:{temperature:0,responseMimeType:"application/json",maxOutputTokens:2048,
