@@ -392,8 +392,10 @@ test("final physical count and assessments agree before any per-item assessment,
   assert.equal(result.categoryAssessments.items.length,1);
   assert.equal(result.categoryAssessments.items[0].itemId,result.detectedItems[0].itemId);
   const fromGemini = visionObjects.length === 0;
-  assert.equal(result.categoryAssessments.items[0].category,fromGemini?"Recyclable":"Unknown");
-  assert.equal(result.categoryAssessments.items[0].assessmentSource,fromGemini?"reviewed_identity_rule":"existing_category");
+  // Bottle/Soap observations conflict even when Gemini owns the survivor.
+  // The independent original primary remains untouched below.
+  assert.equal(result.categoryAssessments.items[0].category,"Unknown");
+  assert.equal(result.categoryAssessments.items[0].assessmentSource,fromGemini?"insufficient_evidence":"existing_category");
   assert.equal(result.categoryAssessments.aiStatus,"not_requested");
   assert.equal(result.itemName,"Original Bottle");assert.equal(result.category,"Recyclable");
   assert.equal(result.explanation,"Original explanation");assert.equal(result.action,"Original action");
