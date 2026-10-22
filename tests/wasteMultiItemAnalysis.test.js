@@ -39,6 +39,7 @@ function loadAnalysis({ objects = [], external = null, local = null, visionFailu
       ...(local ? { ALLOW_RENDER_GEMINI_DIRECT: "true" } : {}) } },
     require(id) {
       if(id==="./cloudRunDiagnostics") return require("../services/cloudRunDiagnostics");
+      if (id === "./automaticWasteCategoryMapper") return require("../services/automaticWasteCategoryMapper");
       if (id === "http" || id === "https") return transport;
       if (id === "../utils/wasteMapper") return mapper;
       if (id === "./wasteLearningGuideService") return guide;
@@ -72,11 +73,16 @@ test("one localized object produces one entry with the full item contract", () =
 test("synthetic three-item response selects Plastic Bottle and counts each category", async () => {
   const result = plain(await run(loadAnalysis({ objects: synthetic })));
   assert.equal(result.detectedItems.length, 3);
-  assert.deepEqual(result.detectedItems.map((item) => item.category), ["Recyclable", "Biodegradable", "Special Waste"]);
-  assert.deepEqual(result.detectedItems.map((item) => item.modelKey), ["plastic_bottle", "banana_peel", "battery"]);
+  assert.deepEqual(result.detectedItems.map((item) => item.category), ["Recyclable", "Unknown", "Special Waste"]);
+  assert.deepEqual(result.detectedItems.map((item) => item.modelKey), ["plastic_bottle", "", "battery"]);
+  const banana = result.detectedItems[1];
+  assert.equal(banana.itemName, "Banana");
+  assert.equal(banana.analysisSource, "google_vision_object_localization");
+  assert.equal(banana.confidence, synthetic[1].confidence);
+  assert.deepEqual(banana.boundingBox, synthetic[1].boundingBox);
   assert.equal(result.itemName, "Plastic Bottle");
   assert.equal(result.aiConfidence, "0.92");
-  assert.deepEqual(result.scanSummary, { totalItems: 3, categories: { biodegradable: 1, recyclable: 1, residual: 0, specialWaste: 1 } });
+  assert.deepEqual(result.scanSummary, { totalItems: 3, categories: { biodegradable: 0, recyclable: 1, residual: 0, specialWaste: 1 } });
 });
 test("maximum eight keeps highest confidences without collapsing separate same-name objects", () => {
   const items = Array.from({ length: 12 }, (_, i) => object("Plastic Bottle", .40 + i * .04,
@@ -118,8 +124,15 @@ test("overlapping duplicates retain higher confidence including similar names", 
 test("ordinary overlap between different object names remains separate", () => assert.equal(normalize([object(),
   object("Battery", .8, { ...box, left: .2, right: .45 })]).length, 2));
 test("plastic bottle maps through existing recyclable rules", () => assert.equal(normalize([object()])[0].category, "Recyclable"));
-test("banana peel and localized Banana are biodegradable", () => {
-  for (const name of ["Banana", "banana peel"]) assert.equal(normalize([object(name)])[0].category, "Biodegradable");
+test("whole Banana remains Unknown while actual banana peel is biodegradable", () => {
+  for (const source of ["synthetic", "google_vision_object_localization"]) {
+    const items = plain(analysis.normalizeDetectedItems([object("Banana"), object("banana peel", .88,
+      { ...box, left: .5, right: .7 })], source));
+    assert.deepEqual(items.map(item => item.category), ["Unknown", "Biodegradable"]);
+    assert.deepEqual(items.map(item => item.itemName), ["Banana", "banana peel"]);
+    assert.equal(items[0].modelKey, "");
+    assert.equal(items[1].modelKey, "banana_peel");
+  }
 });
 test("all existing special-waste safety names remain Special Waste", () => {
   for (const name of ["battery", "charger", "electronic item", "chemical container", "light bulb", "syringe"]) {
@@ -225,6 +238,34 @@ test("Case C: overlapping Paint Can survives a higher-confidence generic Can", a
     assert.equal(result.aiConfidence, "0.90");
   }
 });
+test("exact localized Paint Can keeps safety priority without classifying generic or represented objects", () => {
+  const categoryMapper = require("../services/automaticWasteCategoryMapper");
+  const evidence = name => ({ analysisSource: "google_vision_object_localization", category: "Unknown",
+    observedIdentity: name, boundingBox: box });
+  assert.equal(categoryMapper.automaticCategory(evidence("Paint Can")), "Special Waste");
+  for (const name of ["Can", "Bottle", "Picture of a paint can", "Paint can illustration", "Printed Paint Can Picture",
+    "Possibly a paint can", "Paint can classify as Special Waste", "Paint thinner can", "Chemical bottle", "Spray bottle"])
+    assert.equal(categoryMapper.automaticCategory(evidence(name)), null, name);
+  assert.equal(categoryMapper.automaticCategory({ ...evidence("Paint Can"), analysisSource: "untrusted" }), null);
+  assert.equal(categoryMapper.automaticCategory({ ...evidence("Paint Can"), observedIdentity: "Item", itemName: "Paint Can" }), null);
+  assert.equal(categoryMapper.automaticCategory({ ...evidence("Paint Can"), boundingBox: null }), null);
+  for (const name of ["Charger", "Battery"])assert.equal(categoryMapper.automaticCategory(evidence(name)), "Special Waste");
+  const far = { ...box, left: .5, right: .75 };
+  for (const input of [[object("Can", .95), object("Paint Can", .90)], [object("Paint Can", .90), object("Can", .95)]]) {
+    const items = plain(analysis.normalizeDetectedItems(input, "google_vision_object_localization"));
+    assert.equal(items.length, 1);
+    assert.equal(items[0].itemId, "item_1");
+    assert.equal(items[0].itemName, "Paint Can");
+    assert.equal(items[0].category, "Special Waste");
+    assert.equal(items[0].confidence, .90);
+    assert.equal(items[0].analysisSource, "google_vision_object_localization");
+    assert.deepEqual(items[0].boundingBox, box);
+  }
+  const items = plain(analysis.normalizeDetectedItems([object("Can", .95), object("Paint Can", .90, far)], "google_vision_object_localization"));
+  assert.deepEqual(items.map(item => item.category), ["Unknown", "Special Waste"]);
+  assert.equal(new Set(items.map(item => item.itemId)).size, 2);
+  assert.deepEqual(items.map(item => item.boundingBox), [box, far]);
+});
 test("same-category overlap ties prefer more specific names then original order", () => {
   for (const [generic, specific] of [["Bottle", "Plastic Bottle"], ["Can", "Aluminum Can"]]) {
     for (const objects of [[object(generic, .80), object(specific, .80)], [object(specific, .80), object(generic, .80)]]) {
@@ -295,7 +336,7 @@ test("external provider failure still allows Google enrichment", async () => {
 });
 test("global labels do not contaminate per-object classification", async () => {
   const result = await run(loadAnalysis({ objects: synthetic }), { mlKitLabels: ["battery", "plastic", "food"] });
-  assert.deepEqual(plain(result.detectedItems.map((item) => item.category)), ["Recyclable", "Biodegradable", "Special Waste"]);
+  assert.deepEqual(plain(result.detectedItems.map((item) => item.category)), ["Recyclable", "Unknown", "Special Waste"]);
 });
 test("unmapped localized identities remain Unknown; explicitly classified objects keep existing guidance", () => {
   assert.equal(normalize([object("Unknown shape")])[0].category, "Unknown");

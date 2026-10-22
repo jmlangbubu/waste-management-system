@@ -5,9 +5,13 @@ const TRUSTED = new Set(["gemini_whole_image", "google_vision_object_localizatio
 const CATEGORIES = new Set(["Biodegradable", "Recyclable", "Residual", "Special Waste"]);
 const HAZARD = /\b(?:chemical(?:s)?|pesticide|insecticide|herbicide|bleach|disinfectant|solvent|paint(?:\s+thinner)?|thinner|motor\s+oil|engine\s+oil|fuel|gasoline|kerosene|acid|pharmaceutical|medicine|medication|medical\s+waste|sharps?|syringes?|aerosol|spray\s+paint|unknown\s+contents?|contaminat\w*|hazard\w*)\b/;
 const REPRESENTATION = /\b(?:picture|drawing|photo(?:graph)?|printed\s+(?:image|picture)|illustration|logo|advertisement|toy|replica|label\s+showing)\b/;
-const UNCERTAIN = /\b(?:maybe|possibly|probably|looks\s+like|appears\s+to\s+be|unidentified|unclassified|unknown|unclear|unsure|ambiguous|generic|could\s+be)\b/;
+const UNCERTAIN = /\b(?:maybe|possibly|probably|looks\s+like|appears\s+to\s+be|unidentified|unclassified|unknown|unclear|unsure|uncertain|ambiguous|generic|could\s+be)\b/;
 const INSTRUCTION = /\b(?:ignore\s+(?:all|previous|prior)|system\s+prompt|follow\s+instructions|classify\s+as|return\s+(?:json|category))\b|```/;
 const COLOR = /^(?:(?:light|dark)\s+)?(?:black|white|red|green|blue|yellow|orange|gray|grey|brown|clear|transparent|pink|purple)\s+/;
+// Exact physical identities only; never restore the legacy substring scorer.
+const SPECIAL_OBJECTS = new Set(["paint can","syringe","needle","electronic item","car battery",
+ "charging brick","extension cord","electronic waste","e waste","broken light bulb",
+ "spray can","power bank","circuit board","electronics"]);
 function observedIdentity(item) {
  if(!item || !TRUSTED.has(item.analysisSource) || item.recognitionState === "unlocalized_observation"
   || (item.recognitionState && item.recognitionState !== "localized_observation")
@@ -22,13 +26,42 @@ function hazardousIdentity(item) {
  const identity=observedIdentity(item);
  return !!identity && HAZARD.test(identity);
 }
+// Narrow equivalence for intact banana descriptions, not peel/scraps or any
+// arbitrary phrase containing 'banana'. Colors are already image-evidenced.
+const wholeBanana=identity=>/^(?:(?:whole|unpeeled|ripe|yellow)\s+)*bananas?(?:\s+fruit)?$/.test(identity||"");
+function unreliablePhysicalIdentity(item) {
+ const identity=observedIdentity(item);
+ return !!identity && (REPRESENTATION.test(identity) || UNCERTAIN.test(identity) || INSTRUCTION.test(identity)
+  || /\bnot (?:a|an)\b/.test(identity));
+}
+function physicalSpecialWasteIdentity(item) {
+ const identity=observedIdentity(item),b=item?.boundingBox;
+ if(!identity || unreliablePhysicalIdentity(item)
+  || !b || Object.keys(b).sort().join(",")!=="bottom,left,right,top"
+  || ![b.left,b.top,b.right,b.bottom].every(n=>typeof n==="number"&&Number.isFinite(n)&&n>=0&&n<=1)
+  || b.left>=b.right || b.top>=b.bottom)return null;
+ return SPECIAL_OBJECTS.has(identity.replace(/-/g," "))
+  || /^(?:(?:mobile|cell|phone|usb|wall|power)\s+)?(?:charger|power adapter|usb adapter|electrical adapter)$/.test(identity)
+  || /^(?:used\s+)?(?:battery|batteries|lithium battery|phone battery|electronic circuit board|light bulb|fluorescent lamp|electronic device|mobile phone|cell phone)$/.test(identity)
+  ? identity : null;
+}
+function requiresWasteIdentityReview(item,originalItem=item) {
+ const identity=observedIdentity(item),original=observedIdentity(originalItem);
+ // Generic packaging may be resolved by safe capture-bound wrapper evidence;
+ // an original whole-fruit observation must not be reinterpreted as peel.
+ return !!identity && /^(?:food packaging|packaged food|food packages?|packaged goods)$/.test(identity)
+  || wholeBanana(identity) || wholeBanana(original);
+}
 function automaticCategory(item) {
  const identity = observedIdentity(item);
- if(!identity || HAZARD.test(identity) || REPRESENTATION.test(identity) || UNCERTAIN.test(identity) || INSTRUCTION.test(identity))return null;
- // Specific recognition of electrical waste must take priority over packaging.
- if(/^(?:(?:mobile|cell|phone|usb|wall|power)\s+)?(?:charger|power adapter|usb adapter|electrical adapter)$/.test(identity)
-  || /^(?:used\s+)?(?:battery|batteries|lithium battery|phone battery|electronic circuit board|light bulb|fluorescent lamp|electronic device|mobile phone|cell phone)$/.test(identity))
-  return "Special Waste";
+ if(!identity || REPRESENTATION.test(identity) || UNCERTAIN.test(identity) || INSTRUCTION.test(identity))return null;
+ // Exact physical hazardous-object identity retains safety priority during
+ // localization/deduplication. This does not establish contents or cleanliness.
+ if(physicalSpecialWasteIdentity(item))return "Special Waste";
+ if(HAZARD.test(identity))return null;
+ // A provider's generic food-packaging taxonomy does not establish discarded,
+ // empty multilayer wrapping. Keep specific independently evidenced wrappers.
+ if(requiresWasteIdentityReview(item))return null;
  // Plant-only discarded material; generic food scraps are intentionally excluded.
  if(/^(?:banana|mango|orange|apple|fruit|vegetable|potato)\s+peels?$/.test(identity)
   || /^(?:plant[- ]only\s+)?(?:vegetable|fruit)\s+scraps$/.test(identity)
@@ -72,7 +105,10 @@ function unsafeProviderEvidence(provider,category) {
 function unsafeIdentity(item) {
  const identity=observedIdentity(item);
  const contents=/\b(?:spray|pump|nozzle|cosmetic|sunscreen|sunblock|spf|detergent|soap|shampoo|lotion|cream|oil)\b.*\b(?:bottle|container|tube|jar|vial|canister)\b|\b(?:bottle|container|tube|jar|vial|canister)\b.*\b(?:spray|pump|nozzle|cosmetic|sunscreen|sunblock|spf|detergent|soap|shampoo|lotion|cream|oil)\b/;
- return !!identity && (HAZARD.test(identity)||REPRESENTATION.test(identity)||INSTRUCTION.test(identity)||contents.test(identity));
+ // A spray can carries unresolved contents/pressure risk, unlike a generic
+ // can. This is a veto signal, not evidence of a particular chemical/category.
+ return !!identity && (HAZARD.test(identity)||REPRESENTATION.test(identity)||INSTRUCTION.test(identity)||contents.test(identity)
+  || /\bspray\s+cans?\b/.test(identity));
 }
 // An optional model category is not proof by itself. Bridge the strict facts
 // validator only when the ORIGINAL localized identity independently corroborates
@@ -93,7 +129,7 @@ function providerIdentityConflict(item,provider) {
 }
 function corroboratedCategory(item,provider) {
  const identity=observedIdentity(item);
- if(!identity || unsafeIdentity(item) || UNCERTAIN.test(identity)
+ if(!identity || requiresWasteIdentityReview(item) || unsafeIdentity(item) || UNCERTAIN.test(identity)
   || /\b(?:uncertain|not|used|dirty|soiled|tissue|contaminated|label|logo|printed|containing|contains|filled|with)\b/.test(identity)
   || !provider || provider.evidence!=="visible" || provider.condition!=="unknown"
   || !CATEGORIES.has(provider.category) || providerIdentityConflict(item,provider))return null;
@@ -115,4 +151,4 @@ function corroboratedCategory(item,provider) {
   && /\b(?:wrapper|sachet|packet|packaging)\b/.test(identity))return "Residual";
  return null;
 }
-module.exports = {automaticCategory,unsafeProviderEvidence,hazardousIdentity,unsafeIdentity,corroboratedCategory,providerIdentityConflict};
+module.exports = {automaticCategory,unsafeProviderEvidence,hazardousIdentity,unsafeIdentity,corroboratedCategory,providerIdentityConflict,requiresWasteIdentityReview,physicalSpecialWasteIdentity,unreliablePhysicalIdentity};
