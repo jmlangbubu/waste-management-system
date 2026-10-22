@@ -462,10 +462,18 @@ async function classifyWithExternalGeminiService(image, timeoutMs = 35000) {
       image
     }, Math.max(1, deadlineAt-Date.now()), headers);
 
-    console.log("[WasteAnalysis] External classifier response success:", response?.success);
+    console.log("[WasteAnalysis] External classifier response success:", response?.success === true);
 
-    if (!response?.success || !response?.result) {
-      console.error("[WasteAnalysis] classifier failure", diagnostics.diagnostic(null, "classifier_response_validation"));
+    const envelope = response !== null && typeof response === "object" && !Array.isArray(response);
+    const hasResult = envelope && response.success === true && response.result !== null
+      && typeof response.result === "object" && !Array.isArray(response.result);
+    const validUnsuccessful = envelope && response.success === false && response.result === null;
+    const usablePrimary = hasResult && isValidCategory(normalizeCategory(response.result.category));
+    if (!usablePrimary) {
+      const stage = validUnsuccessful ? "classifier_upstream_unsuccessful" : "classifier_response_validation";
+      console.error("[WasteAnalysis] classifier failure", diagnostics.diagnostic(null, stage));
+    }
+    if (!hasResult) {
       return {
         success: false,
         message: response?.message || "External classifier returned no valid result.",
@@ -473,6 +481,8 @@ async function classifyWithExternalGeminiService(image, timeoutMs = 35000) {
       };
     }
 
+    // An unusable primary may still carry valid independent detections. Let the
+    // existing item normalization and primary/fallback selection handle them.
     return {
       success: true,
       source: response.source || "cloud_run_gemini_vision",

@@ -201,3 +201,22 @@ test("generic placeholder uses explicit observation without changing underlying 
  }
  assert.equal(withDisplayNames({detectedItems:[{itemName:"Item",observedIdentity:"green round shape"}]}).detectedItems[0].itemName,"Item");
 });
+
+test("specific capped beverage and wrapper suggestions keep strict v5 mixed-owner acceptance",async()=>{
+ const s=scene(["plastic beverage bottle with cap","torn snack wrapper","Plastic Bottle","Item"]);
+ Object.assign(s.capture,{image:Buffer.from("ffd8ffc0000b080190025801011100ffd9","hex").toString("base64"),width:600,height:400,orientation:"upright"});
+ s.items[3]={...s.items[3],analysisSource:"google_vision_object_localization",canonicalItem:"item",confidence:.8};
+ const original=structuredClone(s.items);let calls=0;
+ const assess=createAssessmentService({env:{WASTE_ITEM_ASSESSMENT_ENABLED:"true",WASTE_ITEM_ASSESSMENT_AI_ENABLED:"true",
+  CLOUD_RUN_AUTH_MODE:"iam",CLOUD_RUN_AUDIENCE:"https://synthetic.invalid",GEMINI_CLASSIFIER_URL:"https://synthetic.invalid/classify-waste",
+  WASTE_ITEM_ASSESSMENT_SHARED_TOKEN:"synthetic-offline-assessment-token-long-enough"},authHeaders:async()=>({}),transport:async(url,input)=>{
+   calls++;return {schemaVersion:1,requestId:input.requestId,captureId:input.captureId,assessments:input.items.map(i=>({itemId:i.itemId,
+    category:"Unknown",kind:"unknown",material:"unknown",condition:"unknown",evidence:"insufficient"}))};
+  }});
+ const sidecar=await assess(s),response=withDisplayNames({detectedItems:s.items,categoryAssessments:sidecar});
+ assert.equal(calls,1);assert.equal(v5SidecarAccepted(response,s.capture.captureId),true);
+ assert.deepEqual(sidecar.items.map(i=>i.category),["Recyclable","Residual","Recyclable","Unknown"]);
+ assert.deepEqual(sidecar.items.map(i=>i.assessmentSource),["reviewed_identity_rule","reviewed_identity_rule","reviewed_identity_rule","ai_assisted"]);
+ assert.deepEqual(s.items,original);assert.equal(response.categoryAssessments,sidecar);
+ assert.deepEqual(Object.keys(sidecar).sort(),["schemaVersion","captureId","aiStatus","items"].sort());
+});

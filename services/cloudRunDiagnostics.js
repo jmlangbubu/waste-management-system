@@ -16,6 +16,7 @@ const CODES = Object.freeze({
   cancelled: "CLOUD_RUN_REQUEST_CANCELLED",
   classifier_http_response: "CLASSIFIER_HTTP_ERROR",
   classifier_network_transport: "CLASSIFIER_NETWORK_ERROR",
+  classifier_upstream_unsuccessful: "CLASSIFIER_UPSTREAM_UNSUCCESSFUL",
   classifier_response_validation: "CLASSIFIER_RESPONSE_INVALID"
 });
 function record(stage, status) {
