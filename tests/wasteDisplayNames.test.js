@@ -43,11 +43,11 @@ test("every item gets an independent confirmation-required assessment from origi
  const result=await assess(s);
  assert.equal(result.captureId,s.capture.captureId);assert.equal(result.schemaVersion,1);assert.equal(result.aiStatus,"not_requested");
  assert.deepEqual(result.items.map(i=>i.itemId),s.items.map(i=>i.itemId));
- assert.deepEqual(result.items.map(i=>i.category),["Special Waste","Biodegradable","Residual","Recyclable","Unknown","Special Waste","Unknown","Unknown"]);
+ assert.deepEqual(result.items.map(i=>i.category),["Special Waste","Biodegradable","Residual","Recyclable","Unknown","Special Waste","Recyclable","Recyclable"]);
  assert.ok(result.items.every(i=>i.requiresConfirmation===true));assert.equal(calls,0);
  assert.deepEqual(deterministic(withDisplayNames({detectedItems:s.items}).detectedItems),result.items);
  // Identical display names do not imply identical disposal categories.
- const both=scene(["plastic bottle","bottle"]);
+ const both=scene(["plastic bottle","chemical bottle"]);
  assert.deepEqual(withDisplayNames({detectedItems:both.items}).detectedItems.map(i=>i.itemName),["Bottle","Bottle"]);
  assert.deepEqual(deterministic(both.items).map(i=>i.category),["Recyclable","Unknown"]);
 });

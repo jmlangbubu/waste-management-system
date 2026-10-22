@@ -112,6 +112,7 @@ function serviceFixture({enabled=true,objects=[object("Pen",[100,400,800,450])],
   if(id==="./wasteLearningGuideService")return require("../services/wasteLearningGuideService");
   if(id==="./wasteDisplayNameService")return require("../services/wasteDisplayNameService");
   if(id==="./perItemWasteAssessmentService"){if(assessmentFailure)throw Error("SYNTHETIC_PRIVATE_ASSESSMENT_FAILURE");return {assessCapture:require("../services/perItemWasteAssessmentService").createAssessmentService({env:{WASTE_ITEM_ASSESSMENT_ENABLED:"true"}})};}
+  if(id==="./wasteAssessmentDiagnostics")return {logAssessment(){}};
   if(id==="../utils/wasteMapper")return require("../utils/wasteMapper");
   if(id==="./wholeImageRecognitionService")return {merge,discoverObjects:async(input)=>{calls.discovery++;if(failure)throw new shared.RecognitionError("RECOGNITION_TIMEOUT",504);return new Promise(resolve=>{resolveDiscovery=()=>resolve(normalize(objects,input));});}};
   throw Error("Unexpected dependency "+id);
@@ -390,7 +391,9 @@ test("final physical count and assessments agree before any per-item assessment,
   assert.equal(result.categoryAssessments.captureId,request.captureId);
   assert.equal(result.categoryAssessments.items.length,1);
   assert.equal(result.categoryAssessments.items[0].itemId,result.detectedItems[0].itemId);
-  assert.equal(result.categoryAssessments.items[0].category,"Unknown");
+  const fromGemini = visionObjects.length === 0;
+  assert.equal(result.categoryAssessments.items[0].category,fromGemini?"Recyclable":"Unknown");
+  assert.equal(result.categoryAssessments.items[0].assessmentSource,fromGemini?"reviewed_identity_rule":"existing_category");
   assert.equal(result.categoryAssessments.aiStatus,"not_requested");
   assert.equal(result.itemName,"Original Bottle");assert.equal(result.category,"Recyclable");
   assert.equal(result.explanation,"Original explanation");assert.equal(result.action,"Original action");

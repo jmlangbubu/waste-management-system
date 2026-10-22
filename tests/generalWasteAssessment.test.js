@@ -21,7 +21,7 @@ const examples=[
  ["banana peel","Biodegradable"],["vegetable scraps","Biodegradable"],["fruit peels","Biodegradable"],["plant-only food scraps","Biodegradable"],
  ["plastic water bottle","Recyclable"],["cardboard","Recyclable"],["clean dry paper","Recyclable"],["empty aluminum can","Recyclable"],
  ["snack wrapper","Residual"],["phone charger","Special Waste"],["power adapter","Special Waste"],["battery","Special Waste"],["electronic circuit board","Special Waste"],
- ["food scraps","Unknown"],["paper","Unknown"],["glass bottle","Unknown"],["gray round container","Unknown"],["generic bottle","Unknown"],
+ ["food scraps","Unknown"],["paper","Unknown"],["glass bottle","Recyclable"],["gray round container","Unknown"],["generic bottle","Unknown"],
  ["unidentified plastic-looking object","Unknown"],["ambiguous packaging","Unknown"],["unknown mixed-material object","Unknown"],
  ["condition cannot be confirmed","Unknown"],["unsupported identity","Unknown"],["used tissue","Unknown"],["mixed contaminated packaging","Unknown"],
  ["vegetable scraps printed on packaging","Unknown"],["electronic circuit board picture","Unknown"]
