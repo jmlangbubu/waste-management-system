@@ -34,3 +34,16 @@ test("provider hazard/contamination evidence vetoes recycling suggestion",()=>{
  assert.equal(unsafeProviderEvidence({kind:"single_material",material:"unknown",condition:"contaminated_nonhazardous",evidence:"visible"},"Recyclable"),true);
  assert.equal(unsafeProviderEvidence({kind:"single_material",material:"unknown",condition:"unknown",evidence:"insufficient"},"Recyclable"),false);
 });
+
+test("narrow beverage/cap and food-wrapper phrasing uses original identities without shape or brand expansion",()=>{
+ for(const source of ["gemini_whole_image","google_vision_object_localization"]) {
+  for(const label of ["plastic beverage bottle with cap","water bottle with cap","empty PET water bottle with a screw cap"])
+   assert.equal(automaticCategory(item(label,source)),"Recyclable",label);
+  for(const label of ["torn snack wrapper","opened snack sachet","empty candy packet"])
+   assert.equal(automaticCategory(item(label,source)),"Residual",label);
+  for(const label of ["Bottle with cap","Green bottle with cap","plastic bottle with cap","C2 tea beverage",
+   "bottle-shaped container","red wrapper","torn packet","opened item","printed picture of torn snack wrapper",
+   "possibly a water bottle with cap","medicine water bottle with cap","contaminated beverage bottle with cap"])
+   assert.equal(automaticCategory(item(label,source)),null,label);
+ }
+});

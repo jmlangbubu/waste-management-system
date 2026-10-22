@@ -35,12 +35,16 @@ function automaticCategory(item) {
   || /^(?:dry\s+)?leaves$/.test(identity) || /^(?:grass\s+clippings|garden\s+trimmings)$/.test(identity))
   return "Biodegradable";
  // Common multi-layer food wrappers: a *suggestion*, not a disposal guarantee.
- if(/^(?:(?:plastic|foil|metalized|metallized|food|snack|candy|chocolate|biscuit|chips|chip|instant noodle)\s+)*(?:snack wrapper|food wrapper|candy wrapper|chocolate wrapper|biscuit wrapper|chip wrapper|chips wrapper|foil wrapper|plastic wrapper|sachet|snack sachet|snack packet|food packet|chips packet)$/.test(identity)
+ if(/^(?:(?:empty|opened|torn)\s+)?(?:snack|food|candy|chocolate|biscuit|chips)\s+(?:wrapper|sachet|packet)$/.test(identity)
+  || /^(?:(?:plastic|foil|metalized|metallized|food|snack|candy|chocolate|biscuit|chips|chip|instant noodle)\s+)*(?:snack wrapper|food wrapper|candy wrapper|chocolate wrapper|biscuit wrapper|chip wrapper|chips wrapper|foil wrapper|plastic wrapper|sachet|snack sachet|snack packet|food packet|chips packet)$/.test(identity)
   || /^(?:snack|candy|chocolate|biscuit|chips|food)\s+(?:packaging|wrapper|sachet|packet)$/.test(identity))
   return "Residual";
  // Automatic household recycling *suggestions*. Actual acceptance depends on
  // contents/condition and confirmed local handling, not an image alone.
- if(/^(?:(?:empty|clean|ordinary)\s+)*(?:plastic water|plastic|pet|hdpe|glass|water|drinking water|beverage|soda)?\s*bottle$/.test(identity)
+ // A cap is not a nozzle/pump. Require the original beverage identity, not
+ // color, brand text or a generic bottle silhouette, for these extra phrases.
+ if(/^(?:(?:empty|clean|ordinary)\s+)*(?:(?:plastic|pet|hdpe|glass)\s+)?(?:water|drinking water|beverage|soda)\s+bottle(?:\s+with\s+(?:a\s+)?(?:screw\s+)?cap)?$/.test(identity)
+  || /^(?:(?:empty|clean|ordinary)\s+)*(?:plastic water|plastic|pet|hdpe|glass|water|drinking water|beverage|soda)?\s*bottle$/.test(identity)
   || /^(?:(?:empty|clean)\s+)?(?:plastic|pet|hdpe|glass)\s+(?:jar|container)$/.test(identity)
   || /^(?:(?:clean|dry|clean dry|unused|empty)\s+)?(?:cardboard|cardboard box|paperboard|corrugated cardboard)$/.test(identity)
   || /^(?:(?:clean|dry|clean dry|unused)\s+)(?:paper|newspaper|office paper|magazine)$/.test(identity)
