@@ -3,27 +3,32 @@ const crypto=require("node:crypto");
 const shared=require("../gemini-waste-classifier-cloudrun/cropRecognition");
 const contract=require("../gemini-waste-classifier-cloudrun/wasteItemAssessment");
 const {enrichDiscoveryItem}=require("./discoveryItemClassificationService");
+const {automaticCategory,unsafeProviderEvidence,hazardousIdentity}=require("./automaticWasteCategoryMapper");
 const {getWasteLearningGuide}=require("./wasteLearningGuideService");
 function questions(category) {
  return category==="Unknown"?["Confirm the physical object's identity.","Confirm its material/composition and any contamination or hazardous contents."]
   :["Confirm identity, material and condition before disposal.","Confirm local acceptance and collection arrangements with WMO."];
 }
-function assessment(item,category,source) {
+function assessment(item,category,source,identityMapped=false) {
  let guidance;
  if(category==="Unknown")guidance={whatItIs:"Identity, material or condition is not safely established.",properDisposal:"Confirm identity, material and condition with WMO before choosing a waste stream.",reuseIdeas:[],recoveryOptions:[],warnings:questions(category)};
  else {
   const {modelKey,modelHotspots,...approved}=getWasteLearningGuide(item.canonicalItem,category);
   guidance=approved;
   // General assessments must not attach a tutorial based on fuzzy asset aliases.
-  if(source==="ai_assisted")guidance={...guidance,reuseIdeas:[]};
+  if(source==="ai_assisted"||identityMapped)guidance={...guidance,reuseIdeas:[]};
  }
  return {itemId:item.itemId,category,assessmentSource:source,requiresConfirmation:true,confirmationRequirements:questions(category),guidance};
 }
 function deterministic(items) {
  return items.map(item=>{
+  // Android assessment v1 only accepts reviewed_identity_rule for Gemini.
+  // Keep Vision's established/Unknown category as existing_category until AI succeeds.
   if(item.analysisSource!=="gemini_whole_image")return assessment(item,item.category,"existing_category");
   const classified=enrichDiscoveryItem(item);
-  return assessment(item,classified.category,classified.category==="Unknown"?"insufficient_evidence":"reviewed_identity_rule");
+  const mapped=classified.category==="Unknown"?automaticCategory(item):null;
+  return assessment(item,mapped||classified.category,mapped?"reviewed_identity_rule":
+   classified.category==="Unknown"?"insufficient_evidence":"reviewed_identity_rule",!!mapped);
  });
 }
 function originalEvidence(item) {
@@ -86,7 +91,14 @@ function createAssessmentService({env=process.env,transport=shared.postJson,auth
  }
  return async({capture,items,principal,signal})=>{
   if(env.WASTE_ITEM_ASSESSMENT_ENABLED!=="true")return null;
-  const assessments=deterministic(items),unknown=items.filter((item,index)=>assessments[index].category==="Unknown"&&originalEvidence(item));
+  const assessments=deterministic(items),unknown=items.filter((item,index)=>{
+   if(!originalEvidence(item))return false;
+   if(assessments[index].category==="Unknown")return true;
+   // Keep one bounded AI safety review for freshly mapped suggestions.
+   // Do not re-assess pre-existing, established item categories.
+   return !!automaticCategory(item)&&item.category==="Unknown"
+    &&(item.analysisSource!=="gemini_whole_image"||enrichDiscoveryItem(item).category==="Unknown");
+  });
   let aiStatus="not_requested";
   if(env.WASTE_ITEM_ASSESSMENT_AI_ENABLED==="true"&&unknown.length){
    try{
@@ -94,7 +106,19 @@ function createAssessmentService({env=process.env,transport=shared.postJson,auth
     const result=await remote(capture,batch.items,principal,signal);
     // validateResponse has already rejected duplicate/foreign IDs and stale capture/request IDs.
     const byId=new Map(result.assessments.map(a=>[batch.wireIds.get(a.itemId),a]));
-    for(let i=0;i<items.length;i++)if(byId.has(items[i].itemId))assessments[i]=assessment(items[i],contract.categoryFromEvidence(byId.get(items[i].itemId)),"ai_assisted");
+    for(let i=0;i<items.length;i++)if(byId.has(items[i].itemId)) {
+     const provider=byId.get(items[i].itemId),verified=contract.categoryFromEvidence(provider);
+     const mapped=automaticCategory(items[i]);
+     const suggested=verified!=="Unknown"?verified:
+      mapped&&!unsafeProviderEvidence(provider,mapped)?mapped:"Unknown";
+     const category=suggested==="Recyclable"&&hazardousIdentity(items[i])?"Unknown":suggested;
+     if(category==="Unknown")assessments[i]=assessment(items[i],"Unknown","ai_assisted");
+     else if(verified!=="Unknown"||items[i].analysisSource==="google_vision_object_localization")
+      // Existing Android accepts Vision suggestions as ai_assisted only after
+      // status=complete, with exact capture/item ID and original Unknown category.
+      assessments[i]=assessment(items[i],category,"ai_assisted",verified==="Unknown");
+     // Otherwise retain Gemini's reviewed_identity_rule mapping suggestion.
+    }
     aiStatus="complete";
    }catch(_){aiStatus="unavailable";}
   }

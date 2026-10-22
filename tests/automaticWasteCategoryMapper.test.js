@@ -1,0 +1,36 @@
+"use strict";
+const {test}=require("node:test"),assert=require("node:assert/strict");
+const {automaticCategory,unsafeProviderEvidence}=require("../services/automaticWasteCategoryMapper");
+const box={left:.1,top:.2,right:.6,bottom:.8};
+function item(label,src="gemini_whole_image",extra={}) {return {analysisSource:src,category:"Unknown",boundingBox:box,
+ ...(src==="gemini_whole_image" ? {observedIdentity:label,recognitionState:"localized_observation"}:{originalItemName:label,canonicalItem:label.toLowerCase(),itemName:"Item"}),...extra};}
+for(const [label,category] of [
+ ["Bottle","Recyclable"],["Clear bottle","Recyclable"],["Plastic bottle","Recyclable"],
+ ["plastic water bottle","Recyclable"],["glass bottle","Recyclable"],["PET container","Recyclable"],
+ ["empty aluminum can","Recyclable"],["cardboard","Recyclable"],["clean dry paper","Recyclable"],
+ ["green snack wrapper","Residual"],["foil chocolate wrapper","Residual"],["snack sachet","Residual"],
+ ["banana peel","Biodegradable"],["vegetable scraps","Biodegradable"],["leaves","Biodegradable"],
+ ["White Charger","Special Waste"],["power adapter","Special Waste"],["battery","Special Waste"],
+ ["Bottle of bleach",null],["chemical bottle",null],["pesticide bottle",null],["spray paint can",null],
+ ["motor oil bottle",null],["contaminated plastic bottle",null],["medicine bottle",null],
+ ["green container",null],["gray container",null],["Item",null],["plastic-looking object",null],
+ ["possibly a glass bottle",null],["generic bottle",null],["printed picture of battery",null],
+ ["food scraps",null],["paper",null],["packet",null],["used tissue",null],["soap",null],
+ ["box of batteries",null],["plastic bag",null],["spray bottle",null]
+])test(`identity ${label} => ${category??"Unknown"}`,()=>{
+ assert.equal(automaticCategory(item(label)),category);
+ assert.equal(automaticCategory(item(label,"google_vision_object_localization")),category);
+});
+test("does not classify shortened Android Item or arbitrary primary source",()=>{
+ assert.equal(automaticCategory(item("plastic bottle","local_mapper_fallback")),null);
+ assert.equal(automaticCategory(item("Item","google_vision_object_localization",{itemName:"Plastic Bottle"})),null);
+ assert.equal(automaticCategory(item("plastic bottle","gemini_whole_image",{recognitionState:"unlocalized_observation"})),null);
+ assert.equal(automaticCategory(item("plastic bottle","gemini_whole_image",{boundingBox:null})),null);
+ assert.equal(automaticCategory(item("plastic bottle","gemini_whole_image",{category:"Special Waste"})),null);
+});
+test("provider hazard/contamination evidence vetoes recycling suggestion",()=>{
+ assert.equal(unsafeProviderEvidence({kind:"electrical",material:"mixed",condition:"unknown",evidence:"visible"},"Recyclable"),true);
+ assert.equal(unsafeProviderEvidence({kind:"single_material",material:"mixed",condition:"unknown",evidence:"visible"},"Recyclable"),true);
+ assert.equal(unsafeProviderEvidence({kind:"single_material",material:"unknown",condition:"contaminated_nonhazardous",evidence:"visible"},"Recyclable"),true);
+ assert.equal(unsafeProviderEvidence({kind:"single_material",material:"unknown",condition:"unknown",evidence:"insufficient"},"Recyclable"),false);
+});
