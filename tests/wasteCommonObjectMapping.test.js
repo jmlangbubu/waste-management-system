@@ -3,6 +3,15 @@ const {test}=require("node:test"),assert=require("node:assert/strict"),fs=requir
 const {automaticCategory,productStateVeto}=require("../services/automaticWasteCategoryMapper");
 const box={left:.1,top:.1,right:.3,bottom:.5};
 const owner=label=>({analysisSource:"google_vision_object_localization",category:"Unknown",observedIdentity:label,boundingBox:box});
+for(const source of ["google_vision_object_localization","gemini_whole_image"])
+ for(const [label,expected] of [["Instant Noodle Packet","Residual"],["Instant Noodle Wrapper","Residual"],
+  ["Empty Noodle Sachet","Residual"],["Coffee Packet","Residual"],["Coffee Sachet","Residual"],["Snack Wrapper","Residual"],
+  ["Unopened Noodle Sachet",null],["Full Noodle Sachet",null],["Empty Noodle Sachet containing chemicals",null],
+  ["Possibly Empty Noodle Sachet",null],["Printed picture of Empty Noodle Sachet",null]])
+  test(`physical packaging state ${source}: ${label}`,()=>{
+   const item={...owner(label),analysisSource:source};assert.equal(automaticCategory(item),expected);
+   assert.equal(item.observedIdentity,label);
+  });
 const practicalMappings={
  Recyclable:["Plastic Bottle","Water Bottle","PET Bottle","Ordinary Bottle","Beverage Can","Soda Can","Aluminum Can","Tin Can","Ordinary Can","Ordinary Container","Plastic Container","Empty Food Container","Glass Bottle","Glass Jar","Clean Newspaper","Clean Paper","Cardboard","Cardboard Box","Clean Metal Can","Recoverable Metal Scrap"],
  Residual:["Empty Snack Sachet","Empty Coffee Sachet","Empty Shampoo Sachet","Snack Wrapper","Candy Wrapper","Chip Wrapper","Instant Noodle Wrapper","Multilayer Food Packaging","Laminated Wrapper","Used Tissue","Disposable Diaper","Sanitary Pad","Disposable Mask","Broken Ceramic","Non-recoverable Household Packaging"],
@@ -12,7 +21,7 @@ const practicalMappings={
 for(const [category,names] of Object.entries(practicalMappings))for(const name of names)
  test(`practical exact localized identity: ${name}`,()=>assert.equal(automaticCategory(owner(name)),category));
 test("new packaging aliases cannot erase explicit unsafe state or substitute geometry/display evidence",()=>{
- for(const name of ["Empty shampoo sachet containing unknown contents","Full food container","Unopened coffee sachet","Contaminated laminated wrapper","Printed picture of soda can","Possibly recoverable metal scrap","Shampoo sachet"])
+ for(const name of ["Empty shampoo sachet containing unknown contents","Full food container","Unopened coffee sachet","Contaminated laminated wrapper","Printed picture of soda can","Possibly recoverable metal scrap"])
   assert.equal(automaticCategory(owner(name)),null,name);
  for(const boundingBox of [null,{...box,right:box.left},{...box,left:-.1},{...box,top:NaN}])
   assert.equal(automaticCategory({...owner("Soda Can"),boundingBox}),null);
@@ -40,8 +49,30 @@ function helpers(){
   {module:m,require:createRequire(f),__dirname,Buffer,URL,AbortController,setTimeout,clearTimeout});return m.exports;
 }
 const {fixture,localized,route,unavailablePrimary}=helpers();
+test("ordinary three-object scene uses unique localized identities without optional AI",async()=>{
+ const bounds=[{left:.125,top:.125,right:.25,bottom:.625},{left:.375,top:.125,right:.5,bottom:.625},{left:.625,top:.125,right:.75,bottom:.625}];
+ for(const ai of [false,true])for(const [identity,category]of [["Instant Noodle Packet","Residual"],["Can","Recyclable"]]) {
+  const objects=[localized("Can",.93,bounds[0]),localized("Item",.93,bounds[1]),localized("Bottle",.93,bounds[2])];
+  const f=fixture({objects,labels:[[identity,bounds[1]]],compatible:true,ai}),r=JSON.parse(JSON.stringify(await f.run()));
+  assert.equal(r.detectedItems.length,3);assert.equal(new Set(r.detectedItems.map(x=>x.itemId)).size,3);
+  assert.deepEqual(r.detectedItems.map(x=>x.category),["Recyclable",category,"Recyclable"]);
+  assert.equal(r.detectedItems[1].itemName,identity);
+  r.detectedItems.forEach((item,i)=>{assert.deepEqual(item.boundingBox,bounds[i]);assert.equal(item.confidence,.93);
+   assert.equal(item.analysisSource,"google_vision_object_localization");
+   const row=r.categoryAssessments.items.find(row=>row.itemId===item.itemId);
+   assert.equal(row.category,item.category);assert.equal(row.assessmentSource,"existing_category");assert.equal(row.requiresConfirmation,true);});
+  assert.equal(f.calls.assessment,0);assert.equal((await route(r,{capability:"waste-scan-independent-category-v2",captureId:f.c.captureId})).status,200);
+ }
+});
+test("unrecognized Item and ambiguous or hazardous alignment never acquire an ordinary fallback",async()=>{
+ for(const labels of [[],[["Chemical packet"]],[["Instant Noodle Packet"],["Coffee Sachet"]]]) {
+  const f=fixture({objects:[localized("Item")],labels,compatible:true,ai:false}),r=await f.run();
+  assert.equal(r.detectedItems[0].category,"Unknown");assert.equal(r.categoryAssessments.items[0].category,"Unknown");
+ }
+});
 for(const provider of ["vision","gemini"])for(const [label,category] of [
- ["Soda Can","Recyclable"],["Empty Coffee Sachet","Residual"],["Empty Shampoo Sachet","Residual"],
+ ["Can","Recyclable"],["Bottle","Recyclable"],["Instant Noodle Packet","Residual"],["Coffee Sachet","Residual"],["Banana","Biodegradable"],["Battery","Special Waste"],
+ ["Soda Can","Recyclable"],["Empty Noodle Sachet","Residual"],["Empty Coffee Sachet","Residual"],["Empty Shampoo Sachet","Residual"],
  ["Multilayer Food Packaging","Residual"],["Orange Peel","Biodegradable"],["Coffee Grounds","Biodegradable"],
  ["Spray Paint Can","Special Waste"],["Pesticide Container","Special Waste"]])
  test(`practical final compatible response ${provider}: ${label}`,async()=>{
