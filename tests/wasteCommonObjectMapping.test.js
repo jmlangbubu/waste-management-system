@@ -3,6 +3,16 @@ const {test}=require("node:test"),assert=require("node:assert/strict"),fs=requir
 const {automaticCategory,productStateVeto}=require("../services/automaticWasteCategoryMapper");
 const box={left:.1,top:.1,right:.3,bottom:.5};
 const owner=label=>({analysisSource:"google_vision_object_localization",category:"Unknown",observedIdentity:label,boundingBox:box});
+for(const [category,names]of Object.entries({
+ Biodegradable:["Apple Core","Orange Rind","Potato Peel","Vegetable Peelings","Fruit Peelings","Plant Cuttings","Fallen Leaves"],
+ Recyclable:["Metal Food Container","Steel Food Tin","Office Paper","Paper Bag","Paper Envelope","Corrugated Carton","Flattened Cardboard"],
+ Residual:["Crisps Packet","Chip Packet","Biscuit Wrapper","Chocolate Wrapper","Used Paper Towel","Plastic Straw","Plastic Cutlery","Polystyrene Food Tray","Styrofoam Food Container"],
+ "Special Waste":["AA Battery","AAA Battery","Button Cell Battery","Lithium Ion Battery","Smartphone","USB Charger","Fluorescent Tube","Compact Fluorescent Lamp","Broken Fluorescent Lamp"]
+}))for(const name of names)test(`bounded household vocabulary ${name}`,()=>assert.equal(automaticCategory(owner(name)),category));
+test("material synonyms do not classify branded/uncertain/hazardous lookalikes",()=>{
+ for(const name of ["NESCAFE","Sprite","Chemical Paper Bag","Paper Bag with unknown contents","Possibly Office Paper","Printed picture of Smartphone","Plastic-looking scrap"])
+  assert.equal(automaticCategory(owner(name)),null,name);
+});
 for(const source of ["google_vision_object_localization","gemini_whole_image"])
  for(const [label,expected] of [["Instant Noodle Packet","Residual"],["Instant Noodle Wrapper","Residual"],
   ["Empty Noodle Sachet","Residual"],["Coffee Packet","Residual"],["Coffee Sachet","Residual"],["Snack Wrapper","Residual"],
