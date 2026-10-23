@@ -3,6 +3,7 @@
 // Do not use this helper on raw provider output or change the shared cloud catalog.
 const { matchIdentity } = require("../gemini-waste-classifier-cloudrun/cropRecognition");
 const { getWasteLearningGuide } = require("./wasteLearningGuideService");
+const { productStateVeto } = require("./automaticWasteCategoryMapper");
 const EXTRA_IDENTITIES = new Map([
   ["vegetable scraps", "Biodegradable"], ["fruit peels", "Biodegradable"],
   ["plant-only food scraps", "Biodegradable"], ["clean dry paper", "Recyclable"],
@@ -20,6 +21,11 @@ function enrichDiscoveryItem(item) {
   const supported = matchIdentity(item.observedIdentity)
     || (ELECTRICAL_IDENTITIES.has(label.replace(/^(?:black|white|red|green|blue|yellow|gray|grey)\s+/, "")) ? { category: "Special Waste" }
       : EXTRA_IDENTITIES.has(label) ? { category: EXTRA_IDENTITIES.get(label) } : null);
+  if(productStateVeto(item,supported?.category || item.category)){
+    const safe={...item,category:"Unknown",requiresConfirmation:true};
+    for(const field of ["guidance","modelKey","modelHotspots","explanation","action","warning"])delete safe[field];
+    return safe;
+  }
   if (!supported) {
     if (item.category !== "Unknown") return item;
     // Never pass Unknown through the legacy guide's generic Residual fallback.

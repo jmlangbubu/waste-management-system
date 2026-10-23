@@ -34,7 +34,9 @@ for(const label of ["Container","Sunscreen container"])test(`unique neutral alia
   assert.equal(items[0].itemId,initial[0].itemId);ownersPreserved(items,before);
   const s=service(recycling),sidecar=await s.assess({capture:c,items,principal:5});
   assert.equal(sidecar.items.length,1);assert.equal(sidecar.items[0].itemId,items[0].itemId);
-  assert.equal(sidecar.items[0].category,"Unknown");assert.equal(s.calls(),1);
+  // Only the retained ordinary Container owner supports the common-object rule.
+  // A retained Gemini Item does not inherit the discarded observation's category.
+  assert.equal(sidecar.items[0].category,label==="Container" && initial[0].analysisSource==="google_vision_object_localization"?"Recyclable":"Unknown");assert.equal(s.calls(),1);
  }
  assert.deepEqual([v,g],before);
 });
@@ -77,13 +79,14 @@ test("specific original identity reaches the actual AI batch; compact label is n
  assert.equal(items.length,1);assert.equal(items[0].itemId,v.itemId);assert.equal(items[0].canonicalItem,"item");
  const s=service(insufficient),sidecar=await s.assess({capture:c,items,principal:5});
  assert.equal(s.requests[0].items[0].observedIdentity,"Instant noodle packet");
- assert.equal(sidecar.items[0].category,"Residual");assert.equal(sidecar.items[0].assessmentSource,"ai_assisted");
+ assert.equal(sidecar.items[0].category,"Unknown");assert.equal(sidecar.items[0].assessmentSource,"ai_assisted");
+ assert.doesNotMatch(JSON.stringify(sidecar.items[0].guidance),/residual.bin|recycling.bin|landfill/i);
  const response=withDisplayNames({detectedItems:items,categoryAssessments:sidecar});
  assert.equal(response.detectedItems[0].itemName,"Instant Noodle Packet");assert.equal(items[0].itemName,"Instant noodle packet");
  assert.equal(response.detectedItems[0].originalItemName,"Instant noodle packet");
  assert.deepEqual(response.detectedItems[0].boundingBox,v.boundingBox);assert.equal(s.calls(),1);
 });
-for(const [label,expected]of [["Snack wrapper","Residual"],["Instant noodle packet","Residual"],["Plastic beverage bottle","Recyclable"],["Banana peel","Biodegradable"],["White charger","Special Waste"],["Sunscreen container","Unknown"],["Container","Unknown"],["Item","Unknown"]])
+for(const [label,expected]of [["Snack wrapper","Residual"],["Instant noodle packet","Unknown"],["Plastic beverage bottle","Unknown"],["Empty snack wrapper","Residual"],["Empty plastic water bottle","Recyclable"],["Banana peel","Biodegradable"],["White charger","Special Waste"],["Sunscreen container","Unknown"],["Container","Recyclable"],["Item","Unknown"]])
  test(`final automatic assessment remains item-owned: ${label}`,async()=>{
   const c=capture(),items=merge([],[gemini(c,label)],samePhysicalObject,c),s=service(insufficient);
   const sidecar=await s.assess({capture:c,items,principal:5});
@@ -103,7 +106,7 @@ test("four objects with two duplicate generic observations yield four independen
  const primary={success:false,itemName:"Unclassified primary",category:"Unknown"};
  const sidecar=await s.assess({capture:c,items,primary,principal:5}),response=withDisplayNames({...primary,detectedItems:items,categoryAssessments:sidecar});
  assert.equal(items.length,4);assert.equal(buildScanSummary(items).totalItems,4);assert.equal(new Set(items.map(i=>i.itemId)).size,4);
- assert.deepEqual(sidecar.items.map(i=>i.category),["Residual","Unknown","Biodegradable","Special Waste"]);
+ assert.deepEqual(sidecar.items.map(i=>i.category),["Unknown","Unknown","Biodegradable","Special Waste"]);
  assert.deepEqual(sidecar.items.map(i=>i.itemId),items.map(i=>i.itemId));ownersPreserved(items,v.concat(g));
  assert.deepEqual(Object.keys(sidecar).sort(),["aiStatus","captureId","items","schemaVersion"]);
  for(const row of sidecar.items)assert.deepEqual(Object.keys(row).sort(),["assessmentSource","category","confirmationRequirements","guidance","itemId","requiresConfirmation"]);
@@ -113,8 +116,13 @@ test("four objects with two duplicate generic observations yield four independen
 test("timeout, provider-disabled and insufficient responses retain fallback without retries",async()=>{
  for(const options of [{fail:true},{env:{WASTE_ITEM_ASSESSMENT_AI_ENABLED:"false"}},{}]){
   const c=capture(),items=[gemini(c,"Container")],s=service(insufficient,options),input={capture:c,items,principal:5};
-  const result=await s.assess(input);assert.equal(result.items[0].category,"Unknown");
-  await s.assess(input);assert.equal(s.calls(),options.env?0:1);
+  const result=await s.assess(input);assert.equal(result.items[0].category,"Recyclable");
+  await s.assess(input);assert.equal(s.calls(),0);
+  // Keep genuine provider-failure/disabled/insufficient fallback coverage: an
+  // unsupported Item still stays Unknown and repeated requests never retry.
+  const unresolved={capture:c,items:[gemini(c,"Item")],principal:5};
+  const unknown=await s.assess(unresolved);assert.equal(unknown.items[0].category,"Unknown");
+  await s.assess(unresolved);assert.equal(s.calls(),options.env?0:1);
  }
 });
 test("specific short names retain uncertainty, material neutrality and the eight-object protocol",()=>{

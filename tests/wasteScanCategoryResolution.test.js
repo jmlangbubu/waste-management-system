@@ -22,9 +22,13 @@ test("Gemini-only four small physical regions plus generic scene frame become fo
  const c=capture(),raw=whole.normalize(c,{objects:[generic,...objects]}).objects,saved=structuredClone(raw);
  const items=merge([],raw,samePhysicalObject,c);assert.equal(items.length,4);assert.deepEqual(raw,saved);
  assert.deepEqual(items.map(i=>i.itemId).sort(),raw.slice(1).map(i=>i.itemId).sort());
- for(const item of items)assert.deepEqual(item,raw.find(i=>i.itemId===item.itemId));
- const f=fixture(),result=await f.assess({capture:c,items,principal:5});assert.equal(f.calls(),1);
- assert.deepEqual(raw.slice(1).map(owner=>result.items.find(i=>i.itemId===owner.itemId).category),["Recyclable","Special Waste","Residual","Biodegradable"]);
+ for(const item of items){
+  const owner=raw.find(i=>i.itemId===item.itemId);
+  // Reconciliation applies product-state policy, not a change to physical ownership.
+  assert.deepEqual(item,{...owner,category:owner.observedIdentity==="Snack wrapper"?"Unknown":owner.category});
+ }
+ const f=fixture(),result=await f.assess({capture:c,items,principal:5});assert.equal(f.calls(),0);
+ assert.deepEqual(raw.slice(1).map(owner=>result.items.find(i=>i.itemId===owner.itemId).category),["Unknown","Special Waste","Unknown","Biodegradable"]);
  assert.equal(result.items.length,items.length);assert.equal(result.captureId,c.captureId);
 });
 test("large real objects, single generic frames, nested clusters and partial overlaps are preserved",()=>{
@@ -48,13 +52,13 @@ test("bare/color-only bottle, generic container and Item require confirmation in
 });
 test("specific identity supplies a provisional stream without fabricated provider material/condition",async()=>{
  const c=capture(),raw=whole.normalize(c,{objects:[{label:"Sheet of paper",box_2d:[100,100,500,300]}]}).objects;
- const f=fixture(),result=await f.assess({capture:c,items:raw,principal:5});
+ const f=fixture(),result=await f.assess({capture:c,items:merge([],raw,samePhysicalObject,c),principal:5});
  assert.equal(result.items[0].category,"Recyclable");assert.equal(result.items[0].assessmentSource,"reviewed_identity_rule");
  assert.equal(result.items[0].requiresConfirmation,true);assert.match(result.items[0].guidance.whatItIs,/not verified/);
  assert.equal(raw[0].category,"Unknown");assert.equal(f.calls(),1);
  const recyclable={category:"Recyclable",kind:"single_material",material:"pet_plastic",condition:"clean_dry",evidence:"visible"};
  const verified=fixture(()=>recyclable),items=whole.normalize(c,{objects:[{label:"Bottle",box_2d:[100,100,500,300]}]}).objects;
- const r=await verified.assess({capture:c,items,principal:5});assert.equal(r.items[0].category,"Recyclable");
+ const r=await verified.assess({capture:c,items,principal:5});assert.equal(r.items[0].category,"Unknown");
  assert.equal(r.items[0].assessmentSource,"ai_assisted");
  assert.equal(contract.categoryFromEvidence({...recyclable,material:"unknown",condition:"unknown"}),"Unknown");
 });
@@ -81,16 +85,20 @@ test("local Cloud Run prompts demand specific supported identity and separate su
  assert.deepEqual(body.generationConfig.responseSchema.properties.assessments.items.required,["itemId","category","kind","material","condition","evidence"]);
 });
 
-test("one bounded discovery and one existing assessment batch are cached per capture without category cross-transfer",async()=>{
+test("discovery is cached and ineligible product states do not trigger assessment or category cross-transfer",async()=>{
  const {createDiscoveryService}=require("../services/wholeImageRecognitionService");
  const c=capture();let discoveryCalls=0;
  const discover=createDiscoveryService({env:{WHOLE_IMAGE_DISCOVERY_ENABLED:"true",CLOUD_RUN_AUTH_MODE:"iam",
   GEMINI_CLASSIFIER_URL:"https://synthetic.invalid/classify-waste",WHOLE_IMAGE_DISCOVERY_SHARED_TOKEN:"offline-only-discovery-token-longer-than-32"},
   authHeaders:async()=>({}),transport:async(url,input)=>{discoveryCalls++;return whole.normalize(input,{objects:[generic,...objects]});}});
- const discovered=await discover(c,{principal:5}),items=merge([],discovered.objects,samePhysicalObject,c),f=fixture();
+ const discovered=await discover(c,{principal:5});
+ // The discovery service validates the raw response; merge then applies owner policy.
+ const items=merge([],discovered.objects,samePhysicalObject,c),f=fixture();
  const primary={category:"Special Waste",aiLabel:"White charger",analysisSource:"cloud_run_gemini_vision",aiConfidence:.99},saved=structuredClone(primary);
  const result=await f.assess({capture:c,items,primary,principal:5});
  assert.equal(result.items.filter(i=>i.category==="Special Waste").length,1);assert.deepEqual(primary,saved);
  const retry={...c,requestId:crypto.randomUUID()};await discover(retry,{principal:5});await f.assess({capture:retry,items,primary,principal:5});
- assert.equal(discoveryCalls,1);assert.equal(f.calls(),1);assert.deepEqual(result.items.map(i=>i.itemId),items.map(i=>i.itemId));
+ assert.equal(discoveryCalls,1);assert.equal(f.calls(),0);assert.deepEqual(result.items.map(i=>i.itemId),items.map(i=>i.itemId));
+ for(const item of items)assert.equal(result.items.find(row=>row.itemId===item.itemId).category,
+  item.observedIdentity==="White charger"?"Special Waste":item.category);
 });

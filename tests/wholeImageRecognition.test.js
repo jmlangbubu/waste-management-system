@@ -1,7 +1,7 @@
 "use strict";
 const assert=require("node:assert/strict"),{test}=require("node:test"),crypto=require("node:crypto"),fs=require("node:fs"),path=require("node:path"),vm=require("node:vm"),{EventEmitter}=require("node:events");
 const whole=require("../gemini-waste-classifier-cloudrun/wholeImageRecognition"),shared=require("../gemini-waste-classifier-cloudrun/cropRecognition");
-const {createDiscoveryService,merge}=require("../services/wholeImageRecognitionService");
+const {createDiscoveryService,merge,identityConflict,alignedIdentity}=require("../services/wholeImageRecognitionService");
 const analysis=require("../services/wasteAnalysisService");
 const jpeg=Buffer.from([255,216,255,192,0,11,8,1,144,2,88,1,1,17,0,255,217]).toString("base64");
 const input=()=>({requestId:crypto.randomUUID(),captureId:crypto.randomUUID(),image:jpeg,width:600,height:400,orientation:"upright"});
@@ -115,7 +115,7 @@ function serviceFixture({enabled=true,objects=[object("Pen",[100,400,800,450])],
   if(id==="./perItemWasteAssessmentService"){if(assessmentFailure)throw Error("SYNTHETIC_PRIVATE_ASSESSMENT_FAILURE");return {assessCapture:require("../services/perItemWasteAssessmentService").createAssessmentService({env:{WASTE_ITEM_ASSESSMENT_ENABLED:"true"}})};}
   if(id==="./wasteAssessmentDiagnostics")return {logAssessment(){}};
   if(id==="../utils/wasteMapper")return require("../utils/wasteMapper");
-  if(id==="./wholeImageRecognitionService")return {merge,discoverObjects:async(input)=>{calls.discovery++;if(failure)throw new shared.RecognitionError("RECOGNITION_TIMEOUT",504);return new Promise(resolve=>{resolveDiscovery=()=>resolve(normalize(objects,input));});}};
+  if(id==="./wholeImageRecognitionService")return {merge,identityConflict,alignedIdentity,discoverObjects:async(input)=>{calls.discovery++;if(failure)throw new shared.RecognitionError("RECOGNITION_TIMEOUT",504);return new Promise(resolve=>{resolveDiscovery=()=>resolve(normalize(objects,input));});}};
   throw Error("Unexpected dependency "+id);
  }});
  return {...module.exports,calls,complete:()=>resolveDiscovery?.()};
@@ -147,8 +147,8 @@ test("remote JSON field ordering is irrelevant but optional confidences are stil
  const reordered={...valid,objects:valid.objects.map(item=>Object.fromEntries(Object.entries(item).reverse()))};assert.deepEqual(whole.validateResponse(request,reordered),valid);
 });
 
-async function routeFixture({enabled=true,authenticated=true}={}) {
- const handlers={},writes={history:0,image:0,auth:0},module={exports:{}},service=serviceFixture({enabled});
+async function routeFixture({enabled=true,authenticated=true,compatible=false,assessmentEnabled=true,assessmentFailure=false}={}) {
+ const handlers={},writes={history:0,image:0,auth:0},module={exports:{}},service=serviceFixture({enabled,assessmentEnabled,assessmentFailure});
  const router=Object.fromEntries(["get","post","patch","delete"].map(method=>[method,(url,...chain)=>{handlers[method+" "+url]=chain;}]));
  vm.runInNewContext(fs.readFileSync(path.join(__dirname,"../routes/wasteRoutes.js"),"utf8"),{module,Buffer,AbortController,process:{env:enabled?{WHOLE_IMAGE_DISCOVERY_ENABLED:"true"}:{}},__dirname:path.join(__dirname,"../routes"),console:{log(){},warn(){},error(){}},require(id){
   if(id==="./cloudRunDiagnostics")return require("../services/cloudRunDiagnostics");
@@ -163,12 +163,28 @@ async function routeFixture({enabled=true,authenticated=true}={}) {
   throw Error("Unexpected route dependency "+id);
  }});
  const request=input(),req=new EventEmitter(),res=response();req.body={image:request.image,objectDiscovery:{...request},detectedObject:"captured_waste_item",mlKitLabels:[]};delete req.body.objectDiscovery.image;
+ req.headers=compatible?{"x-wmo-scan-capability":"waste-scan-independent-category-v2"}:{};
  const pending=(async()=>{for(const handler of handlers["post /analyze"]){let next=false;await handler(req,res,()=>{next=true;});if(!next)break;}})();
- await new Promise(resolve=>setImmediate(resolve));service.complete();await pending;return {writes,res,calls:service.calls};
+ await new Promise(resolve=>setImmediate(resolve));service.complete();await pending;return {writes,res,calls:service.calls,captureId:request.captureId};
 }
 test("opted-in analyze authenticates and merges without any extra scan-history or image writes",async()=>{
- const {writes,res,calls}=await routeFixture();assert.equal(writes.auth,1);assert.equal(writes.history,1);assert.equal(writes.image,1);
+ const {writes,res,calls}=await routeFixture({compatible:true});assert.equal(res.statusCode||200,200);assert.equal(res.body.success,true);assert.equal(writes.auth,1);assert.equal(writes.history,1);assert.equal(writes.image,1);
  assert.equal(calls.discovery,1);assert.equal(calls.vision,1);assert.equal(res.body.result.id,123);assert.equal(res.body.result.itemName,"Original Bottle");assert.equal(res.body.detectedItems.length,2);
+});
+test("headerless mixed-Unknown scan fails legacy safety before image or history persistence",async()=>{
+ const {writes,res}=await routeFixture();assert.equal(res.statusCode,503);assert.equal(res.body.success,false);
+ assert.equal(writes.auth,1);assert.equal(writes.history,0);assert.equal(writes.image,0);
+});
+test("compatible scan preserves primary and independent detections when optional assessment is disabled or unavailable",async()=>{
+ for(const options of [{assessmentEnabled:false},{assessmentFailure:true}]){
+  const {writes,res,calls}=await routeFixture({compatible:true,...options});
+  assert.equal(res.statusCode||200,200);assert.equal(res.body.success,true);assert.equal(res.body.result.itemName,"Original Bottle");
+  assert.equal(res.body.result.category,"Recyclable");assert.equal(res.body.detectedItems.length,2);
+  assert.equal(new Set(res.body.detectedItems.map(item=>item.itemId)).size,2);
+  assert.equal(Object.hasOwn(res.body,"categoryAssessments"),false);
+  assert.equal(writes.auth,1);assert.equal(writes.history,1);assert.equal(writes.image,1);
+  assert.deepEqual(calls,{primary:1,vision:1,discovery:1});
+ }
 });
 test("unauthenticated discovery is rejected before model calls or history writes",async()=>{
  const {writes,res,calls}=await routeFixture({authenticated:false});assert.equal(res.statusCode,401);assert.equal(writes.history,0);assert.equal(writes.image,0);assert.equal(calls.discovery,0);assert.equal(calls.primary,0);
@@ -196,7 +212,9 @@ test("actual four Gemini objects remain distinct Unknown observations without sc
 });
 test("actual two separate Vision bottles plus four Gemini observations remain four",()=>{
  const v=realVision(),before=JSON.stringify(v),result=merged(v,realFour);assert.equal(result.length,4);assert.equal(JSON.stringify(v),before);
- for(let i=0;i<v.length;i++){const matched=result.find(x=>x.itemId===v[i].itemId);assert.deepEqual(matched.boundingBox,v[i].boundingBox);assert.equal(matched.confidence,v[i].confidence);assert.equal(matched.category,"Unknown");assert.equal(matched.itemName,realFour[i===0?0:3].label);assert.equal(matched.identityObservation,realFour[i===0?0:3].label);}
+ // A known Vision owner keeps its identity; the beverage brand is only a
+ // separate provider observation, not proof of contents or discarded state.
+ for(let i=0;i<v.length;i++){const matched=result.find(x=>x.itemId===v[i].itemId);assert.deepEqual(matched.boundingBox,v[i].boundingBox);assert.equal(matched.confidence,v[i].confidence);assert.equal(matched.category,"Recyclable");assert.equal(matched.itemName,v[i].itemName);assert.equal(matched.identityObservation,realFour[i===0?0:3].label);}
 });
 for(const label of ["Packaging","Plastic box"]){
  test("actual package plus mocked Vision "+label+" does not create a fifth item",()=>{
@@ -222,9 +240,11 @@ test("partial overlaps, different extents and small nested objects remain indepe
  // Same name and category also cannot collapse a spatially separate bottle.
  assert.equal(merged([vision("Bottle",realBoxes[0])],[realFour[3]]).length,2);
 });
-test("matched Unknown observations retain supported and confirmed names/categories",()=>{
+test("confirmed display metadata does not prove discarded product state",()=>{
  const v={...vision("User-confirmed package",realBoxes[2]),category:"Recyclable",confirmed:true};
- const result=merged([v],[realFour[2]])[0];assert.equal(result.itemName,v.itemName);assert.equal(result.category,v.category);assert.equal(result.confirmed,true);assert.equal(result.identityObservation,"blue plastic container");assert.equal(result.confidence,v.confidence);
+ const result=merged([v],[realFour[2]])[0];assert.equal(result.itemName,v.itemName);assert.equal(result.category,"Unknown");assert.equal(result.confirmed,true);assert.equal(result.identityObservation,"blue plastic container");assert.equal(result.confidence,v.confidence);
+ assert.equal(result.itemId,v.itemId);assert.deepEqual(result.boundingBox,v.boundingBox);
+ for(const key of ["guidance","modelKey","modelHotspots"])assert.equal(Object.hasOwn(result,key),false);
 });
 test("ranked descriptive observation is retained rather than overwritten by later generic observations",()=>{
  const result=merged([vision("Bottle",realBoxes[0])],[realFour[0],object("Bottle",realFour[0].box_2d)]);
@@ -266,7 +286,7 @@ test("assessment flag off preserves the original full analyze response and billi
  assert.ok(result.detectedItems.every(i=>i.category==="Unknown"&&!Object.hasOwn(i,"guidance")));assert.deepEqual(service.calls,{primary:1,vision:1,discovery:1});
 });
 test("versioned deterministic assessments reach authenticated API response without extra history or image writes",async()=>{
- const {res,writes,calls}=await routeFixture();assert.equal(res.body.categoryAssessments.schemaVersion,1);assert.equal(res.body.categoryAssessments.aiStatus,"not_requested");
+ const {res,writes,calls,captureId}=await routeFixture({compatible:true});assert.equal(res.statusCode||200,200);assert.equal(res.body.result.itemName,"Original Bottle");assert.equal(res.body.result.category,"Recyclable");assert.equal(res.body.categoryAssessments.captureId,captureId);assert.equal(res.body.categoryAssessments.schemaVersion,1);assert.equal(res.body.categoryAssessments.aiStatus,"not_requested");
  assert.equal(res.body.categoryAssessments.items.length,res.body.detectedItems.length);assert.equal(writes.history,1);assert.equal(writes.image,1);assert.equal(writes.auth,1);assert.deepEqual(calls,{primary:1,vision:1,discovery:1});
 });
 

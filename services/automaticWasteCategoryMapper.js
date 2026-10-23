@@ -1,4 +1,5 @@
 "use strict";
+const { commonObjectCategory } = require("../utils/wasteMapper");
 // Provisional *household* category suggestions from original, independently
 // localized recognition evidence. Never use shortened UI display names.
 const TRUSTED = new Set(["gemini_whole_image", "google_vision_object_localization"]);
@@ -16,19 +17,22 @@ function observedIdentity(item) {
  if(!item || !TRUSTED.has(item.analysisSource) || item.recognitionState === "unlocalized_observation"
   || (item.recognitionState && item.recognitionState !== "localized_observation")
   || !item.boundingBox || item.category !== "Unknown")return null;
+ const b=item.boundingBox;
+ if(Object.keys(b).sort().join(",")!=="bottom,left,right,top"
+  || ![b.left,b.top,b.right,b.bottom].every(n=>typeof n==="number"&&Number.isFinite(n)&&n>=0&&n<=1)
+  || b.left>=b.right || b.top>=b.bottom)return null;
  const label = item.analysisSource === "gemini_whole_image"
   ? item.observedIdentity
   : (item.observedIdentity || item.originalItemName || item.canonicalItem);
  if(typeof label !== "string" || !label.trim() || label.length > 128 || /[\x00-\x1f<>]/.test(label))return null;
- return label.toLowerCase().trim().replace(/\s+/g," ").replace(COLOR,"");
+ const normalized=label.toLowerCase().trim().replace(/\s+/g," ");
+ // An exact object identity (e.g. Orange Peel) must not lose its noun as color.
+ return commonObjectCategory(normalized)?normalized:normalized.replace(COLOR,"");
 }
 function hazardousIdentity(item) {
  const identity=observedIdentity(item);
  return !!identity && HAZARD.test(identity);
 }
-// Narrow equivalence for intact banana descriptions, not peel/scraps or any
-// arbitrary phrase containing 'banana'. Colors are already image-evidenced.
-const wholeBanana=identity=>/^(?:(?:whole|unpeeled|ripe|yellow)\s+)*bananas?(?:\s+fruit)?$/.test(identity||"");
 function unreliablePhysicalIdentity(item) {
  const identity=observedIdentity(item);
  return !!identity && (REPRESENTATION.test(identity) || UNCERTAIN.test(identity) || INSTRUCTION.test(identity)
@@ -41,34 +45,66 @@ function physicalSpecialWasteIdentity(item) {
   || ![b.left,b.top,b.right,b.bottom].every(n=>typeof n==="number"&&Number.isFinite(n)&&n>=0&&n<=1)
   || b.left>=b.right || b.top>=b.bottom)return null;
  return SPECIAL_OBJECTS.has(identity.replace(/-/g," "))
+  || commonObjectCategory(identity)==="Special Waste"
   || /^(?:(?:mobile|cell|phone|usb|wall|power)\s+)?(?:charger|power adapter|usb adapter|electrical adapter)$/.test(identity)
   || /^(?:used\s+)?(?:battery|batteries|lithium battery|phone battery|electronic circuit board|light bulb|fluorescent lamp|electronic device|mobile phone|cell phone)$/.test(identity)
   ? identity : null;
 }
 function requiresWasteIdentityReview(item,originalItem=item) {
- const identity=observedIdentity(item),original=observedIdentity(originalItem);
- // Generic packaging may be resolved by safe capture-bound wrapper evidence;
- // an original whole-fruit observation must not be reinterpreted as peel.
- return !!identity && /^(?:food packaging|packaged food|food packages?|packaged goods)$/.test(identity)
-  || wholeBanana(identity) || wholeBanana(original);
+ const identity=observedIdentity(item);
+ // Broad packaged-food taxonomies still do not identify a waste object.
+ return !!identity && /^(?:food packaging|packaged food|food packages?|packaged goods)$/.test(identity);
+}
+// Shared acceptance rule, including already-known catalog categories. Inputs
+// are original localized evidence; aligned must come from capture-bound merge
+// provenance, never itemName/display text or a scene-wide primary classifier.
+function productStateVeto(item,category,aligned=null) {
+ if(!["Residual","Recyclable"].includes(category))return false;
+ if(!item || !TRUSTED.has(item.analysisSource))return false;
+ if(!item.boundingBox)return true;
+ const raw=[item.observedIdentity,item.originalItemName];
+ if(!raw.some(value=>typeof value==="string" && value.trim()))raw.push(item.canonicalItem);
+ if(aligned)raw.push(aligned);
+ const labels=raw.filter(value=>typeof value==="string" && value.trim())
+  .map(value=>value.toLowerCase().trim().replace(/\s+/g," "));
+ const packaging=/\b(?:bottles?|jars?|containers?|cans?|packets?|sachets?|wrappers?|pouches?|packag(?:e|es|ed|ing))\b/;
+ if(!labels.some(label=>packaging.test(label)))return false;
+ if(labels.some(label=>label.length>160 || /[\x00-\x1f<>]/.test(label)
+   || REPRESENTATION.test(label)||UNCERTAIN.test(label)||INSTRUCTION.test(label)
+   || unsafeIdentity({...item,category:"Unknown",observedIdentity:label})
+   || /\b(?:unopened|sealed|full|filled|containing|contains|not empty|not discarded|not (?:a|an))\b/.test(label)))return true;
+ // Approved ordinary common-object policy: an explicit adverse state still
+ // vetoes above, but absence of an empty qualifier alone is not a veto.
+ if(labels.some(label=>commonObjectCategory(label)===category))return false;
+ // Opened/torn and a recognized product name alone do not establish removal
+ // of contents. Empty/discarded is still provisional, not verified ground truth.
+ return !labels.some(label=>packaging.test(label) && /^(?:(?:light|dark)\s+)?(?:(?:black|white|red|green|blue|yellow|orange|gray|grey|brown|clear|transparent|pink|purple)\s+)?(?:empty|discarded)\s+/.test(label));
 }
 function automaticCategory(item) {
+ const category=identityCategory(item);
+ return productStateVeto(item,category)?null:category;
+}
+function identityCategory(item) {
  const identity = observedIdentity(item);
  if(!identity || REPRESENTATION.test(identity) || UNCERTAIN.test(identity) || INSTRUCTION.test(identity))return null;
  // Exact physical hazardous-object identity retains safety priority during
  // localization/deduplication. This does not establish contents or cleanliness.
  if(physicalSpecialWasteIdentity(item))return "Special Waste";
+ const common=commonObjectCategory(identity);
+ if(common==="Special Waste")return common;
  if(HAZARD.test(identity))return null;
+ if(unsafeIdentity(item))return null;
  // A provider's generic food-packaging taxonomy does not establish discarded,
  // empty multilayer wrapping. Keep specific independently evidenced wrappers.
  if(requiresWasteIdentityReview(item))return null;
+ if(common)return common;
  // Plant-only discarded material; generic food scraps are intentionally excluded.
  if(/^(?:banana|mango|orange|apple|fruit|vegetable|potato)\s+peels?$/.test(identity)
   || /^(?:plant[- ]only\s+)?(?:vegetable|fruit)\s+scraps$/.test(identity)
   || /^(?:dry\s+)?leaves$/.test(identity) || /^(?:grass\s+clippings|garden\s+trimmings)$/.test(identity))
   return "Biodegradable";
  // Common multi-layer food wrappers: a *suggestion*, not a disposal guarantee.
- if(/^(?:(?:empty|opened|torn)\s+)?(?:snack|food|candy|chocolate|biscuit|chips|instant noodle)\s+(?:wrapper|sachet|packet)$/.test(identity)
+ if(/^(?:(?:empty|discarded|opened|torn)\s+)?(?:snack|food|candy|chocolate|biscuit|chips|instant noodle)\s+(?:wrapper|sachet|packet)$/.test(identity)
   || /^(?:(?:plastic|foil|metalized|metallized|food|snack|candy|chocolate|biscuit|chips|chip|instant noodle)\s+)*(?:snack wrapper|food wrapper|candy wrapper|chocolate wrapper|biscuit wrapper|chip wrapper|chips wrapper|foil wrapper|plastic wrapper|sachet|snack sachet|snack packet|food packet|chips packet)$/.test(identity)
   || /^(?:snack|candy|chocolate|biscuit|chips|food)\s+(?:packaging|wrapper|sachet|packet)$/.test(identity))
   return "Residual";
@@ -129,7 +165,7 @@ function providerIdentityConflict(item,provider) {
 }
 function corroboratedCategory(item,provider) {
  const identity=observedIdentity(item);
- if(!identity || requiresWasteIdentityReview(item) || unsafeIdentity(item) || UNCERTAIN.test(identity)
+ if(!identity || productStateVeto(item,provider?.category) || requiresWasteIdentityReview(item) || unsafeIdentity(item) || UNCERTAIN.test(identity)
   || /\b(?:uncertain|not|used|dirty|soiled|tissue|contaminated|label|logo|printed|containing|contains|filled|with)\b/.test(identity)
   || !provider || provider.evidence!=="visible" || provider.condition!=="unknown"
   || !CATEGORIES.has(provider.category) || providerIdentityConflict(item,provider))return null;
@@ -151,4 +187,4 @@ function corroboratedCategory(item,provider) {
   && /\b(?:wrapper|sachet|packet|packaging)\b/.test(identity))return "Residual";
  return null;
 }
-module.exports = {automaticCategory,unsafeProviderEvidence,hazardousIdentity,unsafeIdentity,corroboratedCategory,providerIdentityConflict,requiresWasteIdentityReview,physicalSpecialWasteIdentity,unreliablePhysicalIdentity};
+module.exports = {automaticCategory,unsafeProviderEvidence,hazardousIdentity,unsafeIdentity,corroboratedCategory,providerIdentityConflict,requiresWasteIdentityReview,physicalSpecialWasteIdentity,unreliablePhysicalIdentity,productStateVeto,commonObjectCategory};

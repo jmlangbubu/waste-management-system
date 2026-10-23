@@ -3,7 +3,7 @@ const crypto=require("node:crypto");
 const shared=require("../gemini-waste-classifier-cloudrun/cropRecognition");
 const contract=require("../gemini-waste-classifier-cloudrun/wasteItemAssessment");
 const {enrichDiscoveryItem}=require("./discoveryItemClassificationService");
-const {automaticCategory,unsafeProviderEvidence,unsafeIdentity,corroboratedCategory,providerIdentityConflict,requiresWasteIdentityReview,physicalSpecialWasteIdentity,unreliablePhysicalIdentity}=require("./automaticWasteCategoryMapper");
+const {automaticCategory,unsafeProviderEvidence,unsafeIdentity,corroboratedCategory,providerIdentityConflict,requiresWasteIdentityReview,physicalSpecialWasteIdentity,unreliablePhysicalIdentity,productStateVeto,commonObjectCategory}=require("./automaticWasteCategoryMapper");
 const {alignedIdentity,identityConflict}=require("./wholeImageRecognitionService");
 const {getWasteLearningGuide}=require("./wasteLearningGuideService");
 const {createAssessmentReasons,recordAssessmentReasons}=require("./wasteAssessmentDiagnostics");
@@ -24,6 +24,17 @@ function assessment(item,category,source,identityMapped=false) {
  return {itemId:item.itemId,category,assessmentSource:source,requiresConfirmation:true,confirmationRequirements:questions(category),guidance};
 }
 function deterministic(items,captureId) {
+ // Capture ownership applies before every path, including no-AI/cache-free
+ // deterministic suggestions. Unbound legacy Vision observations stay valid.
+ if(items.some(item=>item.captureId!==undefined && item.captureId!==captureId))
+  throw new shared.RecognitionError("INVALID_RECOGNITION_REQUEST",400);
+ // A sidecar-only API cannot rewrite the caller's known detection owner.
+ // Final assembly must apply this veto to owners first (merge does so), then
+ // recalculate primary/summary. Reject raw unsafe owners rather than emit a
+ // conflicting Unknown row or silently bless the old disposal category.
+ if(items.some(item=>item.category!=="Unknown"
+   && productStateVeto(item,item.category,alignedIdentity(item,captureId))))
+  throw new shared.RecognitionError("INVALID_RECOGNITION_REQUEST",400);
  return items.map(item=>{
   if(item.category==="Unknown" && identityConflict(item,captureId))return assessment(item,"Unknown",
    item.analysisSource==="gemini_whole_image"?"insufficient_evidence":"existing_category");
@@ -32,17 +43,18 @@ function deterministic(items,captureId) {
   if(item.analysisSource!=="gemini_whole_image")return assessment(item,item.category,"existing_category");
   const classified=enrichDiscoveryItem(item);
   const mapped=classified.category==="Unknown"?automaticCategory(item):null;
-  if(["Residual","Recyclable"].includes(mapped||classified.category) && productNotDiscarded(item,captureId))
+  if(productStateVeto(item,mapped||classified.category,alignedIdentity(item,captureId)))
    return assessment(item,"Unknown","insufficient_evidence");
   return assessment(item,mapped||classified.category,mapped?"reviewed_identity_rule":
    classified.category==="Unknown"?"insufficient_evidence":"reviewed_identity_rule",!!mapped);
  });
 }
-function originalEvidence(item,captureId) {
+function originalEvidence(item,captureId,useAlignment=true) {
+ if(item.captureId!==undefined && item.captureId!==captureId)return null;
  const gemini=item.analysisSource==="gemini_whole_image",vision=item.analysisSource==="google_vision_object_localization";
  if(!gemini&&!vision)return null;
  // Never fall back to itemName: it may already be a shortened display label.
- const identity=(!unsafeIdentity(item) && alignedIdentity(item,captureId))
+ const identity=(useAlignment && !unsafeIdentity(item) && alignedIdentity(item,captureId))
   || (gemini?item.observedIdentity:item.observedIdentity||item.originalItemName||item.canonicalItem);
  const b=item.boundingBox;
  if(typeof identity!=="string"||!identity.trim()||identity.length>128||/[\x00-\x1f<>]/.test(identity)
@@ -50,18 +62,6 @@ function originalEvidence(item,captureId) {
   ||![b.left,b.top,b.right,b.bottom].every(n=>typeof n==="number"&&Number.isFinite(n)&&n>=0&&n<=1)
   ||b.left>=b.right||b.top>=b.bottom)return null;
  return identity;
-}
-function productNotDiscarded(item,captureId) {
- // Check both the immutable localized owner evidence and capture-bound aligned
- // evidence. Never use itemName: reconciliation/display may have changed it.
- const aligned=originalEvidence(item,captureId);
- if(!aligned)return false;
- const original=item.analysisSource==="google_vision_object_localization"
-  ? item.originalItemName||item.observedIdentity||item.canonicalItem : item.observedIdentity;
- return [original,aligned].some(identity=>typeof identity==="string"
-  && identity.length<=128 && !/[\x00-\x1f<>]/.test(identity)
-  && /\b(?:unopened|sealed|full|filled|containing|contains|not empty)\b/i.test(identity)
-  && /\b(?:packet|sachet|wrapper|packag(?:e|ed|ing)|pouch|bottle|container|jar|can)\b/i.test(identity));
 }
 function assessmentBatch(capture,unknown,allItems) {
  const originalIds=new Set(),wireIds=new Map();
@@ -117,6 +117,25 @@ function createAssessmentService({env=process.env,transport=shared.postJson,auth
     if(assessments[index].category==="Unknown")reasons.identity_unproven++;
     return false;
    }
+   // Structured assessment v1 has no empty/discarded-state evidence field.
+   // Do not create a paid assessment just because this policy vetoed an old
+   // catalog suggestion: its category/material facts cannot lift that veto.
+   // Eligibility belongs to the original localized owner, not a different
+   // observation's empty/discarded qualifier. Keep aligned evidence private
+   // and available for existing eligible requests, without creating a new one.
+   const identity=originalEvidence(item,capture.captureId,false),catalog=shared.matchIdentity(identity);
+   // New deterministic common-object suggestions require no new paid call.
+   // Conflict and explicit safety vetoes were already applied above/at merge.
+   if(commonObjectCategory(identity)===assessments[index].category
+     && assessments[index].category!=="Unknown"
+     && !/^(?:empty|discarded)\s+/i.test(identity))return false;
+   const productIdentity=(catalog && ["Residual","Recyclable"].includes(catalog.category))
+    || (/\b(?:snack|food|noodle|candy|chocolate|biscuit|chips|beverage|water|soda)\b/i.test(identity)
+      && /\b(?:wrapper|packet|sachet|packaging|bottle)\b/i.test(identity));
+   // Generic objects may still carry valid electrical/battery evidence, and
+   // existing hazardous-object suggestions must still receive their AI veto.
+   if(assessments[index].category==="Unknown" && productIdentity
+     && productStateVeto(item,"Residual"))return false;
    if(assessments[index].category==="Unknown")return true;
    // Keep one bounded AI safety review for freshly mapped suggestions.
    // Do not re-assess pre-existing, established item categories.
@@ -134,7 +153,11 @@ function createAssessmentService({env=process.env,transport=shared.postJson,auth
      const provider=byId.get(items[i].itemId),verified=contract.categoryFromEvidence(provider);
      const identity=originalEvidence(items[i],capture.captureId);
      const evidenceItem={...items[i],observedIdentity:identity};
-     const mapped=automaticCategory(evidenceItem);
+     // Failed/unhelpful alignment cannot erase an independent localized Vision
+     // identity. Explicit conflicting/state evidence still vetoes below.
+     const independent=items[i].analysisSource==="google_vision_object_localization"
+      ? automaticCategory({...items[i],observedIdentity:originalEvidence(items[i],capture.captureId,false)}) : null;
+     const mapped=automaticCategory(evidenceItem)||independent;
      const provisional=verified==="Unknown"?corroboratedCategory(evidenceItem,provider):null;
      const evidenceCategory=verified!=="Unknown"?verified:provisional||"Unknown";
      const suggested=evidenceCategory!=="Unknown"?evidenceCategory:
@@ -181,7 +204,8 @@ function createAssessmentService({env=process.env,transport=shared.postJson,auth
       || (!validatedElectrical && (unreliablePhysicalIdentity(items[i]) || unreliablePhysicalIdentity(evidenceItem)));
      // A visible unopened/filled product is not established as discarded
      // empty packaging, even when structured model facts suggest a stream.
-     const protectedProduct=productNotDiscarded(items[i],capture.captureId);
+     const protectedProduct=productStateVeto(items[i],supported)
+      || productStateVeto(items[i],supported,alignedIdentity(items[i],capture.captureId));
      // Unlike the overlapping legacy safety_veto counter, these identify the
      // specific predicates that blocked a suggestion or forced Unknown.
      const providerVeto=suggested==="Unknown" && ((mapped && unsafeProviderEvidence(provider,mapped))

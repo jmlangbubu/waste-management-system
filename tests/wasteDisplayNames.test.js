@@ -3,6 +3,8 @@ const {test}=require("node:test"),assert=require("node:assert/strict"),crypto=re
 const {shortObjectName,withDisplayNames}=require("../services/wasteDisplayNameService");
 const whole=require("../gemini-waste-classifier-cloudrun/wholeImageRecognition");
 const {createAssessmentService,deterministic}=require("../services/perItemWasteAssessmentService");
+const {merge}=require("../services/wholeImageRecognitionService");
+const {samePhysicalObject}=require("../services/wasteAnalysisService");
 
 // Source-equivalent checks for the reconciled v5 parser audited in APK SHA256
 // eb91400f81597363706839326b6bbeacdde08cbd5155b74cdca72bab05c2ab65.
@@ -33,13 +35,20 @@ function v5RawOwner(item) {
 }
 function v5SidecarAccepted(result,captureId) {
  const sidecar=result.categoryAssessments,owners=new Map(result.detectedItems.filter(v5RawOwner).map(i=>[i.itemId,i]));
+ const keys=(value,allowed)=>value&&typeof value==="object"&&!Array.isArray(value)&&Object.keys(value).every(k=>allowed.includes(k));
+ const strings=(value,max,length)=>Array.isArray(value)&&value.length<=max&&value.every(v=>typeof v==="string"&&v.length<=length);
+ const guidance=value=>keys(value,["whatItIs","properDisposal","preparation","environmentalImpact","reuseIdeas","recoveryOptions","warnings"])
+  && ["whatItIs","properDisposal","preparation","environmentalImpact"].every(k=>!(k in value)||typeof value[k]==="string"&&value[k].length<=2048)
+  && ["reuseIdeas","recoveryOptions","warnings"].every(k=>!(k in value)||strings(value[k],8,2048));
  if(!sidecar||sidecar.schemaVersion!==1||sidecar.captureId!==captureId
+  ||!keys(sidecar,["schemaVersion","captureId","aiStatus","items"])
   ||!["complete","unavailable","not_requested"].includes(sidecar.aiStatus)
   ||!Array.isArray(sidecar.items)||sidecar.items.length>8||sidecar.items.length>owners.size)return false;
  const seen=new Set();
  return sidecar.items.every(row=>{
   const owner=owners.get(row.itemId),gemini=owner?.analysisSource==="gemini_whole_image",vision=owner?.analysisSource==="google_vision_object_localization";
-  if(!owner||seen.has(row.itemId)||row.requiresConfirmation!==true
+  if(!keys(row,["itemId","category","assessmentSource","requiresConfirmation","confirmationRequirements","guidance"])
+   ||row.guidance!==undefined&&!guidance(row.guidance)||!owner||seen.has(row.itemId)||row.requiresConfirmation!==true
    ||!["Biodegradable","Recyclable","Residual","Special Waste","Unknown"].includes(row.category)
    ||!Array.isArray(row.confirmationRequirements)||row.confirmationRequirements.length>4
    ||row.confirmationRequirements.some(s=>typeof s!=="string"||s.length>512))return false;
@@ -68,6 +77,28 @@ function scene(labels) {
  const capture={captureId:crypto.randomUUID(),requestId:crypto.randomUUID()};
  return {capture,principal:42,items:whole.normalize(capture,{objects:labels.map((label,i)=>({label,box_2d:[100,10+i*120,900,70+i*120]}))}).objects};
 }
+function reconciled(s) {s.items=merge([],s.items,samePhysicalObject,s.capture);return s;}
+
+test("final Android sidecar rejects foreign, stale, duplicate, malformed and inconsistent owners",()=>{
+ const s=reconciled(scene(["Used Battery","Plastic Bottle"]));
+ const valid=withDisplayNames({detectedItems:s.items,categoryAssessments:{schemaVersion:1,captureId:s.capture.captureId,
+  aiStatus:"not_requested",items:deterministic(s.items,s.capture.captureId)}});
+ assert.equal(v5SidecarAccepted(valid,s.capture.captureId),true);
+ const cases={
+  foreign:r=>{r.categoryAssessments.items[0].itemId="region_"+"f".repeat(32);},
+  stale:r=>{r.categoryAssessments.captureId=crypto.randomUUID();},
+  duplicate:r=>{r.categoryAssessments.items[1]={...r.categoryAssessments.items[0]};},
+  geometry:r=>{r.detectedItems[0].boundingBox.right=-1;},
+  source:r=>{r.categoryAssessments.items[0].assessmentSource="existing_category";},
+  ownerCategory:r=>{r.categoryAssessments.items[0].category="Recyclable";},
+  metadata:r=>{r.categoryAssessments.items[0].modelKey="battery";},
+  guidanceMetadata:r=>{r.categoryAssessments.items[0].guidance.modelKey="battery";}
+ };
+ for(const [name,mutate]of Object.entries(cases)){
+  const invalid=structuredClone(valid);mutate(invalid);
+  assert.equal(v5SidecarAccepted(invalid,s.capture.captureId),false,name);
+ }
+});
 test("display formatting is immutable and preserves raw evidence, IDs, geometry and primary/assessment contracts",()=>{
  const s=scene(["green compact powder","white charger","gray compact powder"]);
  const raw=JSON.parse(JSON.stringify(s.items));
@@ -86,27 +117,35 @@ test("display formatting is immutable and preserves raw evidence, IDs, geometry 
 });
 
 for(const name of ["Plastic Bottle","Used Battery","Snack Sachet"])test(`v5 known Gemini catalog name survives display formatting: ${name}`,()=>{
- const s=scene([name]),before=structuredClone(s.items[0]);
+ const s=scene([name]),rawOwners=s.items,before=structuredClone(s.items[0]);
+ if(name!=="Used Battery")assert.throws(()=>deterministic(s.items,s.capture.captureId),{code:"INVALID_RECOGNITION_REQUEST"});
+ reconciled(s);
+ assert.deepEqual(rawOwners,[before]);
  const response={detectedItems:s.items,categoryAssessments:{schemaVersion:1,captureId:s.capture.captureId,
   aiStatus:"not_requested",items:deterministic(s.items)}};
  const formatted=withDisplayNames(response),item=formatted.detectedItems[0];
  assert.equal(item.itemName,name);assert.equal(item.originalItemName,name);assert.equal(v5RawOwner(item),true);
  assert.equal(v5SidecarAccepted(formatted,s.capture.captureId),true);
- for(const key of Object.keys(before))assert.deepEqual(item[key],before[key],key);
- assert.equal(formatted.categoryAssessments,response.categoryAssessments);assert.deepEqual(s.items[0],before);
+ for(const key of Object.keys(before).filter(k=>k!=="category"))assert.deepEqual(item[key],before[key],key);
+ assert.equal(item.category,name==="Used Battery"?"Special Waste":"Unknown");
+ assert.equal(formatted.categoryAssessments,response.categoryAssessments);
  const oldBehavior={...formatted,detectedItems:[{...item,itemName:shortObjectName(name)}]};
- assert.equal(v5RawOwner(oldBehavior.detectedItems[0]),false);
- assert.equal(v5SidecarAccepted(oldBehavior,s.capture.captureId),false);
+ // Exact names are mandatory for known catalog categories. Unknown owners
+ // permit compact names, while production still preserves original identity.
+ assert.equal(v5RawOwner(oldBehavior.detectedItems[0]),item.category==="Unknown");
+ assert.equal(v5SidecarAccepted(oldBehavior,s.capture.captureId),item.category==="Unknown");
 });
 
 test("reviewed observed aliases retain canonical Gemini names without rewriting evidence",()=>{
- const s=scene(["plastic water bottle","AA battery","snack wrapper"]),raw=structuredClone(s.items);
+ const s=scene(["plastic water bottle","AA battery","snack wrapper"]),rawOwners=s.items,raw=structuredClone(s.items);
+ assert.throws(()=>deterministic(s.items),{code:"INVALID_RECOGNITION_REQUEST"});reconciled(s);
+ assert.deepEqual(rawOwners,raw);
  const formatted=withDisplayNames({detectedItems:s.items,categoryAssessments:{schemaVersion:1,captureId:s.capture.captureId,
   aiStatus:"not_requested",items:deterministic(s.items)}});
  assert.deepEqual(formatted.detectedItems.map(i=>i.itemName),["Plastic Bottle","Used Battery","Snack Sachet"]);
  assert.equal(v5SidecarAccepted(formatted,s.capture.captureId),true);
  assert.deepEqual(formatted.detectedItems.map(i=>i.observedIdentity),raw.map(i=>i.observedIdentity));
- assert.deepEqual(s.items,raw);
+ for(let i=0;i<raw.length;i++)for(const key of Object.keys(raw[i]).filter(k=>k!=="category"))assert.deepEqual(s.items[i][key],raw[i][key]);
 });
 
 test("Vision known names and Unknown Gemini names retain compact formatting",()=>{
@@ -114,7 +153,7 @@ test("Vision known names and Unknown Gemini names retain compact formatting",()=
   const item=scene([name]).items[0];
   for(const variant of [{...item,analysisSource:"google_vision_object_localization",confidence:.8},{...item,category:"Unknown"}]){
    const formatted=withDisplayNames({detectedItems:[variant]}).detectedItems[0];
-   assert.equal(formatted.itemName,shortObjectName(name));
+   assert.equal(formatted.itemName,variant.analysisSource==="gemini_whole_image"?name:shortObjectName(name));
    for(const key of Object.keys(variant).filter(key=>key!=="itemName"))assert.deepEqual(formatted[key],variant[key]);
   }
  }
@@ -132,8 +171,14 @@ test("a mismatched category, alias or unsupported observed identity is not bless
 
 test("known Gemini catalog formatting is idempotent without altering primary or sidecar",()=>{
  const s=scene(["Plastic Bottle","Used Battery","Snack Sachet"]);
+ // Assessment requires final safety-reconciled owners, just like analyzeWaste.
+ // Keep this formatting test's assertions, rather than feeding the sidecar
+ // boundary a raw known owner that the safety policy has already vetoed.
+ s.items=require("../services/wholeImageRecognitionService").merge([],s.items,
+  require("../services/wasteAnalysisService").samePhysicalObject,s.capture);
  const response={itemName:"Original scene primary",category:"Special Waste",captureId:s.capture.captureId,
   detectedItems:s.items,categoryAssessments:{schemaVersion:1,captureId:s.capture.captureId,aiStatus:"not_requested",items:deterministic(s.items)}};
+ assert.equal(v5SidecarAccepted(response,s.capture.captureId),true);
  const once=withDisplayNames(response);assert.deepEqual(withDisplayNames(once),once);
  assert.equal(once.itemName,response.itemName);assert.equal(once.category,response.category);
  assert.equal(once.captureId,response.captureId);assert.equal(once.categoryAssessments,response.categoryAssessments);
@@ -143,6 +188,9 @@ test("five mixed owners retain all v5 sidecar entries with Vision AI and Gemini 
  const s=scene(["Plastic Bottle","Used Battery","Snack Sachet","white charger","Bottle"]);
  Object.assign(s.capture,{image:Buffer.from("ffd8ffc0000b080190025801011100ffd9","hex").toString("base64"),width:600,height:400,orientation:"upright"});
  s.items[3]={...s.items[3],analysisSource:"google_vision_object_localization",canonicalItem:"white charger",confidence:.8};
+ const chargerId=s.items[3].itemId,plasticId=s.items[0].itemId,rawOwners=s.items,rawSnapshot=structuredClone(s.items);
+ const expectedById=new Map(s.items.map((i,n)=>[i.itemId,["Unknown","Special Waste","Unknown","Special Waste","Unknown"][n]]));
+ reconciled(s);
  const raw=structuredClone(s.items);let calls=0;
  const assess=createAssessmentService({env:{WASTE_ITEM_ASSESSMENT_ENABLED:"true",WASTE_ITEM_ASSESSMENT_AI_ENABLED:"true",
   CLOUD_RUN_AUTH_MODE:"iam",CLOUD_RUN_AUDIENCE:"https://synthetic.invalid",GEMINI_CLASSIFIER_URL:"https://synthetic.invalid/classify-waste",
@@ -150,13 +198,15 @@ test("five mixed owners retain all v5 sidecar entries with Vision AI and Gemini 
    calls++;return {schemaVersion:1,captureId:input.captureId,requestId:input.requestId,assessments:input.items.map(item=>({itemId:item.itemId,
     category:"Unknown",kind:"unknown",material:"unknown",condition:"unknown",evidence:"insufficient"})).reverse()};
   }});
+ await assert.rejects(assess({...s,items:rawOwners}),{code:"INVALID_RECOGNITION_REQUEST"});assert.equal(calls,0);
+ assert.deepEqual(rawOwners,rawSnapshot);
  const sidecar=await assess(s),formatted=withDisplayNames({detectedItems:s.items,categoryAssessments:sidecar});
  assert.equal(calls,1);assert.equal(sidecar.aiStatus,"complete");assert.equal(v5SidecarAccepted(formatted,s.capture.captureId),true);
  assert.equal(formatted.detectedItems.length,5);assert.equal(sidecar.items.length,5);
  assert.equal(new Set(formatted.detectedItems.map(i=>i.itemId)).size,5);
- assert.deepEqual(sidecar.items.map(i=>i.category),["Recyclable","Special Waste","Residual","Special Waste","Unknown"]);
- assert.equal(sidecar.items[3].assessmentSource,"ai_assisted");
- assert.equal(sidecar.items[0].assessmentSource,"reviewed_identity_rule");
+ assert.deepEqual(sidecar.items.map(i=>i.category),sidecar.items.map(i=>expectedById.get(i.itemId)));
+ assert.equal(sidecar.items.find(i=>i.itemId===chargerId).assessmentSource,"ai_assisted");
+ assert.equal(sidecar.items.find(i=>i.itemId===plasticId).assessmentSource,"insufficient_evidence");
  assert.deepEqual(sidecar.items.map(i=>i.itemId),raw.map(i=>i.itemId));assert.deepEqual(s.items,raw);
  for(let i=0;i<5;i++)for(const key of Object.keys(raw[i]).filter(key=>key!=="itemName"))assert.deepEqual(formatted.detectedItems[i][key],raw[i][key]);
  assert.equal(v5SidecarAccepted({...formatted,categoryAssessments:{...sidecar,captureId:crypto.randomUUID()}},s.capture.captureId),false);
@@ -164,18 +214,21 @@ test("five mixed owners retain all v5 sidecar entries with Vision AI and Gemini 
 });
 test("every item gets an independent confirmation-required assessment from original evidence, not color/display type",async()=>{
  const s=scene(["used battery","banana peel","snack sachet","empty aluminum can","green compact powder","white charger","bottle","yellow bottle"]);
+ const expectedById=new Map(s.items.map((i,n)=>[i.itemId,["Special Waste","Biodegradable","Unknown","Recyclable","Unknown","Special Waste","Unknown","Unknown"][n]]));
+ reconciled(s);
  let calls=0;
  const assess=createAssessmentService({env:{WASTE_ITEM_ASSESSMENT_ENABLED:"true",WASTE_ITEM_ASSESSMENT_AI_ENABLED:"false"},transport:async()=>{calls++;throw Error("Paid calls forbidden");}});
  const result=await assess(s);
  assert.equal(result.captureId,s.capture.captureId);assert.equal(result.schemaVersion,1);assert.equal(result.aiStatus,"not_requested");
  assert.deepEqual(result.items.map(i=>i.itemId),s.items.map(i=>i.itemId));
- assert.deepEqual(result.items.map(i=>i.category),["Special Waste","Biodegradable","Residual","Recyclable","Unknown","Special Waste","Unknown","Unknown"]);
+ assert.deepEqual(result.items.map(i=>i.category),result.items.map(i=>expectedById.get(i.itemId)));
  assert.ok(result.items.every(i=>i.requiresConfirmation===true));assert.equal(calls,0);
  assert.deepEqual(deterministic(withDisplayNames({detectedItems:s.items}).detectedItems),result.items);
  // A known Gemini catalog name must remain exact; an uncertain one stays compact.
  const both=scene(["plastic bottle","chemical bottle"]);
+ assert.throws(()=>deterministic(both.items),{code:"INVALID_RECOGNITION_REQUEST"});reconciled(both);
  assert.deepEqual(withDisplayNames({detectedItems:both.items}).detectedItems.map(i=>i.itemName),["Plastic Bottle","Bottle"]);
- assert.deepEqual(deterministic(both.items).map(i=>i.category),["Recyclable","Unknown"]);
+ assert.deepEqual(deterministic(both.items).map(i=>i.category),["Unknown","Unknown"]);
 });
 test("production-default assessment-off stays off and cannot invoke a provider",async()=>{
  const assess=createAssessmentService({env:{},transport:async()=>{throw Error("Provider forbidden");}});
@@ -206,6 +259,7 @@ test("specific capped beverage and wrapper suggestions keep strict v5 mixed-owne
  const s=scene(["plastic beverage bottle with cap","torn snack wrapper","Plastic Bottle","Item"]);
  Object.assign(s.capture,{image:Buffer.from("ffd8ffc0000b080190025801011100ffd9","hex").toString("base64"),width:600,height:400,orientation:"upright"});
  s.items[3]={...s.items[3],analysisSource:"google_vision_object_localization",canonicalItem:"item",confidence:.8};
+ const rawOwners=s.items,rawSnapshot=structuredClone(s.items);reconciled(s);
  const original=structuredClone(s.items);let calls=0;
  const assess=createAssessmentService({env:{WASTE_ITEM_ASSESSMENT_ENABLED:"true",WASTE_ITEM_ASSESSMENT_AI_ENABLED:"true",
   CLOUD_RUN_AUTH_MODE:"iam",CLOUD_RUN_AUDIENCE:"https://synthetic.invalid",GEMINI_CLASSIFIER_URL:"https://synthetic.invalid/classify-waste",
@@ -213,10 +267,12 @@ test("specific capped beverage and wrapper suggestions keep strict v5 mixed-owne
    calls++;return {schemaVersion:1,requestId:input.requestId,captureId:input.captureId,assessments:input.items.map(i=>({itemId:i.itemId,
     category:"Unknown",kind:"unknown",material:"unknown",condition:"unknown",evidence:"insufficient"}))};
   }});
+ await assert.rejects(assess({...s,items:rawOwners}),{code:"INVALID_RECOGNITION_REQUEST"});assert.equal(calls,0);
+ assert.deepEqual(rawOwners,rawSnapshot);
  const sidecar=await assess(s),response=withDisplayNames({detectedItems:s.items,categoryAssessments:sidecar});
  assert.equal(calls,1);assert.equal(v5SidecarAccepted(response,s.capture.captureId),true);
- assert.deepEqual(sidecar.items.map(i=>i.category),["Recyclable","Residual","Recyclable","Unknown"]);
- assert.deepEqual(sidecar.items.map(i=>i.assessmentSource),["reviewed_identity_rule","reviewed_identity_rule","reviewed_identity_rule","ai_assisted"]);
+ assert.deepEqual(sidecar.items.map(i=>i.category),["Unknown","Unknown","Unknown","Unknown"]);
+ assert.deepEqual(sidecar.items.map(i=>i.assessmentSource),["insufficient_evidence","insufficient_evidence","insufficient_evidence","ai_assisted"]);
  assert.deepEqual(s.items,original);assert.equal(response.categoryAssessments,sidecar);
  assert.deepEqual(Object.keys(sidecar).sort(),["schemaVersion","captureId","aiStatus","items"].sort());
 });
@@ -235,7 +291,7 @@ test("deduplicated simple aliases preserve strict v5 owners, sidecar count and s
  assert.equal(result.itemName,primary.itemName);assert.equal(result.category,primary.category);
  for(const item of items) {
   const owner=raw.find(i=>i.itemId===item.itemId);assert.deepEqual(item.boundingBox,owner.boundingBox);
-  assert.equal(item.category,owner.category);assert.equal(item.observedIdentity,owner.observedIdentity);
+  assert.equal(item.category,owner.observedIdentity==="Snack Sachet"?"Unknown":owner.category);assert.equal(item.observedIdentity,owner.observedIdentity);
  }
 });
 

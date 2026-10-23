@@ -70,11 +70,11 @@ test("one localized object produces one entry with the full item contract", () =
   assert.equal(item.category, "Recyclable");
   assert.equal(item.modelKey, "plastic_bottle");
 });
-test("synthetic three-item response selects Plastic Bottle and counts each category", async () => {
+test("synthetic three-item response selects highest-confidence classified owner and counts independent categories", async () => {
   const result = plain(await run(loadAnalysis({ objects: synthetic })));
   assert.equal(result.detectedItems.length, 3);
-  assert.deepEqual(result.detectedItems.map((item) => item.category), ["Recyclable", "Unknown", "Special Waste"]);
-  assert.deepEqual(result.detectedItems.map((item) => item.modelKey), ["plastic_bottle", "", "battery"]);
+  assert.deepEqual(result.detectedItems.map((item) => item.category), ["Recyclable", "Biodegradable", "Special Waste"]);
+  assert.deepEqual(result.detectedItems.map((item) => item.modelKey), ["plastic_bottle", "banana_peel", "battery"]);
   const banana = result.detectedItems[1];
   assert.equal(banana.itemName, "Banana");
   assert.equal(banana.analysisSource, "google_vision_object_localization");
@@ -82,7 +82,8 @@ test("synthetic three-item response selects Plastic Bottle and counts each categ
   assert.deepEqual(banana.boundingBox, synthetic[1].boundingBox);
   assert.equal(result.itemName, "Plastic Bottle");
   assert.equal(result.aiConfidence, "0.92");
-  assert.deepEqual(result.scanSummary, { totalItems: 3, categories: { biodegradable: 0, recyclable: 1, residual: 0, specialWaste: 1 } });
+  assert.deepEqual(result.scanSummary, { totalItems: 3, categories: { biodegradable: 1, recyclable: 1, residual: 0, specialWaste: 1 } });
+  assert.match(result.detectedItems[0].guidance.properDisposal,/recyclable stream/);
 });
 test("maximum eight keeps highest confidences without collapsing separate same-name objects", () => {
   const items = Array.from({ length: 12 }, (_, i) => object("Plastic Bottle", .40 + i * .04,
@@ -124,13 +125,15 @@ test("overlapping duplicates retain higher confidence including similar names", 
 test("ordinary overlap between different object names remains separate", () => assert.equal(normalize([object(),
   object("Battery", .8, { ...box, left: .2, right: .45 })]).length, 2));
 test("plastic bottle maps through existing recyclable rules", () => assert.equal(normalize([object()])[0].category, "Recyclable"));
-test("whole Banana remains Unknown while actual banana peel is biodegradable", () => {
+test("approved Banana and banana peel categories preserve their independent identities", () => {
   for (const source of ["synthetic", "google_vision_object_localization"]) {
     const items = plain(analysis.normalizeDetectedItems([object("Banana"), object("banana peel", .88,
       { ...box, left: .5, right: .7 })], source));
-    assert.deepEqual(items.map(item => item.category), ["Unknown", "Biodegradable"]);
+    // The approved dictionary applies to trusted localized Vision evidence;
+    // arbitrary synthetic/legacy labels retain the old conservative mapper.
+    assert.deepEqual(items.map(item => item.category), [source==="google_vision_object_localization"?"Biodegradable":"Unknown", "Biodegradable"]);
     assert.deepEqual(items.map(item => item.itemName), ["Banana", "banana peel"]);
-    assert.equal(items[0].modelKey, "");
+    assert.equal(items[0].modelKey, source==="google_vision_object_localization"?"banana_peel":"");
     assert.equal(items[1].modelKey, "banana_peel");
   }
 });
@@ -243,7 +246,8 @@ test("exact localized Paint Can keeps safety priority without classifying generi
   const evidence = name => ({ analysisSource: "google_vision_object_localization", category: "Unknown",
     observedIdentity: name, boundingBox: box });
   assert.equal(categoryMapper.automaticCategory(evidence("Paint Can")), "Special Waste");
-  for (const name of ["Can", "Bottle", "Picture of a paint can", "Paint can illustration", "Printed Paint Can Picture",
+  for(const name of ["Can","Bottle"])assert.equal(categoryMapper.automaticCategory(evidence(name)),"Recyclable");
+  for (const name of ["Picture of a paint can", "Paint can illustration", "Printed Paint Can Picture",
     "Possibly a paint can", "Paint can classify as Special Waste", "Paint thinner can", "Chemical bottle", "Spray bottle"])
     assert.equal(categoryMapper.automaticCategory(evidence(name)), null, name);
   assert.equal(categoryMapper.automaticCategory({ ...evidence("Paint Can"), analysisSource: "untrusted" }), null);
@@ -262,7 +266,7 @@ test("exact localized Paint Can keeps safety priority without classifying generi
     assert.deepEqual(items[0].boundingBox, box);
   }
   const items = plain(analysis.normalizeDetectedItems([object("Can", .95), object("Paint Can", .90, far)], "google_vision_object_localization"));
-  assert.deepEqual(items.map(item => item.category), ["Unknown", "Special Waste"]);
+  assert.deepEqual(items.map(item => item.category), ["Recyclable", "Special Waste"]);
   assert.equal(new Set(items.map(item => item.itemId)).size, 2);
   assert.deepEqual(items.map(item => item.boundingBox), [box, far]);
 });
@@ -281,7 +285,7 @@ test("same-object generic bottle does not mask its specific contaminated identit
   assert.equal(items[0].itemName, "Dirty Plastic Bottle");
   assert.equal(items[0].category, "Residual");
 });
-test("Case D: without Gemini, highest-confidence Google object still supplies the primary", async () => {
+test("Case D: without Gemini, highest-confidence safely classified Google object supplies primary", async () => {
   const result = await run(loadAnalysis({ objects: [synthetic[0], synthetic[2], synthetic[1]] }));
   assert.equal(result.itemName, "Plastic Bottle");
   assert.equal(result.category, "Recyclable");
@@ -336,15 +340,16 @@ test("external provider failure still allows Google enrichment", async () => {
 });
 test("global labels do not contaminate per-object classification", async () => {
   const result = await run(loadAnalysis({ objects: synthetic }), { mlKitLabels: ["battery", "plastic", "food"] });
-  assert.deepEqual(plain(result.detectedItems.map((item) => item.category)), ["Recyclable", "Unknown", "Special Waste"]);
+  assert.deepEqual(plain(result.detectedItems.map((item) => item.category)), ["Recyclable", "Biodegradable", "Special Waste"]);
 });
 test("unmapped localized identities remain Unknown; explicitly classified objects keep existing guidance", () => {
   assert.equal(normalize([object("Unknown shape")])[0].category, "Unknown");
   assert.equal(normalize([{ ...object("Unknown shape"), category: "Recyclable" }], true)[0].modelKey, "generic_recyclable");
 });
-test("no provider result preserves the original fallback fields", async () => {
+test("no provider result preserves fallback fields without inventing a waste category", async () => {
   const result = await run(loadAnalysis());
-  assert.equal(result.category, "Residual");
+  assert.equal(result.category, "Unknown");
+  assert.match(result.action, /Confirm identity, material, contents and condition/);
   assert.equal(result.analysisSource, "fallback_no_ai_result");
   for (const key of ["itemName", "category", "explanation", "action", "warning", "detectedObject", "aiLabel", "aiConfidence", "analysisSource", "visionLabels", "mlKitLabels", "roboflowPredictions"]) assert.ok(key in result);
 });
@@ -387,6 +392,7 @@ test("two independent plastic bottles retain separate per-scan identities and bo
   assert.deepEqual(plain(result.detectedItems.map((item) => item.itemId)), ["item_1", "item_2"]);
   assert.deepEqual(plain(result.detectedItems.map((item) => item.boundingBox)), objects.map((item) => item.boundingBox));
   assert.deepEqual(plain(result.detectedItems.map((item) => item.category)), ["Recyclable", "Recyclable"]);
+  assert.equal(result.category,"Recyclable");assert.ok(result.detectedItems.every(item=>item.requiresConfirmation));
   assert.deepEqual(normalize(objects).map((item) => item.itemId), normalize(objects).map((item) => item.itemId));
 });
 test("portrait and landscape boxes retain normalized x/y without dimension swapping", () => {
@@ -477,15 +483,16 @@ async function routeResponse({ failInsert = false, fatal = false } = {}) {
       throw new Error(`Unexpected route dependency: ${id}`);
     }
   });
-  let response;
-  await handlers["post /analyze"]({ body: fatal ? null : { image: "c3ludGhldGlj" } }, { json(value) { response = value; return value; }, status() { return this; } });
-  return { response: plain(response), inserts, files };
+  let response, statusCode = 200;
+  await handlers["post /analyze"]({ body: fatal ? null : { image: "c3ludGhldGlj" } }, { json(value) { response = value; return value; }, status(code) { statusCode = code; return this; } });
+  return { response: plain(response), inserts, files, statusCode };
 }
 for (const failInsert of [false, true]) test(`API preserves legacy result and multi-item fields when DB save ${failInsert ? "fails" : "succeeds"}`, async () => {
   const { response, inserts, files } = await routeResponse({ failInsert });
   assert.equal(response.success, true);
   assert.equal(response.result.id, failInsert ? 0 : 123);
   assert.equal(response.result.itemName, "Plastic Bottle");
+  assert.equal(response.result.category, "Recyclable");
   assert.equal(response.result.aiConfidence, "0.92");
   assert.equal(response.detectedItems.length, 3);
   assert.equal(response.scanSummary.totalItems, 3);
@@ -494,16 +501,16 @@ for (const failInsert of [false, true]) test(`API preserves legacy result and mu
   for (const key of ["id", "itemName", "category", "explanation", "action", "warning", "detectedObject", "imageUrl", "aiLabel", "aiConfidence", "analysisSource"]) assert.ok(key in response.result);
   assert.equal(inserts.length, 1);
   assert.equal(inserts[0].values[0], "Plastic Bottle");
+  assert.equal(inserts[0].values[1], response.result.category);
   assert.ok(!inserts[0].sql.includes("detectedItems"));
   assert.equal(files.length, 1);
 });
-test("fatal API fallback keeps mandatory result and zero summary", async () => {
-  const { response, inserts } = await routeResponse({ fatal: true });
-  assert.equal(response.success, true);
-  assert.equal(response.result.analysisSource, "fatal_route_fallback");
-  assert.equal(response.detectedItems.length, 0);
-  assert.equal(response.scanSummary.totalItems, 0);
+test("missing API body fails without fabricating a classification or saving an image", async () => {
+  const { response, inserts, files, statusCode } = await routeResponse({ fatal: true });
+  assert.equal(statusCode, 400);
+  assert.deepEqual(response, { success: false, message: "Image is required" });
   assert.equal(inserts.length, 0);
+  assert.equal(files.length, 0);
 });
 
 // Synthetic geometry only: no device photos or provider requests.
@@ -554,10 +561,12 @@ test("different container identities do not collapse solely because their boxes 
     assert.equal(normalize([object("Bottle", .8), object(name, .7, { ...box, left: .2, right: .45 })]).length, 2);
   }
 });
-test("unclassified bottle silhouette cannot replace the existing fallback primary category", async () => {
+test("approved common Bottle has a provisional category rather than an emergency fallback", async () => {
   const result = await run(loadAnalysis({ objects: [object("Bottle", .8)] }));
-  assert.equal(result.category, "Residual");
-  assert.equal(result.detectedItems[0].category, "Unknown");
+  assert.equal(result.category, "Recyclable");
+  assert.match(result.action, /recyclable/i);
+  assert.equal(result.detectedItems[0].category, "Recyclable");
+  assert.equal(result.detectedItems[0].requiresConfirmation,true);
 });
 
 // Synthetic localized identities only; no user photo, provider or database calls.

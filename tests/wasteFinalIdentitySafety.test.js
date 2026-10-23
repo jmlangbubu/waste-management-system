@@ -35,25 +35,30 @@ for(const [original,qualifier,previous,facts]of reverseProducts)for(const revers
   const c=capture(),raw=[{name:original,confidence:.9,boundingBox:box},{name:"Banana peel",confidence:.85,boundingBox:far}];
   const initial=normalizeDetectedItems(reverse?raw.reverse():raw,"google_vision_object_localization");
   const before=structuredClone(initial),originalOwner=initial.find(i=>i.canonicalItem===original.toLowerCase());
-  assert.equal(originalOwner.category,previous);
+  // An unqualified product name no longer establishes empty/discarded state.
+  assert.equal(originalOwner.category,"Unknown");
   const g=whole.normalize(c,{objects:[{label:qualifier,box_2d:[100,100,500,300]}]}).objects;
   const items=merge(initial,g,samePhysicalObject,c),owner=items.find(i=>i.itemId===originalOwner.itemId);
   assert.equal(owner.category,"Unknown");assert.equal(owner.requiresConfirmation,true);
   assert.equal(owner.canonicalItem,originalOwner.canonicalItem);assert.equal(owner.itemName,originalOwner.itemName);
   assert.equal(owner.analysisSource,originalOwner.analysisSource);assert.equal(owner.confidence,originalOwner.confidence);
   assert.deepEqual(owner.boundingBox,originalOwner.boundingBox);assert.equal(alignedIdentity(owner,c.captureId),qualifier);
-  for(const field of ["guidance","modelKey","modelHotspots","explanation","action","warning"])assert.equal(Object.hasOwn(owner,field),false,field);
+  // Already-Unknown normalized owners may retain empty metadata containers,
+  // but never category-specific advice or a usable model/tutorial reference.
+  assert.deepEqual(owner.guidance||{},{});assert.equal(owner.modelKey||"","");assert.deepEqual(owner.modelHotspots||[],[]);
+  for(const field of ["explanation","action","warning"])assert.equal(Object.hasOwn(owner,field),false,field);
+  for(const field of ["observedIdentity","originalItemName","captureId"])assert.deepEqual(owner[field],originalOwner[field],field);
   const s=service(mode==="supported"?facts:insufficient,{enabled:mode!=="disabled"}),saved=structuredClone(items);
   const sidecar=await s.assess({capture:c,items,principal:5});
   const envelope=withDisplayNames({detectedItems:items,scanSummary:buildScanSummary(items),categoryAssessments:sidecar,
    itemName:"Original primary",category:"Recyclable"});
   const row=sidecar.items.find(i=>i.itemId===owner.itemId);
   assert.equal(row.category,"Unknown");assert.equal(row.requiresConfirmation,true);
-  assert.equal(row.assessmentSource,mode==="disabled"?"existing_category":"ai_assisted");
+  assert.equal(row.assessmentSource,"existing_category");
   assert.equal(sidecar.schemaVersion,1);assert.equal(sidecar.captureId,c.captureId);
   assert.deepEqual(envelope.scanSummary,{totalItems:2,categories:{biodegradable:1,recyclable:0,residual:0,specialWaste:0}});
   assert.equal(envelope.category,"Recyclable");assert.equal(envelope.itemName,"Original primary");
-  assert.deepEqual(items,saved);assert.deepEqual(initial,before);assert.equal(s.calls(),mode==="disabled"?0:1);
+  assert.deepEqual(items,saved);assert.deepEqual(initial,before);assert.equal(s.calls(),0);
  });
 for(const mode of ["disabled","insufficient","supported"])
  test(`explicit empty observation cannot defeat same-region unopened evidence: ${mode}`,async()=>{
@@ -74,10 +79,11 @@ for(const scenario of ["separate","nested","partial","stale","foreign ID","dupli
   if(scenario==="duplicate ID")g.push({...g[0]});
   if(scenario==="ambiguous owner")initial.push({...initial[0],itemId:"item_2"});
   const items=merge(initial,g,samePhysicalObject,c),owner=items.find(i=>i.itemId===initial[0].itemId);
-  assert.equal(owner.category,"Residual");assert.equal(owner.canonicalItem,initial[0].canonicalItem);
+  // Bad correspondence cannot supply state; the original packet is also unproven.
+  assert.equal(owner.category,"Unknown");assert.equal(owner.canonicalItem,initial[0].canonicalItem);
   assert.equal(alignedIdentity(owner,c.captureId),null);
   const r=await service(insufficient).assess({capture:c,items,principal:5});
-  assert.equal(r.items.find(i=>i.itemId===owner.itemId).category,"Residual");
+  assert.equal(r.items.find(i=>i.itemId===owner.itemId).category,"Unknown");
  });
 for(const [original,aligned,supported]of protectedProducts)
  for(const mode of ["disabled","insufficient","supported","provisional"])
@@ -96,10 +102,11 @@ for(const [original,aligned,supported]of protectedProducts)
    primary:{analysisSource:"cloud_run_gemini_vision",aiLabel:aligned,category:supported.category,aiConfidence:.99}});
   const row=r.items.find(i=>i.itemId===owner.itemId);
   assert.equal(row.category,"Unknown");assert.equal(row.requiresConfirmation,true);
-  assert.equal(row.assessmentSource,mode==="disabled"?"existing_category":"ai_assisted");
+  // A structured category response cannot establish removal of product contents.
+  assert.equal(row.assessmentSource,"existing_category");
   assert.match(row.guidance.whatItIs,/not safely established/);assert.equal(r.captureId,c.captureId);assert.equal(r.schemaVersion,1);
   assert.equal(r.items.find(i=>i.itemId!==owner.itemId).category,"Biodegradable");assert.deepEqual(items,before);
-  assert.equal(s.calls(),mode==="disabled"?0:1);
+  assert.equal(s.calls(),0);
   assert.deepEqual(other.boundingBox,far);
  });
 for(const [original,aligned,supported]of protectedProducts)for(const source of ["Vision","Gemini"])
@@ -122,13 +129,13 @@ for(const [original,aligned,supported]of protectedProducts)
   const before=structuredClone(items),s=service(insufficient),r=await s.assess({capture:c,items,principal:5,
    primary:{analysisSource:"cloud_run_gemini_vision",aiLabel:aligned,category:supported.category,aiConfidence:.99}});
   assert.equal(r.items[0].category,"Unknown");assert.equal(r.items[0].requiresConfirmation,true);
-  assert.equal(r.items[0].itemId,v.itemId);assert.deepEqual(items,before);assert.equal(s.calls(),1);
+  assert.equal(r.items[0].itemId,v.itemId);assert.deepEqual(items,before);assert.equal(s.calls(),0);
  });
 for(const label of ["Empty snack wrapper","Snack wrapper","Empty water bottle"])
- test(`discarded-product positives survive the original-state guard: ${label}`,async()=>{
+ test(`explicit-empty state is required for product guidance: ${label}`,async()=>{
   const c=capture(),items=[vision(label)],before=structuredClone(items),s=service(insufficient);
   const r=await s.assess({capture:c,items,principal:5});
-  assert.equal(r.items[0].category,label.includes("bottle")?"Recyclable":"Residual");assert.deepEqual(items,before);
+  assert.equal(r.items[0].category,label==="Snack wrapper"?"Unknown":label.includes("bottle")?"Recyclable":"Residual");assert.deepEqual(items,before);
  });
 for(const initial of [false,true])for(const labels of [["Can","Spray Can"],["Spray Can","Can"]])
  for(const facts of [insufficient,electrical,verified])
@@ -257,7 +264,7 @@ for(const name of ["Food packaging","Packaged goods","Packaged food","Food packa
   const result=await s.assess({capture:c,items,primary,principal:5});
   assert.equal(corroboratedCategory({...items[0],observedIdentity:name},provisional),null);
   assert.equal(result.items[0].category,"Unknown");assert.equal(result.items[0].itemId,items[0].itemId);
-  assert.deepEqual(items,saved);assert.equal(s.calls(),1);
+  assert.deepEqual(items,saved);assert.equal(s.calls(),name==="Food packaging"?0:1);
  });
 for(const name of ["Banana","Whole banana","Yellow Banana"])
  for(const [provider,facts]of [["verified plant",plant],["provisional plant",evidence("Biodegradable","plant_food_scraps","plant_matter","unknown","visible")],["insufficient",insufficient]])
@@ -273,16 +280,18 @@ for(const label of ["Food packaging","Banana"])
   const s=service(label==="Banana"?plant:verified),r=await s.assess({capture:c,items,principal:5});
   assert.equal(r.items[0].category,"Unknown");assert.equal(r.items[0].itemId,items[0].itemId);
  });
-for(const [name,category]of [["Snack wrapper","Residual"],["Food wrapper","Residual"],["Empty snack wrapper","Residual"],["Banana peel","Biodegradable"],["Vegetable scraps","Biodegradable"]])
- test(`supported discarded identity remains available: ${name}`,async()=>{
-  const c=capture(),items=[vision(name)],s=service(category==="Residual"?verified:plant);
+for(const [name,category]of [["Snack wrapper","Unknown"],["Food wrapper","Unknown"],["Empty snack wrapper","Residual"],["Banana peel","Biodegradable"],["Vegetable scraps","Biodegradable"]])
+ test(`supported waste form versus unproven wrapper state: ${name}`,async()=>{
+  // Facts describe the original fixture, not the expected category. Ineligible
+  // unqualified wrappers must remain Unknown even with a verified wrapper claim.
+  const c=capture(),items=[vision(name)],s=service(/wrapper/i.test(name)?verified:plant);
   const r=await s.assess({capture:c,items,principal:5});assert.equal(r.items[0].category,category);
  });
-test("specific capture-bound refinement can resolve generic packaging without changing its owner",async()=>{
+test("aligned-only empty refinement cannot establish original packaging disposal state",async()=>{
  const c=capture(),v=vision("Packaged goods"),g=whole.normalize(c,{objects:[{label:"Empty snack wrapper",box_2d:[100,100,500,300]}]}).objects;
  const items=merge([v],g,samePhysicalObject,c),saved=structuredClone(items),s=service(verified);
  assert.equal(alignedIdentity(items[0],c.captureId),"Empty snack wrapper");
- const r=await s.assess({capture:c,items,principal:5});assert.equal(r.items[0].category,"Residual");
+ const r=await s.assess({capture:c,items,principal:5});assert.equal(r.items[0].category,"Unknown");
  assert.equal(s.requests[0].items[0].observedIdentity,"Empty snack wrapper");assert.equal(r.items[0].itemId,v.itemId);
  assert.deepEqual(items,saved);assert.deepEqual(items[0].boundingBox,v.boundingBox);
 });
@@ -310,15 +319,18 @@ test("mixed final sidecar keeps v7 fields, source enums, category ownership, box
  assert.equal(result.captureId,c.captureId);assert.equal(result.schemaVersion,1);assert.equal(result.aiStatus,"complete");
  assert.deepEqual(Object.keys(result).sort(),["aiStatus","captureId","items","schemaVersion"]);
  for(const row of result.items){assert.deepEqual(Object.keys(row).sort(),["assessmentSource","category","confirmationRequirements","guidance","itemId","requiresConfirmation"]);assert.equal(row.requiresConfirmation,true);}
- assert.deepEqual(result.items.map(i=>i.assessmentSource),["ai_assisted","ai_assisted","existing_category","existing_category","existing_category"]);
+ assert.deepEqual(result.items.map(i=>i.assessmentSource),["existing_category","ai_assisted","existing_category","existing_category","existing_category"]);
  const formatted=withDisplayNames({detectedItems:items,categoryAssessments:result});assert.equal(formatted.categoryAssessments,result);
  assert.deepEqual(formatted.detectedItems.map(i=>i.boundingBox),before.map(i=>i.boundingBox));
  await s.assess({capture:{...c,requestId:crypto.randomUUID()},items,principal:5});assert.equal(s.calls(),1);
 });
 test("disabled and unavailable AI preserve the guarded Unknown fallback with no retry",async()=>{
  for(const options of [{enabled:false},{fail:true}]){
-  const c=capture(),items=[vision("Food packaging")],s=service(verified,options),input={capture:c,items,principal:5};
-  assert.equal((await s.assess(input)).items[0].category,"Unknown");await s.assess(input);assert.equal(s.calls(),options.enabled===false?0:1);
+  const c=capture(),items=normalizeDetectedItems([{name:"Food packaging",confidence:.9,boundingBox:box},
+   {name:"Item",confidence:.9,boundingBox:far}],"google_vision_object_localization"),s=service(verified,options),input={capture:c,items,principal:5};
+  const r=await s.assess(input);assert.deepEqual(r.items.map(i=>i.category),["Unknown","Unknown"]);
+  assert.equal(r.aiStatus,options.fail?"unavailable":"not_requested");
+  await s.assess(input);assert.equal(s.calls(),options.fail?1:0);
  }
 });
 
