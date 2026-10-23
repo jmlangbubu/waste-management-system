@@ -75,7 +75,7 @@ test("stale captures, forged ownership, source conflicts and malformed boxes can
   assert.equal(merge([v],[g],samePhysicalObject,c).length,2);
 });
 test("specific same-object identity maps directly; unlisted identity reaches AI without compact-label evidence",async()=>{
- for(const [label,category,display,calls]of [["Instant noodle packet","Residual","Instant Noodle Packet",0],["Paper envelope","Unknown","Paper Envelope",1]]){
+ for(const [label,category,display,calls]of [["Instant noodle packet","Residual","Instant Noodle Packet",0],["Paper envelope","Recyclable","Paper Envelope",0],["Ceramic spoon","Unknown","Spoon",1]]){
  const c=capture(),v=vision("Item"),g=gemini(c,label),items=merge([v],[g],samePhysicalObject,c);
  assert.equal(items.length,1);assert.equal(items[0].itemId,v.itemId);assert.equal(items[0].canonicalItem,"item");
  const s=service(insufficient),sidecar=await s.assess({capture:c,items,principal:5});

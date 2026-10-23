@@ -544,6 +544,14 @@ for (const [category, names] of [
   ["Special Waste", ["cellphone", "hazardous light bulb", "spray paint can", "paint waste", "pesticide waste", "pesticide container", "chemical waste", "used motor oil", "needles and sharps", "sharps"]]
 ]) for (const name of names) COMMON_OBJECT_CATEGORIES.set(normalizeText(name), category);
 
+// Bounded household/material synonyms, not brand names or substring scoring.
+for (const [category,names] of [
+  ["Biodegradable",["apple core","banana skins","orange rind","potato peel","vegetable peel","vegetable peelings","fruit peelings","plant cuttings","fallen leaves"]],
+  ["Recyclable",["metal food container","steel food tin","tin food can","office paper","paper bag","paper envelope","corrugated carton","cardboard carton","flattened cardboard"]],
+  ["Residual",["crisps packet","chip packet","biscuit wrapper","chocolate wrapper","used paper towel","plastic straw","plastic cutlery","polystyrene food tray","styrofoam food container"]],
+  ["Special Waste",["aa battery","aaa battery","button cell battery","lithium ion battery","smartphone","usb charger","fluorescent tube","compact fluorescent lamp","broken fluorescent lamp"]]
+]) for(const name of names)COMMON_OBJECT_CATEGORIES.set(normalizeText(name),category);
+
 function commonObjectCategory(name) {
   const normalized = normalizeText(name);
   const direct = COMMON_OBJECT_CATEGORIES.get(normalized);
