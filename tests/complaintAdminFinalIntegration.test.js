@@ -19,6 +19,25 @@ const forwardAck = { success: true, complaint_id: 11, status: "forwarded",
 const resolveAck = { success: true, complaint_id: 11, status: "resolved",
   handling_owner: "wmo", assigned_barangay: "Synthetic A", evidence_url: "/synthetic/evidence.jpg" };
 
+test("WMO takeover controls are scoped, labeled and retain escaped decline information", () => {
+  const h = harness({ status: "wmo_handling", owner: "wmo" });
+  h.complaint.barangay_decline_reason = '<script>unsafe</script> — access blocked';
+  h.render();
+  const html = h.elements.complaintWmoHandlingOptions.innerHTML;
+  assert.match(html, /<section class="complaint-wmo-panel"/);
+  assert.match(html, /<h4>WMO Handling<\/h4>/);
+  assert.match(html, /class="complaint-wmo-form"/);
+  assert.match(html, /for="complaintWmoReport"/);
+  assert.match(html, /name="resolution_report"/);
+  assert.match(html, /name="evidence"/);
+  assert.match(html, /&lt;script(?:>|&gt;)/);
+  assert.doesNotMatch(html, /<script>/);
+  const css = read("frontend/css/admin/admin-complaints.css");
+  assert.match(css, /#complaintDetailsModal \.complaint-wmo-form/);
+  assert.match(css, /textarea \{ resize: vertical; min-height: 112px/);
+  assert.match(css, /@media \(max-width: 560px\)[\s\S]*?complaint-wmo-submit \{ width: 100%/);
+});
+
 function element(value = "") {
   const classes = new Set();
   return { value, innerHTML: "", textContent: "", disabled: false, events: {},
