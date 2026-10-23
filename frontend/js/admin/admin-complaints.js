@@ -309,13 +309,18 @@ function renderComplaintDetailsNearbyOptions() {
   if (data.status === "wmo_handling") {
     const workflowWrap = handlingWrap;
     if (!workflowWrap) return;
-    workflowWrap.innerHTML += '<p><strong>WMO handling — Barangay Cannot Accept</strong></p><p>'
-      + escapeHtml(data.barangay_decline_reason || "Reason unavailable") + '</p>';
+    workflowWrap.innerHTML = '<section class="complaint-wmo-panel" aria-label="WMO Handling">'
+      + '<h4>WMO Handling</h4><p class="complaint-wmo-context">Barangay Cannot Accept</p>'
+      + '<p class="complaint-wmo-reason">' + escapeHtml(data.barangay_decline_reason || "Reason unavailable") + '</p></section>';
     if (complaintAdminAllowed() && data.handling_owner === "wmo") {
-      workflowWrap.innerHTML += '<form id="complaintWmoResolutionForm"><label>WMO resolution report'
-        + '<textarea name="resolution_report" required maxlength="2000"></textarea></label>'
-        + '<label>Resolution evidence<input name="evidence" type="file" accept="image/jpeg,image/png,image/webp" required></label>'
-        + '<button type="submit">Submit WMO resolution</button></form>';
+      workflowWrap.innerHTML = workflowWrap.innerHTML.replace('</section>',
+        '<form id="complaintWmoResolutionForm" class="complaint-wmo-form">'
+        + '<label for="complaintWmoReport">Resolution report <span>(required)</span></label>'
+        + '<textarea id="complaintWmoReport" name="resolution_report" rows="4" required maxlength="2000" aria-describedby="complaintWmoHelp"></textarea>'
+        + '<label for="complaintWmoEvidence">Resolution evidence <span>(required)</span></label>'
+        + '<input id="complaintWmoEvidence" name="evidence" type="file" accept="image/jpeg,image/png,image/webp" required aria-describedby="complaintWmoHelp">'
+        + '<p id="complaintWmoHelp" class="complaint-wmo-help">Enter a report of up to 2,000 characters and attach a JPEG, PNG or WebP photo.</p>'
+        + '<button type="submit" class="complaint-wmo-submit">Submit WMO resolution</button></form></section>');
       document.getElementById("complaintWmoResolutionForm").addEventListener("submit", async event => {
         event.preventDefault();
         const form = event.currentTarget, button = form.querySelector("button");

@@ -3092,6 +3092,37 @@ html body #complaintDetailsModal .complaint-assignment-card {
 }
 html body #complaintDetailsModal .complaint-assignment-card h4 { margin: 0 0 12px; color: #12355B; }
 html body #complaintDetailsModal .complaint-assignment-name { display: block; line-height: 1.5; overflow-wrap: anywhere; color: #12355B; }
+/* Only the legitimate WMO-owned takeover form, never other admin forms. */
+#complaintDetailsModal .complaint-wmo-panel {
+  min-width: 0; margin-top: 18px; padding: 18px; border: 1px solid #D9E6F2;
+  border-radius: 14px; background: #F8FBFF; color: #12355B;
+}
+#complaintDetailsModal .complaint-wmo-panel h4 { margin: 0 0 6px; font-size: 16px; }
+#complaintDetailsModal .complaint-wmo-context { margin: 0 0 8px; font-weight: 600; }
+#complaintDetailsModal .complaint-wmo-reason { margin: 0 0 14px; line-height: 1.5; overflow-wrap: anywhere; white-space: pre-wrap; }
+#complaintDetailsModal .complaint-wmo-form { display: grid; gap: 10px; min-width: 0; }
+#complaintDetailsModal .complaint-wmo-form label { margin: 0; font-weight: 600; line-height: 1.5; }
+#complaintDetailsModal .complaint-wmo-form label span { font-weight: 400; color: #52677D; }
+#complaintDetailsModal .complaint-wmo-form :is(textarea,input[type="file"]) {
+  box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0; padding: 11px 12px;
+  border: 1px solid #B8CBDD; border-radius: 9px; background: #FFF; color: #12355B; font: inherit;
+}
+#complaintDetailsModal .complaint-wmo-form textarea { resize: vertical; min-height: 112px; }
+#complaintDetailsModal .complaint-wmo-form input[type="file"]::file-selector-button {
+  margin-right: 10px; padding: 8px 10px; border: 0; border-radius: 6px; background: #EAF1FF; color: #12355B; cursor: pointer;
+}
+#complaintDetailsModal .complaint-wmo-form :is(textarea,input,button):focus-visible { outline: 3px solid #93C5FD; outline-offset: 2px; }
+#complaintDetailsModal .complaint-wmo-form :is(textarea,input):user-invalid { border-color: #B91C1C; }
+#complaintDetailsModal .complaint-wmo-help { margin: 0; color: #52677D; font-size: 13px; line-height: 1.5; }
+#complaintDetailsModal .complaint-wmo-submit {
+  justify-self: start; max-width: 100%; padding: 12px 16px; min-height: 44px; border: 0; border-radius: 9px;
+  background: #2563EB; color: #FFF; font: inherit; font-weight: 600; cursor: pointer; white-space: normal;
+}
+#complaintDetailsModal .complaint-wmo-submit:disabled { opacity: .6; cursor: wait; }
+@media (max-width: 560px) {
+  #complaintDetailsModal .complaint-wmo-panel { padding: 14px; }
+  #complaintDetailsModal .complaint-wmo-submit { width: 100%; justify-self: stretch; }
+}
 html body #complaintMapModal .complaint-full-map-legend { max-width: calc(100% - 36px) !important; }
 html body #complaintMapModal .complaint-full-map-legend span { white-space: normal !important; overflow-wrap: anywhere; }
 @media (max-width: 560px) {
