@@ -2,7 +2,7 @@
 const shared=require("../gemini-waste-classifier-cloudrun/cropRecognition");
 const crypto=require("node:crypto");
 const whole=require("../gemini-waste-classifier-cloudrun/wholeImageRecognition");
-const {unsafeIdentity,unreliablePhysicalIdentity,productStateVeto}=require("./automaticWasteCategoryMapper");
+const {unsafeIdentity,unreliablePhysicalIdentity,productStateVeto,automaticCategory}=require("./automaticWasteCategoryMapper");
 function createDiscoveryService({env=process.env,transport=shared.postJson,budget=shared.createBudget(),authHeaders}={}) {
   const attempts=new Map();
   let authenticate=authHeaders;
@@ -230,12 +230,15 @@ function merge(vision,proposals,samePhysicalObject,capture,hasNormalizationConfl
       const broad=generic(match) && !/\b(bottles?|jars?|cans?|cups?|bags?|box(?:es)?)\b/.test(identityKey(match.itemName));
       const identityMismatch=(!broad && !compatibleIdentity(match,proposal))
         || unsafeIdentity(match)!==unsafeIdentity(proposal);
+      // Can/Bottle/Container are broad but valid physical classes. Unlike Item
+      // or a scene taxonomy, they may establish a unique localized identity.
+      const supportedPhysical=!!automaticCategory({...proposal,category:"Unknown"});
       if(capture?.captureId && (conflicting || identityMismatch) && belongsToCapture(proposal,capture)) {
         classificationEvidence.set(match,{captureId:capture.captureId,conflict:true,snapshot:evidenceSnapshot(match)});
       }
       if(conflicting) {match.requiresConfirmation=true;continue;}
       if(capture?.captureId && match.category==="Unknown" && !match.confirmed
-          && proposal.analysisSource==="gemini_whole_image" && !generic(proposal)
+          && proposal.analysisSource==="gemini_whole_image" && (!generic(proposal)||supportedPhysical)
           && alignedRegion(match,proposal) && vision.filter(item=>samePhysicalObject(item,proposal)).length===1
           && !identityMismatch && trustedCorrespondence(match,proposal) && !identityConflict(match,capture.captureId)) {
         classificationEvidence.set(match,{captureId:capture.captureId,identity:proposal.observedIdentity,
@@ -245,7 +248,9 @@ function merge(vision,proposals,samePhysicalObject,capture,hasNormalizationConfl
       // Do not transfer categories/scores or regenerate IDs or geometry.
       const refined=match.analysisSource==="google_vision_object_localization" && proposal.analysisSource==="gemini_whole_image"
           && match.category==="Unknown" && !match.confirmed
-          && generic(match) && !generic(proposal) && alignedRegion(match,proposal)
+          && generic(match) && (!generic(proposal) || supportedPhysical && capture?.captureId
+            && trustedCorrespondence(match,proposal) && !identityMismatch && !identityConflict(match,capture.captureId))
+          && alignedRegion(match,proposal)
           && (!containerIdentity(match) || compatibleIdentity(match,proposal))
           && vision.filter(item=>samePhysicalObject(item,proposal)).length===1;
       const physicalIdentity=match.category==="Unknown" && !match.confirmed && !generic(match)
@@ -284,8 +289,21 @@ function merge(vision,proposals,samePhysicalObject,capture,hasNormalizationConfl
       conflict:!!prior?.conflict,snapshot:evidenceSnapshot(owner)});
   }
   for(const owner of retained) {
-    const evidence=classificationEvidence.get(owner);
+    let evidence=classificationEvidence.get(owner);
     const aligned=alignedIdentity(owner,capture?.captureId);
+    // Classify only this uniquely matched, capture-bound physical owner. This
+    // is deterministic original recognition evidence, not an optional AI
+    // category response, scene-primary label or shortened display name.
+    if(capture?.captureId && owner.analysisSource==="google_vision_object_localization"
+        && owner.category==="Unknown" && aligned && !owner.confirmed
+        && !identityConflict(owner,capture.captureId) && !unsafeIdentity(owner)) {
+      const mapped=automaticCategory({...owner,observedIdentity:aligned});
+      if(mapped && !productStateVeto(owner,mapped,aligned)) {
+        owner.category=mapped;owner.requiresConfirmation=true;
+        evidence={...evidence,snapshot:evidenceSnapshot(owner)};
+        classificationEvidence.set(owner,evidence);
+      }
+    }
     const conflictingStream=["Residual","Recyclable"].includes(owner.category)
       && identityConflict(owner,capture?.captureId);
     if(!conflictingStream && !productStateVeto(owner,owner.category,aligned))continue;

@@ -539,9 +539,9 @@ for (const [category, names] of [
 // contained word such as "can". State/conflict vetoes remain the caller's gate.
 for (const [category, names] of [
   ["Recyclable", ["ordinary bottle", "ordinary can", "ordinary container", "soda can", "empty food container", "glass jar", "recoverable metal scrap"]],
-  ["Residual", ["empty coffee sachet", "empty shampoo sachet", "chip wrapper", "multilayer food packaging", "laminated wrapper", "disposable diaper", "sanitary pad", "disposable mask", "broken ceramic", "non-recoverable household packaging"]],
-  ["Biodegradable", ["mango peel", "orange peel", "eggshell", "eggshells", "coffee grounds", "tea leaves", "garden trimmings", "plant scraps"]],
-  ["Special Waste", ["hazardous light bulb", "spray paint can", "paint waste", "pesticide container", "chemical waste", "used motor oil", "needles and sharps"]]
+  ["Residual", ["instant noodle packet", "noodle sachet", "coffee packet", "coffee sachet", "shampoo sachet", "empty noodle sachet", "empty coffee sachet", "empty shampoo sachet", "chip wrapper", "multilayer food packaging", "laminated packaging", "laminated wrapper", "ordinary non-recoverable packaging", "disposable diaper", "sanitary pad", "sanitary waste", "disposable mask", "broken ceramic", "non-recoverable household packaging"]],
+  ["Biodegradable", ["fruit", "fruits", "fruit peels", "ordinary food scraps", "mango peel", "orange peel", "eggshell", "eggshells", "coffee grounds", "tea leaves", "garden trimmings", "plant trimmings", "plant scraps"]],
+  ["Special Waste", ["cellphone", "hazardous light bulb", "spray paint can", "paint waste", "pesticide waste", "pesticide container", "chemical waste", "used motor oil", "needles and sharps", "sharps"]]
 ]) for (const name of names) COMMON_OBJECT_CATEGORIES.set(normalizeText(name), category);
 
 function commonObjectCategory(name) {

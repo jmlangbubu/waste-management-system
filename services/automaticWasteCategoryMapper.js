@@ -76,8 +76,8 @@ function productStateVeto(item,category,aligned=null) {
  // Approved ordinary common-object policy: an explicit adverse state still
  // vetoes above, but absence of an empty qualifier alone is not a veto.
  if(labels.some(label=>commonObjectCategory(label)===category))return false;
- // Opened/torn and a recognized product name alone do not establish removal
- // of contents. Empty/discarded is still provisional, not verified ground truth.
+ // Approved ordinary identities above need no empty qualifier. Unlisted
+ // packaging descriptions still cannot establish a safe ordinary waste form.
  return !labels.some(label=>packaging.test(label) && /^(?:(?:light|dark)\s+)?(?:(?:black|white|red|green|blue|yellow|orange|gray|grey|brown|clear|transparent|pink|purple)\s+)?(?:empty|discarded)\s+/.test(label));
 }
 function automaticCategory(item) {

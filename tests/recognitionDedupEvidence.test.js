@@ -74,19 +74,21 @@ test("stale captures, forged ownership, source conflicts and malformed boxes can
   {...gemini(c,"Container"),boundingBox:{...box,right:NaN}}])
   assert.equal(merge([v],[g],samePhysicalObject,c).length,2);
 });
-test("specific original identity reaches the actual AI batch; compact label is never evidence",async()=>{
- const c=capture(),v=vision("Item"),g=gemini(c,"Instant noodle packet"),items=merge([v],[g],samePhysicalObject,c);
+test("specific same-object identity maps directly; unlisted identity reaches AI without compact-label evidence",async()=>{
+ for(const [label,category,display,calls]of [["Instant noodle packet","Residual","Instant Noodle Packet",0],["Paper envelope","Unknown","Paper Envelope",1]]){
+ const c=capture(),v=vision("Item"),g=gemini(c,label),items=merge([v],[g],samePhysicalObject,c);
  assert.equal(items.length,1);assert.equal(items[0].itemId,v.itemId);assert.equal(items[0].canonicalItem,"item");
  const s=service(insufficient),sidecar=await s.assess({capture:c,items,principal:5});
- assert.equal(s.requests[0].items[0].observedIdentity,"Instant noodle packet");
- assert.equal(sidecar.items[0].category,"Unknown");assert.equal(sidecar.items[0].assessmentSource,"ai_assisted");
- assert.doesNotMatch(JSON.stringify(sidecar.items[0].guidance),/residual.bin|recycling.bin|landfill/i);
+ if(calls)assert.equal(s.requests[0].items[0].observedIdentity,label);
+ assert.equal(sidecar.items[0].category,category);assert.equal(sidecar.items[0].assessmentSource,calls?"ai_assisted":"existing_category");
+ if(category==="Unknown")assert.doesNotMatch(JSON.stringify(sidecar.items[0].guidance),/residual.bin|recycling.bin|landfill/i);
  const response=withDisplayNames({detectedItems:items,categoryAssessments:sidecar});
- assert.equal(response.detectedItems[0].itemName,"Instant Noodle Packet");assert.equal(items[0].itemName,"Instant noodle packet");
- assert.equal(response.detectedItems[0].originalItemName,"Instant noodle packet");
- assert.deepEqual(response.detectedItems[0].boundingBox,v.boundingBox);assert.equal(s.calls(),1);
+ assert.equal(response.detectedItems[0].itemName,display);assert.equal(items[0].itemName,label);
+ assert.equal(response.detectedItems[0].originalItemName,label);
+ assert.deepEqual(response.detectedItems[0].boundingBox,v.boundingBox);assert.equal(s.calls(),calls);
+ }
 });
-for(const [label,expected]of [["Snack wrapper","Residual"],["Instant noodle packet","Unknown"],["Plastic beverage bottle","Unknown"],["Empty snack wrapper","Residual"],["Empty plastic water bottle","Recyclable"],["Banana peel","Biodegradable"],["White charger","Special Waste"],["Sunscreen container","Unknown"],["Container","Recyclable"],["Item","Unknown"]])
+for(const [label,expected]of [["Snack wrapper","Residual"],["Instant noodle packet","Residual"],["Plastic beverage bottle","Unknown"],["Empty snack wrapper","Residual"],["Empty plastic water bottle","Recyclable"],["Banana peel","Biodegradable"],["White charger","Special Waste"],["Sunscreen container","Unknown"],["Container","Recyclable"],["Item","Unknown"]])
  test(`final automatic assessment remains item-owned: ${label}`,async()=>{
   const c=capture(),items=merge([],[gemini(c,label)],samePhysicalObject,c),s=service(insufficient);
   const sidecar=await s.assess({capture:c,items,principal:5});
@@ -106,8 +108,9 @@ test("four objects with two duplicate generic observations yield four independen
  const primary={success:false,itemName:"Unclassified primary",category:"Unknown"};
  const sidecar=await s.assess({capture:c,items,primary,principal:5}),response=withDisplayNames({...primary,detectedItems:items,categoryAssessments:sidecar});
  assert.equal(items.length,4);assert.equal(buildScanSummary(items).totalItems,4);assert.equal(new Set(items.map(i=>i.itemId)).size,4);
- assert.deepEqual(sidecar.items.map(i=>i.category),["Unknown","Unknown","Biodegradable","Special Waste"]);
- assert.deepEqual(sidecar.items.map(i=>i.itemId),items.map(i=>i.itemId));ownersPreserved(items,v.concat(g));
+ assert.deepEqual(sidecar.items.map(i=>i.category),["Residual","Unknown","Biodegradable","Special Waste"]);
+ assert.deepEqual(sidecar.items.map(i=>i.itemId),items.map(i=>i.itemId));
+ ownersPreserved(items,v.concat(g).map(item=>item.itemId===v[0].itemId?{...item,category:"Residual"}:item));
  assert.deepEqual(Object.keys(sidecar).sort(),["aiStatus","captureId","items","schemaVersion"]);
  for(const row of sidecar.items)assert.deepEqual(Object.keys(row).sort(),["assessmentSource","category","confirmationRequirements","guidance","itemId","requiresConfirmation"]);
  assert.equal(response.success,false);assert.equal(response.category,"Unknown");assert.deepEqual(items,saved);

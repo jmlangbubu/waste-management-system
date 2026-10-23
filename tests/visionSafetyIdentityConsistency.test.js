@@ -36,10 +36,11 @@ test("normalized Vision Packet + uniquely aligned Gemini Snack Sachet retains ow
  assert.equal(identityConflict(items[0],c.captureId),false);
  assert.equal(alignedIdentity(items[0],c.captureId),"Snack sachet");
  const {assessment,requests}=offlineAssessment();const result=await assessment({capture:c,items,principal:11});
- assert.equal(requests[0].items[0].observedIdentity,"Snack sachet");
- // The aligned sachet name does not establish empty/discarded product state.
- assert.equal(result.items[0].itemId,v.itemId);assert.equal(result.items[0].category,"Unknown");
- assert.doesNotMatch(JSON.stringify(result.items[0].guidance),/residual waste bin|recyclable waste bin|landfill/i);
+ // Unique physical correspondence supplies an ordinary suggestion, not an
+ // assertion of contents/cleanliness; no optional model category is needed.
+ assert.equal(requests.length,0);assert.equal(items[0].category,"Residual");
+ assert.equal(result.items[0].itemId,v.itemId);assert.equal(result.items[0].category,"Residual");
+ assert.equal(result.items[0].assessmentSource,"existing_category");assert.equal(result.items[0].requiresConfirmation,true);
 });
 test("unopened item is not classified by verified wrapper claim",async()=>{
  const c=capture(),items=[vision("Unopened instant noodle packet")];const {assessment}=offlineAssessment(visibleWrapper);
