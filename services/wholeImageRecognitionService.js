@@ -2,7 +2,7 @@
 const shared=require("../gemini-waste-classifier-cloudrun/cropRecognition");
 const crypto=require("node:crypto");
 const whole=require("../gemini-waste-classifier-cloudrun/wholeImageRecognition");
-const {unsafeIdentity,unreliablePhysicalIdentity}=require("./automaticWasteCategoryMapper");
+const {unsafeIdentity,unreliablePhysicalIdentity,productStateVeto}=require("./automaticWasteCategoryMapper");
 function createDiscoveryService({env=process.env,transport=shared.postJson,budget=shared.createBudget(),authHeaders}={}) {
   const attempts=new Map();
   let authenticate=authHeaders;
@@ -79,7 +79,7 @@ const containerIdentity=item=>/\b(bottles?|jars?|containers?|cans?|cups?|box(?:e
 // Server-only provenance; never add fields to Android's strict discovery schema.
 const classificationEvidence=new WeakMap();
 const evidenceSnapshot=item=>JSON.stringify([item.itemId,item.category,item.canonicalItem,item.observedIdentity,
-  item.originalItemName,item.analysisSource,item.boundingBox]);
+  item.originalItemName,item.analysisSource,item.boundingBox,item.captureId,item.confidence]);
 function alignedIdentity(item,captureId) {
   const evidence=classificationEvidence.get(item);
   return evidence && !evidence.conflict && evidence.captureId===captureId && evidence.snapshot===evidenceSnapshot(item)
@@ -96,7 +96,7 @@ function belongsToCapture(item,capture) {
     box_2d:[b.top,b.left,b.bottom,b.right].map(n=>Math.round(n*1000))}]}).objects[0];
   return rebuilt.itemId===item.itemId;
 }
-function merge(vision,proposals,samePhysicalObject,capture) {
+function merge(vision,proposals,samePhysicalObject,capture,hasNormalizationConflict=()=>false) {
   const retained=[];
   const currentObservation=item=>{
     if(!capture?.captureId)return true; // Legacy callers have no discovery capture.
@@ -153,6 +153,14 @@ function merge(vision,proposals,samePhysicalObject,capture) {
   const uniqueAlias=(a,b)=>nearAlias(a,b)&&!all.some(other=>other.itemId!==a.itemId&&other.itemId!==b.itemId
     &&(related(a,other)||related(b,other)));
   const matchesRegion=(a,b)=>currentObservation(a)&&currentObservation(b)&&(samePhysicalObject(a,b)||uniqueAlias(a,b));
+  // Trust correspondence only for a unique current pair. Category Unknown is
+  // not physical uncertainty; use the established identity predicate on the
+  // original evidence, including for already-categorized observations.
+  const trustedCorrespondence=(owner,proposal)=>currentObservation(owner)&&currentObservation(proposal)
+    && [owner,proposal].every(item=>all.filter(other=>other.itemId===item.itemId).length===1
+      && !unreliablePhysicalIdentity({...item,category:"Unknown"}))
+    && !all.some(other=>other.itemId!==owner.itemId && other.itemId!==proposal.itemId
+      && (related(other,owner)||related(other,proposal)));
   // An exact generic Can observation adds no contrary contents evidence to a
   // uniquely localized Paint Can. Never extend this exception to other hazards,
   // nearby/nested regions, stale captures, or a third competing observation.
@@ -174,7 +182,8 @@ function merge(vision,proposals,samePhysicalObject,capture) {
   for(const item of vision) {
     const matches=retained.filter(other=>matchesRegion(other,item));
     const index=matches.length===1?retained.indexOf(matches[0]):-1;
-    if(index<0) {if(retained.length<8)retained.push({...item});continue;}
+    if(index<0) {if(retained.length<8){const owner={...item};retained.push(owner);
+      if(hasNormalizationConflict(item))recordConflict(owner);}continue;}
     const match=retained[index];
     if(paintCanRefinement(match,item)) {
       if(identityKey(item.observedIdentity)==="paint can")retained[index]={...item};
@@ -228,7 +237,7 @@ function merge(vision,proposals,samePhysicalObject,capture) {
       if(capture?.captureId && match.category==="Unknown" && !match.confirmed
           && proposal.analysisSource==="gemini_whole_image" && !generic(proposal)
           && alignedRegion(match,proposal) && vision.filter(item=>samePhysicalObject(item,proposal)).length===1
-          && !identityMismatch && belongsToCapture(proposal,capture) && !identityConflict(match,capture.captureId)) {
+          && !identityMismatch && trustedCorrespondence(match,proposal) && !identityConflict(match,capture.captureId)) {
         classificationEvidence.set(match,{captureId:capture.captureId,identity:proposal.observedIdentity,
           snapshot:evidenceSnapshot(match)});
       }
@@ -254,7 +263,7 @@ function merge(vision,proposals,samePhysicalObject,capture) {
   // stream, never grant a category or replace the localized owner identity.
   for(const owner of retained) {
     if(!capture?.captureId || owner.analysisSource!=="google_vision_object_localization"
-        || owner.confirmed || !["Residual","Recyclable"].includes(owner.category)
+        || owner.confirmed
         || !currentObservation(owner))continue;
     const physicalName=item=>identityKey(item.analysisSource==="gemini_whole_image"
       ? item.observedIdentity : item.originalItemName||item.observedIdentity||item.canonicalItem);
@@ -263,22 +272,29 @@ function merge(vision,proposals,samePhysicalObject,capture) {
     const base=item=>({...item,itemName:physicalName(item).replace(/^(?:(?:unopened|sealed|full|filled|empty|opened|discarded)\s+)+/,"")});
     const candidates=proposals.filter(proposal=>proposal.analysisSource==="gemini_whole_image"
       && currentObservation(proposal) && !proposal.confirmed && safe(owner) && safe(proposal)
-      && /^(?:unopened|sealed|full|filled)\s+/.test(physicalName(proposal))
+      && /^(?:unopened|sealed|full|filled|empty|discarded)\s+/.test(physicalName(proposal))
       && /\b(?:packet|sachet|wrapper|packag(?:e|ed|ing)|pouch|bottle|container|jar|can)\b/.test(physicalName(proposal))
       && alignedRegion(owner,proposal) && samePhysicalObject(owner,proposal)
       && compatibleIdentity(base(owner),base(proposal))
-      && all.filter(item=>item.itemId===owner.itemId).length===1
-      && all.filter(item=>item.itemId===proposal.itemId).length===1
-      && !all.some(other=>other.itemId!==owner.itemId && other.itemId!==proposal.itemId
-        && (related(other,owner)||related(other,proposal))));
+      && trustedCorrespondence(owner,proposal));
     if(candidates.length!==1)continue;
     const prior=classificationEvidence.get(owner);
+    // Keep state evidence even if it cannot grant any positive category.
+    classificationEvidence.set(owner,{captureId:capture.captureId,identity:candidates[0].observedIdentity,
+      conflict:!!prior?.conflict,snapshot:evidenceSnapshot(owner)});
+  }
+  for(const owner of retained) {
+    const evidence=classificationEvidence.get(owner);
+    const aligned=alignedIdentity(owner,capture?.captureId);
+    const conflictingStream=["Residual","Recyclable"].includes(owner.category)
+      && identityConflict(owner,capture?.captureId);
+    if(!conflictingStream && !productStateVeto(owner,owner.category,aligned))continue;
     owner.category="Unknown";
     owner.requiresConfirmation=true;
     for(const field of ["guidance","modelKey","modelHotspots","explanation","action","warning"])delete owner[field];
-    // Snapshot AFTER mutation; keep existing conflicts rather than overwrite them.
-    classificationEvidence.set(owner,{captureId:capture.captureId,identity:candidates[0].observedIdentity,
-      conflict:!!prior?.conflict,snapshot:evidenceSnapshot(owner)});
+    // Snapshot after downgrade; copying the public result later must not be
+    // used to recover or manufacture private cross-provider provenance.
+    if(evidence)classificationEvidence.set(owner,{...evidence,snapshot:evidenceSnapshot(owner)});
   }
   // Keep the discovery v1 mobile contract intact; assessments travel separately.
   // A frame-sized generic Gemini proposal is scene/background evidence only

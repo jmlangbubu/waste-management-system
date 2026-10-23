@@ -19,24 +19,26 @@ function service({config={},make=item=>facts(item),error,clock}={}){
 }
 const examples=[
  ["banana peel","Biodegradable"],["vegetable scraps","Biodegradable"],["fruit peels","Biodegradable"],["plant-only food scraps","Biodegradable"],
- ["plastic water bottle","Recyclable"],["cardboard","Recyclable"],["clean dry paper","Recyclable"],["empty aluminum can","Recyclable"],
- ["snack wrapper","Residual"],["phone charger","Special Waste"],["power adapter","Special Waste"],["battery","Special Waste"],["electronic circuit board","Special Waste"],
- ["food scraps","Unknown"],["paper","Unknown"],["glass bottle","Recyclable"],["gray round container","Unknown"],["generic bottle","Unknown"],
+ ["plastic water bottle","Unknown"],["cardboard","Recyclable"],["clean dry paper","Recyclable"],["empty aluminum can","Recyclable"],
+ ["snack wrapper","Unknown"],["empty plastic bottle","Recyclable"],["empty snack wrapper","Residual"],
+ ["phone charger","Special Waste"],["power adapter","Special Waste"],["battery","Special Waste"],["electronic circuit board","Special Waste"],
+ ["food scraps","Unknown"],["paper","Unknown"],["glass bottle","Unknown"],["gray round container","Unknown"],["generic bottle","Unknown"],
  ["unidentified plastic-looking object","Unknown"],["ambiguous packaging","Unknown"],["unknown mixed-material object","Unknown"],
  ["condition cannot be confirmed","Unknown"],["unsupported identity","Unknown"],["used tissue","Unknown"],["mixed contaminated packaging","Unknown"],
  ["vegetable scraps printed on packaging","Unknown"],["electronic circuit board picture","Unknown"]
 ];
 for(const [label,category]of examples)test(`diverse deterministic dataset: ${label} -> ${category}`,()=>{
- const input=scene([label]),saved=structuredClone(input.items),[a]=deterministic(input.items);assert.equal(a.category,category);assert.equal(a.requiresConfirmation,true);assert.deepEqual(input.items,saved);
+ const input=scene([label]),raw=structuredClone(input.items),items=merge([],input.items,samePhysicalObject,input.capture),saved=structuredClone(items),[a]=deterministic(items,input.capture.captureId);
+ assert.equal(a.category,category);assert.equal(a.requiresConfirmation,true);assert.deepEqual(items,saved);assert.deepEqual(input.items,raw);
  if(category==="Unknown"){assert.deepEqual(a.guidance.reuseIdeas,[]);assert.deepEqual(a.guidance.recoveryOptions,[]);assert.match(a.guidance.properDisposal,/Confirm identity, material and condition/);}
 });
 const evidenceCases=[
  ["unlisted garden trimmings","Biodegradable","plant_food_scraps","plant_matter","food_only","Biodegradable"],
  ["unlisted paper sleeve","Recyclable","single_material","paper","clean_dry","Recyclable"],
- ["aluminum can","Recyclable","single_material","aluminum","clean_dry","Recyclable"],
- ["glass bottle","Recyclable","single_material","glass","clean_dry","Recyclable"],
+ ["aluminum can","Recyclable","single_material","aluminum","clean_dry","Unknown"],
+ ["glass bottle","Recyclable","single_material","glass","clean_dry","Unknown"],
  ["marked PET object","Recyclable","single_material","pet_plastic","clean_dry","Recyclable"],
- ["non-recyclable wrapper","Residual","wrapper","mixed","non_recyclable","Residual"],
+ ["non-recyclable wrapper","Residual","wrapper","mixed","non_recyclable","Unknown"],
  ["used tissue","Residual","tissue","paper","used_nonhazardous","Unknown"],
  ["mixed contaminated packaging","Residual","mixed_packaging","mixed","contaminated_nonhazardous","Unknown"],
  ["unlisted karaoke remote","Special Waste","electrical","mixed","unknown","Special Waste"],
@@ -52,6 +54,7 @@ for(const [label,category,kind,material,condition,expected]of evidenceCases)test
  const {assess,calls}=service({make:item=>facts(item,category,kind,material,condition)}),input=scene([label]),before=structuredClone(input.items);
  const result=await assess(input);assert.equal(result.items[0].category,expected);assert.equal(result.items[0].requiresConfirmation,true);assert.equal(result.items[0].assessmentSource,"ai_assisted");assert.deepEqual(input.items,before);assert.equal(calls.filter(c=>c.input).length,1);
  assert.deepEqual(result.items[0].guidance.reuseIdeas,[]);assert.ok(result.items[0].confirmationRequirements.length);
+ if(expected==="Unknown")assert.doesNotMatch(JSON.stringify(result.items[0].guidance),/residual waste bin|recyclable waste bin|landfill/i);
 });
 test("both new flags default off independently; safe rules never cause inference",async()=>{
  for(const config of [{WASTE_ITEM_ASSESSMENT_ENABLED:undefined},{WASTE_ITEM_ASSESSMENT_ENABLED:"false"},{WASTE_ITEM_ASSESSMENT_AI_ENABLED:undefined},{WASTE_ITEM_ASSESSMENT_AI_ENABLED:"false"}]){
@@ -122,10 +125,18 @@ test("new route is separately mounted, disabled/auth-checked before body parsing
  assert.equal(route,"/v1/assess-waste-items");const req=new EventEmitter(),res=response();req.get=()=>"";chain[0](req,res,()=>assert.fail("Disabled must not parse"));assert.equal(res.statusCode,503);assert.equal(parsed,0);
 });
 test("discovery v1 survives unchanged and satisfies the actual current Android parser restrictions",()=>{
- const s=scene(["power adapter","gray round container","plastic bottle"]),items=merge([],s.items,samePhysicalObject);
+ const s=scene(["power adapter","gray round container","plastic bottle"]),raw=structuredClone(s.items);
+ // The raw provider validator runs BEFORE final owner reconciliation.
+ assert.deepEqual(whole.validateResponse(s.capture,{success:true,requestId:s.capture.requestId,captureId:s.capture.captureId,objects:s.items}).objects,s.items);
+ const items=merge([],s.items,samePhysicalObject,s.capture);
  assert.equal(items.length,3);assert.ok(items.filter(i=>i.observedIdentity!=="plastic bottle").every(i=>i.category==="Unknown"));
  for(const i of items)for(const key of ["guidance","modelKey","modelHotspots","confidence"])assert.equal(Object.hasOwn(i,key),false);
- assert.deepEqual(whole.validateResponse(s.capture,{success:true,requestId:s.capture.requestId,captureId:s.capture.captureId,objects:items}).objects,items);
+ assert.deepEqual(s.items,raw);assert.equal(items.find(i=>i.observedIdentity==="plastic bottle").category,"Unknown");
+ const validatorPath=path.join(__dirname,"wasteDisplayNames.test.js"),validatorSource=fs.readFileSync(validatorPath,"utf8"),validation={exports:{}};
+ require("node:vm").runInNewContext(validatorSource.slice(0,validatorSource.indexOf("for(const [raw,display]"))+"\nmodule.exports={v5SidecarAccepted};",
+  {module:validation,require:require("node:module").createRequire(validatorPath)});
+ const sidecar={schemaVersion:1,captureId:s.capture.captureId,aiStatus:"not_requested",items:deterministic(items,s.capture.captureId)};
+ assert.equal(validation.exports.v5SidecarAccepted({detectedItems:items,categoryAssessments:sidecar},s.capture.captureId),true);
  const java=fs.readFileSync("C:/Users/ADMIN/AndroidStudioProjects/AIWasteManagementSystem-LATEST/app/src/main/java/com/example/aiwastemanagementsystem/DetectedWasteItem.java","utf8");
  assert.match(java,/GEMINI_CATEGORY_IDENTITY_MISMATCH/);assert.match(java,/GEMINI_METADATA_DISALLOWED/);
  assert.equal(items.find(i=>i.observedIdentity==="power adapter").category,"Unknown");assert.equal(deterministic(items).find(i=>i.itemId===items.find(x=>x.observedIdentity==="power adapter").itemId).category,"Special Waste");

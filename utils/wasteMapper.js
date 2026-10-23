@@ -522,6 +522,38 @@ function mapWasteCategory({ analysisText = "", labels = [], objectName = "" } = 
   };
 }
 
+// Exact per-object household suggestions. The caller must retain localized
+// evidence and apply hazard/conflict/product-state vetoes before accepting one.
+// No substring scoring or catch-all: an unidentified object is never Residual.
+const COMMON_OBJECT_CATEGORIES = new Map();
+for (const [category, names] of [
+  ["Special Waste", ["hazardous chemical waste", "hazardous chemical container", "chemical container with hazardous contents", "hazardous aerosol can", "aerosol can", "broken electronic device"]],
+  ["Biodegradable", ["banana", "whole banana", "unpeeled banana", "ripe banana", "banana peel", "banana skin", "fruit peel", "fruit scraps", "vegetable scraps", "food scraps", "leaves", "leaf", "dry leaves", "grass", "grass clippings", "ordinary plant waste", "plant waste", "garden waste"]],
+  ["Residual", ["sachet", "snack sachet", "snack wrapper", "instant noodle wrapper", "candy wrapper", "used tissue", "diaper", "nappy",
+    // Positive ordinary-object fallback list, not an arbitrary unknown noun.
+    "pen", "ballpoint pen", "pencil", "comb", "toothbrush", "rubber band", "broken ceramic cup", "ceramic shard"]],
+  ["Recyclable", ["can", "aluminum can", "aluminium can", "tin can", "steel can", "metal can", "drink can", "beverage can", "container", "plastic container", "glass container", "bottle", "plastic bottle", "water bottle", "plastic water bottle", "beverage bottle", "glass bottle", "pet bottle", "hdpe bottle", "paper", "cardboard", "cardboard box", "newspaper", "clean recyclable plastic packaging"]]
+]) for (const name of names) COMMON_OBJECT_CATEGORIES.set(normalizeText(name), category);
+
+// Additional exact household identities; never match a hazardous phrase by a
+// contained word such as "can". State/conflict vetoes remain the caller's gate.
+for (const [category, names] of [
+  ["Recyclable", ["ordinary bottle", "ordinary can", "ordinary container", "soda can", "empty food container", "glass jar", "recoverable metal scrap"]],
+  ["Residual", ["empty coffee sachet", "empty shampoo sachet", "chip wrapper", "multilayer food packaging", "laminated wrapper", "disposable diaper", "sanitary pad", "disposable mask", "broken ceramic", "non-recoverable household packaging"]],
+  ["Biodegradable", ["mango peel", "orange peel", "eggshell", "eggshells", "coffee grounds", "tea leaves", "garden trimmings", "plant scraps"]],
+  ["Special Waste", ["hazardous light bulb", "spray paint can", "paint waste", "pesticide container", "chemical waste", "used motor oil", "needles and sharps"]]
+]) for (const name of names) COMMON_OBJECT_CATEGORIES.set(normalizeText(name), category);
+
+function commonObjectCategory(name) {
+  const normalized = normalizeText(name);
+  const direct = COMMON_OBJECT_CATEGORIES.get(normalized);
+  if (direct) return direct;
+  // Only these bounded state qualifiers/plurals; never remove hazard words.
+  const ordinary = normalized.replace(/^(?:empty|discarded|clean dry|clean|dry)\s+/, "");
+  return COMMON_OBJECT_CATEGORIES.get(ordinary)
+    || COMMON_OBJECT_CATEGORIES.get(ordinary.replace(/s$/, "")) || null;
+}
+
 function analyzeWasteByObject(objectName = "") {
   const cleanObject = normalizeText(objectName);
 
@@ -551,5 +583,6 @@ module.exports = {
   analyzeWasteByObject,
   getFallbackResult,
   mapWasteCategory,
+  commonObjectCategory,
   normalizeText
 };

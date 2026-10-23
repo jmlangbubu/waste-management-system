@@ -39,7 +39,8 @@ test("only an explicit false/null unsuccessful envelope gets the upstream-unsucc
   assert.deepEqual(diagnostic,response?.success===false&&response.result===null
    ?{stage:"classifier_upstream_unsuccessful",code:"CLASSIFIER_UPSTREAM_UNSUCCESSFUL"}
    :{stage:"classifier_response_validation",code:"CLASSIFIER_RESPONSE_INVALID"});
-  assert.equal(result.category,"Residual");assert.equal(result.analysisSource,"fallback_no_ai_result");
+  assert.equal(result.category,"Unknown");assert.equal(result.analysisSource,"fallback_no_ai_result");
+  assert.match(result.action,/Confirm identity, material, contents and condition/);
   assert.deepEqual(calls,{http:1,vision:1,local:0});assert.doesNotMatch(JSON.stringify(logs),/PRIVATE_|Bearer|synthetic\.invalid/);
   assert.equal(typeof logs.find(args=>args[0]==="[WasteAnalysis] External classifier response success:")[1],"boolean");
  }
@@ -93,7 +94,8 @@ test("HTTP, transport, IAM and timeout failures retain distinct fixed diagnostic
   const {result,logs,calls}=await run({success:false,result:null,message:secret},options);
   const errors=logs.filter(args=>args[0]==="[WasteAnalysis] classifier failure");assert.equal(errors.length,1);
   assert.deepEqual(errors[0][1],{stage,code,...(options.status?{status:options.status}:{})});
-  assert.equal(result.category,"Residual");assert.equal(result.analysisSource,"fallback_no_ai_result");
+  assert.equal(result.category,"Unknown");assert.equal(result.analysisSource,"fallback_no_ai_result");
+  assert.match(result.action,/Confirm identity, material, contents and condition/);
   assert.deepEqual(calls,{http,vision:1,local:0});assert.doesNotMatch(JSON.stringify(logs),/PRIVATE_|Bearer|synthetic\.invalid/);
  }
 });

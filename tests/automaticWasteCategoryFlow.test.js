@@ -17,12 +17,12 @@ test("one capture five independent physical detections preserve exact IDs and us
  const a=deterministic(items);assert.deepEqual(a.map(x=>x.category),['Unknown','Special Waste','Unknown','Unknown','Unknown']);
  assert.ok(a[0].guidance.reuseIdeas.length===0);
  const {assess,calls}=service();const response=await assess({capture:capture(),items,principal:5});
- assert.equal(calls(),1);assert.equal(response.aiStatus,'complete');assert.deepEqual(response.items.map(i=>i.category),['Recyclable','Special Waste','Residual','Unknown','Biodegradable']);
+ assert.equal(calls(),1);assert.equal(response.aiStatus,'complete');assert.deepEqual(response.items.map(i=>i.category),['Unknown','Special Waste','Unknown','Unknown','Biodegradable']);
  assert.deepEqual(response.items.map(i=>i.itemId),ids);assert.equal(new Set(ids).size,5);
 });
-test("single generic Bottle remains Unknown rather than inventing a recycling suggestion",async()=>{
+test("ordinary localized Bottle receives a provisional recycling suggestion",async()=>{
  const items=[vision('Bottle')],{assess}=service();const result=await assess({capture:capture(),items,principal:5});
- assert.equal(result.items[0].category,'Unknown');assert.equal(result.items[0].assessmentSource,'ai_assisted');
+ assert.equal(result.items[0].category,'Recyclable');assert.equal(result.items[0].assessmentSource,'ai_assisted');
  assert.equal(result.items[0].requiresConfirmation,true);
 });
 test("visible hazardous evidence blocks the broad bottle mapping",async()=>{
@@ -35,10 +35,11 @@ test("explicit bleach/pesticide bottles remain Unknown even when provider calls 
   const result=await assess({capture:capture(),items:[vision(label)],principal:5});assert.equal(result.items[0].category,'Unknown');
  }
 });
-test("AI validates a clean PET bottle and maps back the exact Android item ID",async()=>{
+test("ordinary Bottle with supported PET facts retains provisional recycling and exact Android ID",async()=>{
  const {assess}=service(()=>({category:"Recyclable",kind:"single_material",material:"pet_plastic",condition:"clean_dry",evidence:"visible"}));
  const result=await assess({capture:capture(),items:[vision('Bottle','item_7')],principal:5});
  assert.equal(result.items[0].itemId,'item_7');assert.equal(result.items[0].assessmentSource,'ai_assisted');assert.equal(result.items[0].category,'Recyclable');
+ assert.doesNotMatch(JSON.stringify(result.items[0].guidance),/residual waste bin/);
 });
 test("pre-existing categories must not be overwritten by mapping or provider",async()=>{
  const obj=vision('Bottle');obj.category='Special Waste';const {assess,calls}=service();
@@ -49,7 +50,7 @@ test("AI disabled still uses generic automatic mappings without extra calls",asy
  const result=await assess({capture:capture(),items:[vision('Bottle'),vision('unidentified object','item_2'),gemini('Bottle')],principal:5});
  assert.equal(result.aiStatus,'not_requested');assert.equal(calls(),0);
  // Android v1 cannot display Vision identity mappings without a completed AI batch.
- assert.deepEqual(result.items.map(x=>x.category),['Unknown','Unknown','Unknown']);
+ assert.deepEqual(result.items.map(x=>x.category),['Unknown','Unknown','Recyclable']);
 });
 test("full assessment disabled remains fully off",async()=>{
  const {assess,calls}=service(undefined,{WASTE_ITEM_ASSESSMENT_ENABLED:'false'});
@@ -60,14 +61,21 @@ test("pre-AI sources remain within existing Android category sidecar parser cont
  assert.equal(initial[0].assessmentSource,'existing_category');assert.equal(initial[0].category,'Unknown');
  assert.equal(initial[1].assessmentSource,'reviewed_identity_rule');assert.equal(initial[1].category,'Recyclable');
  const {assess}=service();const live=await assess({capture:capture(),items:[v,g],principal:5});
- assert.equal(live.aiStatus,'complete');assert.equal(live.items[0].assessmentSource,'ai_assisted');
+ assert.equal(live.aiStatus,'not_requested');assert.equal(live.items[0].assessmentSource,'existing_category');
  assert.equal(live.items[1].assessmentSource,'reviewed_identity_rule');
- assert.deepEqual(live.items.map(x=>x.category),['Recyclable','Recyclable']);
+ assert.deepEqual(live.items.map(x=>x.category),['Unknown','Recyclable']);
 });
-test("AI failure keeps Vision Unknown under Android v1 while retaining Gemini mapping",async()=>{
- const assess=createAssessmentService({env,authHeaders:async()=>({}),transport:async()=>{throw Error('offline')}});
+test("ineligible bottles avoid AI while an actual provider failure preserves independent fallback",async()=>{
+ let calls=0;const assess=createAssessmentService({env,authHeaders:async()=>({}),transport:async()=>{calls++;throw Error('offline')}});
  const result=await assess({capture:capture(),items:[vision('Water bottle'),gemini('Water bottle')],principal:5});
- assert.equal(result.aiStatus,'unavailable');
+ // Ordinary water-bottle mapping requires no new AI call; Vision ownership stays unchanged.
+ assert.equal(result.aiStatus,'not_requested');
  assert.deepEqual(result.items.map(x=>x.category),['Unknown','Recyclable']);
  assert.deepEqual(result.items.map(x=>x.assessmentSource),['existing_category','reviewed_identity_rule']);
+ assert.equal(calls,0);
+ const input={capture:capture(),items:[vision('Item'),gemini('white charger')],principal:5};
+ const failed=await assess(input);
+ assert.equal(failed.aiStatus,'unavailable');assert.deepEqual(failed.items.map(x=>x.category),['Unknown','Special Waste']);
+ assert.deepEqual(failed.items.map(x=>x.assessmentSource),['existing_category','reviewed_identity_rule']);
+ await assess(input);assert.equal(calls,1);
 });

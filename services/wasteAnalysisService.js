@@ -4,7 +4,7 @@ const diagnostics = require("./cloudRunDiagnostics");
 const { withDisplayNames } = require("./wasteDisplayNameService");
 const { detectObjectsFromBase64, normalizeBoundingBox, OBJECT_LOCALIZATION_TIMEOUT_MS } = require("./googleVisionService");
 const { getWasteLearningGuide } = require("./wasteLearningGuideService");
-const { automaticCategory } = require("./automaticWasteCategoryMapper");
+const { automaticCategory, productStateVeto } = require("./automaticWasteCategoryMapper");
 
 const {
   analyzeWasteByObject,
@@ -15,6 +15,8 @@ const {
 
 const MIN_OBJECT_CONFIDENCE = 0.40;
 const MAX_DETECTED_ITEMS = 8;
+// Request-local ownership, never serialized into responses or scan history.
+const primaryOwners = new WeakMap();
 
 function overlapRatio(a, b) {
   const intersection = Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left))
@@ -25,6 +27,8 @@ function overlapRatio(a, b) {
 
 // Provider aliases describe the same bottle/container silhouette, not its material.
 const GENERIC_CONTAINER_NAMES = new Set(["bottle", "bottles", "jar", "jars", "container", "can", "bottled and jarred packaged goods"]);
+// Private only: a normalization conflict must survive the later merge/assessment.
+const normalizationConflicts = new WeakSet();
 function identityFamily(name) {
   if (name === "bottled and jarred packaged goods") return "packaged-container";
   if (/\bbottles?\b/.test(name)) return "bottle";
@@ -79,10 +83,8 @@ function normalizeDetectedItems(objects, analysisSource, allowClassifierCategory
     // of waste condition. Never apply the broad legacy word-score mapper to it.
     // The existing narrow identity rules are provisional suggestions only.
     const visionLocalization = analysisSource === "google_vision_object_localization";
-    const packagedProductState = /\b(?:unopened|sealed|full|filled|containing|contains|not empty)\b/i.test(name)
-      && /\b(?:packet|sachet|wrapper|packag(?:e|ed|ing)|pouch|bottle|container|jar|can)\b/i.test(name);
     const mapped = visionLocalization
-      ? { category: packagedProductState ? null : automaticCategory({
+      ? { category: automaticCategory({
         analysisSource, observedIdentity: name, category: "Unknown", boundingBox
       }) }
       : analyzeWasteByObject(canonicalItem);
@@ -91,8 +93,8 @@ function normalizeDetectedItems(objects, analysisSource, allowClassifierCategory
       ? "Special Waste" : classifierCategory || mapped?.category;
     // No whole-banana-to-peel conversion or category from broad packaging words.
     if (!category || (allowClassifierCategory && object.category === "Unknown")
-      || (visionLocalization && packagedProductState)
-      || (!classifierCategory && GENERIC_CONTAINER_NAMES.has(canonicalItem))) category = "Unknown";
+        || (!visionLocalization && !classifierCategory && GENERIC_CONTAINER_NAMES.has(canonicalItem))) category = "Unknown";
+    if(productStateVeto({analysisSource,observedIdentity:name,boundingBox},category))category="Unknown";
     if (!isValidCategory(category) && category !== "Unknown") return [];
     const details = allowClassifierCategory ? Object.fromEntries(
       ["explanation", "action", "warning"].filter((key) => typeof object[key] === "string" && object[key].trim())
@@ -101,7 +103,7 @@ function normalizeDetectedItems(objects, analysisSource, allowClassifierCategory
     const { modelKey = "", modelHotspots = [], ...guidance } = category === "Unknown" ? {} : getWasteLearningGuide(canonicalItem, category);
     return [{ index, itemName: name, canonicalItem, category, confidence,
       analysisSource, boundingBox, modelKey, guidance, modelHotspots, ...details,
-      ...(category === "Unknown" ? { requiresConfirmation: true } : {}) }];
+      ...(visionLocalization || category === "Unknown" ? { requiresConfirmation: true } : {}) }];
   });
   // Safety and supported specificity precede confidence; geometry decides duplication.
   candidates.sort((a, b) => Number(b.category === "Special Waste") - Number(a.category === "Special Waste")
@@ -117,6 +119,16 @@ function normalizeDetectedItems(objects, analysisSource, allowClassifierCategory
       // Prefer an observed physical container over an incompatible contents label,
       // without inferring material/category or replacing established safety evidence.
       const container = (item) => /\b(bottles?|jars?|containers?|cans?|cups?|box(?:es)?|bags?)\b/.test(item.canonicalItem);
+      if (candidate.category !== "Special Waste" && other.category !== "Special Waste"
+          && !similarObjectNames(candidate.canonicalItem,other.canonicalItem)
+          && container(candidate) !== container(other)) {
+        const survivor=container(candidate)?candidate:other;
+        survivor.category="Unknown";survivor.requiresConfirmation=true;
+        survivor.modelKey="";survivor.modelHotspots=[];survivor.guidance={};
+        for(const field of ["explanation","action","warning"])delete survivor[field];
+        normalizationConflicts.add(survivor);retained[duplicate]=survivor;
+        continue;
+      }
       if (candidate.category === "Unknown" && other.category === "Unknown"
           && !similarObjectNames(candidate.canonicalItem, other.canonicalItem)) {
         if (container(candidate) && !container(other)) retained[duplicate] = candidate;
@@ -127,9 +139,11 @@ function normalizeDetectedItems(objects, analysisSource, allowClassifierCategory
     retained.push(candidate);
     if (retained.length === MAX_DETECTED_ITEMS) break;
   }
-  return retained.sort((a, b) => a.index - b.index).map(({ index, ...item }, position) => ({
-    itemId: `item_${position + 1}`, ...item
-  }));
+  return retained.sort((a, b) => a.index - b.index).map((candidate, position) => {
+    const {index,...item}=candidate,owner={itemId:`item_${position+1}`,...item};
+    if(normalizationConflicts.has(candidate))normalizationConflicts.add(owner);
+    return owner;
+  });
 }
 
 function buildScanSummary(detectedItems = []) {
@@ -148,7 +162,34 @@ function withDetectedItems(legacyResult, detectedItems, preserveLegacyPrimary = 
       explanation: primary.explanation, action: primary.action, warning: primary.warning }),
     itemName: primary.itemName
   } : legacyResult;
-  return { ...result, detectedItems, scanSummary: buildScanSummary(detectedItems) };
+  const response = { ...result, detectedItems, scanSummary: buildScanSummary(detectedItems) };
+  if (primary && !preserveLegacyPrimary) primaryOwners.set(response, primary);
+  return response;
+}
+
+function reconcilePrimary(result, detectedItems) {
+  const owner = primaryOwners.get(result);
+  const noClassification = result.analysisSource === "fallback_no_ai_result" || !isValidCategory(result.category);
+  // A valid independent classifier/mapper result is not owned by a localized
+  // observation. Never infer ownership from its label or category agreement.
+  if (!owner && !noClassification) return result;
+  const sameOwner = owner && detectedItems.filter(item => item.itemId === owner.itemId
+    && item.analysisSource === owner.analysisSource && item.captureId === owner.captureId
+    && item.confidence === owner.confidence && ["left", "top", "right", "bottom"]
+      .every(key => item.boundingBox?.[key] === owner.boundingBox?.[key]));
+  if (sameOwner?.length === 1 && sameOwner[0].category === result.category
+      && isValidCategory(sameOwner[0].category)) return result;
+  const safe = detectedItems.filter(item => isValidCategory(item.category))
+    .reduce((best, item) => !best || (item.confidence ?? 0) > (best.confidence ?? 0) ? item : best, null);
+  if (safe) return { ...result, ...createSafeResult({ category: safe.category,
+    detectedObject: safe.itemName, aiLabel: safe.itemName,
+    aiConfidence: toSafeNumberText(safe.confidence), analysisSource: safe.analysisSource,
+    explanation: safe.explanation, action: safe.action, warning: safe.warning }), itemName: safe.itemName };
+  // Do not pass Unknown through the legacy createSafeResult Residual default.
+  return { ...result, ...(noClassification ? { itemName: "Unidentified item" } : {}), category: "Unknown",
+    explanation: "The object's waste category or condition has not been safely established.",
+    action: "Confirm identity, material, contents and condition with WMO before choosing a disposal stream.",
+    warning: "Keep separate until identity, contents and condition are established. Do not choose a disposal stream from an uncertain result." };
 }
 
 async function localizeObjectsBestEffort(image) {
@@ -676,20 +717,42 @@ async function analyzeWasteLegacy({ image, detectedObject, mlKitLabels = [], bou
 }
 
 async function analyzeWaste(input) {
-  if(process.env.WHOLE_IMAGE_DISCOVERY_ENABLED!=="true" || !input.objectDiscovery || !input.principal) return withDisplayNames(await analyzeWasteLegacy(input));
+  if(process.env.WHOLE_IMAGE_DISCOVERY_ENABLED!=="true" || !input.objectDiscovery || !input.principal) {
+    const legacy = await analyzeWasteLegacy(input);
+    return withDisplayNames(reconcilePrimary(legacy, legacy.detectedItems || []));
+  }
   const discovery=require("./wholeImageRecognitionService");
   // One attempt per capture, concurrently with primary classification; optional failure is isolated.
   const observations=discovery.discoverObjects({...input.objectDiscovery,image:input.image},{principal:input.principal,signal:input.signal})
     .then(result=>result.objects).catch(()=>[]);
-  const primary=await analyzeWasteLegacy({...input,boundedDiscovery:true});
+  const legacy=await analyzeWasteLegacy({...input,boundedDiscovery:true});
   const objects=await observations;
-  const detectedItems=discovery.merge(primary.detectedItems || [],objects,samePhysicalObject,input.objectDiscovery);
+  const detectedItems=discovery.merge(legacy.detectedItems || [],objects,samePhysicalObject,input.objectDiscovery,
+    item=>normalizationConflicts.has(item));
+  let primary=reconcilePrimary(legacy,detectedItems);
   // A versioned sidecar never changes detection v1 IDs, categories or metadata.
   let categoryAssessments=null;
   if(process.env.WASTE_ITEM_ASSESSMENT_ENABLED==="true") {
     try {categoryAssessments=await require("./perItemWasteAssessmentService").assessCapture({capture:{...input.objectDiscovery,image:input.image},items:detectedItems,primary,principal:input.principal,signal:input.signal});}
     catch(_) { /* Optional assessment failure must never replace a valid primary scan. */ }
     require("./wasteAssessmentDiagnostics").logAssessment(categoryAssessments,detectedItems.length,undefined,detectedItems);
+  }
+  if(input.independentCategoryV2 && categoryAssessments?.schemaVersion===1
+      && categoryAssessments.captureId===input.objectDiscovery.captureId) {
+    const rows=categoryAssessments.items,counts=new Map();
+    for(const row of rows)counts.set(row.itemId,(counts.get(row.itemId)||0)+1);
+    for(const item of detectedItems) {
+      const row=rows.find(row=>row.itemId===item.itemId);
+      if(item.analysisSource!=="gemini_whole_image" || item.category!=="Unknown"
+          || counts.get(item.itemId)!==1 || row?.assessmentSource!=="reviewed_identity_rule"
+          || !isValidCategory(row.category) || !row.requiresConfirmation)continue;
+      // Promote only the same localized object's original deterministic mapping;
+      // no identity, geometry, provider, or independent object's category transfer.
+      if(automaticCategory(item)===row.category
+          && !discovery.identityConflict(item,input.objectDiscovery.captureId)
+          && !productStateVeto(item,row.category,discovery.alignedIdentity(item,input.objectDiscovery.captureId)))item.category=row.category;
+    }
+    primary=reconcilePrimary(legacy,detectedItems);
   }
   return withDisplayNames({...primary,detectedItems,scanSummary:buildScanSummary(detectedItems),identityObservations:objects.filter(item=>!item.boundingBox),...(categoryAssessments?{categoryAssessments}:{})});
 }

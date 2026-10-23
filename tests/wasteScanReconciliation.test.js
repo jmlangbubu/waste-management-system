@@ -75,12 +75,12 @@ test("same-provider conflicting identities veto classification even with AI disa
   assert.equal(r.items[0].category,"Unknown");assert.equal(r.items[0].itemId,items[0].itemId);
  }
 });
-test("safe single primary corroboration remains separate from nozzle and unsupported primary evidence",async()=>{
+test("primary corroboration cannot establish discarded state and remains separate from nozzle evidence",async()=>{
  const primary={analysisSource:"cloud_run_gemini_vision",category:"Recyclable",aiLabel:"Plastic water bottle",aiConfidence:.95};
- for(const [label,expected] of [["Water bottle with cap","Recyclable"],["Spray bottle with nozzle","Unknown"],["Bottle with unknown contents","Unknown"]]) {
+ for(const [label,expected,calls] of [["Water bottle with cap","Unknown",0],["Spray bottle with nozzle","Unknown",1],["Bottle with unknown contents","Unknown",1]]) {
   const s=service(),c=capture(),items=[vision(label)],before=structuredClone({primary,items});
   const result=await s.assess({capture:c,items,primary,principal:5});
-  assert.equal(result.items[0].category,expected);assert.equal(s.calls(),1);assert.deepEqual({primary,items},before);
+  assert.equal(result.items[0].category,expected);assert.equal(s.calls(),calls);assert.deepEqual({primary,items},before);
  }
  const s=service(),result=await s.assess({capture:capture(),items:[vision("Spray bottle with nozzle")],primary,principal:5});
  const reasons=assessmentReasonCounts(result);assert.equal(reasons.veto_observed_identity,1);assert.equal(reasons.veto_primary_hazard,0);
@@ -90,20 +90,28 @@ test("validated structured evidence reconciles independently and precise counter
  const c=capture(),items=[vision("Water bottle with cap"),vision("Snack wrapper","item_2",{...box,left:.5,right:.7}),vision("White charger","item_3",{...box,top:.6,bottom:.9})];
  const s=service(i=>i.observedIdentity.includes("water")?recyclable:insufficient);
  const result=await s.assess({capture:c,items,principal:5});
- assert.deepEqual(result.items.map(i=>i.category),["Recyclable","Residual","Special Waste"]);assert.equal(s.calls(),1);
+ assert.deepEqual(result.items.map(i=>i.category),["Unknown","Unknown","Special Waste"]);assert.equal(s.calls(),1);
  const logs=[];logAssessment(result,3,{info:line=>logs.push(line)},items);
  assert.doesNotMatch(logs.join(""),/item_1|water bottle|Snack wrapper|White charger|captureId|Bearer|boundingBox/);
  assert.deepEqual(Object.keys(result).sort(),["schemaVersion","captureId","aiStatus","items"].sort());
  const denied=service(()=>({...insufficient,material:"mixed",evidence:"visible"}));
  const r=await denied.assess({capture:capture(),items:[vision("Water bottle with cap")],principal:5});
- assert.equal(r.items[0].category,"Unknown");assert.equal(assessmentReasonCounts(r).veto_provider_evidence,1);
+ assert.equal(r.items[0].category,"Unknown");assert.equal(assessmentReasonCounts(r).veto_provider_evidence,0);assert.equal(denied.calls(),0);
+ // A separate explicitly empty owner remains eligible and exercises the actual provider veto.
+ const eligible=service(()=>({...insufficient,material:"mixed",evidence:"visible"}));
+ const vetoed=await eligible.assess({capture:capture(),items:[vision("Empty plastic water bottle")],principal:5});
+ assert.equal(vetoed.items[0].category,"Unknown");assert.equal(eligible.calls(),1);
+ assert.equal(assessmentReasonCounts(vetoed).veto_provider_evidence,1);
 });
 
 test("active primary hazard is distinct from observational safety counts on an unrelated scene primary",async()=>{
  const primary={analysisSource:"cloud_run_gemini_vision",category:"Special Waste",aiLabel:"Chemical bottle",aiConfidence:.95};
  const s=service(),r=await s.assess({capture:capture(),items:[vision("Water bottle with cap")],primary,principal:5});
  assert.equal(r.items[0].category,"Unknown");
- assert.equal(assessmentReasonCounts(r).veto_primary_hazard,1);assert.equal(assessmentReasonCounts(r).veto_observed_identity,0);
+ assert.equal(assessmentReasonCounts(r).veto_primary_hazard,0);assert.equal(assessmentReasonCounts(r).veto_observed_identity,0);assert.equal(s.calls(),0);
+ const eligible=service(),hazard=await eligible.assess({capture:capture(),items:[vision("Bottle")],primary,principal:5});
+ assert.equal(hazard.items[0].category,"Unknown");assert.equal(eligible.calls(),1);
+ assert.equal(assessmentReasonCounts(hazard).veto_primary_hazard,1);
  const unrelated=service(()=>({...insufficient,material:"mixed",evidence:"visible"}));
  const result=await unrelated.assess({capture:capture(),items:[vision("Opaque tub"),vision("Item","item_2")],
   primary:{...primary,category:"Recyclable",aiLabel:"Plastic bottle"},principal:5});

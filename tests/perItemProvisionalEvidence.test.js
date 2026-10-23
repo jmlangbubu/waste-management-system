@@ -4,6 +4,7 @@ const whole=require("../gemini-waste-classifier-cloudrun/wholeImageRecognition")
 const contract=require("../gemini-waste-classifier-cloudrun/wasteItemAssessment");
 const {createAssessmentService}=require("../services/perItemWasteAssessmentService");
 const {withDisplayNames}=require("../services/wasteDisplayNameService");
+const {merge}=require("../services/wholeImageRecognitionService"),{samePhysicalObject}=require("../services/wasteAnalysisService");
 const env={WASTE_ITEM_ASSESSMENT_ENABLED:"true",WASTE_ITEM_ASSESSMENT_AI_ENABLED:"true",CLOUD_RUN_AUTH_MODE:"iam",
  CLOUD_RUN_AUDIENCE:"https://synthetic.invalid",GEMINI_CLASSIFIER_URL:"https://synthetic.invalid/classify-waste",
  WASTE_ITEM_ASSESSMENT_SHARED_TOKEN:"offline-token-more-than-thirty-two-characters"};
@@ -22,16 +23,18 @@ function service(facts,config={},fail=false){
   calls++;seen.push(structuredClone(input));if(fail)throw Error("offline-only");
   return {schemaVersion:1,captureId:input.captureId,requestId:input.requestId,assessments:input.items.map(item=>({itemId:item.itemId,...(typeof facts==="function"?facts(item):facts)}))};
  }});
- return {assess,seen,calls:()=>calls,async response(input){const sidecar=await assess(input);return withDisplayNames({...input.primary,detectedItems:input.items,...(sidecar?{categoryAssessments:sidecar}:{})});}};
+ return {assess,seen,calls:()=>calls,async response(input){
+  const owners=merge(input.items.filter(i=>i.analysisSource!=="gemini_whole_image"),input.items.filter(i=>i.analysisSource==="gemini_whole_image"),samePhysicalObject,input.capture);
+  const sidecar=await assess({...input,items:owners});return withDisplayNames({...input.primary,detectedItems:owners,...(sidecar?{categoryAssessments:sidecar}:{})});}};
 }
 const cases=[
- ["A plastic beverage bottle","Plastic beverage bottle",evidence("Recyclable","single_material"),"Recyclable"],
+ ["A plastic beverage bottle","Plastic beverage bottle",evidence("Recyclable","single_material"),"Unknown"],
  ["B paper envelope","Paper envelope",evidence("Recyclable","single_material","paper"),"Recyclable"],
  ["B cardboard sleeve","Cardboard sleeve",evidence("Recyclable","single_material"),"Recyclable"],
  ["C banana peel","Banana peel",evidence("Biodegradable","plant_food_scraps","plant_matter"),"Biodegradable"],
  ["C plant stems","Fallen plant stems",evidence("Biodegradable","plant_food_scraps","plant_matter"),"Biodegradable"],
- ["D conventional wrapper","Snack wrapper",evidence("Residual","wrapper","mixed"),"Residual"],
- ["D crumpled food packaging","Crumpled snack packaging",evidence("Residual","wrapper"),"Residual"],
+ ["D conventional wrapper","Snack wrapper",evidence("Residual","wrapper","mixed"),"Unknown"],
+ ["D crumpled food packaging","Crumpled snack packaging",evidence("Residual","wrapper"),"Unknown"],
  ["E charger","Phone charger",evidence("Special Waste","electrical","mixed"),"Special Waste"],
  ["E electric toothbrush","Electric toothbrush",evidence("Special Waste","electrical"),"Special Waste"],
  ["F ordinary nonrecoverable waste","Rubber band",insufficient,"Residual"],
@@ -66,6 +69,7 @@ for(const vision of [false,true])for(const [name,label,facts,expected] of cases)
  assert.deepEqual(input,saved);assert.deepEqual(facts,provider);assert.ok(s.calls()<=1);
  assert.deepEqual(response.detectedItems[0].boundingBox,input.items[0].boundingBox);
  assert.equal(response.itemName,input.primary.itemName);assert.equal(response.category,input.primary.category);
+ if(expected==="Unknown")assert.doesNotMatch(JSON.stringify(response.categoryAssessments.items[0].guidance),/residual waste bin|recyclable waste bin|landfill/i);
  if(expected!=="Unknown" && contract.categoryFromEvidence(facts)==="Unknown" && facts.condition==="unknown" && ["Paper envelope","Cardboard sleeve","Fallen plant stems","Crumpled snack packaging"].includes(label)){
   assert.equal(response.categoryAssessments.items[0].assessmentSource,"ai_assisted");
   assert.match(response.categoryAssessments.items[0].guidance.whatItIs,/not verified/);
@@ -75,15 +79,19 @@ for(const vision of [false,true])for(const [name,label,facts,expected] of cases)
 test("J four independent original regions, reversed provider results, one cached batch and unchanged v7 shape",async()=>{
  const input=scene(["Paper envelope","Fallen plant stems","Crumpled snack packaging","Electric toothbrush"],true),saved=structuredClone(input);
  const facts=[evidence("Recyclable","single_material","paper"),evidence("Biodegradable","plant_food_scraps","plant_matter"),evidence("Residual","wrapper"),evidence("Special Waste","electrical")];
+ const evidenceById=new Map(input.items.map((item,n)=>[item.itemId,facts[n]]));
+ const ownerByRegion=new Map(input.items.map(item=>[JSON.stringify(item.boundingBox),item.itemId]));
  let calls=0;
  const assess=createAssessmentService({env,authHeaders:async()=>({}),transport:async(u,b)=>{calls++;return {schemaVersion:1,captureId:b.captureId,requestId:b.requestId,
-  assessments:b.items.map((i,n)=>({itemId:i.itemId,...facts[n]})).reverse()};}});
+  assessments:b.items.map(i=>{const id=ownerByRegion.get(JSON.stringify(i.boundingBox));assert.ok(evidenceById.has(id));return {itemId:i.itemId,...evidenceById.get(id)};}).reverse()};}});
  const sidecar=await assess(input),response=withDisplayNames({...input.primary,detectedItems:input.items,categoryAssessments:sidecar});
- assert.deepEqual(sidecar.items.map(i=>i.category),["Recyclable","Biodegradable","Residual","Special Waste"]);
+ assert.deepEqual(sidecar.items.map(i=>i.category),["Recyclable","Biodegradable","Unknown","Special Waste"]);
  assert.deepEqual(sidecar.items.map(i=>i.itemId),input.items.map(i=>i.itemId));assert.deepEqual(input,saved);
  assert.deepEqual(Object.keys(sidecar).sort(),["schemaVersion","captureId","aiStatus","items"].sort());
- for(const row of sidecar.items){assert.equal(row.assessmentSource,"ai_assisted");assert.equal(row.requiresConfirmation,true);assert.deepEqual(Object.keys(row).sort(),["itemId","category","assessmentSource","requiresConfirmation","confirmationRequirements","guidance"].sort());}
- await assess({...input,capture:{...input.capture,requestId:crypto.randomUUID()}});assert.equal(calls,1);assert.equal(response.detectedItems.length,4);
+ for(const row of sidecar.items){assert.equal(row.assessmentSource,row.itemId===input.items[2].itemId?"existing_category":"ai_assisted");assert.equal(row.requiresConfirmation,true);assert.deepEqual(Object.keys(row).sort(),["itemId","category","assessmentSource","requiresConfirmation","confirmationRequirements","guidance"].sort());}
+ const reordered=await assess({...input,items:[...input.items].reverse(),capture:{...input.capture,requestId:crypto.randomUUID()}});
+ assert.deepEqual(new Map(reordered.items.map(i=>[i.itemId,i.category])),new Map(sidecar.items.map(i=>[i.itemId,i.category])));
+ assert.equal(calls,1);assert.equal(response.detectedItems.length,4);
 });
 test("L primary scene cannot supply missing per-item categories",async()=>{
  const input=scene(["Item","Container"]),s=service(insufficient);input.primary.category="Special Waste";

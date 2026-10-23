@@ -22,7 +22,7 @@ test("specific independently supported categories remain intact", () => {
     ["Empty snack wrapper", "Residual"],
     ["Banana peel", "Biodegradable"],
     ["White charger", "Special Waste"],
-    ["Plastic beverage bottle", "Recyclable"],
+    ["Plastic beverage bottle", "Unknown"],
     ["Unopened instant noodle packet", "Unknown"]
   ]) assert.equal(vision(name)?.category, expected, name);
 });
@@ -55,7 +55,8 @@ test("insufficient per-item facts cannot re-promote Food packaging to Residual",
     }
   });
   const result = await assess({ capture, items, principal: 5 });
-  assert.equal(count, 1);
+  // Category/material facts cannot establish original empty/discarded state.
+  assert.equal(count, 0);
   assert.equal(result.items[0].itemId, items[0].itemId);
   assert.equal(result.items[0].category, "Unknown");
 });

@@ -59,6 +59,10 @@ function hasColumn(columnSet, columnName) {
   return columnSet && columnSet.has(columnName);
 }
 
+function isSupportedWasteCategory(category) {
+  return ["Biodegradable", "Recyclable", "Residual", "Special Waste"].includes(category);
+}
+
 function getTableColumnSet(tableName, callback) {
   const safeTableName = String(tableName || "").replace(/[^a-zA-Z0-9_]/g, "");
 
@@ -335,48 +339,9 @@ function buildMonthlyAssistantComment(total, biodegradable, recyclable, residual
 }
 
 function ensureScanHistoryOptionalColumns(callback) {
-  getScanHistoryColumnSet((columnErr, columnSet) => {
-    if (columnErr) {
-      return callback(columnErr, columnSet || new Set());
-    }
-
-    const alters = [];
-
-    if (!hasColumn(columnSet, "image_url")) {
-      alters.push("ADD COLUMN image_url VARCHAR(500) NULL");
-    }
-
-    if (!hasColumn(columnSet, "analysis_source")) {
-      alters.push("ADD COLUMN analysis_source VARCHAR(120) NULL");
-    }
-
-    if (!hasColumn(columnSet, "ai_label")) {
-      alters.push("ADD COLUMN ai_label VARCHAR(255) NULL");
-    }
-
-    if (!hasColumn(columnSet, "ai_confidence")) {
-      alters.push("ADD COLUMN ai_confidence VARCHAR(50) NULL");
-    }
-
-    if (alters.length === 0) {
-      return callback(null, columnSet);
-    }
-
-    const alterSql = `
-      ALTER TABLE scan_history
-      ${alters.join(",\n      ")}
-    `;
-
-    db.query(alterSql, (alterErr) => {
-      if (alterErr) {
-        console.error("[DB] Failed to add optional scan_history columns:", alterErr);
-        console.error("[DB] The API will continue, but captured image URLs may not be saved until columns are added.");
-        return callback(null, columnSet);
-      }
-
-      return getScanHistoryColumnSet(callback);
-    });
-  });
+  // Optional fields are selected/inserted only when present. Runtime DDL is
+  // unnecessary here; schema changes require a separately approved migration.
+  return getScanHistoryColumnSet(callback);
 }
 
 ensureScanHistoryOptionalColumns((err) => {
@@ -387,7 +352,7 @@ ensureScanHistoryOptionalColumns((err) => {
       err.message
     );
   } else {
-    console.log("[DB] scan_history optional columns ready.");
+    console.log("[DB] scan_history optional columns inspected (read-only).");
   }
 });
 
@@ -472,80 +437,6 @@ function getFirstAvailableString(row, keys) {
   return "";
 }
 
-function buildEmergencyResult(detectedObject = "", mlKitLabels = []) {
-  const objectText = String(detectedObject || "").toLowerCase();
-
-  const labelsText = Array.isArray(mlKitLabels)
-    ? mlKitLabels
-        .map((label) => {
-          if (typeof label === "string") return label.toLowerCase();
-          return String(label?.description || label?.name || "").toLowerCase();
-        })
-        .join(" ")
-    : "";
-
-  const combinedText = `${objectText} ${labelsText}`.trim();
-
-  let category = "Residual";
-  let explanation =
-    "The system could not confidently identify the waste item, so it was classified as residual as a safe fallback.";
-  let action =
-    "Place the item in the residual waste bin. Avoid mixing it with recyclable or special waste items.";
-  let warning =
-    "This is a fallback result used when the item is unclear or the AI analysis is unstable.";
-
-  if (
-    combinedText.includes("bottle") ||
-    combinedText.includes("plastic") ||
-    combinedText.includes("can") ||
-    combinedText.includes("glass") ||
-    combinedText.includes("paper") ||
-    combinedText.includes("carton") ||
-    combinedText.includes("cardboard") ||
-    combinedText.includes("container")
-  ) {
-    category = "Recyclable";
-    explanation =
-      "This item appears recyclable based on the detected object or labels.";
-    action =
-      "Place the item in the recyclable waste bin. Clean it first if possible.";
-    warning =
-      "Items contaminated with food or chemicals may no longer be suitable for recycling.";
-  } else if (
-    combinedText.includes("battery") ||
-    combinedText.includes("charger") ||
-    combinedText.includes("adapter") ||
-    combinedText.includes("bulb") ||
-    combinedText.includes("electronic") ||
-    combinedText.includes("electronics") ||
-    combinedText.includes("wire") ||
-    combinedText.includes("cable") ||
-    combinedText.includes("medicine") ||
-    combinedText.includes("chemical") ||
-    combinedText.includes("spray") ||
-    combinedText.includes("aerosol")
-  ) {
-    category = "Special Waste";
-    explanation =
-      "This item appears to require special handling based on the detected object or labels.";
-    action =
-      "Do not mix this item with ordinary waste. Bring it to the proper special waste collection point.";
-    warning =
-      "Improper disposal of special waste may harm people and the environment.";
-  }
-
-  return {
-    itemName: category,
-    category,
-    explanation,
-    action,
-    warning,
-    detectedObject: detectedObject || category,
-    aiLabel: detectedObject || null,
-    aiConfidence: null,
-    analysisSource: "emergency_stable_mode"
-  };
-}
 
 /* =========================================
    VALIDATED WASTE RECORDS (NEW SYSTEM)
@@ -781,25 +672,32 @@ router.post("/analyze", (req, res, next) => {
   if (process.env.WHOLE_IMAGE_DISCOVERY_ENABLED !== "true" || !req.body?.objectDiscovery) return next();
   return requireMobileSession(req, res, next);
 }, async (req, res) => {
+  const discoveryController = new AbortController();
+  const stopped = () => req.aborted || res.destroyed || res.headersSent || res.writableEnded
+    || discoveryController.signal.aborted;
+  const fail = (status = 503, message = "Waste analysis could not be completed. Please scan again or ask WMO to confirm the item.") => {
+    if (stopped()) return;
+    discoveryController.abort();
+    return res.status(status).json({ success: false, message });
+  };
   try {
-    const { image, detectedObject, mlKitLabels } = req.body;
+    if (stopped()) return;
+    // Protocol negotiation only; never an authentication/authorization signal.
+    const compatibleScan = req.headers?.["x-wmo-scan-capability"] === "waste-scan-independent-category-v2";
+    const { image, detectedObject, mlKitLabels } = req.body || {};
 
     console.log("---- /api/waste/analyze START ----");
-    console.log("detectedObject:", detectedObject);
+    console.log("hasDetectedObject:", typeof detectedObject === "string" && !!detectedObject.trim());
     console.log("hasImage:", !!image);
     console.log("imageLength:", image ? image.length : 0);
-    console.log("mlKitLabels:", Array.isArray(mlKitLabels) ? mlKitLabels : []);
+    console.log("mlKitLabelCount:", Array.isArray(mlKitLabels) ? mlKitLabels.length : 0);
 
     if (!image || typeof image !== "string" || image.trim() === "") {
       console.error("Analyze error: image is missing");
-      return res.status(400).json({
-        success: false,
-        message: "Image is required"
-      });
+      return fail(400, "Image is required");
     }
 
     let analysisResult;
-    const discoveryController = new AbortController();
     const cancelDiscovery = () => discoveryController.abort();
     req.once?.("aborted", cancelDiscovery);
     res.once?.("close", cancelDiscovery);
@@ -810,30 +708,64 @@ router.post("/analyze", (req, res, next) => {
         image,
         detectedObject,
         mlKitLabels: Array.isArray(mlKitLabels) ? mlKitLabels : [],
-        objectDiscovery: req.body.objectDiscovery, principal: req.mobileUser?.id, signal: discoveryController.signal
+        objectDiscovery: req.body.objectDiscovery, principal: req.mobileUser?.id, signal: discoveryController.signal,
+        independentCategoryV2: compatibleScan
       });
-    } catch (analysisError) {
-      console.error("[SERVICE] analyzeWaste failed:");
-      console.error(analysisError);
-      console.error(analysisError.stack);
-
-      analysisResult = buildEmergencyResult(detectedObject, mlKitLabels);
+    } catch (_) {
+      console.error("[SERVICE] Waste analysis unavailable.");
+      return fail();
     }
 
-    if (!analysisResult || typeof analysisResult !== "object") {
-      console.error("[API] Invalid analysisResult:", analysisResult);
-      analysisResult = buildEmergencyResult(detectedObject, mlKitLabels);
+    if (stopped()) return;
+    if (!analysisResult || typeof analysisResult !== "object" || Array.isArray(analysisResult)
+        || analysisResult.success === false
+        || !["Unknown", "Biodegradable", "Recyclable", "Residual", "Special Waste"].includes(analysisResult.category)) {
+      console.error("[API] Waste analysis result invalid.");
+      return fail();
     }
 
-    const itemName =
-      analysisResult.itemName || analysisResult.category || "Residual";
-    const category = analysisResult.category || "Residual";
+    // Legacy Android View Details renders an Unknown primary as Residual.
+    // Fail closed for every client until compatible clients can be identified.
+    if (analysisResult.category === "Unknown" && !compatibleScan) return fail();
+
+    // No authenticated client-version signal distinguishes legacy V7, whose
+    // secondary learning/history paths can render Unknown as Residual. Do not
+    // discard objects or transfer another object's category to make it succeed.
+    const owners = Array.isArray(analysisResult.detectedItems) ? analysisResult.detectedItems : [];
+    const validCategory = value => isSupportedWasteCategory(value) || compatibleScan && value === "Unknown";
+    if (owners.some(item => !item || !validCategory(item.category))) return fail();
+    if (analysisResult.category === "Unknown" && owners.length === 0) return fail();
+    if (analysisResult.categoryAssessments) {
+      const assessments = analysisResult.categoryAssessments.items;
+      if (!Array.isArray(assessments)
+          || assessments.some(item => !item || !validCategory(item.category))) return fail();
+      if (compatibleScan) {
+        const ids = new Set(), byId = new Map(owners.map(item => [item.itemId,item]));
+        if (byId.size !== owners.length || analysisResult.categoryAssessments.schemaVersion !== 1
+            || !["not_requested","complete","unavailable"].includes(analysisResult.categoryAssessments.aiStatus)
+            || analysisResult.categoryAssessments.captureId !== req.body.objectDiscovery?.captureId) return fail();
+        for (const row of assessments) {
+          const owner = byId.get(row.itemId);
+          if (!owner || ids.has(row.itemId) || row.requiresConfirmation !== true
+              || !["reviewed_identity_rule","existing_category","insufficient_evidence","ai_assisted"].includes(row.assessmentSource)
+              || row.assessmentSource === "ai_assisted" && (owner.category !== "Unknown" || analysisResult.categoryAssessments.aiStatus !== "complete")
+              || row.assessmentSource === "reviewed_identity_rule" && (owner.analysisSource !== "gemini_whole_image" || row.category === "Unknown")
+              || row.assessmentSource === "insufficient_evidence" && (owner.analysisSource !== "gemini_whole_image" || row.category !== "Unknown")
+              || row.assessmentSource === "existing_category" && (owner.analysisSource === "gemini_whole_image" || row.category !== owner.category)
+              || owner.category !== "Unknown" && owner.category !== row.category) return fail();
+          ids.add(row.itemId);
+        }
+      }
+    }
+
+    const category = analysisResult.category;
+    const itemName = analysisResult.itemName || category;
     const explanation =
       analysisResult.explanation || "No explanation available.";
     const action = analysisResult.action || "No action available.";
     const warning = analysisResult.warning || "No warning available.";
     const savedDetectedObject =
-      analysisResult.detectedObject || detectedObject || category || "Residual";
+      analysisResult.detectedObject || detectedObject || category;
     const aiLabel = analysisResult.aiLabel || null;
     const aiConfidence = analysisResult.aiConfidence || null;
     const analysisSource = analysisResult.analysisSource || "fallback";
@@ -845,8 +777,9 @@ router.post("/analyze", (req, res, next) => {
     const imageUrl = savedScanImage ? savedScanImage.imageUrl : null;
 
     ensureScanHistoryOptionalColumns((columnErr, columnSet) => {
+      if (stopped()) return;
       if (columnErr) {
-        console.error("[DB] Failed to inspect scan_history columns before insert:", columnErr);
+        console.error("[DB] Failed to inspect scan_history columns before insert.");
       }
 
       const insertColumns = [
@@ -898,8 +831,9 @@ router.post("/analyze", (req, res, next) => {
       `;
 
       db.query(insertSql, values, (err, result) => {
+        if (stopped()) return;
         if (err) {
-          console.error("[DB] Failed to save scan history:", err);
+          console.error("[DB] Failed to save scan history.");
           console.error("[DB] Returning success anyway for app stability.");
 
           return res.json({
@@ -947,32 +881,9 @@ router.post("/analyze", (req, res, next) => {
         });
       });
     });
-  } catch (error) {
-    console.error("[API] /analyze fatal error:");
-    console.error(error);
-    console.error(error.stack);
-
-    const fallbackResult = buildEmergencyResult("", []);
-
-    return res.json({
-      success: true,
-      detectedItems: [],
-      scanSummary: buildScanSummary(),
-      result: {
-        id: 0,
-        itemName: fallbackResult.itemName,
-        category: fallbackResult.category,
-        explanation:
-          "The system encountered an error and returned a safe fallback result.",
-        action: fallbackResult.action,
-        warning:
-          "This is a fallback result because the analysis route encountered an error.",
-        detectedObject: fallbackResult.detectedObject,
-        aiLabel: null,
-        aiConfidence: null,
-        analysisSource: "fatal_route_fallback"
-      }
-    });
+  } catch (_) {
+    console.error("[API] Waste analysis failed.");
+    return fail();
   }
 });
 
@@ -1036,13 +947,15 @@ router.get("/history", (req, res) => {
         });
       }
 
-      const history = (rows || []).map((row) => {
+      // This unpaginated endpoint returns {success, history}, with no total or
+      // cursor. Exclude unsafe legacy records without changing stored rows.
+      const history = (rows || []).filter(row => isSupportedWasteCategory(row.category)).map((row) => {
         const imageUrl = getFirstAvailableString(row, ["image_url"]);
 
         return {
           id: row.id,
           item_name: row.item_name || row.category || "Unknown Item",
-          category: row.category || "Residual",
+          category: row.category,
           detected_object: row.detected_object || row.item_name || row.category || "Unknown",
           created_at: row.created_at,
           explanation: row.explanation || "",

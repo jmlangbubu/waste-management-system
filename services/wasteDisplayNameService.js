@@ -58,8 +58,8 @@ function withDisplayNames(result) {
       // name before it binds sidecar IDs. Compacting that name rejects the owner.
       const catalog = item.analysisSource === "gemini_whole_image" ? matchIdentity(original) : null;
       const observed = catalog ? matchIdentity(item.observedIdentity) : null;
-      if (catalog && catalog.itemName === original && catalog.category === item.category
-          && observed?.itemName === original && observed.category === item.category) return original;
+      if (catalog && catalog.itemName === original && (item.category === "Unknown" || catalog.category === item.category)
+          && observed?.itemName === original && observed.category === catalog.category) return original;
       const primary = shortObjectName(original);
       // Only use another observation when the original was merely "item" or "object".
       // Explicitly uncertain/negated provider labels must never be overridden.

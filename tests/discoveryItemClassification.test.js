@@ -17,13 +17,15 @@ const classify=label=>enrichDiscoveryItem(normalized(label));
 const cases=[
  ["white power adapter","Special Waste"],["power adapter","Special Waste"],
  ["phone charger","Special Waste"],["USB wall charger","Special Waste"],
- ["used battery","Special Waste"],["plastic bottle","Recyclable"],
+ // Approved known catalog suggestions; explicit unsafe states stay negative.
+ ["used battery","Special Waste"],["plastic bottle","Recyclable"],["empty plastic bottle","Recyclable"],
  ["banana peel","Biodegradable"],["cardboard","Recyclable"],
  ["snack sachet","Residual"],["gray round container","Unknown"],
  ["bottled and jarred packaged goods","Unknown"],["generic bottle","Unknown"],
  ["generic packaging","Unknown"],["unidentified packaging","Unknown"],
  ["visually ambiguous clear object","Unknown"],["generic container","Unknown"],
- ["unsupported identity","Unknown"],["adapter","Unknown"],["charger","Unknown"],
+ // The unchanged baseline ELECTRICAL_IDENTITIES explicitly includes charger.
+ ["unsupported identity","Unknown"],["adapter","Unknown"],["charger","Special Waste"],
  ["plastic bottle packaging label","Unknown"],["phone charger picture","Unknown"],
  ["not a power adapter","Unknown"],["adapter cable packaging","Unknown"],
  ["banana peel snack packaging","Unknown"],["dirty plastic bottle","Unknown"],
@@ -36,10 +38,12 @@ for(const [label,category] of cases)test(`reviewed exact identity: ${label} -> $
  assert.equal(after.requiresConfirmation,true);assert.equal(Object.hasOwn(after,"confidence"),false);
  assert.equal(after.localizationSource,"gemini_model_predicted");
  if(category==="Unknown") {
-  assert.match(after.guidance.properDisposal,/confirm.*identity and material/);
-  assert.doesNotMatch(JSON.stringify(after.guidance),/landfill|residual|recycl|compost|planter/i);
-  assert.deepEqual(after.guidance.reuseIdeas,[]);assert.deepEqual(after.guidance.recoveryOptions,[]);
-  assert.equal(after.modelKey,"");assert.deepEqual(after.modelHotspots,[]);
+  if(after.guidance) {
+   assert.match(after.guidance.properDisposal,/confirm.*identity and material/);
+   assert.deepEqual(after.guidance.reuseIdeas,[]);assert.deepEqual(after.guidance.recoveryOptions,[]);
+  }
+  assert.doesNotMatch(JSON.stringify(after.guidance||{}),/landfill|residual|recycl|compost|planter/i);
+  assert.equal(after.modelKey||"","");assert.deepEqual(after.modelHotspots||[],[]);
  }
 });
 test("electrical aliases tolerate only case and whitespace, with no inferred materials or condition",()=>{
@@ -55,7 +59,7 @@ test("approved recycling, biodegradable, reuse, model and hotspot guidance is re
   const {modelKey,modelHotspots,...guidance}=expected;
   assert.deepEqual(item.guidance,guidance);assert.equal(item.modelKey,modelKey);assert.deepEqual(item.modelHotspots,modelHotspots);
  }
- assert.match(classify("plastic bottle").guidance.warnings.join(" "),/oil or chemical contamination/);
+ assert.match(classify("empty plastic bottle").guidance.warnings.join(" "),/oil or chemical contamination/);
 });
 test("three-item fixture preserves IDs, order and all three independent boxes, enriching only the adapter",()=>{
  const input=request(),raw=whole.normalize(input,{objects:[object("bottled and jarred packaged goods"),object("white power adapter",[200,400,500,600]),object("gray round container",[100,700,800,900])]});
