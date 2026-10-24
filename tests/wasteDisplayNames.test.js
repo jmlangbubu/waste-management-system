@@ -6,6 +6,7 @@ const {createAssessmentService,deterministic}=require("../services/perItemWasteA
 const {merge}=require("../services/wholeImageRecognitionService");
 const {samePhysicalObject}=require("../services/wasteAnalysisService");
 
+
 // Source-equivalent checks for the reconciled v5 parser audited in APK SHA256
 // eb91400f81597363706839326b6bbeacdde08cbd5155b74cdca72bab05c2ab65.
 // These are offline contract tests, not execution of Android or the installed APK.
@@ -90,7 +91,11 @@ test("final Android sidecar rejects foreign, stale, duplicate, malformed and inc
   duplicate:r=>{r.categoryAssessments.items[1]={...r.categoryAssessments.items[0]};},
   geometry:r=>{r.detectedItems[0].boundingBox.right=-1;},
   source:r=>{r.categoryAssessments.items[0].assessmentSource="existing_category";},
-  ownerCategory:r=>{r.categoryAssessments.items[0].category="Recyclable";},
+  ownerCategory:r=>{
+   const row=r.categoryAssessments.items[0],owner=r.detectedItems.find(item=>item.itemId===row.itemId);
+   row.category=owner.category==="Special Waste"?"Recyclable":"Special Waste";
+   assert.notEqual(row.category,owner.category);
+  },
   metadata:r=>{r.categoryAssessments.items[0].modelKey="battery";},
   guidanceMetadata:r=>{r.categoryAssessments.items[0].guidance.modelKey="battery";}
  };
@@ -118,7 +123,8 @@ test("display formatting is immutable and preserves raw evidence, IDs, geometry 
 
 for(const name of ["Plastic Bottle","Used Battery","Snack Sachet"])test(`v5 known Gemini catalog name survives display formatting: ${name}`,()=>{
  const s=scene([name]),rawOwners=s.items,before=structuredClone(s.items[0]);
- if(name!=="Used Battery")assert.throws(()=>deterministic(s.items,s.capture.captureId),{code:"INVALID_RECOGNITION_REQUEST"});
+ const expectedCategory={"Plastic Bottle":"Recyclable","Used Battery":"Special Waste","Snack Sachet":"Residual"}[name];
+ assert.equal(deterministic(s.items,s.capture.captureId)[0].category,expectedCategory);
  reconciled(s);
  assert.deepEqual(rawOwners,[before]);
  const response={detectedItems:s.items,categoryAssessments:{schemaVersion:1,captureId:s.capture.captureId,
@@ -127,7 +133,7 @@ for(const name of ["Plastic Bottle","Used Battery","Snack Sachet"])test(`v5 know
  assert.equal(item.itemName,name);assert.equal(item.originalItemName,name);assert.equal(v5RawOwner(item),true);
  assert.equal(v5SidecarAccepted(formatted,s.capture.captureId),true);
  for(const key of Object.keys(before).filter(k=>k!=="category"))assert.deepEqual(item[key],before[key],key);
- assert.equal(item.category,name==="Used Battery"?"Special Waste":"Unknown");
+ assert.equal(item.category,expectedCategory);
  assert.equal(formatted.categoryAssessments,response.categoryAssessments);
  const oldBehavior={...formatted,detectedItems:[{...item,itemName:shortObjectName(name)}]};
  // Exact names are mandatory for known catalog categories. Unknown owners
@@ -138,7 +144,7 @@ for(const name of ["Plastic Bottle","Used Battery","Snack Sachet"])test(`v5 know
 
 test("reviewed observed aliases retain canonical Gemini names without rewriting evidence",()=>{
  const s=scene(["plastic water bottle","AA battery","snack wrapper"]),rawOwners=s.items,raw=structuredClone(s.items);
- assert.throws(()=>deterministic(s.items),{code:"INVALID_RECOGNITION_REQUEST"});reconciled(s);
+ assert.deepEqual(deterministic(s.items,s.capture.captureId).map(i=>i.category),["Recyclable","Special Waste","Residual"]);reconciled(s);
  assert.deepEqual(rawOwners,raw);
  const formatted=withDisplayNames({detectedItems:s.items,categoryAssessments:{schemaVersion:1,captureId:s.capture.captureId,
   aiStatus:"not_requested",items:deterministic(s.items)}});
@@ -189,7 +195,7 @@ test("five mixed owners retain all v5 sidecar entries with Vision AI and Gemini 
  Object.assign(s.capture,{image:Buffer.from("ffd8ffc0000b080190025801011100ffd9","hex").toString("base64"),width:600,height:400,orientation:"upright"});
  s.items[3]={...s.items[3],analysisSource:"google_vision_object_localization",canonicalItem:"white charger",confidence:.8};
  const chargerId=s.items[3].itemId,plasticId=s.items[0].itemId,rawOwners=s.items,rawSnapshot=structuredClone(s.items);
- const expectedById=new Map(s.items.map((i,n)=>[i.itemId,["Unknown","Special Waste","Unknown","Special Waste","Unknown"][n]]));
+ const expectedById=new Map(s.items.map((i,n)=>[i.itemId,["Recyclable","Special Waste","Residual","Special Waste","Recyclable"][n]]));
  reconciled(s);
  const raw=structuredClone(s.items);let calls=0;
  const assess=createAssessmentService({env:{WASTE_ITEM_ASSESSMENT_ENABLED:"true",WASTE_ITEM_ASSESSMENT_AI_ENABLED:"true",
@@ -198,7 +204,8 @@ test("five mixed owners retain all v5 sidecar entries with Vision AI and Gemini 
    calls++;return {schemaVersion:1,captureId:input.captureId,requestId:input.requestId,assessments:input.items.map(item=>({itemId:item.itemId,
     category:"Unknown",kind:"unknown",material:"unknown",condition:"unknown",evidence:"insufficient"})).reverse()};
   }});
- await assert.rejects(assess({...s,items:rawOwners}),{code:"INVALID_RECOGNITION_REQUEST"});assert.equal(calls,0);
+ const rawSidecar=await assess({...s,items:rawOwners});assert.equal(calls,1);
+ assert.deepEqual(rawSidecar.items.map(i=>i.category),rawSidecar.items.map(i=>expectedById.get(i.itemId)));
  assert.deepEqual(rawOwners,rawSnapshot);
  const sidecar=await assess(s),formatted=withDisplayNames({detectedItems:s.items,categoryAssessments:sidecar});
  assert.equal(calls,1);assert.equal(sidecar.aiStatus,"complete");assert.equal(v5SidecarAccepted(formatted,s.capture.captureId),true);
@@ -206,7 +213,7 @@ test("five mixed owners retain all v5 sidecar entries with Vision AI and Gemini 
  assert.equal(new Set(formatted.detectedItems.map(i=>i.itemId)).size,5);
  assert.deepEqual(sidecar.items.map(i=>i.category),sidecar.items.map(i=>expectedById.get(i.itemId)));
  assert.equal(sidecar.items.find(i=>i.itemId===chargerId).assessmentSource,"ai_assisted");
- assert.equal(sidecar.items.find(i=>i.itemId===plasticId).assessmentSource,"insufficient_evidence");
+ assert.equal(sidecar.items.find(i=>i.itemId===plasticId).assessmentSource,"reviewed_identity_rule");
  assert.deepEqual(sidecar.items.map(i=>i.itemId),raw.map(i=>i.itemId));assert.deepEqual(s.items,raw);
  for(let i=0;i<5;i++)for(const key of Object.keys(raw[i]).filter(key=>key!=="itemName"))assert.deepEqual(formatted.detectedItems[i][key],raw[i][key]);
  assert.equal(v5SidecarAccepted({...formatted,categoryAssessments:{...sidecar,captureId:crypto.randomUUID()}},s.capture.captureId),false);
@@ -214,7 +221,7 @@ test("five mixed owners retain all v5 sidecar entries with Vision AI and Gemini 
 });
 test("every item gets an independent confirmation-required assessment from original evidence, not color/display type",async()=>{
  const s=scene(["used battery","banana peel","snack sachet","empty aluminum can","green compact powder","white charger","bottle","yellow bottle"]);
- const expectedById=new Map(s.items.map((i,n)=>[i.itemId,["Special Waste","Biodegradable","Unknown","Recyclable","Unknown","Special Waste","Unknown","Unknown"][n]]));
+ const expectedById=new Map(s.items.map((i,n)=>[i.itemId,["Special Waste","Biodegradable","Residual","Recyclable","Unknown","Special Waste","Recyclable","Unknown"][n]]));
  reconciled(s);
  let calls=0;
  const assess=createAssessmentService({env:{WASTE_ITEM_ASSESSMENT_ENABLED:"true",WASTE_ITEM_ASSESSMENT_AI_ENABLED:"false"},transport:async()=>{calls++;throw Error("Paid calls forbidden");}});
@@ -226,9 +233,9 @@ test("every item gets an independent confirmation-required assessment from origi
  assert.deepEqual(deterministic(withDisplayNames({detectedItems:s.items}).detectedItems),result.items);
  // A known Gemini catalog name must remain exact; an uncertain one stays compact.
  const both=scene(["plastic bottle","chemical bottle"]);
- assert.throws(()=>deterministic(both.items),{code:"INVALID_RECOGNITION_REQUEST"});reconciled(both);
+ assert.deepEqual(deterministic(both.items,both.capture.captureId).map(i=>i.category),["Recyclable","Unknown"]);reconciled(both);
  assert.deepEqual(withDisplayNames({detectedItems:both.items}).detectedItems.map(i=>i.itemName),["Plastic Bottle","Bottle"]);
- assert.deepEqual(deterministic(both.items).map(i=>i.category),["Unknown","Unknown"]);
+ assert.deepEqual(deterministic(both.items).map(i=>i.category),["Recyclable","Unknown"]);
 });
 test("production-default assessment-off stays off and cannot invoke a provider",async()=>{
  const assess=createAssessmentService({env:{},transport:async()=>{throw Error("Provider forbidden");}});
@@ -267,14 +274,66 @@ test("specific capped beverage and wrapper suggestions keep strict v5 mixed-owne
    calls++;return {schemaVersion:1,requestId:input.requestId,captureId:input.captureId,assessments:input.items.map(i=>({itemId:i.itemId,
     category:"Unknown",kind:"unknown",material:"unknown",condition:"unknown",evidence:"insufficient"}))};
   }});
- await assert.rejects(assess({...s,items:rawOwners}),{code:"INVALID_RECOGNITION_REQUEST"});assert.equal(calls,0);
+ const rawSidecar=await assess({...s,items:rawOwners});assert.equal(calls,1);
+ assert.equal(rawSidecar.items.find(i=>i.itemId===rawOwners[2].itemId).category,"Recyclable");
  assert.deepEqual(rawOwners,rawSnapshot);
  const sidecar=await assess(s),response=withDisplayNames({detectedItems:s.items,categoryAssessments:sidecar});
  assert.equal(calls,1);assert.equal(v5SidecarAccepted(response,s.capture.captureId),true);
- assert.deepEqual(sidecar.items.map(i=>i.category),["Unknown","Unknown","Unknown","Unknown"]);
- assert.deepEqual(sidecar.items.map(i=>i.assessmentSource),["insufficient_evidence","insufficient_evidence","insufficient_evidence","ai_assisted"]);
+ const expected=new Map(rawOwners.map(i=>[i.itemId,i.observedIdentity==="Plastic Bottle"
+  ? {category:"Recyclable",source:"reviewed_identity_rule"}
+  : {category:"Unknown",source:i.analysisSource==="gemini_whole_image"?"insufficient_evidence":"ai_assisted"}]));
+ assert.deepEqual(sidecar.items.map(i=>i.category),sidecar.items.map(i=>expected.get(i.itemId).category));
+ assert.deepEqual(sidecar.items.map(i=>i.assessmentSource),sidecar.items.map(i=>expected.get(i.itemId).source));
  assert.deepEqual(s.items,original);assert.equal(response.categoryAssessments,sidecar);
  assert.deepEqual(Object.keys(sidecar).sort(),["schemaVersion","captureId","aiStatus","items"].sort());
+});
+
+test("noodle package display preserves observed state without changing classification evidence",()=>{
+ for(const label of ["Instant Noodle Package","Empty Instant Noodle Package","Unopened Instant Noodle Package"]){
+  const item={itemId:"item_unchanged",itemName:label,observedIdentity:label,category:"Unknown",
+   analysisSource:"google_vision_object_localization",boundingBox:{left:.1,top:.1,right:.4,bottom:.5}};
+  const before=structuredClone(item),shown=withDisplayNames({detectedItems:[item]}).detectedItems[0];
+  assert.equal(shown.itemName,label.replace("Package","Packet"));
+  assert.equal(shown.category,"Unknown");assert.equal(shown.observedIdentity,label);
+  assert.equal(shown.itemId,item.itemId);assert.deepEqual(shown.boundingBox,item.boundingBox);assert.deepEqual(item,before);
+ }
+});
+
+test("noodle package state preserves strict legacy and capability-aware mapped-assessment boundaries",async()=>{
+ // Reuse the existing mocked service/route fixture; no provider or DB calls.
+ const path=require("node:path"),fs=require("node:fs");
+ const file=path.join(__dirname,"wastePrimaryReconciliation.test.js"),source=fs.readFileSync(file,"utf8"),module={exports:{}};
+ const {createRequire}=require("node:module"),vm=require("node:vm");
+ vm.runInNewContext(source.slice(0,source.indexOf('test("full bottle'))+"\nmodule.exports={fixture,localized,route};",
+  {module,require:createRequire(file),__dirname,Buffer,URL,AbortController,setTimeout,clearTimeout});
+ const {fixture,localized,route}=module.exports,b={left:.125,top:.125,right:.375,bottom:.625};
+ for(const provider of ["vision","gemini"])for(const compatible of [false,true])
+  for(const [label,category]of [["Empty Instant Noodle Package","Residual"],["Discarded Instant Noodle Package","Residual"],
+   ["Instant Noodle Package","Unknown"],["Unopened Instant Noodle Package","Unknown"],
+   ["Empty Instant Noodle Package containing chemicals","Unknown"]]){
+   const f=fixture({objects:provider==="vision"?[localized(label,.93,b)]:[],labels:provider==="gemini"?[[label,b]]:[],compatible,ai:false});
+   const result=JSON.parse(JSON.stringify(await f.run())),before=structuredClone(result);
+   assert.equal(result.detectedItems.length,1);const owner=result.detectedItems[0],row=result.categoryAssessments.items[0];
+   assert.equal(row.itemId,owner.itemId);assert.equal(result.categoryAssessments.captureId,f.c.captureId);
+   assert.equal(row.category,category);assert.equal(row.requiresConfirmation,true);assert.deepEqual(owner.boundingBox,b);
+   assert.equal(f.calls.assessment,0);
+   const api=await route(result,{capability:compatible?"waste-scan-independent-category-v2":undefined,captureId:f.c.captureId});
+   assert.equal(api.status,compatible||provider==="vision"&&category==="Residual"?200:503);
+   if(provider==="gemini"&&compatible&&category==="Residual"){
+    assert.equal(owner.category,"Residual");assert.equal(row.assessmentSource,"reviewed_identity_rule");
+    // Strict old v5 does not accept noncatalog known Gemini owners. The
+    // capability-aware parser validates the neutral owner and exact sidecar
+    // before restoring its original mapped category; do not relax v5RawOwner.
+    assert.equal(v5RawOwner(owner),false);assert.equal(v5SidecarAccepted(result,f.c.captureId),false);
+    assert.equal(v5SidecarAccepted({...result,detectedItems:[{...owner,category:"Unknown"}]},f.c.captureId),true);
+   }else assert.equal(v5SidecarAccepted(result,f.c.captureId),true);
+   assert.deepEqual(result,before);
+  }
+ const conflict=fixture({objects:[localized("Empty Instant Noodle Package",.93,b)],
+  labels:[["Unopened Instant Noodle Package",b]],compatible:true,ai:false});
+ const result=JSON.parse(JSON.stringify(await conflict.run()));
+ assert.equal(result.detectedItems.length,1);assert.equal(result.detectedItems[0].category,"Unknown");
+ assert.equal(result.categoryAssessments.items[0].category,"Unknown");assert.equal(conflict.calls.assessment,0);
 });
 
 test("deduplicated simple aliases preserve strict v5 owners, sidecar count and selected-item geometry",async()=>{
@@ -291,7 +350,7 @@ test("deduplicated simple aliases preserve strict v5 owners, sidecar count and s
  assert.equal(result.itemName,primary.itemName);assert.equal(result.category,primary.category);
  for(const item of items) {
   const owner=raw.find(i=>i.itemId===item.itemId);assert.deepEqual(item.boundingBox,owner.boundingBox);
-  assert.equal(item.category,owner.observedIdentity==="Snack Sachet"?"Unknown":owner.category);assert.equal(item.observedIdentity,owner.observedIdentity);
+  assert.equal(item.category,owner.observedIdentity==="Snack Sachet"?"Residual":owner.category);assert.equal(item.observedIdentity,owner.observedIdentity);
  }
 });
 
