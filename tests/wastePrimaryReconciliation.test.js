@@ -12,12 +12,12 @@ const capture=()=>({captureId:crypto.randomUUID(),requestId:crypto.randomUUID(),
  image:Buffer.from("ffd8ffc0000b080190025801011100ffd9","hex").toString("base64")});
 const insufficient={category:"Unknown",kind:"unknown",material:"unknown",condition:"unknown",evidence:"insufficient"};
 function fixture({objects=[],labels=[],primary=null,enabled=true,ai=false,facts=insufficient,compatible=false}={}) {
- const calls={primary:0,vision:0,discovery:0,assessment:0},env={
+ const requests=[],calls={primary:0,vision:0,discovery:0,assessment:0},env={
   WHOLE_IMAGE_DISCOVERY_ENABLED:String(enabled),WASTE_ITEM_ASSESSMENT_ENABLED:"true",WASTE_ITEM_ASSESSMENT_AI_ENABLED:String(ai),
   CLOUD_RUN_AUTH_MODE:"iam",CLOUD_RUN_AUDIENCE:"https://synthetic.invalid",
   GEMINI_CLASSIFIER_URL:"https://synthetic.invalid/classify-waste",WASTE_ITEM_ASSESSMENT_SHARED_TOKEN:"offline-contract-token-over-thirty-two-characters"};
  const assessCapture=createAssessmentService({env,authHeaders:async()=>({}),transport:async(url,input)=>{
-  calls.assessment++;return {schemaVersion:1,captureId:input.captureId,requestId:input.requestId,
+  calls.assessment++;requests.push(plain(input));return {schemaVersion:1,captureId:input.captureId,requestId:input.requestId,
    assessments:input.items.map(item=>({itemId:item.itemId,...facts}))};
  }});
  const transport={request(options,callback){calls.primary++;const request=new EventEmitter();request.write=()=>{};
@@ -40,7 +40,7 @@ function fixture({objects=[],labels=[],primary=null,enabled=true,ai=false,facts=
   }
  });
  const c=capture(),service=m.exports;
- return {calls,c,service,run:()=>service.analyzeWaste({image:c.image,objectDiscovery:c,principal:42,detectedObject:"captured_waste_item",independentCategoryV2:compatible})};
+ return {calls,requests,c,service,run:()=>service.analyzeWaste({image:c.image,objectDiscovery:c,principal:42,detectedObject:"captured_waste_item",independentCategoryV2:compatible})};
 }
 async function route(serviceResult,{fail=false,capability,captureId}={}) {
  const handlers={},writes=[],effects={images:0},m={exports:{}},router=Object.fromEntries(["get","post","patch","delete"].map(method=>[method,(url,...chain)=>{handlers[method+" "+url]=chain.at(-1);} ]));
@@ -91,14 +91,82 @@ function v7(result,c) {
 test("full bottle veto neutralizes the exact Vision-owned primary, retaining owner geometry and source",async()=>{
  const f=fixture({objects:[localized("Empty plastic water bottle")],labels:[["Full plastic water bottle"]],ai:true});
  const initial=f.service.normalizeDetectedItems([localized("Empty plastic water bottle")],"google_vision_object_localization");
+ const observed=whole.normalize(f.c,{objects:[{label:"Full plastic water bottle",box_2d:[100,100,500,300]}]}).objects;
+ const merged=discovery.merge(initial,observed,f.service.samePhysicalObject,f.c);
+ assert.equal(merged.length,1);assert.equal(discovery.identityConflict(merged[0],f.c.captureId),true);
+ assert.equal(discovery.identityConflict(merged[0],crypto.randomUUID()),false);
+ assert.equal(discovery.alignedIdentity(merged[0],f.c.captureId),null);
+ const deterministic=require("../services/perItemWasteAssessmentService").deterministic(merged,f.c.captureId);
+ assert.equal(deterministic[0].category,"Unknown");assert.equal(deterministic[0].itemId,initial[0].itemId);
  const r=plain(await f.run());neutral(r);ownersPreserved(r,plain(initial));
  assert.equal(r.analysisSource,"google_vision_object_localization");assert.equal(r.aiConfidence,"0.95");
  assert.equal(r.detectedItems[0].category,"Unknown");assert.equal(r.scanSummary.categories.recyclable,0);v7(r,f.c);
- // This explicit original empty identity already receives one safety review;
- // primary reconciliation must not add another call or change that policy.
- assert.equal(f.calls.assessment,1);assert.deepEqual(Object.keys(r).filter(k=>/owner|provenance/i.test(k)),[]);
+ // Current-capture contradictory state already fixes this owner at Unknown;
+ // no optional assessment may be billed to reconsider that conflict.
+ assert.equal(f.calls.assessment,0);assert.deepEqual(f.requests,[]);
+ assert.equal(r.categoryAssessments.aiStatus,"not_requested");assert.equal(r.categoryAssessments.items.length,1);
+ assert.equal(r.categoryAssessments.items[0].itemId,r.detectedItems[0].itemId);
+ assert.equal(r.categoryAssessments.items[0].category,"Unknown");assert.equal(r.categoryAssessments.items[0].requiresConfirmation,true);
+ assert.equal(r.categoryAssessments.items[0].assessmentSource,"existing_category");
+ assert.deepEqual(Object.keys(r).filter(k=>/owner|provenance/i.test(k)),[]);
  const saved=await route(r);unavailablePrimary(saved);
 });
+test("a conflicted full bottle is excluded while an independent Unknown owner receives one cached electrical assessment",async()=>{
+ const f=fixture({objects:[localized("Empty plastic water bottle"),localized("Unclassified household container",.9,far)],
+  labels:[["Full plastic water bottle"]],ai:true,
+  facts:{category:"Special Waste",kind:"electrical",material:"mixed",condition:"unknown",evidence:"visible"}});
+ const initial=f.service.normalizeDetectedItems([localized("Empty plastic water bottle"),localized("Unclassified household container",.9,far)],"google_vision_object_localization");
+ const r=plain(await f.run());neutral(r);ownersPreserved(r,plain(initial));v7(r,f.c);
+ assert.deepEqual(r.detectedItems.map(item=>item.category),["Unknown","Unknown"]);
+ assert.equal(r.categoryAssessments.items.length,2);assert.equal(r.categoryAssessments.aiStatus,"complete");
+ assert.deepEqual(r.categoryAssessments.items.map(item=>[item.itemId,item.category,item.assessmentSource]),
+  [[initial[0].itemId,"Unknown","existing_category"],[initial[1].itemId,"Special Waste","ai_assisted"]]);
+ assert.equal(f.calls.assessment,1);assert.equal(f.requests.length,1);
+ const request=f.requests[0],wireId="region_"+crypto.createHash("sha256")
+  .update(JSON.stringify(["vision-assessment-v1",f.c.captureId,initial[1].itemId])).digest("hex").slice(0,32);
+ assert.equal(request.captureId,f.c.captureId);assert.equal(request.items.length,1);
+ assert.equal(request.items[0].itemId,wireId);assert.deepEqual(request.items[0].boundingBox,far);
+ assert.equal(request.items[0].observedIdentity,initial[1].canonicalItem);
+ const repeated=plain(await f.run());assert.equal(f.calls.assessment,1);
+ assert.deepEqual(repeated.categoryAssessments,r.categoryAssessments);
+});
+for(const adverse of ["Chemical Container","Battery"])
+ test(`all-category conflict clears primary, summary and sidecar without persistence: Banana Peel + ${adverse}`,async()=>{
+  const names=["Banana Peel",adverse,"Item"];
+  for(const first of names)for(const second of names.filter(name=>name!==first)){
+   const order=[first,second,names.find(name=>name!==first&&name!==second)];
+   const f=fixture({labels:order.map(name=>[name]),ai:true});
+   const r=plain(await f.run());neutral(r);v7(r,f.c);
+   assert.equal(r.detectedItems.length,1);assert.equal(r.detectedItems[0].category,"Unknown");
+   assert.deepEqual(r.detectedItems[0].boundingBox,box);
+   assert.equal(r.scanSummary.totalItems,1);
+   assert.deepEqual(r.scanSummary.categories,{biodegradable:0,recyclable:0,residual:0,specialWaste:0});
+   assert.equal(r.categoryAssessments.items.length,1);
+   assert.equal(r.categoryAssessments.items[0].category,"Unknown");
+   assert.equal(r.categoryAssessments.items[0].itemId,r.detectedItems[0].itemId);
+   assert.equal(r.categoryAssessments.items[0].requiresConfirmation,true);
+   assert.equal(r.categoryAssessments.aiStatus,"not_requested");assert.equal(f.calls.assessment,0);
+   unavailablePrimary(await route(r));
+  }
+ });
+
+test("all-category conflict cannot downgrade a separate eligible owner or transfer its electrical assessment",async()=>{
+ const f=fixture({objects:[localized("Unclassified household container",.9,far)],
+  labels:[["Banana Peel"],["Battery"],["Item"]],ai:true,
+  facts:{category:"Special Waste",kind:"electrical",material:"mixed",condition:"unknown",evidence:"visible"}});
+ const r=plain(await f.run());neutral(r);v7(r,f.c);
+ assert.equal(r.detectedItems.length,2);assert.equal(r.categoryAssessments.items.length,2);
+ const independent=r.detectedItems.find(item=>item.boundingBox.left===far.left),conflict=r.detectedItems.find(item=>item.itemId!==independent.itemId);
+ assert.equal(independent.category,"Unknown");assert.equal(conflict.category,"Unknown");
+ assert.deepEqual(conflict.boundingBox,box);
+ const rows=new Map(r.categoryAssessments.items.map(item=>[item.itemId,item]));
+ assert.equal(rows.get(conflict.itemId).category,"Unknown");assert.equal(rows.get(independent.itemId).category,"Special Waste");
+ assert.equal(r.categoryAssessments.aiStatus,"complete");assert.equal(f.calls.assessment,1);
+ assert.equal(f.requests[0].items.length,1);assert.deepEqual(f.requests[0].items[0].boundingBox,far);
+ assert.deepEqual(r.scanSummary.categories,{biodegradable:0,recyclable:0,residual:0,specialWaste:0});
+ assert.deepEqual(plain(await f.run()).categoryAssessments,r.categoryAssessments);assert.equal(f.calls.assessment,1);
+});
+
 for(const enabled of [false,true])for(const names of [["Unidentified bottle"],["Unidentified bottle","Unidentified packet"],[]])
  test(`no safe primary stays Unknown internally and fails closed for legacy clients: discovery=${enabled}, owners=${names.length}`,async()=>{
   const objects=names.map((n,i)=>localized(n,.95-i*.05,i?far:box)),f=fixture({objects,enabled});const r=plain(await f.run());neutral(r);

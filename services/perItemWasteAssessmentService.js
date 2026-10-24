@@ -36,7 +36,7 @@ function deterministic(items,captureId) {
    && productStateVeto(item,item.category,alignedIdentity(item,captureId))))
   throw new shared.RecognitionError("INVALID_RECOGNITION_REQUEST",400);
  return items.map(item=>{
-  if(item.category==="Unknown" && identityConflict(item,captureId))return assessment(item,"Unknown",
+  if(identityConflict(item,captureId))return assessment(item,"Unknown",
    item.analysisSource==="gemini_whole_image"?"insufficient_evidence":"existing_category");
   // Android assessment v1 only accepts reviewed_identity_rule for Gemini.
   // Keep Vision's established/Unknown category as existing_category until AI succeeds.
@@ -117,6 +117,9 @@ function createAssessmentService({env=process.env,transport=shared.postJson,auth
     if(assessments[index].category==="Unknown")reasons.identity_unproven++;
     return false;
    }
+   // Keep the deterministic Unknown row, but never bill a request to lift a
+   // conflict established by current-capture physical-object reconciliation.
+   if(identityConflict(item,capture.captureId))return false;
    // Structured assessment v1 has no empty/discarded-state evidence field.
    // Do not create a paid assessment just because this policy vetoed an old
    // catalog suggestion: its category/material facts cannot lift that veto.
@@ -143,9 +146,12 @@ function createAssessmentService({env=process.env,transport=shared.postJson,auth
     &&(item.analysisSource!=="gemini_whole_image"||enrichDiscoveryItem(item).category==="Unknown");
   });
   let aiStatus="not_requested";
-  if(env.WASTE_ITEM_ASSESSMENT_AI_ENABLED==="true"&&unknown.length){
+  if(env.WASTE_ITEM_ASSESSMENT_AI_ENABLED==="true"
+      &&(unknown.length||items.some(item=>identityConflict(item,capture.captureId)))){
    try{
+    // Exclusion must not bypass the existing all-owner ID/capture validation.
     const batch=assessmentBatch(capture,unknown,items);
+    if(unknown.length){
     const result=await remote(capture,batch.items,principal,signal);
     // validateResponse has already rejected duplicate/foreign IDs and stale capture/request IDs.
     const byId=new Map(result.assessments.map(a=>[batch.wireIds.get(a.itemId),a]));
@@ -244,6 +250,7 @@ function createAssessmentService({env=process.env,transport=shared.postJson,auth
      // Otherwise retain Gemini's reviewed_identity_rule mapping suggestion.
     }
     aiStatus="complete";
+    }
    }catch(error){aiStatus="unavailable";reasons.ai_unavailable=1;
     if(error?.code==="INVALID_RECOGNITION_REQUEST")reasons.request_rejected=1;
    }
