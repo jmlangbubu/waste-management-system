@@ -17,11 +17,22 @@ for(const source of ["google_vision_object_localization","gemini_whole_image"])
  for(const [label,expected] of [["Instant Noodle Packet","Residual"],["Instant Noodle Wrapper","Residual"],
   ["Empty Noodle Sachet","Residual"],["Coffee Packet","Residual"],["Coffee Sachet","Residual"],["Snack Wrapper","Residual"],
   ["Unopened Noodle Sachet",null],["Full Noodle Sachet",null],["Empty Noodle Sachet containing chemicals",null],
-  ["Possibly Empty Noodle Sachet",null],["Printed picture of Empty Noodle Sachet",null]])
+  ["Possibly Empty Noodle Sachet",null],["Printed picture of Empty Noodle Sachet",null],
+  ["Empty Instant Noodle Package","Residual"],["Discarded Instant Noodle Package","Residual"],
+  ["Instant Noodle Package",null],["Unopened Instant Noodle Package",null],["Sealed Instant Noodle Package",null],
+  ["Full Instant Noodle Package",null],["Empty Instant Noodle Package containing chemicals",null]])
   test(`physical packaging state ${source}: ${label}`,()=>{
    const item={...owner(label),analysisSource:source};assert.equal(automaticCategory(item),expected);
    assert.equal(item.observedIdentity,label);
   });
+test("noodle package aliases retain evidence and geometry and never use display text as proof",()=>{
+  for(const source of ["google_vision_object_localization","gemini_whole_image"]){
+    const item={...owner("Empty Instant Noodle Package"),analysisSource:source,itemId:"unchanged",captureId:"unchanged-capture"};
+    const before=structuredClone(item);assert.equal(automaticCategory(item),"Residual");assert.deepEqual(item,before);
+    assert.equal(automaticCategory({...item,boundingBox:{...box,right:box.left}}),null);
+    assert.equal(automaticCategory({...item,observedIdentity:"Item",itemName:"Empty Instant Noodle Package"}),null);
+  }
+});
 const practicalMappings={
  Recyclable:["Plastic Bottle","Water Bottle","PET Bottle","Ordinary Bottle","Beverage Can","Soda Can","Aluminum Can","Tin Can","Ordinary Can","Ordinary Container","Plastic Container","Empty Food Container","Glass Bottle","Glass Jar","Clean Newspaper","Clean Paper","Cardboard","Cardboard Box","Clean Metal Can","Recoverable Metal Scrap"],
  Residual:["Empty Snack Sachet","Empty Coffee Sachet","Empty Shampoo Sachet","Snack Wrapper","Candy Wrapper","Chip Wrapper","Instant Noodle Wrapper","Multilayer Food Packaging","Laminated Wrapper","Used Tissue","Disposable Diaper","Sanitary Pad","Disposable Mask","Broken Ceramic","Non-recoverable Household Packaging"],

@@ -2,7 +2,7 @@
 // Display only: never use these broad names as classification evidence.
 const { matchIdentity } = require("../gemini-waste-classifier-cloudrun/cropRecognition");
 const types = [
-  [/\binstant noodle (?:packet|packaging|sachet)\b/, "Instant Noodle Packet"],
+  [/\binstant noodle (?:packet|package|packaging|sachet)\b/, "Instant Noodle Packet"],
   [/\bcoffee (?:sachet|packet)\b/, "Coffee Sachet"],
   [/\bsnack (?:wrapper|wrapping|sachet|packet|packaging)\b/, "Snack Wrapper"],
   [/\bfood (?:wrapper|wrapping|sachet|packet|packaging)\b/, "Food Wrapper"],

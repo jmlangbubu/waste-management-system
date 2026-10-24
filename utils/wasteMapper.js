@@ -526,6 +526,11 @@ function mapWasteCategory({ analysisText = "", labels = [], objectName = "" } = 
 // evidence and apply hazard/conflict/product-state vetoes before accepting one.
 // No substring scoring or catch-all: an unidentified object is never Residual.
 const COMMON_OBJECT_CATEGORIES = new Map();
+// A package may still contain a usable product. Only explicit discarded/empty
+// physical-package identities extend the ordinary noodle-wrapper vocabulary.
+for (const name of ["empty instant noodle package", "discarded instant noodle package"]) {
+  COMMON_OBJECT_CATEGORIES.set(name, "Residual");
+}
 for (const [category, names] of [
   ["Special Waste", ["hazardous chemical waste", "hazardous chemical container", "chemical container with hazardous contents", "hazardous aerosol can", "aerosol can", "broken electronic device"]],
   ["Biodegradable", ["banana", "whole banana", "unpeeled banana", "ripe banana", "banana peel", "banana skin", "fruit peel", "fruit scraps", "vegetable scraps", "food scraps", "leaves", "leaf", "dry leaves", "grass", "grass clippings", "ordinary plant waste", "plant waste", "garden waste"]],
