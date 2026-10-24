@@ -46,8 +46,11 @@ const genericNames=new Set(["object","item","household object","household item",
   "container","can","packaging","packaged goods","bottled and jarred packaged goods",
   "packet","packets","sachet","sachets"]);
 const identityKey=name=>String(name||"").trim().toLowerCase().replace(/[\s_-]+/g," ");
+// Display refinement must never change the evidence used by later merge steps.
+const physicalName=item=>identityKey(item.observedIdentity||item.originalItemName||item.canonicalItem||item.itemName);
+const neutralIdentity=item=>/^(?:item|object|household item|household object|container)$/.test(physicalName(item));
 const generic=item=>{
-  const key=identityKey(item.itemName);
+  const key=physicalName(item);
   const shapeOnly=key.replace(/\b(?:white|black|blue|green|red|yellow|brown|gray|grey|clear|small|large|round)\s+/g,"").trim();
   return genericNames.has(key)||genericNames.has(shapeOnly);
 };
@@ -61,13 +64,29 @@ function alignedRegion(a,b) {
     && Math.abs((x.top+x.bottom-y.top-y.bottom)/2)<=.05*Math.min(x.bottom-x.top,y.bottom-y.top);
 }
 function compatibleIdentity(a,b) {
-  const words=item=>identityKey(item.itemName).split(" ");
+  const words=item=>physicalName(item).split(" ");
   const x=words(a),y=words(b);
-  if(x.every(word=>y.includes(word))||y.every(word=>x.includes(word)))return true;
+  const materials=words=>new Set(words.filter(word=>/^(?:steel|aluminum|aluminium|glass|plastic|pet|hdpe)$/.test(word))
+    .map(word=>word==="aluminium"?"aluminum":/^(?:pet|hdpe)$/.test(word)?"plastic":word));
+  const mx=materials(x),my=materials(y);
+  if(mx.size>1||my.size>1||(mx.size&&my.size&&[...mx][0]!==[...my][0]))return false;
+  // Arbitrary extra words may describe batteries, mixed materials or contents.
+  // Only exact originals or the bounded physical aliases below corroborate.
+  if(physicalName(a)===physicalName(b))return true;
+  // Physical aliases, NOT equal waste categories. Never strip adverse state.
+  const family=item=>{
+    const name=physicalName(item).replace(/^(?:(?:empty|discarded|clean|ordinary)\s+)+/,"");
+    if(/^(?:can|tin can|steel food tin|food can|beverage can|drink can|soda can|alumin(?:um|ium) can|steel can|metal can)$/.test(name))return "can";
+    if(/^(?:(?:plastic|pet|hdpe|glass)\s+)?(?:(?:water|drinking water|beverage|soda)\s+)?bottle$/.test(name))return "bottle";
+    if(/^instant noodle (?:packet|wrapper|sachet)$/.test(name))return "noodle-wrapper";
+    if(/^(?:snack|food|candy|chocolate|biscuit|chips)\s+(?:wrapper|sachet|packet)$/.test(name))return name;
+    return null;
+  };
+  if(family(a)&&family(a)===family(b))return true;
   // Only simple, image-localized packaging aliases. Geometry, uniqueness,
   // capture ownership, hazardous-identity checks and category safeguards are
   // enforced separately by merge(); these names alone prove no category.
-  const name=item=>identityKey(item.observedIdentity||item.itemName);
+  const name=physicalName;
   const n=[name(a),name(b)];
   const broad=/^(?:packet|sachet|food packet|food sachet)$/;
   const specific=/^(?:(?:snack|food|instant noodle|coffee)\s+)(?:packet|sachet)$/;
@@ -75,7 +94,7 @@ function compatibleIdentity(a,b) {
   return !n.some(label=>forbidden.test(label))
     && ((broad.test(n[0])&&specific.test(n[1]))||(broad.test(n[1])&&specific.test(n[0])));
 }
-const containerIdentity=item=>/\b(bottles?|jars?|containers?|cans?|cups?|box(?:es)?|bags?)\b/.test(identityKey(item.itemName));
+const containerIdentity=item=>/\b(bottles?|jars?|containers?|cans?|cups?|box(?:es)?|bags?)\b/.test(physicalName(item));
 // Server-only provenance; never add fields to Android's strict discovery schema.
 const classificationEvidence=new WeakMap();
 const evidenceSnapshot=item=>JSON.stringify([item.itemId,item.category,item.canonicalItem,item.observedIdentity,
@@ -153,25 +172,54 @@ function merge(vision,proposals,samePhysicalObject,capture,hasNormalizationConfl
   const uniqueAlias=(a,b)=>nearAlias(a,b)&&!all.some(other=>other.itemId!==a.itemId&&other.itemId!==b.itemId
     &&(related(a,other)||related(b,other)));
   const matchesRegion=(a,b)=>currentObservation(a)&&currentObservation(b)&&(samePhysicalObject(a,b)||uniqueAlias(a,b));
-  // Trust correspondence only for a unique current pair. Category Unknown is
+  // Multiple descriptions may corroborate one physical owner, but multiple
+  // localized Vision owners or a bridging/competing region are still ambiguous.
+  const corroboratedGroup=(owner,proposal)=>{
+    if(!capture?.captureId || !currentObservation(owner)||!currentObservation(proposal)
+        || !alignedRegion(owner,proposal)||!samePhysicalObject(owner,proposal))return false;
+    const group=all.filter(item=>item.itemId===owner.itemId||item.itemId===proposal.itemId
+      || related(item,owner)||related(item,proposal));
+    if(group.filter(item=>item.analysisSource==="google_vision_object_localization").length>1
+        || group.some(item=>!currentObservation(item)||item.confirmed
+          || all.filter(other=>other.itemId===item.itemId).length!==1
+          || !alignedRegion(owner,item)||!samePhysicalObject(owner,item)
+          || hasNormalizationConflict(item)
+          || unsafeIdentity({...item,category:"Unknown"})||unreliablePhysicalIdentity({...item,category:"Unknown"})))return false;
+    const specific=group.filter(item=>!neutralIdentity(item));
+    if(!specific.length || specific.some((item,i)=>specific.slice(i+1).some(other=>!compatibleIdentity(item,other)))
+        || group.some(item=>physicalName(item)==="container")&&!specific.every(containerIdentity))return false;
+    const categories=specific.map(item=>automaticCategory({...item,category:"Unknown"})).filter(Boolean);
+    if(!categories.length||new Set(categories).size!==1)return false;
+    const anchor=specific.find(item=>automaticCategory({...item,category:"Unknown"})===categories[0]);
+    // Use the established catalog anchor, but let EVERY original observation
+    // veto explicit adverse state. An alias alone grants no contents/material facts.
+    if(group.some(item=>productStateVeto(anchor,categories[0],physicalName(item))))return false;
+    return !all.some(other=>!group.includes(other)&&group.some(item=>related(item,other)));
+  };
+  // Trust a unique current pair or strictly corroborating physical group. Unknown is
   // not physical uncertainty; use the established identity predicate on the
   // original evidence, including for already-categorized observations.
   const trustedCorrespondence=(owner,proposal)=>currentObservation(owner)&&currentObservation(proposal)
     && [owner,proposal].every(item=>all.filter(other=>other.itemId===item.itemId).length===1
       && !unreliablePhysicalIdentity({...item,category:"Unknown"}))
-    && !all.some(other=>other.itemId!==owner.itemId && other.itemId!==proposal.itemId
-      && (related(other,owner)||related(other,proposal)));
+    && (!all.some(other=>other.itemId!==owner.itemId && other.itemId!==proposal.itemId
+      && (related(other,owner)||related(other,proposal))) || corroboratedGroup(owner,proposal));
   // An exact neutral observation supplies no contradictory physical identity.
-  // Ignore that mismatch only for an independently supported recyclable can/
-  // bottle and a unique, tightly aligned current-capture Gemini observation.
+  // Preserve supported can/bottle suggestions and established exact biological/
+  // special-waste identities against a unique, tightly aligned neutral label.
   // This cannot grant a category, clear a prior conflict, or erase adverse state.
-  const neutralCorrespondence=(owner,proposal)=>!!capture?.captureId
+  const neutralCorrespondence=(owner,proposal)=>{
+    const mapped=automaticCategory({...owner,category:"Unknown"});
+    const established=["Biodegradable","Special Waste"].includes(owner.category)&&mapped===owner.category;
+    const ordinary=/\b(?:can|bottle)\b/.test(physicalName(owner))&&mapped==="Recyclable"
+      && !unsafeIdentity({...owner,category:"Unknown"});
+    return !!capture?.captureId
     && proposal.analysisSource==="gemini_whole_image" && proposal.category==="Unknown"
-    && /^(?:item|object|household item|household object)$/.test(identityKey(proposal.observedIdentity))
-    && /\b(?:can|bottle)\b/.test(identityKey(owner.observedIdentity||owner.originalItemName||owner.canonicalItem))
-    && automaticCategory({...owner,category:"Unknown"})==="Recyclable"
-    && !unsafeIdentity({...owner,category:"Unknown"}) && !unsafeIdentity(proposal)
+    && neutralIdentity(proposal)
+    && (ordinary || established&&physicalName(proposal)!=="container")
+    && !unsafeIdentity(proposal)
     && alignedRegion(owner,proposal) && trustedCorrespondence(owner,proposal);
+  };
   // An exact generic Can observation adds no contrary contents evidence to a
   // uniquely localized Paint Can. Never extend this exception to other hazards,
   // nearby/nested regions, stale captures, or a third competing observation.
@@ -185,7 +233,8 @@ function merge(vision,proposals,samePhysicalObject,capture,hasNormalizationConfl
         && (related(other,a)||related(other,b)));
   };
   const recordConflict=item=>{
-    if(capture?.captureId && item.category==="Unknown")classificationEvidence.set(item,
+    // A catalog category cannot exempt this physical owner from adverse evidence.
+    if(capture?.captureId && currentObservation(item))classificationEvidence.set(item,
       {captureId:capture.captureId,conflict:true,snapshot:evidenceSnapshot(item)});
   };
   // The initial list can itself contain conflicting observations of one region.
@@ -228,7 +277,8 @@ function merge(vision,proposals,samePhysicalObject,capture,hasNormalizationConfl
         if(unsafeIdentity(match)||unsafeIdentity(proposal))recordConflict(match);
         continue;
       }
-      const neutral=neutralCorrespondence(match,proposal);
+      const neutral=neutralCorrespondence(match,proposal)
+        || neutralIdentity(proposal)&&corroboratedGroup(match,proposal);
       if(match.analysisSource==="gemini_whole_image") {
         if(paintCanRefinement(match,proposal))continue;
         if(!neutral && (!compatibleIdentity(match,proposal) || unsafeIdentity(match)!==unsafeIdentity(proposal))) {
@@ -237,8 +287,14 @@ function merge(vision,proposals,samePhysicalObject,capture,hasNormalizationConfl
         }
         continue;
       }
-      const observations=ranked.filter(item=>!generic(item)&&alignedRegion(match,item)&&samePhysicalObject(match,item));
-      const conflicting=observations.some((item,i)=>observations.slice(i+1).some(other=>!compatibleIdentity(item,other)));
+      // Catalog-supported broad physical classes (Bottle/Can) can contradict
+      // another identity; only neutral/taxonomic descriptions lack that evidence.
+      const observations=ranked.filter(item=>!neutralIdentity(item)
+        &&(!generic(item)||automaticCategory({...item,category:"Unknown"}))
+        &&alignedRegion(match,item)&&samePhysicalObject(match,item));
+      const conflicting=observations.some((item,i)=>observations.slice(i+1).some(other=>!compatibleIdentity(item,other)
+        && ((!generic(item)&&!generic(other))
+          || (automaticCategory({...item,category:"Unknown"})&&automaticCategory({...other,category:"Unknown"})))));
       const broad=generic(match) && !/\b(bottles?|jars?|cans?|cups?|bags?|box(?:es)?)\b/.test(identityKey(match.itemName));
       const identityMismatch=(!neutral && !broad && !compatibleIdentity(match,proposal))
         || unsafeIdentity(match)!==unsafeIdentity(proposal);
@@ -309,15 +365,16 @@ function merge(vision,proposals,samePhysicalObject,capture,hasNormalizationConfl
     if(capture?.captureId && owner.analysisSource==="google_vision_object_localization"
         && owner.category==="Unknown" && aligned && !owner.confirmed
         && !identityConflict(owner,capture.captureId) && !unsafeIdentity(owner)) {
-      const mapped=automaticCategory({...owner,observedIdentity:aligned});
+      // A valid corroborating alias must not erase the owner's independently
+      // supported original identity just because the alias is not a catalog key.
+      const mapped=automaticCategory({...owner,observedIdentity:aligned})||automaticCategory(owner);
       if(mapped && !productStateVeto(owner,mapped,aligned)) {
         owner.category=mapped;owner.requiresConfirmation=true;
         evidence={...evidence,snapshot:evidenceSnapshot(owner)};
         classificationEvidence.set(owner,evidence);
       }
     }
-    const conflictingStream=["Residual","Recyclable"].includes(owner.category)
-      && identityConflict(owner,capture?.captureId);
+    const conflictingStream=identityConflict(owner,capture?.captureId);
     if(!conflictingStream && !productStateVeto(owner,owner.category,aligned))continue;
     owner.category="Unknown";
     owner.requiresConfirmation=true;
