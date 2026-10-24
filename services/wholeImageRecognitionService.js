@@ -161,6 +161,17 @@ function merge(vision,proposals,samePhysicalObject,capture,hasNormalizationConfl
       && !unreliablePhysicalIdentity({...item,category:"Unknown"}))
     && !all.some(other=>other.itemId!==owner.itemId && other.itemId!==proposal.itemId
       && (related(other,owner)||related(other,proposal)));
+  // An exact neutral observation supplies no contradictory physical identity.
+  // Ignore that mismatch only for an independently supported recyclable can/
+  // bottle and a unique, tightly aligned current-capture Gemini observation.
+  // This cannot grant a category, clear a prior conflict, or erase adverse state.
+  const neutralCorrespondence=(owner,proposal)=>!!capture?.captureId
+    && proposal.analysisSource==="gemini_whole_image" && proposal.category==="Unknown"
+    && /^(?:item|object|household item|household object)$/.test(identityKey(proposal.observedIdentity))
+    && /\b(?:can|bottle)\b/.test(identityKey(owner.observedIdentity||owner.originalItemName||owner.canonicalItem))
+    && automaticCategory({...owner,category:"Unknown"})==="Recyclable"
+    && !unsafeIdentity({...owner,category:"Unknown"}) && !unsafeIdentity(proposal)
+    && alignedRegion(owner,proposal) && trustedCorrespondence(owner,proposal);
   // An exact generic Can observation adds no contrary contents evidence to a
   // uniquely localized Paint Can. Never extend this exception to other hazards,
   // nearby/nested regions, stale captures, or a third competing observation.
@@ -217,9 +228,10 @@ function merge(vision,proposals,samePhysicalObject,capture,hasNormalizationConfl
         if(unsafeIdentity(match)||unsafeIdentity(proposal))recordConflict(match);
         continue;
       }
+      const neutral=neutralCorrespondence(match,proposal);
       if(match.analysisSource==="gemini_whole_image") {
         if(paintCanRefinement(match,proposal))continue;
-        if(!compatibleIdentity(match,proposal) || unsafeIdentity(match)!==unsafeIdentity(proposal)) {
+        if(!neutral && (!compatibleIdentity(match,proposal) || unsafeIdentity(match)!==unsafeIdentity(proposal))) {
           match.requiresConfirmation=true;
           if(capture?.captureId && proposal.analysisSource==="gemini_whole_image" && belongsToCapture(proposal,capture))recordConflict(match);
         }
@@ -228,7 +240,7 @@ function merge(vision,proposals,samePhysicalObject,capture,hasNormalizationConfl
       const observations=ranked.filter(item=>!generic(item)&&alignedRegion(match,item)&&samePhysicalObject(match,item));
       const conflicting=observations.some((item,i)=>observations.slice(i+1).some(other=>!compatibleIdentity(item,other)));
       const broad=generic(match) && !/\b(bottles?|jars?|cans?|cups?|bags?|box(?:es)?)\b/.test(identityKey(match.itemName));
-      const identityMismatch=(!broad && !compatibleIdentity(match,proposal))
+      const identityMismatch=(!neutral && !broad && !compatibleIdentity(match,proposal))
         || unsafeIdentity(match)!==unsafeIdentity(proposal);
       // Can/Bottle/Container are broad but valid physical classes. Unlike Item
       // or a scene taxonomy, they may establish a unique localized identity.

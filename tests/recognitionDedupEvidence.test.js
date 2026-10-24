@@ -3,7 +3,7 @@
 const {test}=require("node:test"),assert=require("node:assert/strict"),crypto=require("node:crypto");
 const whole=require("../gemini-waste-classifier-cloudrun/wholeImageRecognition");
 const {merge,identityConflict}=require("../services/wholeImageRecognitionService");
-const {samePhysicalObject,buildScanSummary}=require("../services/wasteAnalysisService");
+const {samePhysicalObject,buildScanSummary,normalizeDetectedItems}=require("../services/wasteAnalysisService");
 const {createAssessmentService}=require("../services/perItemWasteAssessmentService");
 const {withDisplayNames,shortObjectName}=require("../services/wasteDisplayNameService");
 const box={left:.1,top:.1,right:.3,bottom:.5};
@@ -27,6 +27,72 @@ function ownersPreserved(items,originals) {
    assert.deepEqual(item[key],owner[key],key);
  }
 }
+for(const source of ["vision","gemini"])for(const label of ["Can","Bottle"])
+ for(const neutral of ["Item","Object","Household item","Household object"])
+ test(`unique neutral ${neutral} does not veto original ${source} ${label}`,async()=>{
+  const c=capture(),owner=source==="vision"
+   ?normalizeDetectedItems([{name:label,confidence:.93,boundingBox:box}],"google_vision_object_localization")[0]
+   :gemini(c,label),proposal=gemini(c,neutral),before=structuredClone([owner,proposal]);
+  const items=merge(source==="vision"?[owner]:[],source==="vision"?[proposal]:[owner,proposal],samePhysicalObject,c);
+  assert.equal(items.length,1);assert.equal(items[0].itemId,owner.itemId);
+  assert.equal(identityConflict(items[0],c.captureId),false);ownersPreserved(items,[owner]);
+  assert.equal(items[0].itemName,owner.itemName);
+  const s=service(insufficient,{env:{WASTE_ITEM_ASSESSMENT_AI_ENABLED:"false"}}),sidecar=await s.assess({capture:c,items,principal:5});
+  assert.equal(sidecar.items[0].category,"Recyclable");assert.equal(sidecar.items[0].itemId,owner.itemId);
+  assert.equal(sidecar.items[0].assessmentSource,source==="vision"?"existing_category":"reviewed_identity_rule");
+  assert.equal(sidecar.items[0].requiresConfirmation,true);assert.equal(sidecar.captureId,c.captureId);
+  assert.equal(s.calls(),0);assert.deepEqual([owner,proposal],before);
+ });
+
+test("neutral evidence never erases competing hazardous or unopened observations",async()=>{
+ for(const label of ["Chemical Can","Paint Can","Aerosol Can","Unopened Can","Can with unknown contents"]){
+  const c=capture(),owner=normalizeDetectedItems([{name:"Can",confidence:.93,boundingBox:box}],"google_vision_object_localization")[0];
+  for(const proposals of [[gemini(c,label),gemini(c,"Item")],[gemini(c,"Item"),gemini(c,label)]]){
+   const items=merge([owner],proposals,samePhysicalObject,c);
+   assert.equal(items.length,1);assert.equal(items[0].itemId,owner.itemId);assert.deepEqual(items[0].boundingBox,box);
+   assert.equal(items[0].category,"Unknown",label);assert.equal(identityConflict(items[0],c.captureId),true,label);
+   const s=service(insufficient,{env:{WASTE_ITEM_ASSESSMENT_AI_ENABLED:"false"}});
+   assert.equal((await s.assess({capture:c,items,principal:5})).items[0].category,"Unknown");assert.equal(s.calls(),0);
+  }
+ }
+});
+
+test("neutral observations do not change an established Special Waste owner",async()=>{
+ for(const label of ["Paint Can","Aerosol Can","Battery","Charger"]){
+  const c=capture(),owner=normalizeDetectedItems([{name:label,confidence:.93,boundingBox:box}],"google_vision_object_localization")[0];
+  assert.equal(owner.category,"Special Waste");
+  const items=merge([owner],[gemini(c,"Item")],samePhysicalObject,c);
+  assert.equal(items.length,1);ownersPreserved(items,[owner]);
+  const s=service(insufficient,{env:{WASTE_ITEM_ASSESSMENT_AI_ENABLED:"false"}});
+  assert.equal((await s.assess({capture:c,items,principal:5})).items[0].category,"Special Waste");
+ }
+});
+
+test("neutral exception needs tight geometry and unique correspondence",()=>{
+ const c=capture(),owners=normalizeDetectedItems([{name:"Can",confidence:.93,boundingBox:box}],"google_vision_object_localization");
+ // A competing same-region observation disables the neutral exception.
+ const competing={...owners[0],itemId:"other_owner"};
+ const ambiguous=merge([owners[0],competing],[gemini(c,"Item")],samePhysicalObject,c);
+ assert.equal(ambiguous[0].category,"Unknown");
+ // Partial overlap and actual nested objects must remain separate.
+ for(const b of [{...box,left:.2,right:.4},{left:.15,top:.2,right:.2,bottom:.3}]){
+  const items=merge(owners,[gemini(c,"Item",b)],samePhysicalObject,c);
+  assert.equal(items.length,2);assert.equal(items[0].category,"Recyclable");
+ }
+ const unknown=merge([],[gemini(c,"Item")],samePhysicalObject,c);
+ assert.equal(unknown.length,1);assert.equal(unknown[0].category,"Unknown");
+});
+
+test("neutral Can observation preserves independent Can wrapper Bottle category ownership",async()=>{
+ const c=capture(),names=["Can","Discarded instant noodle wrapper","Bottle"],
+  boxes=[box,{...box,left:.4,right:.6},{...box,left:.7,right:.9}],
+  owners=normalizeDetectedItems(names.map((name,i)=>({name,confidence:.93,boundingBox:boxes[i]})),"google_vision_object_localization");
+ const items=merge(owners,[gemini(c,"Item")],samePhysicalObject,c);
+ ownersPreserved(items,owners);assert.equal(items.length,3);assert.equal(new Set(items.map(i=>i.itemId)).size,3);
+ const s=service(insufficient,{env:{WASTE_ITEM_ASSESSMENT_AI_ENABLED:"false"}}),sidecar=await s.assess({capture:c,items,principal:5});
+ assert.deepEqual(sidecar.items.map(i=>i.category),["Recyclable","Residual","Recyclable"]);
+ assert.deepEqual(sidecar.items.map(i=>i.itemId),owners.map(i=>i.itemId));assert.equal(s.calls(),0);
+});
 for(const label of ["Container","Sunscreen container"])test(`unique neutral alias suppresses only the duplicate: ${label}`,async()=>{
  const c=capture(),v=vision(label),g=gemini(c,"Item",drift),before=structuredClone([v,g]);
  for(const [initial,proposals]of [[[v],[g]],[[g],[v]]]){
