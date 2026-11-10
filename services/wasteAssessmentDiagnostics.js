@@ -1,4 +1,54 @@
 "use strict";
+const {RecognitionError}=require("../gemini-waste-classifier-cloudrun/cropRecognition");
+
+const DISCOVERY_ERRORS=new Map([
+ ["INVALID_PROVIDER_RESPONSE","invalid_response"],["RECOGNITION_TIMEOUT","timeout"],
+ ["RECOGNITION_CANCELLED","cancelled"],["RECOGNITION_UNAVAILABLE","unavailable"],
+ ...["INVALID_RECOGNITION_REQUEST","RECOGNITION_PAYLOAD_TOO_LARGE","RECOGNITION_UNAUTHORIZED",
+  "RECOGNITION_RATE_LIMITED","RECOGNITION_BUSY"].map(code=>[code,"rejected"])
+]);
+const DISCOVERY_FAILURES=new Set(["failed",...DISCOVERY_ERRORS.values()]);
+// Diagnostic vocabulary only. It is not a recognition or classification rule.
+const GENERIC_IDENTITIES=new Set(["object","item","household object","household item","bottle","bottles","jar","jars",
+ "container","can","packaging","packaged goods","bottled and jarred packaged goods","packet","packets","sachet","sachets"]);
+const VISION="google_vision_object_localization",GEMINI="gemini_whole_image";
+function discoveryFailureStatus(error) {
+ return error instanceof RecognitionError ? DISCOVERY_ERRORS.get(error.code)||"failed" : "failed";
+}
+const boundedDiscoveryItems=value=>Array.isArray(value)?value.slice(0,8):[];
+function localizedDiscoveryBox(box) {
+ return !!box && typeof box==="object" && Object.keys(box).sort().join(",")==="bottom,left,right,top"
+  && [box.left,box.top,box.right,box.bottom].every(n=>Number.isFinite(n)&&n>=0&&n<=1)
+  && box.left<box.right && box.top<box.bottom;
+}
+function logDiscovery(failure,proposals,owners,hasAlignment,logger=console) {
+ try {
+  const validated=failure===undefined && Array.isArray(proposals);
+  const candidates=validated?boundedDiscoveryItems(proposals):[];
+  const status=validated?(candidates.length?"ok":"empty"):(DISCOVERY_FAILURES.has(failure)?failure:"failed");
+  let generic=0,specific=0,localized=0,identityOnly=0;
+  for(const candidate of candidates) {
+   const label=candidate?.observedIdentity;
+   if(typeof label==="string" && label.length<=128 && label.trim() && !/[\x00-\x1f<>]/.test(label)) {
+    const key=label.trim().toLowerCase().replace(/[\s_-]+/g," ");
+    const shapeOnly=key.replace(/\b(?:white|black|blue|green|red|yellow|brown|gray|grey|clear|small|large|round)\s+/g,"").trim();
+    if(GENERIC_IDENTITIES.has(key)||GENERIC_IDENTITIES.has(shapeOnly))generic++;
+    else specific++;
+   }
+   if(localizedDiscoveryBox(candidate?.boundingBox))localized++;
+   else if(candidate && candidate.boundingBox===undefined && candidate.recognitionState==="identity_only")identityOnly++;
+  }
+  const items=boundedDiscoveryItems(owners);
+  const vision=items.filter(item=>item?.analysisSource===VISION);
+  const gemini=items.filter(item=>item?.analysisSource===GEMINI).length;
+  const unknown=items.filter(item=>item?.category==="Unknown").length;
+  // This proves alignment for a surviving owner, not how many proposals merged.
+  const aligned=typeof hasAlignment==="function"?vision.filter(item=>hasAlignment(item)===true).length:0;
+  const counts=[candidates.length,generic,specific,localized,identityOnly,items.length,vision.length,gemini,aligned,unknown];
+  if(!counts.every(n=>Number.isSafeInteger(n)&&n>=0&&n<=8))return;
+  logger.info(`[WasteScanDiscovery] status=${status} proposals=${candidates.length} generic=${generic} specific=${specific} localized=${localized} identity_only=${identityOnly} physical=${items.length} vision_owned=${vision.length} gemini_owned=${gemini} aligned_vision_owners=${aligned} final_unknown=${unknown}`);
+ } catch (_) { /* A diagnostic failure cannot fail the scan. */ }
+}
 // Operational counters only: no capture IDs, usernames, images, original labels or secrets.
 const STATUSES=new Set(["complete","unavailable","not_requested"]);
 const CATEGORIES=new Set(["Biodegradable","Recyclable","Residual","Special Waste"]);
@@ -44,4 +94,5 @@ function logAssessment(result,totalItems,logger=console,physicalItems=[]) {
  if(reasons)logger.info(`[WasteScanReasons] ${REASONS.map(reason=>`${reason}=${reasons[reason]}`).join(" ")}`);
  return s;
 }
-module.exports={summarizeAssessment,logAssessment,createAssessmentReasons,recordAssessmentReasons,assessmentReasonCounts};
+module.exports={summarizeAssessment,logAssessment,createAssessmentReasons,recordAssessmentReasons,assessmentReasonCounts,
+ discoveryFailureStatus,logDiscovery};

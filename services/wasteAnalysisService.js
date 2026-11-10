@@ -723,8 +723,14 @@ async function analyzeWaste(input) {
   }
   const discovery=require("./wholeImageRecognitionService");
   // One attempt per capture, concurrently with primary classification; optional failure is isolated.
+  let discoveryFailure;
   const observations=discovery.discoverObjects({...input.objectDiscovery,image:input.image},{principal:input.principal,signal:input.signal})
-    .then(result=>result.objects).catch(()=>[]);
+    .then(result=>result.objects).catch(error=>{
+      discoveryFailure="failed";
+      try {discoveryFailure=require("./wasteAssessmentDiagnostics").discoveryFailureStatus(error);}
+      catch (_) { /* Preserve the original discovery fallback. */ }
+      return [];
+    });
   const legacy=await analyzeWasteLegacy({...input,boundedDiscovery:true});
   const objects=await observations;
   const detectedItems=discovery.merge(legacy.detectedItems || [],objects,samePhysicalObject,input.objectDiscovery,
@@ -735,7 +741,8 @@ async function analyzeWaste(input) {
   if(process.env.WASTE_ITEM_ASSESSMENT_ENABLED==="true") {
     try {categoryAssessments=await require("./perItemWasteAssessmentService").assessCapture({capture:{...input.objectDiscovery,image:input.image},items:detectedItems,primary,principal:input.principal,signal:input.signal});}
     catch(_) { /* Optional assessment failure must never replace a valid primary scan. */ }
-    require("./wasteAssessmentDiagnostics").logAssessment(categoryAssessments,detectedItems.length,undefined,detectedItems);
+    try {require("./wasteAssessmentDiagnostics").logAssessment(categoryAssessments,detectedItems.length,undefined,detectedItems);}
+    catch (_) { /* Diagnostic sink failures do not affect analysis. */ }
   }
   if(input.independentCategoryV2 && categoryAssessments?.schemaVersion===1
       && categoryAssessments.captureId===input.objectDiscovery.captureId) {
@@ -754,6 +761,10 @@ async function analyzeWaste(input) {
     }
     primary=reconcilePrimary(legacy,detectedItems);
   }
+  try {
+    require("./wasteAssessmentDiagnostics").logDiscovery(discoveryFailure,objects,detectedItems,
+      item=>!!discovery.alignedIdentity(item,input.objectDiscovery.captureId),console);
+  } catch (_) { /* Discovery diagnostics are independent of assessment and best effort. */ }
   return withDisplayNames({...primary,detectedItems,scanSummary:buildScanSummary(detectedItems),identityObservations:objects.filter(item=>!item.boundingBox),...(categoryAssessments?{categoryAssessments}:{})});
 }
 
