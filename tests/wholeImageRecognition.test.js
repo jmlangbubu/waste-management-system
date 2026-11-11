@@ -424,3 +424,317 @@ test("final physical count and assessments agree before any per-item assessment,
   assert.deepEqual(service.calls,{primary:1,vision:1,discovery:1});
  }
 });
+
+// Option A uses synthetic geometry, not reconstructed screenshot coordinates.
+// Physical truth is a fixture annotation, never an extra input to recognition.
+function optionACapture() {
+  return {
+    requestId: "11111111-1111-4111-8111-111111111111",
+    captureId: "22222222-2222-4222-8222-222222222222",
+    image: jpeg,
+    width: 600,
+    height: 400,
+    orientation: "upright"
+  };
+}
+
+function optionAVision(name, box, ordinal = 1) {
+  return {
+    itemId: "synthetic_vision_" + ordinal,
+    itemName: name,
+    canonicalItem: name.toLowerCase(),
+    observedIdentity: name,
+    originalItemName: name,
+    category: "Unknown",
+    confidence: .8,
+    captureId: optionACapture().captureId,
+    boundingBox: whole.box(box),
+    analysisSource: "google_vision_object_localization"
+  };
+}
+
+function optionAReplay(t, initial, objects) {
+  const capture = optionACapture();
+  const normalized = whole.normalize(capture, { objects });
+  assert.deepEqual(whole.validateResponse(capture, normalized), normalized);
+  const before = structuredClone({ initial, normalized, capture });
+  const direct = merge(initial, normalized.objects, analysis.samePhysicalObject, capture);
+  assert.deepEqual({ initial, normalized, capture }, before);
+
+  const observedInitial = structuredClone(initial);
+  const observedProposals = structuredClone(normalized.objects);
+  const observations = [];
+  const observingMatcher = (left, right) => {
+    const matched = analysis.samePhysicalObject(left, right);
+    observations.push({ ordinal: observations.length + 1, matched });
+    return matched;
+  };
+  const observed = merge(observedInitial, observedProposals, observingMatcher, capture);
+  assert.deepEqual(observed, direct);
+  assert.deepEqual(observedInitial, initial);
+  assert.deepEqual(observedProposals, normalized.objects);
+  assert.deepEqual({ initial, normalized, capture }, before);
+  assert.ok(observations.length > 0, "replay must compare physical regions");
+  assert.ok(observations.every(entry => typeof entry.matched === "boolean"));
+  t.diagnostic("synthetic matcher calls=" + observations.length
+    + ", true=" + observations.filter(entry => entry.matched).length);
+  return { owners: direct, proposals: normalized.objects, observations, capture };
+}
+
+function optionAAssertSurvivor(actual, expected) {
+  for (const key of ["itemId", "itemName", "observedIdentity", "canonicalItem", "category",
+    "boundingBox", "analysisSource", "regionId", "captureId", "originalItemName", "identitySource",
+    "localizationSource"]) {
+    assert.deepEqual(actual[key], expected[key], "survivor " + key);
+  }
+  for (const key of ["recognitionState", "requiresConfirmation", "geometrySpace", "schemaVersion", "confidence"]) {
+    if (Object.hasOwn(expected, key)) {
+      assert.ok(Object.hasOwn(actual, key), "survivor has " + key);
+      assert.deepEqual(actual[key], expected[key], "survivor " + key);
+    }
+  }
+}
+
+function optionAAssertAssessmentOwners(sidecar, owners) {
+  const ids = sidecar.items.map(row => row.itemId);
+  assert.equal(ids.length, owners.length, "exact assessment row count");
+  assert.equal(new Set(ids).size, ids.length, "unique assessment item IDs");
+  assert.deepEqual([...ids].sort(), owners.map(owner => owner.itemId).sort(), "assessment owner correspondence");
+}
+
+test("Option A: exact repeated synthetic Milo sachet observations retain one original owner", t => {
+  const result = optionAReplay(t, [], [
+    object("Snack Sachet", [100,100,500,500]),
+    object("Snack Sachet", [100,100,500,500])
+  ]);
+  assert.equal(result.proposals[0].itemId, result.proposals[1].itemId);
+  assert.equal(result.owners.length, 1);
+  optionAAssertSurvivor(result.owners[0], result.proposals[0]);
+  assert.equal(result.owners[0].category, result.proposals[0].category);
+  assert.ok(result.observations.some(entry => entry.matched));
+});
+
+test("Option A: tiny and near-boundary accepted sachet jitter preserve the first Gemini owner", t => {
+  for (const displacement of [2,19]) {
+    const result = optionAReplay(t, [], [
+      object("Snack Sachet", [100,100,500,500]),
+      object("Snack Sachet", [100,100 + displacement,500,500 + displacement])
+    ]);
+    assert.notEqual(result.proposals[0].itemId, result.proposals[1].itemId);
+    assert.equal(analysis.samePhysicalObject(...result.proposals), true);
+    assert.equal(result.owners.length, 1);
+    optionAAssertSurvivor(result.owners[0], result.proposals[0]);
+    assert.ok(result.observations.some(entry => entry.matched));
+  }
+});
+
+test("Option A: declared same-object jitter outside strict geometry is conservatively retained", t => {
+  // This declaration is not evidence supplied to merge. The same payload can
+  // also describe two overlapping physical sachets, so two owners is no defect.
+  const result = optionAReplay(t, [], [
+    object("Snack Sachet", [100,100,500,500]),
+    object("Snack Sachet", [100,121,500,521])
+  ]);
+  assert.equal(analysis.samePhysicalObject(...result.proposals), false);
+  assert.equal(result.owners.length, 2);
+  result.owners.forEach((owner, index) => optionAAssertSurvivor(owner, result.proposals[index]));
+  assert.ok(result.observations.every(entry => !entry.matched));
+});
+
+test("Option A: adjacent independent wrappers retain both IDs despite equal labels", t => {
+  const result = optionAReplay(t, [], [
+    object("Food Wrapper", [100,100,500,300]),
+    object("Food Wrapper", [100,310,500,510])
+  ]);
+  assert.equal(result.owners.length, 2);
+  assert.equal(new Set(result.owners.map(owner => owner.itemId)).size, 2);
+  result.owners.forEach((owner, index) => optionAAssertSurvivor(owner, result.proposals[index]));
+  assert.ok(result.observations.every(entry => !entry.matched));
+});
+
+test("Option A: partially overlapping separate sachets remain independent in either order", t => {
+  const objects = [
+    object("Snack Sachet", [100,100,500,400]),
+    object("Snack Sachet", [100,300,500,600])
+  ];
+  for (const ordered of [objects, [...objects].reverse()]) {
+    const result = optionAReplay(t, [], ordered);
+    assert.equal(analysis.samePhysicalObject(...result.proposals), false);
+    assert.equal(result.owners.length, 2);
+    result.owners.forEach((owner, index) => optionAAssertSurvivor(owner, result.proposals[index]));
+    assert.ok(result.observations.every(entry => !entry.matched));
+  }
+});
+
+test("Option A: nested physical sachet and larger wrapper retain separate owners", t => {
+  const result = optionAReplay(t, [], [
+    object("Food Wrapper", [100,100,900,900]),
+    object("Snack Sachet", [300,300,500,500])
+  ]);
+  assert.equal(analysis.samePhysicalObject(...result.proposals), false);
+  assert.equal(result.owners.length, 2);
+  for (const proposal of result.proposals) {
+    optionAAssertSurvivor(result.owners.find(owner => owner.itemId === proposal.itemId), proposal);
+  }
+  assert.ok(result.observations.every(entry => !entry.matched));
+});
+
+test("Option A: different products with identical broad labels are never paired by their names", t => {
+  // Declared product A is partly occluded behind product B. Neither brand nor
+  // declared product identity is passed to the production matcher.
+  const result = optionAReplay(t, [], [
+    object("Food Wrapper", [150,100,600,450]),
+    object("Food Wrapper", [250,400,800,750])
+  ]);
+  assert.equal(result.owners.length, 2);
+  assert.ok(result.owners.every(owner => owner.category === "Unknown"));
+  result.owners.forEach((owner, index) => optionAAssertSurvivor(owner, result.proposals[index]));
+  assert.ok(result.observations.every(entry => !entry.matched));
+});
+
+test("Option A: compatible cross-provider jitter preserves the original Vision owner", t => {
+  const initial = [optionAVision("Snack Sachet", [100,100,500,500])];
+  const result = optionAReplay(t, initial, [object("Snack Sachet", [100,125,500,525])]);
+  assert.equal(analysis.samePhysicalObject(initial[0], result.proposals[0]), true);
+  assert.equal(result.owners.length, 1);
+  // Existing merge annotates the supporting identity source, while the
+  // physical owner's analysisSource and original evidence stay with Vision.
+  optionAAssertSurvivor(result.owners[0], {
+    ...initial[0], identitySource: "gemini_whole_image", requiresConfirmation: true
+  });
+  assert.equal(result.owners[0].identityObservation, result.proposals[0].itemName);
+  assert.equal(result.owners[0].confidence, initial[0].confidence);
+  assert.equal(result.owners[0].category, "Unknown");
+  assert.ok(result.observations.some(entry => entry.matched));
+});
+
+test("Option A: exact cross-provider sachet versus wrapper geometry keeps one uncertain Vision owner", t => {
+  const initial = [optionAVision("Snack Sachet", [100,100,500,500])];
+  const result = optionAReplay(t, initial, [object("Food Wrapper", [100,100,500,500])]);
+  assert.equal(analysis.samePhysicalObject(initial[0], result.proposals[0]), true);
+  assert.equal(result.owners.length, 1);
+  optionAAssertSurvivor(result.owners[0], {
+    ...initial[0], identitySource: "gemini_whole_image", requiresConfirmation: true
+  });
+  assert.equal(result.owners[0].identityObservation, result.proposals[0].itemName);
+  assert.equal(result.owners[0].itemName, initial[0].itemName);
+  assert.equal(result.owners[0].category, "Unknown");
+  assert.equal(identityConflict(result.owners[0], result.capture.captureId), true);
+  assert.ok(result.observations.some(entry => entry.matched));
+});
+
+test("Option A: cross-provider identity differences can retain the same translated geometry", t => {
+  const initial = [optionAVision("Snack Sachet", [100,100,500,500])];
+  const result = optionAReplay(t, initial, [object("Food Wrapper", [100,125,500,525])]);
+  assert.equal(analysis.samePhysicalObject(initial[0], result.proposals[0]), false);
+  assert.equal(result.owners.length, 2);
+  optionAAssertSurvivor(result.owners[0], initial[0]);
+  optionAAssertSurvivor(result.owners[1], result.proposals[0]);
+  assert.ok(result.owners.every(owner => owner.category === "Unknown"));
+  assert.ok(result.observations.every(entry => !entry.matched));
+});
+
+test("Option A: three-region competition never selects an arbitrary retained owner", t => {
+  const initial = [
+    optionAVision("Snack Sachet", [100,100,500,500], 1),
+    optionAVision("Food Wrapper", [100,130,500,530], 2)
+  ];
+  for (const ordered of [initial, [...initial].reverse()]) {
+    const result = optionAReplay(t, ordered, [object("Instant Noodle Packet", [100,115,500,515])]);
+    assert.equal(analysis.samePhysicalObject(...ordered), false);
+    for (const owner of ordered) assert.equal(analysis.samePhysicalObject(owner, result.proposals[0]), true);
+    assert.deepEqual(result.owners, ordered);
+    assert.ok(result.owners.every(owner => owner.category === "Unknown" && !owner.identityObservation));
+    assert.ok(result.observations.filter(entry => entry.matched).length >= 2);
+    assert.ok(result.observations.some(entry => !entry.matched));
+  }
+});
+
+test("Option A: foreign capture responses and forged Gemini IDs fail before replay", () => {
+  const capture = optionACapture();
+  const objects = [object("Snack Sachet", [100,100,500,500])];
+  const foreign = whole.normalize({ ...capture, captureId: "33333333-3333-4333-8333-333333333333" }, { objects });
+  assert.throws(() => whole.validateResponse(capture, foreign));
+  const valid = whole.normalize(capture, { objects });
+  assert.throws(() => whole.validateResponse(capture, {
+    ...valid, objects: [{ ...valid.objects[0], itemId: "synthetic_forged_owner" }]
+  }));
+});
+
+test("Option A: mixed synthetic waste scene preserves categories, primary fields and stub request counts", async () => {
+  const capture = optionACapture();
+  const objects = [
+    object("Bottle", [100,50,400,200]),
+    object("Snack Sachet", [100,300,400,450]),
+    object("Instant Noodle Packet", [500,50,850,300]),
+    object("Food Wrapper", [500,500,850,750])
+  ];
+  const before = structuredClone({ capture, objects });
+  const service = serviceFixture({ objects, visionObjects: [] });
+  const pending = service.analyzeWaste({
+    image: capture.image, objectDiscovery: capture, principal: 42, independentCategoryV2: true
+  });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(service.calls, { primary: 1, vision: 1, discovery: 1 });
+  service.complete();
+  const result = JSON.parse(JSON.stringify(await pending));
+  const proposals = whole.normalize(capture, { objects }).objects;
+  assert.equal(result.detectedItems.length, 4);
+  assert.equal(result.scanSummary.totalItems, 4);
+  optionAAssertAssessmentOwners(result.categoryAssessments, result.detectedItems);
+  const expectedCategories = ["Recyclable", "Residual", "Residual", "Unknown"];
+  for (let index = 0; index < proposals.length; index++) {
+    const owner = result.detectedItems.find(item => item.itemId === proposals[index].itemId);
+    // Display formatting adds originalItemName after physical reconciliation.
+    optionAAssertSurvivor(owner, {
+      ...proposals[index], originalItemName: proposals[index].itemName, category: expectedCategories[index]
+    });
+    assert.equal(owner.category, expectedCategories[index]);
+    assert.equal(result.categoryAssessments.items.find(row => row.itemId === owner.itemId).category, expectedCategories[index]);
+  }
+  assert.equal(result.categoryAssessments.captureId, capture.captureId);
+  assert.equal(result.categoryAssessments.schemaVersion, 1);
+  assert.equal(result.categoryAssessments.aiStatus, "not_requested");
+  assert.equal(result.itemName, "Original Bottle");
+  assert.equal(result.category, "Recyclable");
+  assert.equal(result.explanation, "Original explanation");
+  assert.equal(result.action, "Original action");
+  assert.equal(result.warning, "Original warning");
+  assert.equal(result.analysisSource, "original");
+  assert.equal(result.aiConfidence, "0.91");
+  assert.deepEqual(service.calls, { primary: 1, vision: 1, discovery: 1 });
+  assert.deepEqual({ capture, objects }, before);
+});
+
+test("Option A: four categories and unresolved packaging keep independent evidence without assessment calls", async t => {
+  const labels = ["Banana Peel", "Bottle", "Snack Sachet", "Charger",
+    "Food Wrapper", "Sealed Snack Sachet", "Possibly chemical wrapper", "Unidentified object"];
+  const objects = labels.map((label, index) => object(label, [100,10 + index * 120,500,100 + index * 120]));
+  const result = optionAReplay(t, [], objects);
+  assert.equal(result.owners.length, 8);
+  const before = structuredClone(result.owners);
+  let calls = 0;
+  const assess = require("../services/perItemWasteAssessmentService").createAssessmentService({
+    env: { WASTE_ITEM_ASSESSMENT_ENABLED: "true", WASTE_ITEM_ASSESSMENT_AI_ENABLED: "false" },
+    transport: async () => { calls++; throw new Error("Synthetic assessment must remain offline"); }
+  });
+  const sidecar = await assess({ capture: result.capture, items: result.owners, principal: 42 });
+  optionAAssertAssessmentOwners(sidecar, result.owners);
+  // Unknown outcomes here do not independently isolate the product-state veto.
+  const expected = ["Biodegradable", "Recyclable", "Residual", "Special Waste",
+    "Unknown", "Unknown", "Unknown", "Unknown"];
+  for (let index = 0; index < result.proposals.length; index++) {
+    const proposal = result.proposals[index];
+    const owner = result.owners.find(item => item.itemId === proposal.itemId);
+    optionAAssertSurvivor(owner, proposal);
+    const assessment = sidecar.items.find(row => row.itemId === owner.itemId);
+    assert.equal(assessment.category, expected[index]);
+    assert.equal(assessment.requiresConfirmation, true);
+  }
+  assert.equal(sidecar.captureId, result.capture.captureId);
+  assert.equal(sidecar.schemaVersion, 1);
+  assert.equal(sidecar.aiStatus, "not_requested");
+  assert.equal(calls, 0);
+  assert.deepEqual(result.owners, before);
+  assert.ok(result.observations.every(entry => !entry.matched));
+});
