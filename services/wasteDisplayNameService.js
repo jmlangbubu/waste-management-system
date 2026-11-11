@@ -2,7 +2,8 @@
 // Display only: never use these broad names as classification evidence.
 const { matchIdentity } = require("../gemini-waste-classifier-cloudrun/cropRecognition");
 const types = [
-  [/\binstant noodle (?:packet|package|packaging|sachet)\b/, "Instant Noodle Packet"],
+  [/\binstant noodle (?:packet|package|packaging|wrapper|wrapping|sachet|pouch)\b/, "Instant Noodle Packet"],
+  [/\bnoodle (?:packet|package|packaging|wrapper|wrapping|sachet|pouch)\b/, "Noodle Packet"],
   [/\bcoffee (?:sachet|packet)\b/, "Coffee Sachet"],
   [/\bsnack (?:wrapper|wrapping|sachet|packet|packaging)\b/, "Snack Wrapper"],
   [/\bfood (?:wrapper|wrapping|sachet|packet|packaging)\b/, "Food Wrapper"],
@@ -31,9 +32,33 @@ const types = [
 ];
 const householdNouns = new Set(("hammer screwdriver scissors brush comb toothbrush towel cloth sponge soap mask glove toy remote watch clock "
   + "keyboard mouse headphone earphone computer laptop screen monitor pan bowl bin bucket basket tool device chair table book notebook newspaper envelope tissue").split(" "));
+// Noodle display extensions accept a physical head, not a noun found anywhere
+// in a sentence. Incidental label text cannot supply or negate that identity.
+function affirmativeNoodleHead(text) {
+  const head = text.match(/^(?:(?:an?|the|actual|physical|real|unlisted|brand)\s+)*((?:(?:unopened|sealed|full|filled|empty)\s+)?(?:(?:black|white|red|green|blue|yellow|orange|purple|pink|brown|gray|grey|clear|transparent)\s+)*(?:instant\s+)?noodle\s+(?:packet|package|packaging|wrapper|wrapping|sachet|pouch))\b/);
+  if (!head) return "";
+  const suffix = text.slice(head[0].length).trim();
+  if (!suffix) return head[1];
+  const incidental = /^(?:with|without)\s+(?:(?:an?|the|no|possible|unreadable|printed|visible|missing|faded)\s+)*(?:label(?: artwork)?|packaging artwork|artwork|logo|(?:expiry|expiration) date|date|text|barcode|brand name|picture)(?:\s+(?:that (?:cannot|can't) be (?:identified|read|confirmed)|not visible|(?:of|depicting|showing)\s+(?:(?:an?|the)\s+)?[a-z]+(?:\s+[a-z]+){0,2}))?$/.test(suffix);
+  const descriptive = /^(?:(?:lying|resting)\s+)?on (?:a|the) (?:table|surface|counter|floor)$|^with (?:torn|creased|folded) edges$/.test(suffix);
+  return incidental || descriptive ? head[1] : "";
+}
 function shortObjectName(value) {
-  const text = typeof value === "string" ? value.toLowerCase().replace(/[_-]+/g, " ") : "";
-  if (/\b(?:unknown|unidentified|unclear|unrecognizable|possibly|maybe)\b|\bnot a\b/.test(text)) return "Item";
+  let text = typeof value === "string" ? value.toLowerCase().replace(/[_-]+/g, " ") : "";
+  if (/\b(?:instant\s+)?noodle\s+(?:packet|package|packaging|wrapper|wrapping|sachet|pouch)\b/.test(text)) {
+    text = affirmativeNoodleHead(text.trim());
+    if (!text) return "Item";
+  }
+  // These bounded description guards affect display only, never recognition evidence.
+  const uncertain = /\b(?:unknown|unidentified|unclear|unrecognizable|possible|possibly|probably|perhaps|maybe|uncertain|unsure|ambiguous)\b|\b(?:may|might|could)\s+be\b/.test(text);
+  const unidentifiable = /\b(?:cannot|can't|unable to)\s+(?:(?:be\s+)?identified|identify|confirm|recognize|determine)\b/.test(text);
+  // Negate the packaging identity, not incidental text such as "no label".
+  const negated = /\bnot (?:a|an)\b|\b(?:not|no)\s+(?:(?:an?|any|actual|physical)\s+)*(?:(?:instant\s+)?noodle|snack|food)\s+(?:packet|package|packaging|wrapper|wrapping|sachet|pouch)\b/.test(text);
+  const absent = /\b(?:(?:instant\s+)?noodle|snack|food)\s+(?:packet|package|packaging|wrapper|wrapping|sachet|pouch)\s+(?:(?:is|was)\s+)?not\s+(?:visible|present|identifiable|confirmed)\b/.test(text);
+  // Leading artwork references are not packages. Actual packages with printed
+  // text/artwork remain eligible because their physical identity leads the label.
+  const referenceOnly = /^\s*(?:(?:(?:this|that|it)\s+is|there\s+is)\s+)?(?:(?:an?|the|only|visible|printed|label|packaging)\s+)*(?:picture|image|photo(?:graph)?|drawing|illustration|artwork|depiction|logo|advertisement|product reference)\s+(?:of|showing|depicting)\b/.test(text);
+  if (uncertain || unidentifiable || negated || absent || referenceOnly) return "Item";
   // A broad provider taxonomy does not prove which particular container is present.
   const noun = text.match(/\b[a-z]+\b/g)?.map(word => householdNouns.has(word) ? word : word.replace(/s$/, ""))
     .findLast(word => householdNouns.has(word));
