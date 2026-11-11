@@ -370,3 +370,359 @@ test("scene-frame removal and identity suggestions keep strict v5 schema without
  assert.ok(sidecar.items.every(i=>i.requiresConfirmation));
  assert.deepEqual(Object.keys(sidecar).sort(),["schemaVersion","captureId","aiStatus","items"].sort());
 });
+
+// Synthetic identity phrases only; these do not reconstruct a historical scan.
+const identityPhase1Displays = [
+  ["Instant Noodle Packet", "Instant Noodle Packet"],
+  ["instant noodle wrapper", "Instant Noodle Packet"],
+  ["instant noodle pouch", "Instant Noodle Packet"],
+  ["noodle sachet", "Noodle Packet"],
+  ["noodle packet", "Noodle Packet"],
+  ["noodle pouch", "Noodle Packet"],
+  ["Snack Sachet", "Snack Wrapper"],
+  ["snack wrapper", "Snack Wrapper"],
+  ["Food Wrapper", "Food Wrapper"],
+  ["food packaging", "Food Wrapper"],
+  ["Bottle", "Bottle"],
+  ["plastic bottle", "Bottle"],
+  ["Battery", "Battery"],
+  ["Cardboard", "Cardboard"],
+  ["Item", "Item"],
+  ["Object", "Item"],
+  ["Milo", "Item"],
+  ["Pancit Canton", "Item"],
+  ["Lucky Me", "Item"],
+  ["Unlisted Product 37", "Item"],
+  ["instant noodles", "Item"],
+  ["Pancit Canton packet", "Packet"],
+  ["Milo sachet", "Packet"],
+  ["Unlisted Brand noodle pouch", "Noodle Packet"],
+  ["Possibly an instant noodle packet", "Item"],
+  ["maybe a snack sachet", "Item"],
+  ["Unknown food wrapper", "Item"],
+  ["unidentified battery", "Item"],
+  ["unclear bottle", "Item"],
+  ["uncertain noodle pouch", "Item"],
+  ["unsure battery", "Item"],
+  ["ambiguous food packaging", "Item"],
+  ["not a battery", "Item"],
+  ["not an instant noodle packet", "Item"],
+  ["Printed picture of a battery", "Item"],
+  ["Photo of an instant noodle packet", "Item"],
+  ["Drawing of a bottle", "Item"],
+  ["Logo showing a snack sachet", "Item"],
+  ["Snack wrapper with printed logo", "Snack Wrapper"],
+  ["Instant noodle pouch with printed text", "Instant Noodle Packet"],
+  ["Sealed instant noodle pouch", "Sealed Instant Noodle Packet"],
+  ["Unopened Instant Noodle Packet", "Unopened Instant Noodle Packet"],
+  ["Full instant noodle pouch", "Full Instant Noodle Packet"],
+  ["Filled food packaging", "Filled Food Wrapper"]
+];
+for (const [label, expected] of identityPhase1Displays) {
+  test(`identity phase 1 display: ${label} -> ${expected}`, () => {
+    assert.equal(shortObjectName(label), expected);
+  });
+}
+
+function identityPhase1Envelope(labels, provider = "gemini_whole_image") {
+  const capture = {
+    captureId: "44444444-4444-4444-8444-444444444444",
+    requestId: "55555555-5555-4555-8555-555555555555"
+  };
+  const normalized = whole.normalize(capture, {
+    objects: labels.map((label, index) => ({ label, box_2d: [100,10 + index * 120,500,100 + index * 120] }))
+  });
+  assert.deepEqual(whole.validateResponse(capture, normalized), normalized);
+  const owners = normalized.objects.map((item, index) => provider === "gemini_whole_image" ? item : {
+    itemId: "synthetic_display_" + index,
+    itemName: labels[index],
+    originalItemName: labels[index],
+    observedIdentity: labels[index],
+    canonicalItem: labels[index].toLowerCase(),
+    category: "Unknown",
+    confidence: .8,
+    analysisSource: provider,
+    boundingBox: item.boundingBox,
+    captureId: capture.captureId
+  });
+  return {
+    success: true,
+    result: { itemName: "Original primary", category: "Special Waste", explanation: "Original explanation" },
+    detectedItems: owners,
+    categoryAssessments: {
+      schemaVersion: 1, captureId: capture.captureId, aiStatus: "not_requested",
+      items: owners.map(item => ({
+        itemId: item.itemId, category: item.category, requiresConfirmation: true,
+        assessmentSource: provider !== "gemini_whole_image" ? "existing_category"
+          : item.category === "Unknown" ? "insufficient_evidence" : "reviewed_identity_rule",
+        confirmationRequirements: []
+      }))
+    }
+  };
+}
+
+function assertIdentityPhase1Preserved(response) {
+  const before = structuredClone(response);
+  const captureId = response.categoryAssessments.captureId;
+  assert.equal(v5SidecarAccepted(response, captureId), true);
+  const formatted = withDisplayNames(response);
+  assert.deepEqual(response, before);
+  assert.deepEqual(Object.keys(formatted).sort(), Object.keys(response).sort());
+  assert.equal(formatted.result, response.result);
+  assert.equal(formatted.categoryAssessments, response.categoryAssessments);
+  assert.equal(formatted.detectedItems.length, response.detectedItems.length);
+  for (let index = 0; index < response.detectedItems.length; index++) {
+    const original = response.detectedItems[index], display = formatted.detectedItems[index];
+    for (const key of Object.keys(original).filter(key => key !== "itemName")) {
+      assert.deepEqual(display[key], original[key], "preserved " + key);
+    }
+    assert.equal(display.originalItemName, original.originalItemName || original.itemName);
+    assert.deepEqual(Object.keys(display).sort(), [...new Set([...Object.keys(original), "originalItemName"])].sort());
+    assert.equal(v5RawOwner(display), true);
+  }
+  assert.equal(v5SidecarAccepted(formatted, captureId), true);
+  assert.equal(v5SidecarAccepted(formatted, "66666666-6666-4666-8666-666666666666"), false);
+  assert.deepEqual(withDisplayNames(formatted), formatted);
+  return formatted;
+}
+
+for (const provider of ["gemini_whole_image", "google_vision_object_localization"]) {
+  for (const [label, expected] of [
+    ["instant noodle pouch", "Instant Noodle Packet"],
+    ["instant noodle wrapper", "Instant Noodle Packet"],
+    ["noodle sachet", "Noodle Packet"],
+    ["Pancit Canton", "Item"],
+    ["Maybe an instant noodle packet", "Item"],
+    ["Printed picture of a battery", "Item"],
+    ["Sealed instant noodle pouch", "Sealed Instant Noodle Packet"]
+  ]) {
+    test(`identity phase 1 ${provider} preserves Unknown and v5 contract: ${label}`, () => {
+      const response = identityPhase1Envelope([label], provider);
+      assert.equal(response.detectedItems[0].category, "Unknown");
+      const formatted = assertIdentityPhase1Preserved(response);
+      assert.equal(formatted.detectedItems[0].itemName, expected);
+      assert.equal(formatted.detectedItems[0].category, "Unknown");
+    });
+  }
+}
+
+for (const [alias, name, category] of [
+  ["Plastic Bottle", "Plastic Bottle", "Recyclable"],
+  ["plastic water bottle", "Plastic Bottle", "Recyclable"],
+  ["Snack Sachet", "Snack Sachet", "Residual"],
+  ["snack wrapper", "Snack Sachet", "Residual"],
+  ["Used Battery", "Used Battery", "Special Waste"],
+  ["AA battery", "Used Battery", "Special Waste"],
+  ["Banana Peel", "Banana Peel", "Biodegradable"],
+  ["banana skin", "Banana Peel", "Biodegradable"],
+  ["Cardboard", "Cardboard", "Recyclable"],
+  ["corrugated cardboard", "Cardboard", "Recyclable"]
+]) {
+  test(`identity phase 1 preserves exact Gemini catalog identity: ${alias}`, () => {
+    const formatted = assertIdentityPhase1Preserved(identityPhase1Envelope([alias]));
+    assert.equal(formatted.detectedItems[0].itemName, name);
+    assert.equal(formatted.detectedItems[0].category, category);
+  });
+}
+
+test("identity phase 1 placeholder refinement retains originalItemName and observed evidence", () => {
+  for (const placeholder of ["Item", "Object"]) {
+    const response = identityPhase1Envelope(["instant noodle pouch"], "google_vision_object_localization");
+    response.detectedItems[0].itemName = placeholder;
+    response.detectedItems[0].originalItemName = placeholder;
+    const formatted = assertIdentityPhase1Preserved(response);
+    assert.equal(formatted.detectedItems[0].itemName, "Instant Noodle Packet");
+    assert.equal(formatted.detectedItems[0].originalItemName, placeholder);
+  }
+});
+
+test("identity phase 1 original uncertainty and negation cannot be overridden by another observation", () => {
+  for (const label of ["Unknown item", "Possibly a packet", "not an instant noodle packet", "Printed picture of a battery"]) {
+    const response = identityPhase1Envelope([label], "google_vision_object_localization");
+    response.detectedItems[0].observedIdentity = "instant noodle pouch";
+    const formatted = assertIdentityPhase1Preserved(response);
+    assert.equal(formatted.detectedItems[0].itemName, "Item");
+    assert.equal(formatted.detectedItems[0].category, "Unknown");
+  }
+});
+
+test("identity phase 1 mixed four-category and uncertain owners retain independent assessments", () => {
+  const response = identityPhase1Envelope([
+    "plastic water bottle", "banana skin", "snack wrapper", "AA battery", "Cardboard",
+    "instant noodle pouch", "Sealed instant noodle pouch", "Unidentified object"
+  ]);
+  const formatted = assertIdentityPhase1Preserved(response);
+  assert.deepEqual(formatted.detectedItems.map(item => item.category), [
+    "Recyclable", "Biodegradable", "Residual", "Special Waste", "Recyclable", "Unknown", "Unknown", "Unknown"
+  ]);
+  assert.equal(new Set(formatted.detectedItems.map(item => item.itemId)).size, 8);
+  assert.equal(formatted.categoryAssessments.items.length, 8);
+  assert.deepEqual(formatted.categoryAssessments.items.map(row => row.itemId), formatted.detectedItems.map(item => item.itemId));
+});
+
+// Display-safety corrections use synthetic text, never historical capture data.
+const displaySafetyBlocking = [
+  "A picture of an instant noodle pouch",
+  "Label artwork showing a noodle pouch",
+  "not instant noodle pouch",
+  "probably an instant noodle pouch",
+  "possible noodle pouch"
+];
+for (const label of displaySafetyBlocking) {
+  test(`display safety correction blocking: ${label}`, () => {
+    assert.equal(shortObjectName(label), "Item");
+  });
+}
+const displaySafetyNegative = [
+  "photograph of a noodle pouch",
+  "image of an instant noodle wrapper",
+  "illustration of a noodle sachet",
+  "logo depicting an instant noodle pouch",
+  "printed picture showing a noodle packet",
+  "The photograph of a noodle pouch",
+  "This is a picture of an instant noodle pouch",
+  "Visible label artwork depicting a noodle sachet",
+  "An illustration showing a snack sachet",
+  "probably a noodle packet",
+  "possibly a noodle pouch",
+  "maybe an instant noodle wrapper",
+  "possible instant noodle packet",
+  "uncertain whether it is a noodle pouch",
+  "This could be a noodle sachet",
+  "The object may be an instant noodle wrapper",
+  "A noodle pouch, perhaps",
+  "instant noodle pouch, identity uncertain",
+  "not a noodle pouch",
+  "no instant noodle pouch visible",
+  "There is no noodle sachet visible",
+  "The object is not an instant noodle wrapper",
+  "A noodle pouch is not visible",
+  "noodle packet not present",
+  "instant noodle wrapper is not confirmed",
+  "snack sachet not identifiable",
+  "cannot identify a noodle packet",
+  "A noodle pouch cannot be identified",
+  "Unable to confirm an instant noodle pouch",
+  "Pancit Canton",
+  "Lucky Me",
+  "Milo"
+];
+for (const label of displaySafetyNegative) {
+  test(`display safety correction negative: ${label}`, () => {
+    assert.equal(shortObjectName(label), "Item");
+  });
+}
+const displaySafetyPositive = [
+  ["instant noodle pouch", "Instant Noodle Packet"],
+  ["instant noodle wrapper", "Instant Noodle Packet"],
+  ["noodle sachet", "Noodle Packet"],
+  ["noodle packet", "Noodle Packet"],
+  ["actual noodle pouch with printed text", "Noodle Packet"],
+  ["instant noodle wrapper with a printed logo", "Instant Noodle Packet"],
+  ["physical snack sachet with packaging artwork", "Snack Wrapper"],
+  ["noodle pouch with no printed text", "Noodle Packet"],
+  ["noodle pouch with no label", "Noodle Packet"],
+  ["noodle pouch with no barcode", "Noodle Packet"],
+  ["noodle pouch with label not visible", "Noodle Packet"],
+  ["noodle pouch with a picture of noodles", "Noodle Packet"],
+  ["instant noodle wrapper with label artwork depicting a bowl", "Instant Noodle Packet"],
+  ["Sealed instant noodle pouch", "Sealed Instant Noodle Packet"],
+  ["Full noodle pouch", "Full Noodle Packet"],
+  ["Plastic Bottle", "Bottle"],
+  ["Snack Sachet", "Snack Wrapper"],
+  ["Used Battery", "Battery"],
+  ["Banana Peel", "Banana Peel"],
+  ["Cardboard", "Cardboard"]
+];
+for (const [label, expected] of displaySafetyPositive) {
+  test(`display safety correction positive: ${label}`, () => {
+    assert.equal(shortObjectName(label), expected);
+  });
+}
+for (const provider of ["gemini_whole_image", "google_vision_object_localization"]) {
+  test(`display safety correction preserves ${provider} owner and sidecar contracts`, () => {
+    for (const label of [...displaySafetyBlocking, ...displaySafetyNegative]) {
+      const response = identityPhase1Envelope([label], provider);
+      const formatted = assertIdentityPhase1Preserved(response);
+      assert.equal(formatted.detectedItems[0].itemName, "Item", label);
+      assert.equal(formatted.detectedItems[0].category, "Unknown", label);
+      assert.equal(formatted.categoryAssessments.items.length, 1);
+      assert.equal(formatted.categoryAssessments.items[0].itemId, formatted.detectedItems[0].itemId);
+    }
+    for (const [label] of displaySafetyPositive.slice(0, 14)) {
+      const response = identityPhase1Envelope([label], provider);
+      const formatted = assertIdentityPhase1Preserved(response);
+      assert.notEqual(formatted.detectedItems[0].itemName, "Item", label);
+      assert.equal(formatted.detectedItems[0].category, "Unknown", label);
+    }
+  });
+}
+
+// Bounded noodle display grammar: synthetic language contrasts, not AI evidence.
+const boundedNoodleRegressions = [
+  ["A close-up photo of an instant noodle pouch", "Item"],
+  ["Label shows a noodle pouch", "Item"],
+  ["noodle pouch depicted on a label", "Item"],
+  ["no clear noodle pouch visible", "Item"],
+  ["instant noodle pouch with a possible expiry date", "Instant Noodle Packet"],
+  ["noodle pouch with a label that cannot be identified", "Noodle Packet"]
+];
+for (const [label, expected] of boundedNoodleRegressions) {
+  test(`bounded noodle blocking: ${label}`, () => {
+    assert.equal(shortObjectName(label), expected);
+  });
+}
+const boundedNoodleBoundaries = [
+  ["noodle pouch printed on a shirt", "Item"],
+  ["drawing of a noodle packet", "Item"],
+  ["no recognizable noodle pouch", "Item"],
+  ["no visible instant noodle pouch", "Item"],
+  ["unsure whether this is a noodle pouch", "Item"],
+  ["a pouch that might contain noodles", "Item"],
+  ["real noodle pouch with an unreadable label", "Noodle Packet"],
+  ["noodle packet without a visible brand name", "Noodle Packet"],
+  ["noodle pouch with torn edges", "Noodle Packet"],
+  ["bottle with a noodle illustration", "Bottle"],
+  ["blue plate beside noodles", "Blue Plate"],
+  ["Lucky Me", "Item"],
+  ["Pancit Canton", "Item"],
+  ["Milo", "Item"]
+];
+for (const [label, expected] of boundedNoodleBoundaries) {
+  test(`bounded noodle boundary: ${label}`, () => {
+    assert.equal(shortObjectName(label), expected);
+  });
+}
+const boundedNoodleContrasts = [];
+for (const [head, expected] of [
+  ["instant noodle pouch", "Instant Noodle Packet"],
+  ["noodle packet", "Noodle Packet"],
+  ["noodle sachet", "Noodle Packet"]
+]) {
+  for (const [label, display] of [
+    [head, expected],
+    [`A close-up photo of a ${head}`, "Item"],
+    [`${head} depicted on printed artwork`, "Item"],
+    [`no visible ${head}`, "Item"],
+    [`unsure whether this is a ${head}`, "Item"],
+    [`${head} with a possible expiry date`, expected],
+    [`${head} lying on a table`, expected]
+  ]) {
+    boundedNoodleContrasts.push([label, display]);
+    test(`bounded noodle contrast: ${label}`, () => {
+      assert.equal(shortObjectName(label), display);
+    });
+  }
+}
+for (const provider of ["gemini_whole_image", "google_vision_object_localization"]) {
+  test(`bounded noodle preserves ${provider} evidence and category contracts`, () => {
+    for (const [label, expected] of [...boundedNoodleRegressions, ...boundedNoodleBoundaries, ...boundedNoodleContrasts]) {
+      const response = identityPhase1Envelope([label], provider);
+      const formatted = assertIdentityPhase1Preserved(response);
+      assert.equal(formatted.detectedItems[0].itemName, expected, label);
+      assert.equal(formatted.detectedItems[0].category, "Unknown", label);
+      assert.equal(formatted.categoryAssessments.items.length, 1);
+      assert.equal(formatted.categoryAssessments.items[0].itemId, formatted.detectedItems[0].itemId);
+    }
+  });
+}
