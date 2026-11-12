@@ -4,7 +4,7 @@ const shared=require("../gemini-waste-classifier-cloudrun/cropRecognition");
 const contract=require("../gemini-waste-classifier-cloudrun/wasteItemAssessment");
 const {enrichDiscoveryItem}=require("./discoveryItemClassificationService");
 const {automaticCategory,unsafeProviderEvidence,unsafeIdentity,corroboratedCategory,providerIdentityConflict,requiresWasteIdentityReview,physicalSpecialWasteIdentity,unreliablePhysicalIdentity,productStateVeto,commonObjectCategory}=require("./automaticWasteCategoryMapper");
-const {alignedIdentity,identityConflict}=require("./wholeImageRecognitionService");
+const {alignedIdentity,identityConflict,categoryAuthority}=require("./wholeImageRecognitionService");
 const {getWasteLearningGuide}=require("./wasteLearningGuideService");
 const {createAssessmentReasons,recordAssessmentReasons}=require("./wasteAssessmentDiagnostics");
 function questions(category) {
@@ -36,7 +36,7 @@ function deterministic(items,captureId) {
    && productStateVeto(item,item.category,alignedIdentity(item,captureId))))
   throw new shared.RecognitionError("INVALID_RECOGNITION_REQUEST",400);
  return items.map(item=>{
-  if(identityConflict(item,captureId))return assessment(item,"Unknown",
+  if(categoryAuthority(item,captureId)==="invalid" || identityConflict(item,captureId))return assessment(item,"Unknown",
    item.analysisSource==="gemini_whole_image"?"insufficient_evidence":"existing_category");
   // Android assessment v1 only accepts reviewed_identity_rule for Gemini.
   // Keep Vision's established/Unknown category as existing_category until AI succeeds.
@@ -54,8 +54,13 @@ function originalEvidence(item,captureId,useAlignment=true) {
  const gemini=item.analysisSource==="gemini_whole_image",vision=item.analysisSource==="google_vision_object_localization";
  if(!gemini&&!vision)return null;
  // Never fall back to itemName: it may already be a shortened display label.
+ // Preserve exact legacy wire text when it agrees with canonical evidence,
+ // without allowing display-added originalItemName to replace that evidence.
+ const normalized=value=>String(value||"").trim().toLowerCase().replace(/\s+/g," ");
+ const original=item.canonicalItem && normalized(item.originalItemName)!==normalized(item.canonicalItem)
+  ?item.canonicalItem:item.originalItemName||item.canonicalItem;
  const identity=(useAlignment && !unsafeIdentity(item) && alignedIdentity(item,captureId))
-  || (gemini?item.observedIdentity:item.observedIdentity||item.originalItemName||item.canonicalItem);
+  || (gemini?item.observedIdentity:item.observedIdentity||original);
  const b=item.boundingBox;
  if(typeof identity!=="string"||!identity.trim()||identity.length>128||/[\x00-\x1f<>]/.test(identity)
   ||!b||Object.keys(b).sort().join(",")!=="bottom,left,right,top"
@@ -81,9 +86,38 @@ function assessmentBatch(capture,unknown,allItems) {
  });
  return {items,wireIds};
 }
+function assessmentInputGuard(capture,items,primary) {
+ const invalid=()=>{throw new shared.RecognitionError("INVALID_RECOGNITION_REQUEST",400);};
+ const fields=["itemId","regionId","category","itemName","observedIdentity","originalItemName","canonicalItem",
+  "analysisSource","confidence","captureId","confirmed","requiresConfirmation","recognitionState",
+  "identitySource","localizationSource","geometrySpace","schemaVersion"];
+ const values=(object,keys)=>keys.map(key=>[Object.hasOwn(object,key),typeof object[key],object[key]]);
+ const state=()=>JSON.stringify([
+  values(capture,["captureId","requestId","width","height","orientation"]),
+  items.map(item=>{
+   const box=item.boundingBox;
+   return [values(item,fields),typeof box,box==null?box:[Object.keys(box).sort(),
+    values(box,["left","top","right","bottom"])],
+    categoryAuthority(item,capture.captureId),alignedIdentity(item,capture.captureId),identityConflict(item,capture.captureId)];
+  }),
+  primary?values(primary,["category","analysisSource","itemName","aiLabel","aiConfidence"]):null
+ ]);
+ let owners,image,snapshot;
+ try {
+  owners=items.slice();image=capture.image;snapshot=state();
+ } catch(_) {invalid();}
+ // Explicit value serialization detects in-place geometry mutation. Keep only
+ // an immutable string reference for image comparison, never duplicate Base64.
+ return ()=>{
+  try {
+   if(capture.image!==image || items.length!==owners.length
+       || owners.some((owner,index)=>items[index]!==owner) || state()!==snapshot)invalid();
+  } catch(_) {invalid();}
+ };
+}
 function createAssessmentService({env=process.env,transport=shared.postJson,authHeaders,budget=shared.createBudget(),now=Date.now}={}) {
  const attempts=new Map();let authenticate=authHeaders;
- async function remote(capture,items,principal,signal) {
+ async function remote(capture,items,principal,signal,ownerEvidence) {
   if(signal?.aborted)throw new shared.RecognitionError("RECOGNITION_CANCELLED",499);
   if(env.CLOUD_RUN_AUTH_MODE!=="iam"||!String(principal).match(/^[1-9][0-9]*$/)||typeof env.WASTE_ITEM_ASSESSMENT_SHARED_TOKEN!=="string"||env.WASTE_ITEM_ASSESSMENT_SHARED_TOKEN.length<32)throw new shared.RecognitionError("RECOGNITION_UNAVAILABLE",503);
   const input=contract.validateRequest({schemaVersion:1,...capture,items:items.map(item=>({itemId:item.itemId,observedIdentity:item.observedIdentity,boundingBox:item.boundingBox}))});
@@ -95,7 +129,8 @@ function createAssessmentService({env=process.env,transport=shared.postJson,auth
   const time=now();for(const [key,value]of attempts)if(value.expires<=time)attempts.delete(key);
   const key=String(principal)+":"+input.captureId;
   const {requestId,...fingerprintInput}=input;
-  const fingerprint=crypto.createHash("sha256").update(JSON.stringify({...fingerprintInput,items:[...fingerprintInput.items].sort((a,b)=>a.itemId.localeCompare(b.itemId))})).digest("hex");
+  const fingerprint=crypto.createHash("sha256").update(JSON.stringify({...fingerprintInput,
+   items:[...fingerprintInput.items].sort((a,b)=>a.itemId.localeCompare(b.itemId)),ownerEvidence})).digest("hex");
   const previous=attempts.get(key);
   if(previous){if(previous.fingerprint!==fingerprint)throw new shared.RecognitionError("INVALID_RECOGNITION_REQUEST",400);const result=await previous.pending;return {...result,requestId:input.requestId};}
   if(attempts.size>=256)throw new shared.RecognitionError("RECOGNITION_BUSY",429);
@@ -111,8 +146,13 @@ function createAssessmentService({env=process.env,transport=shared.postJson,auth
  }
  return async({capture,items,primary,principal,signal})=>{
   if(env.WASTE_ITEM_ASSESSMENT_ENABLED!=="true")return null;
+  const assertUnchanged=assessmentInputGuard(capture,items,primary);
   const reasons=createAssessmentReasons();
   const assessments=deterministic(items,capture.captureId),unknown=items.filter((item,index)=>{
+   // Invalid carried authority is not a reason to buy repair inference. merge
+   // sanitizes public owners before final primary/summary/sidecar assembly.
+   // Direct assessment callers remain unmodified and receive an Unknown row.
+   if(categoryAuthority(item,capture.captureId)==="invalid")return false;
    if(!originalEvidence(item,capture.captureId)){
     if(assessments[index].category==="Unknown")reasons.identity_unproven++;
     return false;
@@ -152,7 +192,12 @@ function createAssessmentService({env=process.env,transport=shared.postJson,auth
     // Exclusion must not bypass the existing all-owner ID/capture validation.
     const batch=assessmentBatch(capture,unknown,items);
     if(unknown.length){
-    const result=await remote(capture,batch.items,principal,signal);
+    // Cache validation includes original fields even when canonical selection
+    // deliberately keeps a changed display fallback off the provider wire.
+    const ownerEvidence=[...items].sort((a,b)=>a.itemId.localeCompare(b.itemId)).map(item=>[
+     item.itemId,item.category,item.canonicalItem,item.observedIdentity,item.originalItemName,
+     item.analysisSource,item.boundingBox,item.captureId,item.confidence]);
+    const result=await remote(capture,batch.items,principal,signal,ownerEvidence);
     // validateResponse has already rejected duplicate/foreign IDs and stale capture/request IDs.
     const byId=new Map(result.assessments.map(a=>[batch.wireIds.get(a.itemId),a]));
     for(let i=0;i<items.length;i++)if(byId.has(items[i].itemId)) {
@@ -255,6 +300,10 @@ function createAssessmentService({env=process.env,transport=shared.postJson,auth
     if(error?.code==="INVALID_RECOGNITION_REQUEST")reasons.request_rejected=1;
    }
   }
+  // Outside the optional-provider catch: rejection, timeout and success must
+  // all revalidate EVERY owner, including precomputed deterministic rows.
+  // Never convert changed authority into an unavailable result with stale rows.
+  assertUnchanged();
   if(aiStatus==="not_requested" && unknown.length)reasons.ai_not_requested=1;
   reasons.classification_accepted=assessments.filter(item=>["Biodegradable","Recyclable","Residual","Special Waste"].includes(item.category)).length;
   return recordAssessmentReasons({schemaVersion:1,captureId:capture.captureId,aiStatus,items:assessments},reasons);

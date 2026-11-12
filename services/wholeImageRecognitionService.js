@@ -101,12 +101,40 @@ const evidenceSnapshot=item=>JSON.stringify([item.itemId,item.category,item.cano
   item.originalItemName,item.analysisSource,item.boundingBox,item.captureId,item.confidence]);
 function alignedIdentity(item,captureId) {
   const evidence=classificationEvidence.get(item);
-  return evidence && !evidence.conflict && evidence.captureId===captureId && evidence.snapshot===evidenceSnapshot(item)
+  return evidence && !evidence.conflict && !evidence.invalidCategoryAuthority
+    && evidence.captureId===captureId && evidence.snapshot===evidenceSnapshot(item)
     ? evidence.identity : null;
 }
 function identityConflict(item,captureId) {
   const evidence=classificationEvidence.get(item);
   return !!(evidence?.conflict && evidence.captureId===captureId && evidence.snapshot===evidenceSnapshot(item));
+}
+// Private server interface. Public category/display text cannot recreate lost
+// correspondence authority. Copies may instead qualify through original evidence.
+function categoryAuthority(item,captureId) {
+  const evidence=classificationEvidence.get(item);
+  if(evidence?.invalidCategoryAuthority)return "invalid";
+  // A known derived reference must match before any fallback (even if its
+  // source/category/identity was changed to look independently supported).
+  if(evidence?.derivedCategory)return !evidence.conflict && evidence.captureId===captureId
+    && evidence.derivedCategory===item.category && evidence.snapshot===evidenceSnapshot(item)
+    ? "correspondence" : "invalid";
+  if(item.analysisSource!=="google_vision_object_localization")return "independent";
+  if(item.category==="Unknown")return "unknown";
+  if((item.captureId!==undefined && item.captureId!==captureId)
+      || typeof item.itemId!=="string" || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(item.itemId))return "invalid";
+  // Vision normalization preserves canonicalItem before display refinement.
+  // Formatting can later add originalItemName from a refined itemName, so that
+  // fallback must not outrank the original canonical observation on a copy.
+  const original=item.observedIdentity || item.canonicalItem || item.originalItemName;
+  if([item.observedIdentity,item.canonicalItem,item.originalItemName].filter(label=>typeof label==="string")
+      .some(label=>{
+        const observation={...item,category:"Unknown",observedIdentity:label};
+        return unreliablePhysicalIdentity(observation)
+          || unsafeIdentity(observation) && automaticCategory(observation)!==item.category;
+      }))return "invalid";
+  return automaticCategory({...item,category:"Unknown",observedIdentity:original})===item.category
+    ? "independent" : "invalid";
 }
 function belongsToCapture(item,capture) {
   if(item.captureId!==undefined && item.captureId!==capture.captureId)return false;
@@ -117,6 +145,19 @@ function belongsToCapture(item,capture) {
 }
 function merge(vision,proposals,samePhysicalObject,capture,hasNormalizationConflict=()=>false) {
   const retained=[];
+  const copyOwner=item=>{
+    const owner={...item},evidence=classificationEvidence.get(item);
+    if(!capture?.captureId || !evidence)return owner;
+    if(categoryAuthority(item,capture.captureId)==="invalid") {
+      classificationEvidence.set(owner,{captureId:capture.captureId,invalidCategoryAuthority:true,
+        snapshot:evidenceSnapshot(owner)});
+    } else if(evidence.captureId===capture.captureId && evidence.snapshot===evidenceSnapshot(item)) {
+      classificationEvidence.set(owner,{...evidence,snapshot:evidenceSnapshot(owner)});
+    }
+    // Keep public categories unchanged until physical reconciliation completes:
+    // correcting authority must never make a categorized owner a near alias.
+    return owner;
+  };
   const currentObservation=item=>{
     if(!capture?.captureId)return true; // Legacy callers have no discovery capture.
     const r=item.boundingBox;
@@ -131,6 +172,7 @@ function merge(vision,proposals,samePhysicalObject,capture,hasNormalizationConfl
   // never permission to refine identity or transfer a category. Both observations
   // must be trusted, unconfirmed and independently localized in this capture.
   const nearAlias=(a,b)=>{
+    if([a,b].some(item=>classificationEvidence.get(item)?.invalidCategoryAuthority))return false;
     if(!capture?.captureId || [a,b].some(item=>item.confirmed || item.category!=="Unknown"
         || !["gemini_whole_image","google_vision_object_localization"].includes(item.analysisSource)
         || (item.captureId!==undefined && item.captureId!==capture.captureId)))return false;
@@ -235,18 +277,18 @@ function merge(vision,proposals,samePhysicalObject,capture,hasNormalizationConfl
   const recordConflict=item=>{
     // A catalog category cannot exempt this physical owner from adverse evidence.
     if(capture?.captureId && currentObservation(item))classificationEvidence.set(item,
-      {captureId:capture.captureId,conflict:true,snapshot:evidenceSnapshot(item)});
+      {...classificationEvidence.get(item),captureId:capture.captureId,conflict:true,snapshot:evidenceSnapshot(item)});
   };
   // The initial list can itself contain conflicting observations of one region.
   // Keep the survivor's entire ID/geometry/evidence contract, never synthesize a box.
   for(const item of vision) {
     const matches=retained.filter(other=>matchesRegion(other,item));
     const index=matches.length===1?retained.indexOf(matches[0]):-1;
-    if(index<0) {if(retained.length<8){const owner={...item};retained.push(owner);
+    if(index<0) {if(retained.length<8){const owner=copyOwner(item);retained.push(owner);
       if(hasNormalizationConflict(item))recordConflict(owner);}continue;}
     const match=retained[index];
     if(paintCanRefinement(match,item)) {
-      if(identityKey(item.observedIdentity)==="paint can")retained[index]={...item};
+      if(identityKey(item.observedIdentity)==="paint can")retained[index]=copyOwner(item);
       continue;
     }
     if(!samePhysicalObject(match,item)) {
@@ -256,7 +298,7 @@ function merge(vision,proposals,samePhysicalObject,capture,hasNormalizationConfl
     if(!compatibleIdentity(match,item) || unsafeIdentity(match)!==unsafeIdentity(item)) {
       if(!match.confirmed && match.category==="Unknown" && item.category==="Unknown"
           && ((containerIdentity(item) && !containerIdentity(match))
-            || (generic(match) && !generic(item) && unsafeIdentity(item)))) retained[index]={...item};
+            || (generic(match) && !generic(item) && unsafeIdentity(item)))) retained[index]=copyOwner(item);
       retained[index].requiresConfirmation=true;
       recordConflict(retained[index]);
     }
@@ -265,7 +307,8 @@ function merge(vision,proposals,samePhysicalObject,capture,hasNormalizationConfl
   const ranked=proposals.map((item,index)=>({...item,index})).sort((a,b)=>Number(b.category!=="Unknown")-Number(a.category!=="Unknown")
     || Number(containerIdentity(b))-Number(containerIdentity(a))
     || Number(generic(a))-Number(generic(b)) || a.index-b.index);
-  for(const {index,...proposal} of ranked) {
+  for(const {index} of ranked) {
+    const proposal=copyOwner(proposals[index]);
     // Identity-only observations are carried separately, never promoted into localized cards.
     if(!proposal.boundingBox) continue;
     const matches=retained.filter(item=>matchesRegion(item,proposal));
@@ -302,7 +345,7 @@ function merge(vision,proposals,samePhysicalObject,capture,hasNormalizationConfl
       // or a scene taxonomy, they may establish a unique localized identity.
       const supportedPhysical=!!automaticCategory({...proposal,category:"Unknown"});
       if(capture?.captureId && (conflicting || identityMismatch) && belongsToCapture(proposal,capture)) {
-        classificationEvidence.set(match,{captureId:capture.captureId,conflict:true,snapshot:evidenceSnapshot(match)});
+        recordConflict(match);
       }
       if(conflicting) {match.requiresConfirmation=true;continue;}
       if(capture?.captureId && match.category==="Unknown" && !match.confirmed
@@ -353,10 +396,16 @@ function merge(vision,proposals,samePhysicalObject,capture,hasNormalizationConfl
     if(candidates.length!==1)continue;
     const prior=classificationEvidence.get(owner);
     // Keep state evidence even if it cannot grant any positive category.
-    classificationEvidence.set(owner,{captureId:capture.captureId,identity:candidates[0].observedIdentity,
+    classificationEvidence.set(owner,{...prior,captureId:capture.captureId,identity:candidates[0].observedIdentity,
       conflict:!!prior?.conflict,snapshot:evidenceSnapshot(owner)});
   }
   for(const owner of retained) {
+    if(capture?.captureId && categoryAuthority(owner,capture.captureId)==="invalid") {
+      owner.category="Unknown";owner.requiresConfirmation=true;
+      for(const field of ["guidance","modelKey","modelHotspots","explanation","action","warning"])delete owner[field];
+      classificationEvidence.set(owner,{...classificationEvidence.get(owner),captureId:capture.captureId,
+        invalidCategoryAuthority:true,snapshot:evidenceSnapshot(owner)});
+    }
     let evidence=classificationEvidence.get(owner);
     const aligned=alignedIdentity(owner,capture?.captureId);
     // Classify only this uniquely matched, capture-bound physical owner. This
@@ -370,7 +419,7 @@ function merge(vision,proposals,samePhysicalObject,capture,hasNormalizationConfl
       const mapped=automaticCategory({...owner,observedIdentity:aligned})||automaticCategory(owner);
       if(mapped && !productStateVeto(owner,mapped,aligned)) {
         owner.category=mapped;owner.requiresConfirmation=true;
-        evidence={...evidence,snapshot:evidenceSnapshot(owner)};
+        evidence={...evidence,derivedCategory:mapped,snapshot:evidenceSnapshot(owner)};
         classificationEvidence.set(owner,evidence);
       }
     }
@@ -410,4 +459,4 @@ function merge(vision,proposals,samePhysicalObject,capture,hasNormalizationConfl
     return true;
   });
 }
-module.exports={createDiscoveryService,discoverObjects:createDiscoveryService(),merge,alignedIdentity,identityConflict};
+module.exports={createDiscoveryService,discoverObjects:createDiscoveryService(),merge,alignedIdentity,identityConflict,categoryAuthority};
