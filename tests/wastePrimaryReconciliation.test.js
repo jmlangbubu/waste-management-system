@@ -236,7 +236,8 @@ test("Unknown primary is rejected before even a failing persistence path is atte
  neutral(r);unavailablePrimary(saved);
 });
 test("source-equivalent Android Unknown contract is wired through real presentation and original-primary navigation",()=>{
- const root="C:/Users/ADMIN/AndroidStudioProjects/AIWasteManagementSystem-unknown-primary/app/src/main/java/com/example/aiwastemanagementsystem/";
+ const androidPath=require("node:path");
+ const root=androidPath.resolve(__dirname,"../../../../../AndroidStudioProjects/AIWasteManagementSystem-unknown-primary/app/src/main/java/com/example/aiwastemanagementsystem")+androidPath.sep;
  const presentation=fs.readFileSync(root+"WastePrimaryPresentation.java","utf8"),scan=fs.readFileSync(root+"WasteScanActivity.java","utf8"),
   details=fs.readFileSync(root+"ScanHistoryDetailActivity.java","utf8"),parser=fs.readFileSync(root+"WasteCategoryAssessments.java","utf8");
  assert.match(presentation,/default: return "Unknown"/);assert.match(presentation,/category\(primary.optString\("category", ""\)\).equals\("Unknown"\)\) return true/);
