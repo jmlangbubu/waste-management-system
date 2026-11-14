@@ -1,7 +1,7 @@
 "use strict";
 const assert=require("node:assert/strict"),{test}=require("node:test"),crypto=require("node:crypto"),fs=require("node:fs"),path=require("node:path"),vm=require("node:vm"),{EventEmitter}=require("node:events");
 const whole=require("../gemini-waste-classifier-cloudrun/wholeImageRecognition"),shared=require("../gemini-waste-classifier-cloudrun/cropRecognition");
-const {createDiscoveryService,merge,identityConflict,alignedIdentity}=require("../services/wholeImageRecognitionService");
+const {createDiscoveryService,merge,identityConflict,alignedIdentity,categoryAuthority}=require("../services/wholeImageRecognitionService");
 const analysis=require("../services/wasteAnalysisService");
 const jpeg=Buffer.from([255,216,255,192,0,11,8,1,144,2,88,1,1,17,0,255,217]).toString("base64");
 const input=()=>({requestId:crypto.randomUUID(),captureId:crypto.randomUUID(),image:jpeg,width:600,height:400,orientation:"upright"});
@@ -100,8 +100,8 @@ test("Cloud handler is gated authenticated bounded and uses only the pinned mode
  const req=new EventEmitter();req.body=request;req.get=()=>env.WHOLE_IMAGE_DISCOVERY_SHARED_TOKEN;const res=response();await handler(req,res);assert.equal(res.body.objects.length,1);assert.equal(calls,1);
  for(const config of [{...env,WHOLE_IMAGE_DISCOVERY_ENABLED:"false"},{...env,WHOLE_IMAGE_DISCOVERY_MODEL:"unverified-model"}]){const bad=response();await whole.createCloudHandler({env:config,transport:async()=>{throw Error("must not call");}})(req,bad);assert.equal(bad.statusCode,503);}
 });
-function serviceFixture({enabled=true,objects=[object("Pen",[100,400,800,450])],failure=false,visionObjects=null,assessmentEnabled=true,assessmentFailure=false}={}) {
- let resolveDiscovery;const calls={primary:0,vision:0,discovery:0};const primary={success:true,source:"original",result:{itemName:"Original Bottle",category:"Recyclable",confidence:.91,explanation:"Original explanation",action:"Original action",warning:"Original warning"}};
+function serviceFixture({enabled=true,objects=[object("Pen",[100,400,800,450])],failure=false,visionObjects=null,assessmentEnabled=true,assessmentFailure=false,correspondence={merge,identityConflict,alignedIdentity,categoryAuthority},carriedOwners,primaryPayload,assessmentAI=false}={}) {
+ let resolveDiscovery,assessmentRequests=0;const calls={primary:0,vision:0,discovery:0};const primary=primaryPayload??{success:true,source:"original",result:{itemName:"Original Bottle",category:"Recyclable",confidence:.91,explanation:"Original explanation",action:"Original action",warning:"Original warning"}};
  const transport={request(options,callback){const req=new EventEmitter();req.write=()=>{};req.destroy=e=>req.emit("error",e);req.end=()=>{calls.primary++;const res=new EventEmitter();res.statusCode=200;callback(res);res.emit("data",JSON.stringify(primary));res.emit("end");return req;};return req;}};
  const module={exports:{}};
  vm.runInNewContext(fs.readFileSync(path.join(__dirname,"../services/wasteAnalysisService.js"),"utf8"),{module,Buffer,URL,setTimeout,clearTimeout,console:{log(){},warn(){},error(){}},process:{env:{GEMINI_CLASSIFIER_URL:env.GEMINI_CLASSIFIER_URL,...(enabled?{WHOLE_IMAGE_DISCOVERY_ENABLED:"true",...(assessmentEnabled?{WASTE_ITEM_ASSESSMENT_ENABLED:"true"}:{})}:{})}},require(id){
@@ -112,13 +112,27 @@ function serviceFixture({enabled=true,objects=[object("Pen",[100,400,800,450])],
   if(id==="./geminiWasteClassifierService")return {};
   if(id==="./wasteLearningGuideService")return require("../services/wasteLearningGuideService");
   if(id==="./wasteDisplayNameService")return require("../services/wasteDisplayNameService");
-  if(id==="./perItemWasteAssessmentService"){if(assessmentFailure)throw Error("SYNTHETIC_PRIVATE_ASSESSMENT_FAILURE");return {assessCapture:require("../services/perItemWasteAssessmentService").createAssessmentService({env:{WASTE_ITEM_ASSESSMENT_ENABLED:"true"}})};}
+  if(id==="./perItemWasteAssessmentService"){if(assessmentFailure)throw Error("SYNTHETIC_PRIVATE_ASSESSMENT_FAILURE");
+   // Trace modules own separate WeakMaps; wire the consumer to that same module
+   // instance rather than making valid traced evidence appear to be missing.
+   const file=path.join(__dirname,"../services/perItemWasteAssessmentService.js"),m={exports:{}};
+   const localRequire=require("node:module").createRequire(file);
+   vm.runInNewContext(fs.readFileSync(file,"utf8"),{module:m,process:{env:{}},URL,Buffer,
+    require:id=>id==="./wholeImageRecognitionService"?correspondence:localRequire(id)});
+   return {assessCapture:m.exports.createAssessmentService({env:{WASTE_ITEM_ASSESSMENT_ENABLED:"true",
+    WASTE_ITEM_ASSESSMENT_AI_ENABLED:String(assessmentAI),CLOUD_RUN_AUTH_MODE:"iam",CLOUD_RUN_AUDIENCE:"https://synthetic.invalid",
+    GEMINI_CLASSIFIER_URL:env.GEMINI_CLASSIFIER_URL,WASTE_ITEM_ASSESSMENT_SHARED_TOKEN:"synthetic-offline-token-over-thirty-two-characters"},
+    authHeaders:async()=>({}),transport:async(url,input)=>{assessmentRequests++;return {schemaVersion:1,
+     requestId:input.requestId,captureId:input.captureId,assessments:input.items.map(item=>({itemId:item.itemId,
+      category:"Unknown",kind:"unknown",material:"unknown",condition:"unknown",evidence:"insufficient"}))};}})};}
   if(id==="./wasteAssessmentDiagnostics")return {logAssessment(){}};
   if(id==="../utils/wasteMapper")return require("../utils/wasteMapper");
-  if(id==="./wholeImageRecognitionService")return {merge,identityConflict,alignedIdentity,discoverObjects:async(input)=>{calls.discovery++;if(failure)throw new shared.RecognitionError("RECOGNITION_TIMEOUT",504);return new Promise(resolve=>{resolveDiscovery=()=>resolve(normalize(objects,input));});}};
+  if(id==="./wholeImageRecognitionService")return {...correspondence,
+   merge:(initial,proposals,matcher,capture,conflict)=>correspondence.merge(carriedOwners??initial,proposals,matcher,capture,conflict),
+   discoverObjects:async(input)=>{calls.discovery++;if(failure)throw new shared.RecognitionError("RECOGNITION_TIMEOUT",504);return new Promise(resolve=>{resolveDiscovery=()=>resolve(normalize(objects,input));});}};
   throw Error("Unexpected dependency "+id);
  }});
- return {...module.exports,calls,complete:()=>resolveDiscovery?.()};
+ return {...module.exports,calls,assessmentRequests:()=>assessmentRequests,complete:()=>resolveDiscovery?.()};
 }
 test("discovery and primary run concurrently, primary result stays unchanged, Vision geometry wins",async()=>{
  const request=input(),service=serviceFixture();const pending=service.analyzeWaste({image:request.image,objectDiscovery:request,principal:42});
@@ -453,6 +467,64 @@ function optionAVision(name, box, ordinal = 1) {
   };
 }
 
+// Phase 2A observes only booleans/counters. No labels, images, IDs or geometry
+// enter trace records. Private predicates execute unchanged in a fresh VM; the
+// checked source anchors fail closed if production structure changes. Nothing
+// is written to disk, added to production exports or patched in require.cache.
+function phase2ATracer() {
+  const file = path.join(__dirname, "../services/wholeImageRecognitionService.js");
+  let source = fs.readFileSync(file, "utf8");
+  const replaceOnce = (anchor, replacement) => {
+    assert.equal(source.split(anchor).length, 2, "unique instrumentation anchor");
+    source = source.replace(anchor, replacement);
+  };
+  replaceOnce("function alignedRegion(a,b) {", "function untracedAlignedRegion(a,b) {");
+  replaceOnce("function compatibleIdentity(a,b) {", `function alignedRegion(a,b) {
+    const result=untracedAlignedRegion(a,b); observe("alignedRegion",result); return result;
+  }
+  function compatibleIdentity(a,b) {`);
+  replaceOnce("const trustedCorrespondence=(owner,proposal)=>",
+    "const untracedTrustedCorrespondence=(owner,proposal)=>");
+  const marker = "  // An exact neutral observation supplies no contradictory physical identity.";
+  replaceOnce(marker, `  const trustedCorrespondence=(owner,proposal)=>{
+    const result=untracedTrustedCorrespondence(owner,proposal);
+    observe("trustedCorrespondence",result); return result;
+  };
+${marker}`);
+  const records = [], module = { exports: {} };
+  const observe = (predicate, accepted) => {
+    assert.equal(typeof accepted, "boolean");
+    records.push({ predicate, accepted });
+  };
+  vm.runInNewContext(source, {
+    module, observe, process: { env: {} },
+    require: require("node:module").createRequire(file)
+  }, { filename: file, timeout: 1000 });
+  const realMerge = module.exports.merge;
+  let mergeCalls = 0;
+  const correspondence = { ...module.exports, merge(...args) {
+    mergeCalls++;
+    const matcher = args[2];
+    args[2] = (a, b) => {
+      const result = matcher(a, b);
+      observe("samePhysicalObject", result);
+      return result;
+    };
+    return realMerge(...args);
+  } };
+  const counts = predicate => {
+    const calls = records.filter(row => row.predicate === predicate);
+    return { observation: calls.length ? "OBSERVED" : "NOT OBSERVED",
+      calls: calls.length, accepted: calls.filter(row => row.accepted).length,
+      rejected: calls.filter(row => !row.accepted).length };
+  };
+  const report = () => ({ mergeCalls, samePhysicalObject: counts("samePhysicalObject"),
+    alignedRegion: counts("alignedRegion"), trustedCorrespondence: counts("trustedCorrespondence") });
+  const observations = () => records.filter(row => row.predicate === "samePhysicalObject")
+    .map((row, index) => ({ ordinal: index + 1, matched: row.accepted }));
+  return { correspondence, report, observations };
+}
+
 function optionAReplay(t, initial, objects) {
   const capture = optionACapture();
   const normalized = whole.normalize(capture, { objects });
@@ -463,22 +535,31 @@ function optionAReplay(t, initial, objects) {
 
   const observedInitial = structuredClone(initial);
   const observedProposals = structuredClone(normalized.objects);
-  const observations = [];
-  const observingMatcher = (left, right) => {
-    const matched = analysis.samePhysicalObject(left, right);
-    observations.push({ ordinal: observations.length + 1, matched });
-    return matched;
-  };
-  const observed = merge(observedInitial, observedProposals, observingMatcher, capture);
-  assert.deepEqual(observed, direct);
+  const tracer = phase2ATracer();
+  const observed = tracer.correspondence.merge(observedInitial, observedProposals, analysis.samePhysicalObject, capture);
+  // VM outputs have different prototypes; compare their serialized contracts
+  // and separately query each module's own private WeakMap on its live owners.
+  assert.deepEqual(JSON.parse(JSON.stringify(observed)), direct);
+  const outcomes = (owners, predicates) => Array.from(owners, owner => ({
+    aligned: predicates.alignedIdentity(owner, capture.captureId),
+    conflict: predicates.identityConflict(owner, capture.captureId),
+    authority: predicates.categoryAuthority(owner, capture.captureId)
+  }));
+  assert.deepEqual(outcomes(observed, tracer.correspondence), outcomes(direct, { alignedIdentity, identityConflict, categoryAuthority }));
   assert.deepEqual(observedInitial, initial);
   assert.deepEqual(observedProposals, normalized.objects);
   assert.deepEqual({ initial, normalized, capture }, before);
-  assert.ok(observations.length > 0, "replay must compare physical regions");
-  assert.ok(observations.every(entry => typeof entry.matched === "boolean"));
-  t.diagnostic("synthetic matcher calls=" + observations.length
-    + ", true=" + observations.filter(entry => entry.matched).length);
-  return { owners: direct, proposals: normalized.objects, observations, capture };
+  const trace = tracer.report();
+  trace.finalOwners = direct.map((owner, index) => ({ ordinal: index + 1,
+    category: owner.category, hasAlignedIdentity: alignedIdentity(owner, capture.captureId) !== null,
+    identityConflict: identityConflict(owner, capture.captureId) }));
+  assert.equal(trace.mergeCalls, 1);
+  assert.doesNotMatch(JSON.stringify(trace), /itemId|boundingBox|captureId|requestId|image|observedIdentity/);
+  // No predicate call is invented when short-circuiting or identity-only input
+  // bypasses it. Zero calls means NOT OBSERVED, never a hypothetical rejection.
+  t.diagnostic("synthetic correspondence " + JSON.stringify(trace));
+  const observations = tracer.observations();
+  return { owners: direct, proposals: normalized.objects, observations, capture, trace };
 }
 
 function optionAAssertSurvivor(actual, expected) {
@@ -737,4 +818,236 @@ test("Option A: four categories and unresolved packaging keep independent eviden
   assert.equal(calls, 0);
   assert.deepEqual(result.owners, before);
   assert.ok(result.observations.every(entry => !entry.matched));
+});
+
+// A-N correspondence matrix. G/H/I and competing-owner F reuse the Option A
+// adjacent, nested, equal-label and three-region fixtures above, now with the
+// same predicate tracing and private-evidence equivalence checks as these cases.
+function phase2AAssertOwner(result, original, { name = original.itemName,
+  category = original.category, aligned = null, conflict = false } = {}) {
+  assert.equal(result.owners.length, 1);
+  const owner = result.owners[0];
+  optionAAssertSurvivor(owner, { ...original, itemName: name, category,
+    ...(result.proposals[0]?.boundingBox ? { identitySource: "gemini_whole_image" } : {}) });
+  assert.equal(alignedIdentity(owner, result.capture.captureId), aligned);
+  assert.equal(identityConflict(owner, result.capture.captureId), conflict);
+  assert.equal(alignedIdentity(owner, "33333333-3333-4333-8333-333333333333"), null);
+  assert.equal(identityConflict(owner, "33333333-3333-4333-8333-333333333333"), false);
+  return owner;
+}
+
+test("Phase 2A A: unique aligned neutral Vision owner accepts specific noodle identity", t => {
+  const original = optionAVision("Item", [100,100,500,500]);
+  const r = optionAReplay(t, [original], [object("Instant Noodle Packet", [100,100,500,500])]);
+  const owner = phase2AAssertOwner(r, original, {
+    name: "Instant Noodle Packet", category: "Residual", aligned: "Instant Noodle Packet"
+  });
+  assert.equal(owner.identityObservation, "Instant Noodle Packet");
+  assert.equal(owner.identitySource, "gemini_whole_image");
+  assert.ok(r.trace.samePhysicalObject.accepted > 0);
+  assert.ok(r.trace.alignedRegion.accepted > 0);
+  assert.ok(r.trace.trustedCorrespondence.accepted > 0);
+});
+
+test("Phase 2A B: accepted relaxed physical match does not imply strict identity alignment", t => {
+  const original = optionAVision("Packet", [100,100,500,500]);
+  const r = optionAReplay(t, [original], [object("Instant Noodle Packet", [100,125,500,525])]);
+  const owner = phase2AAssertOwner(r, original);
+  assert.equal(owner.identityObservation, "Instant Noodle Packet");
+  assert.equal(owner.identitySource, "gemini_whole_image");
+  assert.ok(r.trace.samePhysicalObject.accepted > 0);
+  assert.ok(r.trace.alignedRegion.rejected > 0);
+  assert.equal(r.trace.alignedRegion.accepted, 0);
+  assert.equal(r.trace.trustedCorrespondence.calls, 0); // NOT OBSERVED
+});
+
+test("Phase 2A C: unlocalized identity cannot refine or add a physical owner", t => {
+  const original = optionAVision("Item", [100,100,500,500]);
+  const r = optionAReplay(t, [original], [object("Instant Noodle Packet", null)]);
+  phase2AAssertOwner(r, original);
+  assert.equal(r.proposals[0].recognitionState, "identity_only");
+  assert.equal(r.proposals[0].boundingBox, undefined);
+  assert.equal(r.owners[0].identityObservation, undefined);
+  assert.equal(r.trace.samePhysicalObject.calls, 0); // NOT OBSERVED, not rejected
+  assert.equal(r.trace.alignedRegion.calls, 0);
+  assert.equal(r.trace.trustedCorrespondence.calls, 0);
+});
+
+test("Phase 2A D: generic Item and Object observations cannot supply a specific identity", t => {
+  for (const label of ["Item", "Object"]) {
+    const original = optionAVision("Item", [100,100,500,500]);
+    const r = optionAReplay(t, [original], [object(label, [100,100,500,500])]);
+    phase2AAssertOwner(r, original);
+    assert.equal(r.owners[0].identityObservation, label);
+    assert.ok(r.trace.samePhysicalObject.accepted > 0);
+  }
+});
+
+test("Phase 2A E: exact physical match cannot corroborate incompatible original identities", t => {
+  const original = optionAVision("Bottle", [100,100,500,500]);
+  const r = optionAReplay(t, [original], [object("Instant Noodle Packet", [100,100,500,500])]);
+  phase2AAssertOwner(r, original, { conflict: true });
+  assert.equal(r.owners[0].identityObservation, "Instant Noodle Packet");
+  assert.ok(r.trace.samePhysicalObject.accepted > 0);
+});
+
+test("Phase 2A J: trusted specific physical identity need not establish a waste category", t => {
+  const original = optionAVision("Item", [100,100,500,500]);
+  const r = optionAReplay(t, [original], [object("Wooden spoon", [100,100,500,500])]);
+  phase2AAssertOwner(r, original, { name: "Wooden spoon", aligned: "Wooden spoon" });
+  assert.ok(r.trace.trustedCorrespondence.accepted > 0);
+});
+
+test("Phase 2A K: trusted unopened or sealed identity remains Unknown after display refinement", t => {
+  for (const label of ["Unopened Instant Noodle Packet", "Sealed Snack Sachet"]) {
+    const original = optionAVision("Item", [100,100,500,500]);
+    const r = optionAReplay(t, [original], [object(label, [100,100,500,500])]);
+    phase2AAssertOwner(r, original, { name: r.proposals[0].itemName, aligned: label });
+    assert.ok(r.trace.trustedCorrespondence.accepted > 0);
+  }
+});
+
+test("Phase 2A L: hazardous display observation never becomes trusted benign classification", t => {
+  const original = optionAVision("Item", [100,100,500,500]);
+  const r = optionAReplay(t, [original], [object("Chemical bottle", [100,100,500,500])]);
+  // Display refinement is weaker than classification provenance; do not call
+  // this a rejected display refinement or a trusted aligned identity.
+  phase2AAssertOwner(r, original, { name: r.proposals[0].itemName, conflict: true });
+  assert.equal(r.owners[0].identityObservation, r.proposals[0].itemName);
+  assert.equal(r.trace.trustedCorrespondence.accepted, 0);
+});
+
+test("Phase 2A M: duplicate normalized IDs suppress trusted evidence, not physical deduplication", t => {
+  const original = optionAVision("Item", [100,100,500,500]);
+  const repeated = object("Instant Noodle Packet", [100,100,500,500]);
+  const r = optionAReplay(t, [original], [repeated, repeated]);
+  assert.equal(r.proposals[0].itemId, r.proposals[1].itemId);
+  phase2AAssertOwner(r, original, { name: "Instant Noodle Packet" });
+  assert.ok(r.trace.trustedCorrespondence.rejected > 0);
+  assert.equal(r.trace.trustedCorrespondence.accepted, 0);
+});
+
+test("Phase 2A M: stale requests and malformed responses fail the validation boundary before merge", () => {
+  const c = optionACapture(), valid = whole.normalize(c, { objects: [object("Instant Noodle Packet")] });
+  const tracer = phase2ATracer();
+  const consume = response => tracer.correspondence.merge([], whole.validateResponse(c, response).objects,
+    analysis.samePhysicalObject, c);
+  for (const invalid of [
+    { ...valid, requestId: "33333333-3333-4333-8333-333333333333" },
+    { ...valid, captureId: "33333333-3333-4333-8333-333333333333" },
+    { ...valid, objects: "malformed" },
+    { ...valid, objects: [{ ...valid.objects[0], category: "Special Waste" }] }
+  ]) assert.throws(() => consume(invalid), error => error.code === "INVALID_PROVIDER_RESPONSE");
+  assert.equal(tracer.report().mergeCalls, 0);
+  assert.equal(tracer.report().samePhysicalObject.calls, 0);
+});
+
+test("Phase 2A N: unique independent Vision ownership and refinement are stable across proposal orders", t => {
+  const initial = [optionAVision("Item", [100,100,500,400], 1), optionAVision("Item", [100,600,500,900], 2)];
+  const proposals = [object("Instant Noodle Packet", [100,100,500,400]), object("Wooden spoon", [100,600,500,900])];
+  let expected;
+  for (const owners of [initial, [...initial].reverse()]) for (const objects of [proposals, [...proposals].reverse()]) {
+    const r = optionAReplay(t, owners, objects);
+    assert.equal(r.owners.length, 2);
+    const sorted = [...r.owners].sort((a, b) => a.itemId.localeCompare(b.itemId));
+    for (let i = 0; i < sorted.length; i++) {
+      optionAAssertSurvivor(sorted[i], { ...initial[i], itemName: proposals[i].label, identitySource: "gemini_whole_image",
+        category: i === 0 ? "Residual" : "Unknown" });
+      assert.equal(alignedIdentity(sorted[i], r.capture.captureId), proposals[i].label);
+      assert.equal(identityConflict(sorted[i], r.capture.captureId), false);
+    }
+    if (expected) assert.deepEqual(sorted, expected);
+    expected = sorted;
+  }
+});
+
+test("Phase 2A: full analysis trace preserves primary, owners, assessments and bounded request counts", async t => {
+  const capture = optionACapture(), original = optionAVision("Item", [100,100,500,500]);
+  const normalizedOwner = analysis.normalizeDetectedItems([original], "google_vision_object_localization")[0];
+  const objects = [object("Instant Noodle Packet", [100,100,500,500])];
+  const tracer = phase2ATracer(), results = [];
+  for (const correspondence of [{ merge, identityConflict, alignedIdentity, categoryAuthority }, tracer.correspondence]) {
+    const service = serviceFixture({ objects, visionObjects: [original], correspondence });
+    const pending = service.analyzeWaste({ image: capture.image, objectDiscovery: capture,
+      principal: 42, independentCategoryV2: true });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(service.calls, { primary: 1, vision: 1, discovery: 1 });
+    service.complete();
+    const result = JSON.parse(JSON.stringify(await pending));
+    results.push(result);
+    assert.equal(result.detectedItems.length, 1);
+    assert.equal(result.detectedItems[0].itemId, normalizedOwner.itemId);
+    assert.deepEqual(result.detectedItems[0].boundingBox, original.boundingBox);
+    assert.equal(result.detectedItems[0].analysisSource, original.analysisSource);
+    assert.equal(result.detectedItems[0].category, "Residual");
+    assert.equal(result.scanSummary.totalItems, 1);
+    optionAAssertAssessmentOwners(result.categoryAssessments, result.detectedItems);
+    assert.equal(result.categoryAssessments.aiStatus, "not_requested");
+    assert.equal(result.categoryAssessments.items[0].category, "Residual");
+    for (const [key, expected] of Object.entries({ itemName: "Original Bottle", category: "Recyclable",
+      explanation: "Original explanation", action: "Original action", warning: "Original warning",
+      analysisSource: "original", aiConfidence: "0.91" })) assert.equal(result[key], expected);
+    assert.deepEqual(service.calls, { primary: 1, vision: 1, discovery: 1 });
+  }
+  assert.deepEqual(results[1], results[0]);
+  assert.equal(tracer.report().mergeCalls, 1);
+  t.diagnostic("synthetic full analysis " + JSON.stringify(tracer.report()));
+});
+
+function phase2AV5Accepted(result, captureId) {
+  const file = path.join(__dirname, "wasteDisplayNames.test.js"), source = fs.readFileSync(file, "utf8");
+  const module = { exports: {} };
+  vm.runInNewContext(source.slice(0, source.indexOf("for(const [raw,display]"))
+    + "\nmodule.exports={v5SidecarAccepted};", { module, require: require("node:module").createRequire(file) });
+  return module.exports.v5SidecarAccepted(result, captureId);
+}
+
+test("Phase 2A.1: real final assembly cannot retain carried stale categories when assessment is disabled or fails", async () => {
+  const a = optionACapture(), b = { ...a, captureId: "33333333-3333-4333-8333-333333333333" };
+  const bounds = whole.box([100,100,500,300]);
+  const initial = analysis.normalizeDetectedItems([{ name: "Item", score: .8, boundingBox: bounds }],
+    "google_vision_object_localization");
+  const owner = merge(initial, whole.normalize(a, { objects: [object("White charger", [100,100,500,300])] }).objects,
+    analysis.samePhysicalObject, a)[0];
+  assert.equal(owner.category, "Special Waste");
+  // Simulate helper-level reuse at the real merge boundary; this is not a claim
+  // that the normal fresh-normalization path reproduces a historical live scan.
+  for (const copy of [item => item, item => ({ ...item }), item => structuredClone(item),
+    item => JSON.parse(JSON.stringify(item))]) for (const independentPrimary of [false, true]) {
+    for (const optional of [{}, { assessmentEnabled: false }, { assessmentFailure: true }]) {
+      const carried = copy(owner), before = structuredClone(carried);
+      const service = serviceFixture({ objects: [], visionObjects: [{ name: "Charger", score: .8, boundingBox: bounds }],
+        carriedOwners: [carried], assessmentAI: true,
+        ...(!independentPrimary ? { primaryPayload: { success: false, result: null } } : {}), ...optional });
+      const pending = service.analyzeWaste({ image: b.image, objectDiscovery: b, principal: 42, independentCategoryV2: true });
+      await new Promise(resolve => setImmediate(resolve));service.complete();
+      const result = JSON.parse(JSON.stringify(await pending));
+      assert.equal(result.detectedItems.length, 1);
+      const returned = result.detectedItems[0];
+      assert.equal(returned.category, "Unknown");
+      for (const key of ["itemId", "boundingBox", "analysisSource", "canonicalItem", "confidence", "captureId"])
+        assert.deepEqual(returned[key], before[key]);
+      assert.deepEqual(result.scanSummary, { totalItems: 1,
+        categories: { biodegradable: 0, recyclable: 0, residual: 0, specialWaste: 0 } });
+      assert.equal(result.category, independentPrimary ? "Recyclable" : "Unknown");
+      if (independentPrimary) {
+        assert.equal(result.itemName, "Original Bottle");assert.equal(result.analysisSource, "original");
+        assert.equal(result.action, "Original action");assert.equal(result.explanation, "Original explanation");
+      }
+      if (optional.assessmentEnabled === false || optional.assessmentFailure) {
+        assert.equal(result.categoryAssessments, undefined);
+      } else {
+        assert.equal(result.categoryAssessments.captureId, b.captureId);
+        assert.equal(result.categoryAssessments.aiStatus, "not_requested");
+        optionAAssertAssessmentOwners(result.categoryAssessments, result.detectedItems);
+        const row = result.categoryAssessments.items[0];
+        assert.equal(row.assessmentSource, "existing_category");assert.equal(row.category, returned.category);
+        assert.equal(phase2AV5Accepted(result, b.captureId), true);
+      }
+      assert.equal(service.assessmentRequests(), 0);
+      assert.deepEqual(service.calls, { primary: 1, vision: 1, discovery: 1 });
+      assert.deepEqual(carried, before);
+      assert.doesNotMatch(JSON.stringify(result), /derivedCategory|invalidCategoryAuthority|classificationEvidence/);
+    }
+  }
 });

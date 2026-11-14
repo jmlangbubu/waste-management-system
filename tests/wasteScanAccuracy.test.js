@@ -1,7 +1,7 @@
 "use strict";
 const {test}=require("node:test"),assert=require("node:assert/strict"),crypto=require("node:crypto");
 const whole=require("../gemini-waste-classifier-cloudrun/wholeImageRecognition");
-const {merge,alignedIdentity}=require("../services/wholeImageRecognitionService");
+const {merge,alignedIdentity,categoryAuthority}=require("../services/wholeImageRecognitionService");
 const {samePhysicalObject,buildScanSummary}=require("../services/wasteAnalysisService");
 const {createAssessmentService}=require("../services/perItemWasteAssessmentService");
 const {withDisplayNames}=require("../services/wasteDisplayNameService");
@@ -155,8 +155,25 @@ test(`assessment ${failure} falls back without retry or primary mutation`,async(
 
 test("assessment disabled causes no inference and preserves established categories",async()=>{
  const {assess,calls}=fixture(undefined,{WASTE_ITEM_ASSESSMENT_AI_ENABLED:"false"});
- const items=[{...vision("Bottle"),category:"Special Waste"}],result=await assess({capture:capture(),items,principal:5});
+ const items=[{...vision("Charger"),category:"Special Waste"}],before=structuredClone(items);
+ const result=await assess({capture:capture(),items,principal:5});
  assert.equal(result.items[0].category,"Special Waste");assert.equal(calls.length,0);
+ assert.deepEqual(items,before);
+});
+
+test("unsupported carried Bottle category is Unknown without repair inference or caller mutation",async()=>{
+ const c=capture(),items=[{...vision("Bottle"),category:"Special Waste"}],before=structuredClone(items);
+ const {assess,calls}=fixture();
+ const result=await assess({capture:c,items,principal:5});
+ assert.equal(result.items[0].category,"Unknown");assert.equal(calls.length,0);
+ assert.deepEqual(items,before);
+ const owners=merge(items,[],samePhysicalObject,c);
+ assert.equal(owners.length,1);assert.equal(owners[0].category,"Unknown");
+ for(const key of ["itemId","boundingBox","analysisSource","canonicalItem","confidence"])
+  assert.deepEqual(owners[0][key],before[0][key]);
+ const final=await assess({capture:c,items:owners,principal:5});
+ assert.equal(final.items[0].category,owners[0].category);assert.equal(calls.length,0);
+ assert.deepEqual(items,before);
 });
 
 test("color-only Green Bottle stays Unknown without structured evidence even with a branded or specific primary",async()=>{
@@ -337,7 +354,7 @@ test("stale alignment cannot transfer Special Waste to an otherwise unidentified
  assert.equal(fresh.items[0].category,"Special Waste");
  const other=capture(),stale=fixture();assert.equal(alignedIdentity(items[0],other.captureId),null);
  const result=await stale.assess({capture:other,items,principal:5});assert.equal(result.items[0].category,"Unknown");
- assert.equal(stale.calls[0].items[0].observedIdentity,"item");
+ assert.equal(stale.calls.length,0);
 });
 test("explicit foreign capture IDs are rejected before deterministic or paid assessment",async()=>{
  const c=capture(),other=capture();
@@ -433,4 +450,205 @@ for(const [name,facts,options] of [
  ["opposing object kind",{category:"Residual",kind:"wrapper",material:"mixed",condition:"non_recyclable",evidence:"visible"},{opposingKind:true}]
 ])test(`eligible original empty bottle consumes provider veto: ${name}`,async()=>{
  await eligibleProviderVeto(facts,options);
+});
+
+// Phase 2A.2 barriers are controlled promises, never timing-based sleeps.
+function suspendedAssessment({outcome="success",config={},items:provided,primary:scene}={}) {
+ // Each case deliberately mutates geometry; never alias the shared fixture box.
+ const c=capture(),owner=merge([vision("Item","item_1",{...box})],
+  [proposal(c,"White charger",{...box})],samePhysicalObject,c)[0];
+ const items=provided||[owner,vision("Item","item_2",{left:.6,top:.1,right:.8,bottom:.8})];
+ let entered,release;
+ const started=new Promise(resolve=>{entered=resolve;}),gate=new Promise(resolve=>{release=resolve;});
+ const calls=[];
+ const assess=createAssessmentService({env:{...env,...config},authHeaders:async()=>({}),transport:async(url,input)=>{
+  calls.push(structuredClone(input));entered();await gate;
+  if(outcome!=="success")throw new (require("../gemini-waste-classifier-cloudrun/cropRecognition").RecognitionError)(
+   outcome==="timeout"?"RECOGNITION_TIMEOUT":"RECOGNITION_UNAVAILABLE",outcome==="timeout"?504:503);
+  return {schemaVersion:1,requestId:input.requestId,captureId:input.captureId,
+   assessments:input.items.map(item=>({itemId:item.itemId,...insufficient}))};
+ }});
+ const input={capture:c,items,principal:5,...(scene?{primary:scene}:{})};
+ return {input,owner,calls,assess,started,release,start:()=>assess(input)};
+}
+
+test("Phase 2A.2: suspended assessment rejects a deterministic owner whose geometry loses authority",async t=>{
+ const f=suspendedAssessment();
+ assert.equal(categoryAuthority(f.owner,f.input.capture.captureId),"correspondence");
+ const pending=f.start();await f.started;
+ assert.equal(f.calls.length,1);assert.equal(f.calls[0].items.length,1);
+ // Only the separate eligible generic owner was sent to the provider.
+ assert.notEqual(f.calls[0].items[0].itemId,f.owner.itemId);
+ assert.equal(f.calls[0].items[0].observedIdentity,"item");
+ assert.deepEqual(f.calls[0].items[0].boundingBox,f.input.items[1].boundingBox);
+ f.owner.boundingBox={...f.owner.boundingBox,right:.31};
+ assert.equal(alignedIdentity(f.owner,f.input.capture.captureId),null);
+ assert.equal(categoryAuthority(f.owner,f.input.capture.captureId),"invalid");
+ const expected=structuredClone(f.input);f.release();
+ const observed=await pending.then(result=>({result}),error=>({error}));
+ if(observed.result)t.diagnostic("observed stale row="+observed.result.items[0].category
+  +", source="+observed.result.items[0].assessmentSource+", separate-owner requests="+f.calls.length);
+ assert.ok(observed.error,"changed owner must reject rather than return its pre-await category");
+ assert.equal(observed.error.code,"INVALID_RECOGNITION_REQUEST");assert.equal(observed.error.statusCode,400);
+ assert.equal(f.calls.length,1);assert.deepEqual(f.input,expected);
+});
+
+test("Phase 2A.2: pending assessment detects owner, capture, membership and private-state changes",async()=>{
+ const mutations=[
+  ["in-place box",f=>{f.owner.boundingBox.right=.31;}],
+  ["box shape",f=>{f.owner.boundingBox.extra=0;}],
+  ["item ID",f=>{f.owner.itemId="item_changed";}],
+  ["observed identity",f=>{f.owner.observedIdentity="Charger";}],
+  ["original identity",f=>{f.owner.originalItemName="Charger";}],
+  ["canonical identity",f=>{f.owner.canonicalItem="charger";}],
+  ["category",f=>{f.owner.category="Unknown";}],
+  ["source",f=>{f.owner.analysisSource="independent_classifier";}],
+  ["confidence",f=>{f.owner.confidence=.9;}],
+  ["confirmation",f=>{f.owner.confirmed=true;}],
+  ["confirmation requirement",f=>{f.owner.requiresConfirmation=false;}],
+  ["recognition state",f=>{f.owner.recognitionState="identity_only";}],
+  ["display only",f=>{f.owner.itemName="Changed display";}],
+  ["owner capture",f=>{f.owner.captureId="33333333-3333-4333-8333-333333333333";}],
+  ["capture ID",f=>{f.input.capture.captureId="33333333-3333-4333-8333-333333333333";}],
+  ["capture geometry",f=>{f.input.capture.width=601;}],
+  ["capture request",f=>{f.input.capture.requestId="33333333-3333-4333-8333-333333333333";}],
+  ["capture image",f=>{f.input.capture.image+="AAAA";}],
+  ["primary",f=>{f.input.primary.category="Special Waste";}],
+  ["added owner",f=>{f.input.items.push(vision("Item","item_3"));}],
+  ["removed owner",f=>{f.input.items.pop();}],
+  ["reordered owners",f=>{f.input.items.reverse();}],
+  ["identical replacement",f=>{f.input.items[0]={...f.owner};}],
+  ["eligible owner",f=>{f.input.items[1].itemId="item_changed";}],
+  ["circular malformed box",f=>{f.owner.boundingBox.self=f.owner.boundingBox;}]
+ ];
+ for(const [name,mutate] of mutations) {
+  const f=suspendedAssessment({primary:primary()}),pending=f.start();await f.started;
+  mutate(f);const expected=structuredClone(f.input);f.release();
+  await assert.rejects(pending,error=>error.code==="INVALID_RECOGNITION_REQUEST"&&error.statusCode===400,name);
+  assert.equal(f.calls.length,1,name);assert.deepEqual(f.input,expected,name);
+ }
+});
+
+test("Phase 2A.2: mutation rejection escapes provider rejection and timeout fallbacks",async()=>{
+ for(const outcome of ["success","reject","timeout"])for(const changed of [false,true]) {
+  const f=suspendedAssessment({outcome}),before=structuredClone(f.input),pending=f.start();await f.started;
+  if(changed)f.owner.boundingBox.left=.11;
+  const expected=structuredClone(f.input);f.release();
+  if(changed)await assert.rejects(pending,error=>error.code==="INVALID_RECOGNITION_REQUEST");
+  else {
+   const result=await pending;
+   assert.equal(result.aiStatus,outcome==="success"?"complete":"unavailable");
+   assert.deepEqual(result.items.map(item=>item.category),["Special Waste","Unknown"]);
+   assert.deepEqual(f.input,before);
+   // Stable fallback and successful attempts retain the existing no-retry cache.
+   assert.deepEqual(await f.assess(f.input),result);
+  }
+  assert.equal(f.calls.length,1);assert.deepEqual(f.input,expected);
+ }
+});
+
+test("Phase 2A.2: stable derived and independent owners keep categories without extra requests",async()=>{
+ const f=suspendedAssessment();
+ f.input.items.push({...vision("Charger","item_3"),category:"Special Waste"},
+  {...vision("Cardboard","item_4"),category:"Recyclable"});
+ const before=structuredClone(f.input),pending=f.start();await f.started;
+ // Equivalent coordinate objects do not invalidate evidence merely by reference.
+ f.owner.boundingBox={...f.owner.boundingBox};
+ f.input.items[1].boundingBox={...f.input.items[1].boundingBox};
+ f.release();const result=await pending;
+ assert.deepEqual(result.items.map(item=>item.category),["Special Waste","Unknown","Special Waste","Recyclable"]);
+ assert.deepEqual(result.items.map(item=>item.itemId),f.input.items.map(item=>item.itemId));
+ assert.equal(f.calls.length,1);assert.equal(f.calls[0].items.length,1);
+ assert.equal(result.aiStatus,"complete");assert.deepEqual(f.input,before);
+ assert.equal(categoryAuthority(f.owner,f.input.capture.captureId),"correspondence");
+});
+
+test("Phase 2A.2: disabled, unrequested, stale and foreign-owner paths retain existing policy",async()=>{
+ for(const config of [{WASTE_ITEM_ASSESSMENT_ENABLED:"false"},{WASTE_ITEM_ASSESSMENT_AI_ENABLED:"false"}]) {
+  const f=suspendedAssessment({config}),before=structuredClone(f.input),result=await f.start();
+  if(config.WASTE_ITEM_ASSESSMENT_ENABLED==="false")assert.equal(result,null);
+  else {assert.equal(result.aiStatus,"not_requested");assert.equal(result.items[0].category,"Special Waste");}
+  assert.equal(f.calls.length,0);assert.deepEqual(f.input,before);
+ }
+ const known=suspendedAssessment({items:[{...vision("Charger"),category:"Special Waste"},
+  {...vision("Cardboard","item_2"),category:"Recyclable"}]});
+ const knownBefore=structuredClone(known.input),result=await known.start();
+ assert.deepEqual(result.items.map(item=>item.category),["Special Waste","Recyclable"]);
+ assert.equal(known.calls.length,0);assert.deepEqual(known.input,knownBefore);
+ const stale=suspendedAssessment();stale.input.items=[stale.owner];
+ stale.input.capture.captureId="33333333-3333-4333-8333-333333333333";
+ const staleBefore=structuredClone(stale.input),denied=await stale.start();
+ assert.equal(denied.items[0].category,"Unknown");assert.equal(stale.calls.length,0);
+ assert.deepEqual(stale.input,staleBefore);
+ const foreign=suspendedAssessment();foreign.owner.captureId="33333333-3333-4333-8333-333333333333";
+ await assert.rejects(foreign.start(),error=>error.code==="INVALID_RECOGNITION_REQUEST");
+ assert.equal(foreign.calls.length,0);
+});
+
+test("Phase 2A.2: real analysis isolates raw provider inputs while assessment awaits",async()=>{
+ const fs=require("node:fs"),path=require("node:path"),vm=require("node:vm"),{EventEmitter}=require("node:events");
+ const discovery=require("../services/wholeImageRecognitionService"),google=require("../services/googleVisionService");
+ const file=path.join(__dirname,"../services/wasteAnalysisService.js"),source=fs.readFileSync(file,"utf8");
+ for(const independent of [false,true])for(const outcome of ["success","reject"]) {
+  const c=capture(),captureBefore=structuredClone(c),calls={primary:0,vision:0,discovery:0,assessment:0};
+  const rawVision=[{name:"Charger",score:.95,boundingBox:{...box}},
+   {name:"Item",score:.8,boundingBox:{left:.6,top:.1,right:.8,bottom:.8}}];
+  const rawDiscovery={objects:[{label:"Cardboard",box_2d:[850,100,980,300]}]};
+  let entered,release;
+  const started=new Promise(resolve=>{entered=resolve;}),gate=new Promise(resolve=>{release=resolve;});
+  const assessCapture=createAssessmentService({env,authHeaders:async()=>({}),transport:async(url,input)=>{
+   calls.assessment++;assert.equal(input.items.length,1);assert.equal(input.items[0].observedIdentity,"item");
+   entered();await gate;
+   if(outcome==="reject")throw new (require("../gemini-waste-classifier-cloudrun/cropRecognition").RecognitionError)("RECOGNITION_UNAVAILABLE",503);
+   return {schemaVersion:1,requestId:input.requestId,captureId:input.captureId,
+    assessments:input.items.map(item=>({itemId:item.itemId,...insufficient}))};
+  }});
+  const transport={request(options,callback){calls.primary++;const req=new EventEmitter();req.write=()=>{};
+   req.destroy=error=>req.emit("error",error);req.end=()=>{const res=new EventEmitter();res.statusCode=200;callback(res);
+    res.emit("data",JSON.stringify(independent?{success:true,source:"original",result:{itemName:"Original Bottle",
+     category:"Recyclable",confidence:.91,explanation:"Original explanation",action:"Original action",warning:"Original warning"}}
+     :{success:false,result:null}));res.emit("end");};return req;}};
+  const m={exports:{}};
+  vm.runInNewContext(source,{module:m,Buffer,URL,setTimeout,clearTimeout,console:{log(){},warn(){},error(){}},
+   process:{env:{...env,WHOLE_IMAGE_DISCOVERY_ENABLED:"true"}},require(id){
+    if(id==="http"||id==="https")return transport;
+    if(id==="./googleVisionService")return {...google,async detectObjectsFromBase64(){calls.vision++;return rawVision;}};
+    if(id==="./geminiWasteClassifierService")return {classifyWasteWithGemini:async()=>null};
+    if(id==="./cloudRunAuth")return {invocationHeaders:async()=>({})};
+    if(id==="./wholeImageRecognitionService")return {...discovery,async discoverObjects(input){calls.discovery++;return whole.normalize(input,rawDiscovery);}};
+    if(id==="./perItemWasteAssessmentService")return {assessCapture};
+    if(id==="./wasteAssessmentDiagnostics")return {...require("../services/wasteAssessmentDiagnostics"),logAssessment(){}};
+    if(["./cloudRunDiagnostics","./wasteDisplayNameService","./wasteLearningGuideService","./automaticWasteCategoryMapper"].includes(id))return require("../services/"+id.slice(2));
+    if(id==="../utils/wasteMapper")return require(id);
+    throw Error("Unexpected offline dependency "+id);
+   }});
+  const pending=m.exports.analyzeWaste({image:c.image,objectDiscovery:c,principal:5,
+   detectedObject:"captured_waste_item",independentCategoryV2:true});
+  await started;
+  // Mutate only raw dependency inputs that the fixture owns. Do not expose or
+  // inject the actual local detectedItems array to manufacture API reachability.
+  rawVision[0].name="Item";rawVision[0].boundingBox.right=.31;
+  rawDiscovery.objects[0].label="Item";rawDiscovery.objects[0].box_2d[3]=310;
+  release();const result=JSON.parse(JSON.stringify(await pending));
+  assert.deepEqual(calls,{primary:1,vision:1,discovery:1,assessment:1});
+  assert.equal(result.detectedItems.length,3);
+  const charger=result.detectedItems.find(item=>item.itemId==="item_1");
+  assert.equal(charger.canonicalItem,"charger");assert.equal(charger.category,"Special Waste");
+  assert.deepEqual(charger.boundingBox,box);assert.equal(charger.analysisSource,"google_vision_object_localization");
+  const cardboard=result.detectedItems.find(item=>item.analysisSource==="gemini_whole_image");
+  const expected=whole.normalize(c,{objects:[{label:"Cardboard",box_2d:[850,100,980,300]}]}).objects[0];
+  assert.equal(cardboard.itemId,expected.itemId);assert.deepEqual(cardboard.boundingBox,expected.boundingBox);
+  assert.equal(cardboard.category,"Recyclable");
+  assert.deepEqual(result.scanSummary,{totalItems:3,categories:{biodegradable:0,recyclable:1,residual:0,specialWaste:1}});
+  assert.equal(result.category,independent?"Recyclable":"Special Waste");
+  if(independent){assert.equal(result.itemName,"Original Bottle");assert.equal(result.analysisSource,"original");}
+  assert.equal(result.categoryAssessments.captureId,c.captureId);
+  assert.equal(result.categoryAssessments.aiStatus,outcome==="success"?"complete":"unavailable");
+  for(const row of result.categoryAssessments.items) {
+   const owner=result.detectedItems.find(item=>item.itemId===row.itemId);assert.ok(owner);
+   if(row.assessmentSource==="existing_category")assert.equal(row.category,owner.category);
+   assert.equal(row.requiresConfirmation,true);
+  }
+  assert.equal(androidEnvelopeAccepted(result,c.captureId),true);assert.deepEqual(c,captureBefore);
+ }
 });
