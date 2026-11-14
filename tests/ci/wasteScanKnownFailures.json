@@ -1,0 +1,922 @@
+{
+  "schemaVersion": 1,
+  "baseCommit": "713a888d324904678873c831d8c3fb778fc10a25",
+  "safetyCommit": "4a6a022783941fce2c73c5f1d1e9c4ec1c50dcfc",
+  "baselineRuntime": "v24.14.1",
+  "description": "Selected offline suite only. Historical failures are disclosed, never treated as a full-suite PASS. Changes require independent review and an explicit helper digest update.",
+  "files": [
+    "tests/wholeImageRecognition.test.js",
+    "tests/wasteScanReconciliation.test.js",
+    "tests/wasteProductStateSafety.test.js",
+    "tests/wasteScanCategoryResolution.test.js",
+    "tests/wastePrimaryReconciliation.test.js",
+    "tests/wasteScanCapability.test.js",
+    "tests/wasteScanAccuracy.test.js",
+    "tests/wasteDisplayNames.test.js",
+    "tests/visionSafetyIdentityConsistency.test.js",
+    "tests/perItemWasteAssessmentIds.test.js"
+  ],
+  "exclusions": [
+    {
+      "file": "tests/wasteProductStateSafety.test.js",
+      "name": "reference Android parser permits Unknown catalog identity independently of its catalog stream",
+      "reason": "Reads a protected external Android checkout; excluded in the approved Phase 2A baseline."
+    },
+    {
+      "file": "tests/wastePrimaryReconciliation.test.js",
+      "name": "source-equivalent Android Unknown contract is wired through real presentation and original-primary navigation",
+      "reason": "Reads a protected external Android checkout; excluded in the approved Phase 2A baseline."
+    }
+  ],
+  "minimumTests": 557,
+  "requiredTests": {
+    "tests/wholeImageRecognition.test.js": [
+      "two distinct bottles and overlapping packaged-goods aliases remain two physical objects",
+      "bottle plus separate pen, two bottles pen and packaging have independent localized entries",
+      "paper cardboard food waste and unspecified containers preserve observed identities and only approved categories",
+      "missing malformed reversed zero-area pixel and normalized-float geometry never invent boxes",
+      "y-first 0..1000 convention maps asymmetric portrait and landscape boxes without axis guessing",
+      "duplicate provider objects collapse by geometry and specificity, never by label alone",
+      "no generated confidence and unsupported hallucinated identities remain unverified Unknown observations",
+      "stable provider-independent IDs depend on capture and geometry, not provider ordering",
+      "strict schema rejects malformed or excessive responses and revalidates remote mappings",
+      "structured prompt uses one whole image with supported schema, no primary classification instructions",
+      "feature disabled, invalid identity, insecure URL, oversized or malformed image cannot call provider",
+      "one bounded authenticated service call uses shared transport and validates response",
+      "provider timeout malformed response and cancellation do not leak payloads and enforce budgets",
+      "Cloud handler is gated authenticated bounded and uses only the pinned model",
+      "discovery and primary run concurrently, primary result stays unchanged, Vision geometry wins",
+      "Vision-only fallback and disabled baseline require no additional provider retries",
+      "Gemini-only valid detections remain bounded at eight and never contain confidence",
+      "new discovery infrastructure contains no history writes or independent Vision calls",
+      "same capture is attempted once per bounded cache window and cannot change image under that ID",
+      "remote JSON field ordering is irrelevant but optional confidences are still rejected",
+      "opted-in analyze authenticates and merges without any extra scan-history or image writes",
+      "headerless mixed-Unknown scan fails legacy safety before image or history persistence",
+      "compatible scan preserves primary and independent detections when optional assessment is disabled or unavailable",
+      "unauthenticated discovery is rejected before model calls or history writes",
+      "server feature-off ignores discovery metadata and preserves the legacy analyze request",
+      "actual four Gemini objects remain distinct Unknown observations without scores",
+      "actual two separate Vision bottles plus four Gemini observations remain four",
+      "actual package plus mocked Vision Packaging does not create a fifth item",
+      "actual package plus mocked Vision Plastic box does not create a fifth item",
+      "strong cross-provider coincidence tolerates small localization differences without equivalent names",
+      "partial overlaps, different extents and small nested objects remain independent",
+      "confirmed display metadata does not prove discarded product state",
+      "ranked descriptive observation is retained rather than overwritten by later generic observations",
+      "actual four-object fixture preserves original primary View Details fields",
+      "three distinct discovery objects survive full analyze with primary fallback unchanged",
+      "forged discovery IDs fail response validation and repeated identical proposals create one item",
+      "assessment flag off preserves the original full analyze response and billing counts",
+      "versioned deterministic assessments reach authenticated API response without extra history or image writes",
+      "even assessment module failure cannot trigger fallback or replace primary fields/detections",
+      "long generic taxonomy cannot outrank a specific identity for the same region",
+      "refining three independent generic detections preserves all boxes IDs capture metadata and categories",
+      "conflicting specific identities retain generic uncertainty regardless of order",
+      "ordinary overlap does not establish duplication or permit identity refinement",
+      "duplicate initial localized regions are deduplicated without ambiguous relabeling",
+      "specific or confirmed Vision identities and established categories are never replaced",
+      "generic-only and unlocalized observations never invent a specific name",
+      "same-provider bottle/contents aliases share one strongly aligned physical region",
+      "cross-provider conflicting identities retain an observed container without transferring categories",
+      "initial duplicate observations are resolved in either order before discovery merging",
+      "separate and nested soap is not treated as the bottle's contents alias",
+      "strong region matching rejects invalid geometry and tolerates only tiny localization drift",
+      "final physical count and assessments agree before any per-item assessment, preserving primary",
+      "Option A: exact repeated synthetic Milo sachet observations retain one original owner",
+      "Option A: tiny and near-boundary accepted sachet jitter preserve the first Gemini owner",
+      "Option A: declared same-object jitter outside strict geometry is conservatively retained",
+      "Option A: adjacent independent wrappers retain both IDs despite equal labels",
+      "Option A: partially overlapping separate sachets remain independent in either order",
+      "Option A: nested physical sachet and larger wrapper retain separate owners",
+      "Option A: different products with identical broad labels are never paired by their names",
+      "Option A: compatible cross-provider jitter preserves the original Vision owner",
+      "Option A: exact cross-provider sachet versus wrapper geometry keeps one uncertain Vision owner",
+      "Option A: cross-provider identity differences can retain the same translated geometry",
+      "Option A: three-region competition never selects an arbitrary retained owner",
+      "Option A: foreign capture responses and forged Gemini IDs fail before replay",
+      "Option A: mixed synthetic waste scene preserves categories, primary fields and stub request counts",
+      "Option A: four categories and unresolved packaging keep independent evidence without assessment calls"
+    ],
+    "tests/wasteScanReconciliation.test.js": [
+      "synthetic two Vision plus four Gemini observations resolve to four, preserving original owners",
+      "same-provider near aliases merge only with one unambiguous partner",
+      "near aliases never absorb nested objects, accessories, partial overlap, unsafe identities or foreign captures",
+      "same-provider conflicting identities veto classification even with AI disabled or valid provider recycling facts",
+      "primary corroboration cannot establish discarded state and remains separate from nozzle evidence",
+      "validated structured evidence reconciles independently and precise counters never log private data",
+      "active primary hazard is distinct from observational safety counts on an unrelated scene primary"
+    ],
+    "tests/wasteProductStateSafety.test.js": [
+      "product-state final veto Vision: Snack Sachet, disabled",
+      "product-state final veto Vision: Snack Sachet, insufficient",
+      "product-state final veto Vision: Snack Sachet, supported",
+      "product-state final veto Vision: Instant Noodle Packet, disabled",
+      "product-state final veto Vision: Instant Noodle Packet, insufficient",
+      "product-state final veto Vision: Instant Noodle Packet, supported",
+      "product-state final veto Vision: Snack Packet, disabled",
+      "product-state final veto Vision: Snack Packet, insufficient",
+      "product-state final veto Vision: Snack Packet, supported",
+      "product-state final veto Vision: Generic Food Packaging, disabled",
+      "product-state final veto Vision: Generic Food Packaging, insufficient",
+      "product-state final veto Vision: Generic Food Packaging, supported",
+      "product-state final veto Vision: Unopened Snack Packet, disabled",
+      "product-state final veto Vision: Unopened Snack Packet, insufficient",
+      "product-state final veto Vision: Unopened Snack Packet, supported",
+      "product-state final veto Vision: Sealed Snack Sachet, disabled",
+      "product-state final veto Vision: Sealed Snack Sachet, insufficient",
+      "product-state final veto Vision: Sealed Snack Sachet, supported",
+      "product-state final veto Vision: Full Water Bottle, disabled",
+      "product-state final veto Vision: Full Water Bottle, insufficient",
+      "product-state final veto Vision: Full Water Bottle, supported",
+      "product-state final veto Vision: Filled Beverage Bottle, disabled",
+      "product-state final veto Vision: Filled Beverage Bottle, insufficient",
+      "product-state final veto Vision: Filled Beverage Bottle, supported",
+      "product-state final veto Vision: Whole Banana, disabled",
+      "product-state final veto Vision: Whole Banana, insufficient",
+      "product-state final veto Vision: Whole Banana, supported",
+      "product-state final veto Vision: Unpeeled Banana, disabled",
+      "product-state final veto Vision: Unpeeled Banana, insufficient",
+      "product-state final veto Vision: Unpeeled Banana, supported",
+      "product-state final veto Vision: Uncertain chemical container, disabled",
+      "product-state final veto Vision: Uncertain chemical container, insufficient",
+      "product-state final veto Vision: Uncertain chemical container, supported",
+      "product-state final veto Vision: Possibly empty snack wrapper, disabled",
+      "product-state final veto Vision: Possibly empty snack wrapper, insufficient",
+      "product-state final veto Vision: Possibly empty snack wrapper, supported",
+      "product-state final veto Vision: Printed picture of empty snack wrapper, disabled",
+      "product-state final veto Vision: Printed picture of empty snack wrapper, insufficient",
+      "product-state final veto Vision: Printed picture of empty snack wrapper, supported",
+      "product-state final veto Vision: Opened snack packet, disabled",
+      "product-state final veto Vision: Opened snack packet, insufficient",
+      "product-state final veto Vision: Opened snack packet, supported",
+      "product-state final veto Vision: Torn snack wrapper, disabled",
+      "product-state final veto Vision: Torn snack wrapper, insufficient",
+      "product-state final veto Vision: Torn snack wrapper, supported",
+      "product-state final veto Vision: Plastic Bottle, disabled",
+      "product-state final veto Vision: Plastic Bottle, insufficient",
+      "product-state final veto Vision: Plastic Bottle, supported",
+      "product-state final veto Gemini: Snack Sachet, disabled",
+      "product-state final veto Gemini: Snack Sachet, insufficient",
+      "product-state final veto Gemini: Snack Sachet, supported",
+      "product-state final veto Gemini: Instant Noodle Packet, disabled",
+      "product-state final veto Gemini: Instant Noodle Packet, insufficient",
+      "product-state final veto Gemini: Instant Noodle Packet, supported",
+      "product-state final veto Gemini: Snack Packet, disabled",
+      "product-state final veto Gemini: Snack Packet, insufficient",
+      "product-state final veto Gemini: Snack Packet, supported",
+      "product-state final veto Gemini: Generic Food Packaging, disabled",
+      "product-state final veto Gemini: Generic Food Packaging, insufficient",
+      "product-state final veto Gemini: Generic Food Packaging, supported",
+      "product-state final veto Gemini: Unopened Snack Packet, disabled",
+      "product-state final veto Gemini: Unopened Snack Packet, insufficient",
+      "product-state final veto Gemini: Unopened Snack Packet, supported",
+      "product-state final veto Gemini: Sealed Snack Sachet, disabled",
+      "product-state final veto Gemini: Sealed Snack Sachet, insufficient",
+      "product-state final veto Gemini: Sealed Snack Sachet, supported",
+      "product-state final veto Gemini: Full Water Bottle, disabled",
+      "product-state final veto Gemini: Full Water Bottle, insufficient",
+      "product-state final veto Gemini: Full Water Bottle, supported",
+      "product-state final veto Gemini: Filled Beverage Bottle, disabled",
+      "product-state final veto Gemini: Filled Beverage Bottle, insufficient",
+      "product-state final veto Gemini: Filled Beverage Bottle, supported",
+      "product-state final veto Gemini: Whole Banana, disabled",
+      "product-state final veto Gemini: Whole Banana, insufficient",
+      "product-state final veto Gemini: Whole Banana, supported",
+      "product-state final veto Gemini: Unpeeled Banana, disabled",
+      "product-state final veto Gemini: Unpeeled Banana, insufficient",
+      "product-state final veto Gemini: Unpeeled Banana, supported",
+      "product-state final veto Gemini: Uncertain chemical container, disabled",
+      "product-state final veto Gemini: Uncertain chemical container, insufficient",
+      "product-state final veto Gemini: Uncertain chemical container, supported",
+      "product-state final veto Gemini: Possibly empty snack wrapper, disabled",
+      "product-state final veto Gemini: Possibly empty snack wrapper, insufficient",
+      "product-state final veto Gemini: Possibly empty snack wrapper, supported",
+      "product-state final veto Gemini: Printed picture of empty snack wrapper, disabled",
+      "product-state final veto Gemini: Printed picture of empty snack wrapper, insufficient",
+      "product-state final veto Gemini: Printed picture of empty snack wrapper, supported",
+      "product-state final veto Gemini: Opened snack packet, disabled",
+      "product-state final veto Gemini: Opened snack packet, insufficient",
+      "product-state final veto Gemini: Opened snack packet, supported",
+      "product-state final veto Gemini: Torn snack wrapper, disabled",
+      "product-state final veto Gemini: Torn snack wrapper, insufficient",
+      "product-state final veto Gemini: Torn snack wrapper, supported",
+      "product-state final veto Gemini: Plastic Bottle, disabled",
+      "product-state final veto Gemini: Plastic Bottle, insufficient",
+      "product-state final veto Gemini: Plastic Bottle, supported",
+      "product-state positive Vision: Empty snack wrapper",
+      "product-state positive Vision: Discarded snack wrapper",
+      "product-state positive Vision: Empty instant noodle wrapper",
+      "product-state positive Vision: Discarded instant noodle wrapper",
+      "product-state positive Vision: Empty plastic water bottle",
+      "product-state positive Vision: Banana Peel",
+      "product-state positive Vision: Vegetable scraps",
+      "product-state positive Vision: Paint Can",
+      "product-state positive Vision: Syringe",
+      "product-state positive Vision: Charger",
+      "product-state positive Vision: Battery",
+      "product-state positive Vision: Electronic item",
+      "product-state positive Gemini: Empty snack wrapper",
+      "product-state positive Gemini: Discarded snack wrapper",
+      "product-state positive Gemini: Empty instant noodle wrapper",
+      "product-state positive Gemini: Discarded instant noodle wrapper",
+      "product-state positive Gemini: Empty plastic water bottle",
+      "product-state positive Gemini: Banana Peel",
+      "product-state positive Gemini: Vegetable scraps",
+      "product-state positive Gemini: Paint Can",
+      "product-state positive Gemini: Syringe",
+      "product-state positive Gemini: Charger",
+      "product-state positive Gemini: Battery",
+      "product-state positive Gemini: Electronic item",
+      "unique aligned empty evidence belongs only to its Vision owner: Empty snack wrapper, disabled",
+      "unique aligned empty evidence belongs only to its Vision owner: Empty snack wrapper, insufficient",
+      "unique aligned empty evidence belongs only to its Vision owner: Empty snack wrapper, supported",
+      "unique aligned empty evidence belongs only to its Vision owner: Empty plastic water bottle, disabled",
+      "unique aligned empty evidence belongs only to its Vision owner: Empty plastic water bottle, insufficient",
+      "unique aligned empty evidence belongs only to its Vision owner: Empty plastic water bottle, supported",
+      "aligned-only empty state cannot create eligibility after owner ordering: reversed=false, AI=false",
+      "aligned-only empty state cannot create eligibility after owner ordering: reversed=false, AI=true",
+      "aligned-only empty state cannot create eligibility after owner ordering: reversed=true, AI=false",
+      "aligned-only empty state cannot create eligibility after owner ordering: reversed=true, AI=true",
+      "untrusted empty evidence cannot grant category: nearby",
+      "untrusted empty evidence cannot grant category: nested",
+      "untrusted empty evidence cannot grant category: partial",
+      "untrusted empty evidence cannot grant category: stale",
+      "untrusted empty evidence cannot grant category: foreign ID",
+      "untrusted empty evidence cannot grant category: duplicate ID",
+      "untrusted empty evidence cannot grant category: ambiguous",
+      "untrusted empty evidence cannot grant category: printed",
+      "untrusted empty evidence cannot grant category: uncertain",
+      "full/empty conflict cannot be resolved as empty by supported provider facts",
+      "category-only provider assertion and a rewritten display name cannot supply product state",
+      "Can/Spray Can conflicts and original primary result remain separate from safe item suggestions",
+      "neutral object still receives validated electrical evidence: Vision",
+      "neutral object still receives validated electrical evidence: Gemini",
+      "existing Paint Can safety review still vetoes contradictory provider facts"
+    ],
+    "tests/wasteScanCategoryResolution.test.js": [
+      "Gemini-only four small physical regions plus generic scene frame become four without owner mutation",
+      "large real objects, single generic frames, nested clusters and partial overlaps are preserved",
+      "bare/color-only bottle, generic container and Item require confirmation instead of identity-only recycling",
+      "specific identity supplies a provisional stream without fabricated provider material/condition",
+      "generic removal cannot bypass nozzle, contamination, mixed-material or opposing-kind vetoes",
+      "local Cloud Run prompts demand specific supported identity and separate suggestions from facts, preserving v1 schemas",
+      "discovery is cached and ineligible product states do not trigger assessment or category cross-transfer"
+    ],
+    "tests/wastePrimaryReconciliation.test.js": [
+      "full bottle veto neutralizes the exact Vision-owned primary, retaining owner geometry and source",
+      "a conflicted full bottle is excluded while an independent Unknown owner receives one cached electrical assessment",
+      "all-category conflict clears primary, summary and sidecar without persistence: Banana Peel + Chemical Container",
+      "all-category conflict clears primary, summary and sidecar without persistence: Banana Peel + Battery",
+      "all-category conflict cannot downgrade a separate eligible owner or transfer its electrical assessment",
+      "no safe primary stays Unknown internally and fails closed for legacy clients: discovery=false, owners=1",
+      "no safe primary stays Unknown internally and fails closed for legacy clients: discovery=false, owners=2",
+      "no safe primary stays Unknown internally and fails closed for legacy clients: discovery=false, owners=0",
+      "no safe primary stays Unknown internally and fails closed for legacy clients: discovery=true, owners=1",
+      "no safe primary stays Unknown internally and fails closed for legacy clients: discovery=true, owners=2",
+      "no safe primary stays Unknown internally and fails closed for legacy clients: discovery=true, owners=0",
+      "an Unknown Bottle cannot take the safe Battery primary or transfer its category",
+      "vetoed higher-confidence owner reselects the independent safe Battery, not a display-name/category match",
+      "same-name separate bottles keep independent owners when only the first primary is vetoed",
+      "valid independent Gemini primary is unchanged despite all-Unknown final owners",
+      "supported original owner remains categorized: Empty snack wrapper",
+      "supported original owner remains categorized: Discarded snack wrapper",
+      "supported original owner remains categorized: Empty instant noodle wrapper",
+      "supported original owner remains categorized: Empty plastic beverage bottle",
+      "supported original owner remains categorized: Banana Peel",
+      "supported original owner remains categorized: Paint Can",
+      "supported original owner remains categorized: Syringe",
+      "supported original owner remains categorized: Charger",
+      "supported original owner remains categorized: Battery",
+      "unsupported original product remains neutral: Unopened Snack Packet",
+      "unsupported original product remains neutral: Generic Food Packaging",
+      "genuine independent Residual classification is not overruled by Unknown owners",
+      "approved common wrapper preserves private evidence and needs no assessment request",
+      "legitimate electrical evidence keeps one cached assessment batch without changing owner or primary",
+      "Unknown primary is rejected before even a failing persistence path is attempted"
+    ],
+    "tests/wasteScanCapability.test.js": [
+      "gemini compatible independent owners: Sachet + Can + Container + Bottle",
+      "gemini compatible independent owners: Battery + Bottle",
+      "gemini compatible independent owners: Banana Peel + Container",
+      "vision compatible independent owners: Sachet + Can + Container + Bottle",
+      "vision compatible independent owners: Battery + Bottle",
+      "vision compatible independent owners: Banana Peel + Container",
+      "legacy policy for unsupported capability: undefined",
+      "legacy policy for unsupported capability: \"\"",
+      "legacy policy for unsupported capability: \"invalid\"",
+      "legacy policy for unsupported capability: \"waste-scan-independent-category-v3\"",
+      "legacy policy for unsupported capability: [\"waste-scan-independent-category-v2\"]",
+      "compatible mixed supported/Unknown and Unknown-only retain neutral independent results",
+      "foreign/duplicate/stale/contradictory sidecars cannot pass compatible safety policy",
+      "capability never turns explicit provider failure or empty Unknown primary into success",
+      "physical Bottle/Soap alias conflict retains Bottle identity and private veto through final assessment"
+    ],
+    "tests/wasteScanAccuracy.test.js": [
+      "seven proposals resolve to five physical items before a single bounded assessment",
+      "aligned Gemini identity is usable evidence, never the short display name or primary scene label",
+      "single bottle cap and primary cannot establish empty product state",
+      "a single primary cannot classify unrelated objects or an incomplete/unlocalized fallback",
+      "hazardous, spray, unknown-content and printed-label cues cannot be recycled by model assertion",
+      "approved Container suggestion does not assert or import a provider polymer identity",
+      "contradictions between mapped evidence, primary and provider retain uncertainty",
+      "a contradictory aligned identity never replaces the physical bottle's assessment evidence",
+      "untrusted, stale, conflicting and mutated provenance cannot bridge identities",
+      "near-region relaxation is identity-aware and cross-provider only, not ordinary overlap or containment",
+      "assessment timeout falls back without retry or primary mutation",
+      "assessment 429 falls back without retry or primary mutation",
+      "assessment malformed falls back without retry or primary mutation",
+      "assessment disabled causes no inference and preserves established categories",
+      "color-only Green Bottle stays Unknown without structured evidence even with a branded or specific primary",
+      "branded primary alone cannot corroborate an unmapped bottle description: expose failed gates",
+      "unqualified water bottle is ineligible even when provider facts could be supplied",
+      "five Gemini-only objects reproduce classified one and unknown four without category contamination",
+      "production-normalized Vision wrapper uses approved mapping without a paid batch",
+      "hazard and represented identities keep Unknown with fixed safety counters",
+      "identity conflict, category contradiction and generic containers have distinct reason flags",
+      "low confidence is diagnosed, not relaxed to classify an unproven single item",
+      "explicit foreign capture is rejected before a deterministic result or AI request",
+      "AI-disabled and failed-provider diagnostics preserve existing flag and retry behavior",
+      "original beverage identity with a cap does not establish empty waste state",
+      "new beverage phrases retain provider contamination, mixed-material and identity vetoes",
+      "brand, cap, color and generic display alone do not establish a new beverage identity",
+      "specific beverage wording never overrides hazardous, cosmetic, spray or represented identity",
+      "specific wrapper phrasing stays independent from ambiguous wrappers and other scene items",
+      "new phrase evidence still requires valid geometry and capture-bound same-object provenance",
+      "stale alignment cannot transfer Special Waste to an otherwise unidentified Vision item",
+      "explicit foreign capture IDs are rejected before deterministic or paid assessment",
+      "common-object names never fabricate categories from invalid normalized geometry",
+      "explicit empty original owners retain positive categories and eligible provider-veto coverage",
+      "eligible original empty bottle consumes provider veto: contaminated condition",
+      "eligible original empty bottle consumes provider veto: used condition",
+      "eligible original empty bottle consumes provider veto: opposing object kind"
+    ],
+    "tests/wasteDisplayNames.test.js": [
+      "short display: green compact powder -> Green Container",
+      "short display: gray compact powder -> Gray Container",
+      "short display: white charger -> White Charger",
+      "short display: clear spray bottle -> Clear Bottle",
+      "short display: bottled and jarred packaged goods -> Container",
+      "short display: yellow plastic bottle -> Yellow Bottle",
+      "short display: long handled wooden spoon -> Spoon",
+      "short display: blue ballpoint pen with printed text -> Blue Pen",
+      "short display: gray heavy duty hammer -> Gray Hammer",
+      "short display: wireless computer keyboard -> Keyboard",
+      "short display: black USB charging cable -> Black Cable",
+      "short display: brown cardboard box -> Brown Cardboard",
+      "short display: red bottle with blue cap -> Bottle",
+      "short display: unidentified white shape -> Item",
+      "short display: orange snack wrapper -> Orange Snack Wrapper",
+      "short display: snack sachet -> Snack Wrapper",
+      "short display: green cosmetics case -> Green Container",
+      "short display: gray powder compact -> Gray Container",
+      "short display: foil chocolate wrapper -> Wrapper",
+      "short display: blue plastic packet -> Blue Packet",
+      "short display: possibly a glass bottle -> Item",
+      "short display: unlisted product name -> Item",
+      "short display: null -> Item",
+      "final Android sidecar rejects foreign, stale, duplicate, malformed and inconsistent owners",
+      "display formatting is immutable and preserves raw evidence, IDs, geometry and primary/assessment contracts",
+      "v5 known Gemini catalog name survives display formatting: Plastic Bottle",
+      "v5 known Gemini catalog name survives display formatting: Used Battery",
+      "v5 known Gemini catalog name survives display formatting: Snack Sachet",
+      "reviewed observed aliases retain canonical Gemini names without rewriting evidence",
+      "Vision known names and Unknown Gemini names retain compact formatting",
+      "a mismatched category, alias or unsupported observed identity is not blessed as a catalog result",
+      "known Gemini catalog formatting is idempotent without altering primary or sidecar",
+      "five mixed owners retain all v5 sidecar entries with Vision AI and Gemini reviewed sources",
+      "every item gets an independent confirmation-required assessment from original evidence, not color/display type",
+      "production-default assessment-off stays off and cannot invoke a provider",
+      "Vision evidence is retained when no original observedIdentity field exists",
+      "generic placeholder uses explicit observation without changing underlying evidence",
+      "specific capped beverage and wrapper suggestions keep strict v5 mixed-owner acceptance",
+      "noodle package display preserves observed state without changing classification evidence",
+      "noodle package state preserves strict legacy and capability-aware mapped-assessment boundaries",
+      "deduplicated simple aliases preserve strict v5 owners, sidecar count and selected-item geometry",
+      "scene-frame removal and identity suggestions keep strict v5 schema without mutating primary or detections",
+      "identity phase 1 display: Instant Noodle Packet -> Instant Noodle Packet",
+      "identity phase 1 display: instant noodle wrapper -> Instant Noodle Packet",
+      "identity phase 1 display: instant noodle pouch -> Instant Noodle Packet",
+      "identity phase 1 display: noodle sachet -> Noodle Packet",
+      "identity phase 1 display: noodle packet -> Noodle Packet",
+      "identity phase 1 display: noodle pouch -> Noodle Packet",
+      "identity phase 1 display: Snack Sachet -> Snack Wrapper",
+      "identity phase 1 display: snack wrapper -> Snack Wrapper",
+      "identity phase 1 display: Food Wrapper -> Food Wrapper",
+      "identity phase 1 display: food packaging -> Food Wrapper",
+      "identity phase 1 display: Bottle -> Bottle",
+      "identity phase 1 display: plastic bottle -> Bottle",
+      "identity phase 1 display: Battery -> Battery",
+      "identity phase 1 display: Cardboard -> Cardboard",
+      "identity phase 1 display: Item -> Item",
+      "identity phase 1 display: Object -> Item",
+      "identity phase 1 display: Milo -> Item",
+      "identity phase 1 display: Pancit Canton -> Item",
+      "identity phase 1 display: Lucky Me -> Item",
+      "identity phase 1 display: Unlisted Product 37 -> Item",
+      "identity phase 1 display: instant noodles -> Item",
+      "identity phase 1 display: Pancit Canton packet -> Packet",
+      "identity phase 1 display: Milo sachet -> Packet",
+      "identity phase 1 display: Unlisted Brand noodle pouch -> Noodle Packet",
+      "identity phase 1 display: Possibly an instant noodle packet -> Item",
+      "identity phase 1 display: maybe a snack sachet -> Item",
+      "identity phase 1 display: Unknown food wrapper -> Item",
+      "identity phase 1 display: unidentified battery -> Item",
+      "identity phase 1 display: unclear bottle -> Item",
+      "identity phase 1 display: uncertain noodle pouch -> Item",
+      "identity phase 1 display: unsure battery -> Item",
+      "identity phase 1 display: ambiguous food packaging -> Item",
+      "identity phase 1 display: not a battery -> Item",
+      "identity phase 1 display: not an instant noodle packet -> Item",
+      "identity phase 1 display: Printed picture of a battery -> Item",
+      "identity phase 1 display: Photo of an instant noodle packet -> Item",
+      "identity phase 1 display: Drawing of a bottle -> Item",
+      "identity phase 1 display: Logo showing a snack sachet -> Item",
+      "identity phase 1 display: Snack wrapper with printed logo -> Snack Wrapper",
+      "identity phase 1 display: Instant noodle pouch with printed text -> Instant Noodle Packet",
+      "identity phase 1 display: Sealed instant noodle pouch -> Sealed Instant Noodle Packet",
+      "identity phase 1 display: Unopened Instant Noodle Packet -> Unopened Instant Noodle Packet",
+      "identity phase 1 display: Full instant noodle pouch -> Full Instant Noodle Packet",
+      "identity phase 1 display: Filled food packaging -> Filled Food Wrapper",
+      "identity phase 1 gemini_whole_image preserves Unknown and v5 contract: instant noodle pouch",
+      "identity phase 1 gemini_whole_image preserves Unknown and v5 contract: instant noodle wrapper",
+      "identity phase 1 gemini_whole_image preserves Unknown and v5 contract: noodle sachet",
+      "identity phase 1 gemini_whole_image preserves Unknown and v5 contract: Pancit Canton",
+      "identity phase 1 gemini_whole_image preserves Unknown and v5 contract: Maybe an instant noodle packet",
+      "identity phase 1 gemini_whole_image preserves Unknown and v5 contract: Printed picture of a battery",
+      "identity phase 1 gemini_whole_image preserves Unknown and v5 contract: Sealed instant noodle pouch",
+      "identity phase 1 google_vision_object_localization preserves Unknown and v5 contract: instant noodle pouch",
+      "identity phase 1 google_vision_object_localization preserves Unknown and v5 contract: instant noodle wrapper",
+      "identity phase 1 google_vision_object_localization preserves Unknown and v5 contract: noodle sachet",
+      "identity phase 1 google_vision_object_localization preserves Unknown and v5 contract: Pancit Canton",
+      "identity phase 1 google_vision_object_localization preserves Unknown and v5 contract: Maybe an instant noodle packet",
+      "identity phase 1 google_vision_object_localization preserves Unknown and v5 contract: Printed picture of a battery",
+      "identity phase 1 google_vision_object_localization preserves Unknown and v5 contract: Sealed instant noodle pouch",
+      "identity phase 1 preserves exact Gemini catalog identity: Plastic Bottle",
+      "identity phase 1 preserves exact Gemini catalog identity: plastic water bottle",
+      "identity phase 1 preserves exact Gemini catalog identity: Snack Sachet",
+      "identity phase 1 preserves exact Gemini catalog identity: snack wrapper",
+      "identity phase 1 preserves exact Gemini catalog identity: Used Battery",
+      "identity phase 1 preserves exact Gemini catalog identity: AA battery",
+      "identity phase 1 preserves exact Gemini catalog identity: Banana Peel",
+      "identity phase 1 preserves exact Gemini catalog identity: banana skin",
+      "identity phase 1 preserves exact Gemini catalog identity: Cardboard",
+      "identity phase 1 preserves exact Gemini catalog identity: corrugated cardboard",
+      "identity phase 1 placeholder refinement retains originalItemName and observed evidence",
+      "identity phase 1 original uncertainty and negation cannot be overridden by another observation",
+      "identity phase 1 mixed four-category and uncertain owners retain independent assessments",
+      "display safety correction blocking: A picture of an instant noodle pouch",
+      "display safety correction blocking: Label artwork showing a noodle pouch",
+      "display safety correction blocking: not instant noodle pouch",
+      "display safety correction blocking: probably an instant noodle pouch",
+      "display safety correction blocking: possible noodle pouch",
+      "display safety correction negative: photograph of a noodle pouch",
+      "display safety correction negative: image of an instant noodle wrapper",
+      "display safety correction negative: illustration of a noodle sachet",
+      "display safety correction negative: logo depicting an instant noodle pouch",
+      "display safety correction negative: printed picture showing a noodle packet",
+      "display safety correction negative: The photograph of a noodle pouch",
+      "display safety correction negative: This is a picture of an instant noodle pouch",
+      "display safety correction negative: Visible label artwork depicting a noodle sachet",
+      "display safety correction negative: An illustration showing a snack sachet",
+      "display safety correction negative: probably a noodle packet",
+      "display safety correction negative: possibly a noodle pouch",
+      "display safety correction negative: maybe an instant noodle wrapper",
+      "display safety correction negative: possible instant noodle packet",
+      "display safety correction negative: uncertain whether it is a noodle pouch",
+      "display safety correction negative: This could be a noodle sachet",
+      "display safety correction negative: The object may be an instant noodle wrapper",
+      "display safety correction negative: A noodle pouch, perhaps",
+      "display safety correction negative: instant noodle pouch, identity uncertain",
+      "display safety correction negative: not a noodle pouch",
+      "display safety correction negative: no instant noodle pouch visible",
+      "display safety correction negative: There is no noodle sachet visible",
+      "display safety correction negative: The object is not an instant noodle wrapper",
+      "display safety correction negative: A noodle pouch is not visible",
+      "display safety correction negative: noodle packet not present",
+      "display safety correction negative: instant noodle wrapper is not confirmed",
+      "display safety correction negative: snack sachet not identifiable",
+      "display safety correction negative: cannot identify a noodle packet",
+      "display safety correction negative: A noodle pouch cannot be identified",
+      "display safety correction negative: Unable to confirm an instant noodle pouch",
+      "display safety correction negative: Pancit Canton",
+      "display safety correction negative: Lucky Me",
+      "display safety correction negative: Milo",
+      "display safety correction positive: instant noodle pouch",
+      "display safety correction positive: instant noodle wrapper",
+      "display safety correction positive: noodle sachet",
+      "display safety correction positive: noodle packet",
+      "display safety correction positive: actual noodle pouch with printed text",
+      "display safety correction positive: instant noodle wrapper with a printed logo",
+      "display safety correction positive: physical snack sachet with packaging artwork",
+      "display safety correction positive: noodle pouch with no printed text",
+      "display safety correction positive: noodle pouch with no label",
+      "display safety correction positive: noodle pouch with no barcode",
+      "display safety correction positive: noodle pouch with label not visible",
+      "display safety correction positive: noodle pouch with a picture of noodles",
+      "display safety correction positive: instant noodle wrapper with label artwork depicting a bowl",
+      "display safety correction positive: Sealed instant noodle pouch",
+      "display safety correction positive: Full noodle pouch",
+      "display safety correction positive: Plastic Bottle",
+      "display safety correction positive: Snack Sachet",
+      "display safety correction positive: Used Battery",
+      "display safety correction positive: Banana Peel",
+      "display safety correction positive: Cardboard",
+      "display safety correction preserves gemini_whole_image owner and sidecar contracts",
+      "display safety correction preserves google_vision_object_localization owner and sidecar contracts",
+      "bounded noodle blocking: A close-up photo of an instant noodle pouch",
+      "bounded noodle blocking: Label shows a noodle pouch",
+      "bounded noodle blocking: noodle pouch depicted on a label",
+      "bounded noodle blocking: no clear noodle pouch visible",
+      "bounded noodle blocking: instant noodle pouch with a possible expiry date",
+      "bounded noodle blocking: noodle pouch with a label that cannot be identified",
+      "bounded noodle boundary: noodle pouch printed on a shirt",
+      "bounded noodle boundary: drawing of a noodle packet",
+      "bounded noodle boundary: no recognizable noodle pouch",
+      "bounded noodle boundary: no visible instant noodle pouch",
+      "bounded noodle boundary: unsure whether this is a noodle pouch",
+      "bounded noodle boundary: a pouch that might contain noodles",
+      "bounded noodle boundary: real noodle pouch with an unreadable label",
+      "bounded noodle boundary: noodle packet without a visible brand name",
+      "bounded noodle boundary: noodle pouch with torn edges",
+      "bounded noodle boundary: bottle with a noodle illustration",
+      "bounded noodle boundary: blue plate beside noodles",
+      "bounded noodle boundary: Lucky Me",
+      "bounded noodle boundary: Pancit Canton",
+      "bounded noodle boundary: Milo",
+      "bounded noodle contrast: instant noodle pouch",
+      "bounded noodle contrast: A close-up photo of a instant noodle pouch",
+      "bounded noodle contrast: instant noodle pouch depicted on printed artwork",
+      "bounded noodle contrast: no visible instant noodle pouch",
+      "bounded noodle contrast: unsure whether this is a instant noodle pouch",
+      "bounded noodle contrast: instant noodle pouch with a possible expiry date",
+      "bounded noodle contrast: instant noodle pouch lying on a table",
+      "bounded noodle contrast: noodle packet",
+      "bounded noodle contrast: A close-up photo of a noodle packet",
+      "bounded noodle contrast: noodle packet depicted on printed artwork",
+      "bounded noodle contrast: no visible noodle packet",
+      "bounded noodle contrast: unsure whether this is a noodle packet",
+      "bounded noodle contrast: noodle packet with a possible expiry date",
+      "bounded noodle contrast: noodle packet lying on a table",
+      "bounded noodle contrast: noodle sachet",
+      "bounded noodle contrast: A close-up photo of a noodle sachet",
+      "bounded noodle contrast: noodle sachet depicted on printed artwork",
+      "bounded noodle contrast: no visible noodle sachet",
+      "bounded noodle contrast: unsure whether this is a noodle sachet",
+      "bounded noodle contrast: noodle sachet with a possible expiry date",
+      "bounded noodle contrast: noodle sachet lying on a table",
+      "bounded noodle preserves gemini_whole_image evidence and category contracts",
+      "bounded noodle preserves google_vision_object_localization evidence and category contracts"
+    ],
+    "tests/visionSafetyIdentityConsistency.test.js": [
+      "Vision original localization category: Packaged goods",
+      "Vision original localization category: Food packaging",
+      "Vision original localization category: Packet",
+      "Vision original localization category: Item",
+      "Vision original localization category: Unopened instant noodle packet",
+      "Vision original localization category: Sealed snack sachet",
+      "Vision original localization category: Full water bottle",
+      "Vision original localization category: Banana",
+      "Vision original localization category: Banana peel",
+      "Vision original localization category: White charger",
+      "Vision original localization category: Empty snack wrapper",
+      "Vision original localization category: Plastic beverage bottle",
+      "normalized Vision Packet + uniquely aligned Gemini Snack Sachet retains owner and improves identity",
+      "unopened item is not classified by verified wrapper claim",
+      "different nearby sachets remain independent even if labels resemble each other",
+      "medicine packet and snack sachet remain incompatible and cannot silently become Residual",
+      "qualifiers persist as display-only descriptions"
+    ],
+    "tests/perItemWasteAssessmentIds.test.js": [
+      "one mixed-provider batch maps Vision wire IDs back to exact Android IDs without mutating recognition",
+      "same-name independent Vision objects keep distinct stable wire IDs across order and request IDs",
+      "concurrent requests share one in-flight mixed batch",
+      "duplicate response ID rejects the whole batch, preserves categories, and is not retried",
+      "foreign response ID rejects the whole batch, preserves categories, and is not retried",
+      "Android ID echoed rejects the whole batch, preserves categories, and is not retried",
+      "stale capture rejects the whole batch, preserves categories, and is not retried",
+      "stale request rejects the whole batch, preserves categories, and is not retried",
+      "missing response rejects the whole batch, preserves categories, and is not retried",
+      "duplicate original IDs including deterministic items cannot overwrite an established category",
+      "Vision items lacking original evidence or valid geometry are excluded, never shortened-name classified",
+      "Vision canonical evidence is used when originalItemName/observedIdentity are absent",
+      "AI insufficient remains Unknown for both providers",
+      "AI unknown material remains Unknown for both providers",
+      "AI category contradiction remains Unknown for both providers",
+      "changed evidence under the same capture cannot trigger another inference",
+      "a stale item capture ID is rejected before inference",
+      "AI flag off keeps deterministic results with no provider or identity mutation"
+    ]
+  },
+  "knownFailures": [
+    {
+      "file": "tests/wasteScanReconciliation.test.js",
+      "name": "same-provider conflicting identities veto classification even with AI disabled or valid provider recycling facts",
+      "classification": "outdated_expectation"
+    },
+    {
+      "file": "tests/wasteScanReconciliation.test.js",
+      "name": "validated structured evidence reconciles independently and precise counters never log private data",
+      "classification": "category_policy_conflict"
+    },
+    {
+      "file": "tests/wasteProductStateSafety.test.js",
+      "name": "product-state final veto Vision: Instant Noodle Packet, disabled",
+      "classification": "category_policy_conflict"
+    },
+    {
+      "file": "tests/wasteProductStateSafety.test.js",
+      "name": "product-state final veto Vision: Instant Noodle Packet, insufficient",
+      "classification": "category_policy_conflict"
+    },
+    {
+      "file": "tests/wasteProductStateSafety.test.js",
+      "name": "product-state final veto Vision: Instant Noodle Packet, supported",
+      "classification": "category_policy_conflict"
+    },
+    {
+      "file": "tests/wasteProductStateSafety.test.js",
+      "name": "product-state final veto Gemini: Instant Noodle Packet, disabled",
+      "classification": "category_policy_conflict"
+    },
+    {
+      "file": "tests/wasteProductStateSafety.test.js",
+      "name": "product-state final veto Gemini: Instant Noodle Packet, insufficient",
+      "classification": "category_policy_conflict"
+    },
+    {
+      "file": "tests/wasteProductStateSafety.test.js",
+      "name": "product-state final veto Gemini: Instant Noodle Packet, supported",
+      "classification": "category_policy_conflict"
+    },
+    {
+      "file": "tests/wasteScanCategoryResolution.test.js",
+      "name": "Gemini-only four small physical regions plus generic scene frame become four without owner mutation",
+      "classification": "category_policy_conflict"
+    },
+    {
+      "file": "tests/wasteScanCategoryResolution.test.js",
+      "name": "bare/color-only bottle, generic container and Item require confirmation instead of identity-only recycling",
+      "classification": "category_policy_conflict"
+    },
+    {
+      "file": "tests/wasteScanCategoryResolution.test.js",
+      "name": "specific identity supplies a provisional stream without fabricated provider material/condition",
+      "classification": "category_policy_conflict"
+    },
+    {
+      "file": "tests/wasteScanCategoryResolution.test.js",
+      "name": "generic removal cannot bypass nozzle, contamination, mixed-material or opposing-kind vetoes",
+      "classification": "category_policy_conflict"
+    },
+    {
+      "file": "tests/wasteScanAccuracy.test.js",
+      "name": "aligned Gemini identity is usable evidence, never the short display name or primary scene label",
+      "classification": "outdated_expectation"
+    },
+    {
+      "file": "tests/wasteScanAccuracy.test.js",
+      "name": "identity conflict, category contradiction and generic containers have distinct reason flags",
+      "classification": "diagnostic_counter"
+    },
+    {
+      "file": "tests/wasteScanAccuracy.test.js",
+      "name": "new phrase evidence still requires valid geometry and capture-bound same-object provenance",
+      "classification": "outdated_expectation"
+    },
+    {
+      "file": "tests/wasteScanAccuracy.test.js",
+      "name": "stale alignment cannot transfer Special Waste to an otherwise unidentified Vision item",
+      "classification": "stale_alignment_corrected_by_safety_patch"
+    },
+    {
+      "file": "tests/perItemWasteAssessmentIds.test.js",
+      "name": "a stale item capture ID is rejected before inference",
+      "classification": "outdated_expectation"
+    }
+  ],
+  "safetyTests": [
+    {
+      "file": "tests/wholeImageRecognition.test.js",
+      "name": "Phase 2A A: unique aligned neutral Vision owner accepts specific noodle identity"
+    },
+    {
+      "file": "tests/wholeImageRecognition.test.js",
+      "name": "Phase 2A B: accepted relaxed physical match does not imply strict identity alignment"
+    },
+    {
+      "file": "tests/wholeImageRecognition.test.js",
+      "name": "Phase 2A C: unlocalized identity cannot refine or add a physical owner"
+    },
+    {
+      "file": "tests/wholeImageRecognition.test.js",
+      "name": "Phase 2A D: generic Item and Object observations cannot supply a specific identity"
+    },
+    {
+      "file": "tests/wholeImageRecognition.test.js",
+      "name": "Phase 2A E: exact physical match cannot corroborate incompatible original identities"
+    },
+    {
+      "file": "tests/wholeImageRecognition.test.js",
+      "name": "Phase 2A J: trusted specific physical identity need not establish a waste category"
+    },
+    {
+      "file": "tests/wholeImageRecognition.test.js",
+      "name": "Phase 2A K: trusted unopened or sealed identity remains Unknown after display refinement"
+    },
+    {
+      "file": "tests/wholeImageRecognition.test.js",
+      "name": "Phase 2A L: hazardous display observation never becomes trusted benign classification"
+    },
+    {
+      "file": "tests/wholeImageRecognition.test.js",
+      "name": "Phase 2A M: duplicate normalized IDs suppress trusted evidence, not physical deduplication"
+    },
+    {
+      "file": "tests/wholeImageRecognition.test.js",
+      "name": "Phase 2A M: stale requests and malformed responses fail the validation boundary before merge"
+    },
+    {
+      "file": "tests/wholeImageRecognition.test.js",
+      "name": "Phase 2A N: unique independent Vision ownership and refinement are stable across proposal orders"
+    },
+    {
+      "file": "tests/wholeImageRecognition.test.js",
+      "name": "Phase 2A: full analysis trace preserves primary, owners, assessments and bounded request counts"
+    },
+    {
+      "file": "tests/wholeImageRecognition.test.js",
+      "name": "Phase 2A.1: real final assembly cannot retain carried stale categories when assessment is disabled or fails"
+    },
+    {
+      "file": "tests/wasteScanReconciliation.test.js",
+      "name": "Phase 2A: correspondence outcomes survive assessment with trace parity and no extra requests"
+    },
+    {
+      "file": "tests/wasteScanReconciliation.test.js",
+      "name": "Phase 2A M characterization: an unbound Vision owner retains a derived category under a stale capture"
+    },
+    {
+      "file": "tests/wasteScanReconciliation.test.js",
+      "name": "Phase 2A.1: only validated merge copies preserve current correspondence authority"
+    },
+    {
+      "file": "tests/wasteScanReconciliation.test.js",
+      "name": "Phase 2A.1: changed authority snapshots fail closed while display-only changes grant nothing"
+    },
+    {
+      "file": "tests/wasteScanReconciliation.test.js",
+      "name": "Phase 2A.1: copied independent four-category originals remain valid without private correspondence"
+    },
+    {
+      "file": "tests/wasteScanReconciliation.test.js",
+      "name": "Phase 2A.1: fresh generic eligibility remains one cached assessment, separate from carried authority denial"
+    },
+    {
+      "file": "tests/wasteScanReconciliation.test.js",
+      "name": "Phase 2A.1: display serialization cannot turn refined names into original category authority"
+    },
+    {
+      "file": "tests/wasteScanAccuracy.test.js",
+      "name": "unsupported carried Bottle category is Unknown without repair inference or caller mutation"
+    },
+    {
+      "file": "tests/wasteScanAccuracy.test.js",
+      "name": "Phase 2A.2: suspended assessment rejects a deterministic owner whose geometry loses authority"
+    },
+    {
+      "file": "tests/wasteScanAccuracy.test.js",
+      "name": "Phase 2A.2: pending assessment detects owner, capture, membership and private-state changes"
+    },
+    {
+      "file": "tests/wasteScanAccuracy.test.js",
+      "name": "Phase 2A.2: mutation rejection escapes provider rejection and timeout fallbacks"
+    },
+    {
+      "file": "tests/wasteScanAccuracy.test.js",
+      "name": "Phase 2A.2: stable derived and independent owners keep categories without extra requests"
+    },
+    {
+      "file": "tests/wasteScanAccuracy.test.js",
+      "name": "Phase 2A.2: disabled, unrequested, stale and foreign-owner paths retain existing policy"
+    },
+    {
+      "file": "tests/wasteScanAccuracy.test.js",
+      "name": "Phase 2A.2: real analysis isolates raw provider inputs while assessment awaits"
+    }
+  ],
+  "safetyMustPass": [
+    {
+      "file": "tests/wholeImageRecognition.test.js",
+      "name": "Phase 2A A: unique aligned neutral Vision owner accepts specific noodle identity"
+    },
+    {
+      "file": "tests/wholeImageRecognition.test.js",
+      "name": "Phase 2A B: accepted relaxed physical match does not imply strict identity alignment"
+    },
+    {
+      "file": "tests/wholeImageRecognition.test.js",
+      "name": "Phase 2A C: unlocalized identity cannot refine or add a physical owner"
+    },
+    {
+      "file": "tests/wholeImageRecognition.test.js",
+      "name": "Phase 2A D: generic Item and Object observations cannot supply a specific identity"
+    },
+    {
+      "file": "tests/wholeImageRecognition.test.js",
+      "name": "Phase 2A E: exact physical match cannot corroborate incompatible original identities"
+    },
+    {
+      "file": "tests/wholeImageRecognition.test.js",
+      "name": "Phase 2A J: trusted specific physical identity need not establish a waste category"
+    },
+    {
+      "file": "tests/wholeImageRecognition.test.js",
+      "name": "Phase 2A K: trusted unopened or sealed identity remains Unknown after display refinement"
+    },
+    {
+      "file": "tests/wholeImageRecognition.test.js",
+      "name": "Phase 2A L: hazardous display observation never becomes trusted benign classification"
+    },
+    {
+      "file": "tests/wholeImageRecognition.test.js",
+      "name": "Phase 2A M: duplicate normalized IDs suppress trusted evidence, not physical deduplication"
+    },
+    {
+      "file": "tests/wholeImageRecognition.test.js",
+      "name": "Phase 2A M: stale requests and malformed responses fail the validation boundary before merge"
+    },
+    {
+      "file": "tests/wholeImageRecognition.test.js",
+      "name": "Phase 2A N: unique independent Vision ownership and refinement are stable across proposal orders"
+    },
+    {
+      "file": "tests/wholeImageRecognition.test.js",
+      "name": "Phase 2A: full analysis trace preserves primary, owners, assessments and bounded request counts"
+    },
+    {
+      "file": "tests/wholeImageRecognition.test.js",
+      "name": "Phase 2A.1: real final assembly cannot retain carried stale categories when assessment is disabled or fails"
+    },
+    {
+      "file": "tests/wasteScanReconciliation.test.js",
+      "name": "Phase 2A: correspondence outcomes survive assessment with trace parity and no extra requests"
+    },
+    {
+      "file": "tests/wasteScanReconciliation.test.js",
+      "name": "Phase 2A M characterization: an unbound Vision owner retains a derived category under a stale capture"
+    },
+    {
+      "file": "tests/wasteScanReconciliation.test.js",
+      "name": "Phase 2A.1: only validated merge copies preserve current correspondence authority"
+    },
+    {
+      "file": "tests/wasteScanReconciliation.test.js",
+      "name": "Phase 2A.1: changed authority snapshots fail closed while display-only changes grant nothing"
+    },
+    {
+      "file": "tests/wasteScanReconciliation.test.js",
+      "name": "Phase 2A.1: copied independent four-category originals remain valid without private correspondence"
+    },
+    {
+      "file": "tests/wasteScanReconciliation.test.js",
+      "name": "Phase 2A.1: fresh generic eligibility remains one cached assessment, separate from carried authority denial"
+    },
+    {
+      "file": "tests/wasteScanReconciliation.test.js",
+      "name": "Phase 2A.1: display serialization cannot turn refined names into original category authority"
+    },
+    {
+      "file": "tests/wasteScanAccuracy.test.js",
+      "name": "unsupported carried Bottle category is Unknown without repair inference or caller mutation"
+    },
+    {
+      "file": "tests/wasteScanAccuracy.test.js",
+      "name": "Phase 2A.2: suspended assessment rejects a deterministic owner whose geometry loses authority"
+    },
+    {
+      "file": "tests/wasteScanAccuracy.test.js",
+      "name": "Phase 2A.2: pending assessment detects owner, capture, membership and private-state changes"
+    },
+    {
+      "file": "tests/wasteScanAccuracy.test.js",
+      "name": "Phase 2A.2: mutation rejection escapes provider rejection and timeout fallbacks"
+    },
+    {
+      "file": "tests/wasteScanAccuracy.test.js",
+      "name": "Phase 2A.2: stable derived and independent owners keep categories without extra requests"
+    },
+    {
+      "file": "tests/wasteScanAccuracy.test.js",
+      "name": "Phase 2A.2: disabled, unrequested, stale and foreign-owner paths retain existing policy"
+    },
+    {
+      "file": "tests/wasteScanAccuracy.test.js",
+      "name": "Phase 2A.2: real analysis isolates raw provider inputs while assessment awaits"
+    },
+    {
+      "file": "tests/wasteScanAccuracy.test.js",
+      "name": "stale alignment cannot transfer Special Waste to an otherwise unidentified Vision item"
+    }
+  ]
+}

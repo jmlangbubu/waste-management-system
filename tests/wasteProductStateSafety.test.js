@@ -128,7 +128,8 @@ test("Can/Spray Can conflicts and original primary result remain separate from s
  assert.equal(r.items[0].category,"Unknown");assert.deepEqual(primary,saved);
 });
 test("reference Android parser permits Unknown catalog identity independently of its catalog stream",()=>{
- const root="C:/Users/ADMIN/.codex/worktrees/android-classification-reconciliation/AIWasteManagementSystem-LATEST/app/src/main/java/com/example/aiwastemanagementsystem/";
+ const androidPath=require("node:path");
+ const root=androidPath.resolve(__dirname,"../../../android-classification-reconciliation/AIWasteManagementSystem-LATEST/app/src/main/java/com/example/aiwastemanagementsystem")+androidPath.sep;
  const owner=fs.readFileSync(root+"DetectedWasteItem.java","utf8"),sidecar=fs.readFileSync(root+"WasteCategoryAssessments.java","utf8");
  assert.match(owner,/if\(!"Unknown"\.equals\(category\)/);
  assert.match(sidecar,/boolean vision="google_vision_object_localization"/);
