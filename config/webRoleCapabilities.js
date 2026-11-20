@@ -4,6 +4,7 @@
 // deferred until its shared mobile API and mutation controls can be separated.
 const ROLE_CAPABILITIES = Object.freeze({
   super_admin: Object.freeze([
+    "appointments.manage", "orientation.manage",
     "dashboard.view", "waste.view", "complaints.view", "appointments.view",
     "orientation.view", "tracking.view", "fleet.view", "dispatch.view",
     "calendar.view", "incoming_documents.view",
@@ -12,6 +13,7 @@ const ROLE_CAPABILITIES = Object.freeze({
     "waste.correction.review", "waste.correction.apply"
   ]),
   clerk_admin: Object.freeze([
+    "appointments.manage", "orientation.manage",
     "dashboard.view", "waste.view", "complaints.view", "appointments.view",
     "orientation.view", "calendar.view", "incoming_documents.view",
     "notifications.view", "notifications.manage",

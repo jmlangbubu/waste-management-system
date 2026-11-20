@@ -1,6 +1,9 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../config/db");
+const { AppointmentSchedulingService } = require("../services/appointmentSchedulingService");
+const appointmentScheduling = new AppointmentSchedulingService(db);
+
 const bcrypt = require("bcrypt");
 const { createEnforcerTeamService, EnforcerTeamError } = require("../services/enforcerTeamService");
 const enforcerTeams = createEnforcerTeamService(db);
@@ -589,15 +592,22 @@ router.delete("/delete-mobile/:id", (req, res) => {
    APPOINTMENTS - GET ACTIVE
    Pending lang ang lalabas dito
 ========================================= */
-router.get("/appointments/active", (req, res) => {
+router.get("/appointments/active", async (req, res) => {
+    res.set("Cache-Control", "no-store");
+    if (appointmentScheduling.enabled()) {
+        try { await appointmentScheduling.ready(); }
+        catch (_) { return res.status(503).json({ success: false, message: "Appointment infrastructure unavailable." }); }
+    }
     const sql = `
         SELECT
             id,
+            ${appointmentScheduling.enabled() ? "appointment_revision," : ""}
             full_name,
             barangay,
             contact,
             purpose,
             preferred_date,
+            DATE_FORMAT(preferred_date, '%Y-%m-%d %H:%i:%s') AS slot_schedule,
             status,
             assigned_to,
             created_at,
@@ -629,15 +639,22 @@ router.get("/appointments/active", (req, res) => {
    APPOINTMENTS - GET HISTORY
    Approved / Rejected mapupunta dito
 ========================================= */
-router.get("/appointments/history", (req, res) => {
+router.get("/appointments/history", async (req, res) => {
+    res.set("Cache-Control", "no-store");
+    if (appointmentScheduling.enabled()) {
+        try { await appointmentScheduling.ready(); }
+        catch (_) { return res.status(503).json({ success: false, message: "Appointment infrastructure unavailable." }); }
+    }
     const sql = `
         SELECT
             id,
+            ${appointmentScheduling.enabled() ? "appointment_revision," : ""}
             full_name,
             barangay,
             contact,
             purpose,
             preferred_date,
+            DATE_FORMAT(preferred_date, '%Y-%m-%d %H:%i:%s') AS slot_schedule,
             status,
             assigned_to,
             created_at,
@@ -667,106 +684,19 @@ router.get("/appointments/history", (req, res) => {
    APPOINTMENTS - ACCEPT / REJECT
    Kapag accept/reject, auto assign current admin
 ========================================= */
-router.put("/appointments/:id/decision", (req, res) => {
-    const { id } = req.params;
-    const { action, personnel_name } = req.body;
-
-    if (!id) {
-        return res.status(400).json({
-            success: false,
-            message: "Appointment ID is required"
-        });
+router.put("/appointments/:id/decision", requireWebCapability("appointments.manage"), async (req, res) => {
+    try {
+        const action = String(req.body?.action || "").toLowerCase();
+        if (!["accept", "reject"].includes(action)) return res.status(400).json({ success: false, message: "Invalid action. Use accept or reject" });
+        const result = await appointmentScheduling.change(req.params.id, action, req.user, req.body);
+        delete result.previous;
+        result.data.assigned_personnel = result.data.assigned_to;
+        delete result.data.assigned_to;
+        return res.json(result);
+    } catch (error) {
+        return res.status(error.statusCode || 503).json({ success: false,
+            message: error.statusCode ? error.message : "Appointment operation unavailable.", code: error.statusCode ? error.code : "APPOINTMENT_UNAVAILABLE" });
     }
-
-    if (!action || !["accept", "reject"].includes(String(action).toLowerCase())) {
-        return res.status(400).json({
-            success: false,
-            message: "Invalid action. Use accept or reject"
-        });
-    }
-
-    if (!personnel_name || !String(personnel_name).trim()) {
-        return res.status(400).json({
-            success: false,
-            message: "Personnel name is required"
-        });
-    }
-
-    const normalizedAction = String(action).toLowerCase();
-    const newStatus = normalizedAction === "accept" ? "approved" : "rejected";
-    const cleanPersonnelName = String(personnel_name).trim();
-
-    const checkSql = `
-        SELECT id, status
-        FROM appointments
-        WHERE id = ?
-        LIMIT 1
-    `;
-
-    db.query(checkSql, [id], (checkErr, checkResults) => {
-        if (checkErr) {
-            console.error("check appointment before decision error:", checkErr);
-            return res.status(500).json({
-                success: false,
-                message: "Failed to validate appointment"
-            });
-        }
-
-        if (!checkResults || checkResults.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: "Appointment not found"
-            });
-        }
-
-        const existingStatus = String(checkResults[0].status || "").toLowerCase().trim();
-
-        if (existingStatus === "approved" || existingStatus === "rejected") {
-            return res.status(400).json({
-                success: false,
-                message: "Appointment already processed"
-            });
-        }
-
-        const updateSql = `
-    UPDATE appointments
-    SET
-        status = ?,
-        assigned_to = ?,
-        updated_at = NOW()
-    WHERE id = ?
-`;
-
-        db.query(updateSql, [newStatus, cleanPersonnelName, id], (updateErr, updateResult) => {
-            if (updateErr) {
-                console.error("appointment decision update error:", updateErr);
-                return res.status(500).json({
-                    success: false,
-                    message: "Failed to update appointment decision"
-                });
-            }
-
-            if (!updateResult || updateResult.affectedRows === 0) {
-                return res.status(404).json({
-                    success: false,
-                    message: "Appointment not found or no changes made"
-                });
-            }
-
-            return res.json({
-                success: true,
-                message:
-                    newStatus === "approved"
-                        ? "Appointment accepted successfully"
-                        : "Appointment rejected successfully",
-                data: {
-                    id: Number(id),
-                    status: newStatus,
-                    assigned_personnel: cleanPersonnelName
-                }
-            });
-        });
-    });
 });
 
 /* =========================================

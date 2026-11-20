@@ -111,6 +111,11 @@ Module._load = function mockedLoad(request, parent, isMain) {
     return { Resend: class Resend {} };
   }
   if (request === "qrcode" && parentPath.endsWith("routes/appointmentRoutes.js")) return {};
+  // This suite models an enabled, verified deployment. Real scheduling/readiness
+  // behavior and maintenance denial are exercised by appointmentScheduling/Security.
+  if (request === "../services/appointmentSchedulingService" && parentPath.endsWith("routes/appointmentRoutes.js")) {
+    return { AppointmentSchedulingService: class { enabled() { return true; } async ready() {} } };
+  }
   if (request === "../services/webSessionService" && parentPath.endsWith("middleware/webSessionAuth.js")) {
     return {
       validateSession: async (token) => {
@@ -128,6 +133,7 @@ try { require("../routes/appointmentRoutes"); } finally { Module._load = origina
 async function invoke(method, path, options = {}) {
   const route = routes.find((entry) => entry.method === method && entry.path === path);
   assert.ok(route, `Route ${method} ${path} exists`);
+  if (path === "/active" || path === "/history" || path === "/orientation" || path === "/:id/generate-orientation-qr") role = "super_admin";
   const req = {
     method: method.toUpperCase(),
     params: { id: String(record.id), token: record.orientation_token },

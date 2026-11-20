@@ -3267,3 +3267,44 @@ a:focus-visible, button:focus-visible, .btn:focus-visible, input:focus-visible, 
   .feature-info-card { padding: 12px !important; min-height: 0 !important; }
   .services-section { padding-top: 32px; }
 }
+#appointmentModal .modal-dialog { max-width: 960px; }
+#appointmentModal .modal-content { max-height:calc(100vh - 2rem); max-height:calc(100dvh - 2rem); }
+#appointmentModal #appointmentForm { display:flex; flex-direction:column; min-height:0; overflow:hidden; }
+#appointmentModal .modal-body { min-height:0; }
+#appointmentModal .modal-header, #appointmentModal .modal-footer { flex-shrink:0; }
+#appointmentModal [hidden] { display:none !important; }
+#appointmentModal .appointment-booking-intro { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:18px; color:#12355b; font-size:.85rem; font-weight:700; }
+#appointmentModal .appointment-booking-intro span { background:#edf4ff; padding:7px 12px; border-radius:20px; }
+#appointmentModal .appointment-booking-intro [aria-current="step"] { background:#12355b; color:#fff; }
+#appointmentModal .appointment-booking-layout { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:24px; }
+#appointmentModal .appointment-schedule-panel, #appointmentModal .appointment-details-panel { min-width:0; padding:18px; background:#f8fbff; border:1px solid #d9e6f2; border-radius:16px; }
+#appointmentModal .appointment-booking-layout .col-md-6, #appointmentModal .appointment-booking-layout .col-12 { width:100%; margin-bottom:15px; }
+#appointmentModal .appointment-slot-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin:12px 0; }
+#appointmentModal .appointment-slot { min-height:56px; padding:10px; border:1px solid #b9d2ef; border-radius:10px; background:white; color:#12355b; font-size:.85rem; }
+#appointmentModal .appointment-slot[aria-pressed="true"] { background:#174e9c; color:white; border-color:#174e9c; box-shadow:0 0 0 2px #a9c9f3; }
+#appointmentModal .appointment-slot:disabled { background:#eef0f3; color:#667085; border-style:dashed; cursor:not-allowed; }
+#appointmentModal .appointment-slot:focus-visible { outline:3px solid #2563eb; outline-offset:2px; }
+#appointmentModal .appointment-time-heading { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:4px 12px; }
+#appointmentModal .appointment-refresh { flex:0 0 auto; max-width:100%; min-height:36px; padding:5px 8px; border:1px solid transparent; border-radius:8px; background:transparent; color:#174e9c; font-size:.85rem; font-weight:600; }
+#appointmentModal .appointment-refresh:hover:not(:disabled) { background:#edf4ff; border-color:#b9d2ef; }
+#appointmentModal .appointment-refresh:disabled { color:#667085; cursor:not-allowed; }
+#appointmentModal .appointment-refresh:focus-visible { outline:3px solid #2563eb; outline-offset:2px; }
+#appointmentModal #appointmentAvailabilityStatus { font-size:.85rem; line-height:1.5; min-height:3em; }
+#appointmentModal .appointment-review { min-width:0; color:#12355b; }
+#appointmentModal .appointment-review-heading { display:flex; align-items:flex-start; gap:12px; margin-bottom:16px; }
+#appointmentModal .appointment-review-icon { flex:0 0 32px; display:grid; place-items:center; height:32px; border-radius:50%; background:#edf4ff; color:#174e9c; font-weight:700; }
+#appointmentModal #appointmentReviewTitle { margin:0 0 5px; font-size:clamp(1.2rem, 3vw, 1.45rem); font-weight:750; overflow-wrap:anywhere; }
+#appointmentModal #appointmentReviewTitle:focus-visible { outline:3px solid #2563eb; outline-offset:3px; }
+#appointmentModal .appointment-review-heading p { margin:0; color:#526579; font-size:.9rem; }
+#appointmentModal .appointment-review-cards { display:grid; gap:12px; min-width:0; }
+#appointmentModal .appointment-review-card { min-width:0; padding:16px; border:1px solid #d9e6f2; border-radius:12px; background:#f8fbff; }
+#appointmentModal .appointment-review-card h4 { margin:0 0 12px; font-size:.95rem; font-weight:700; }
+#appointmentModal .appointment-review-card dl { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px 20px; margin:0; }
+#appointmentModal .appointment-review-card dl > div { min-width:0; }
+#appointmentModal .appointment-review-wide { grid-column:1 / -1; }
+#appointmentModal .appointment-review-card dt { margin-bottom:3px; color:#526579; font-size:.8rem; font-weight:500; }
+#appointmentModal .appointment-review-card dd { margin:0; font-weight:600; overflow-wrap:anywhere; }
+#appointmentModal #appointmentReviewNotes { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; }
+#appointmentModal .appointment-review-notice { margin:14px 0 0; padding:12px 14px; border-left:3px solid #174e9c; background:#edf4ff; font-size:.85rem; line-height:1.5; overflow-wrap:anywhere; }
+@media (max-width:767px) { #appointmentModal .appointment-booking-layout { grid-template-columns:minmax(0,1fr); gap:16px; } }
+@media (max-width:575px) { #appointmentModal .appointment-review-card dl { grid-template-columns:minmax(0,1fr); } }

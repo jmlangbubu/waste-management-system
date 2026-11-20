@@ -95,7 +95,7 @@ async function loadOrientationAppointments() {
   }
 
   try {
-    const response = await fetch(getOrientationAppointmentsApiUrl(), {
+    const response = await webAdminFetch(getOrientationAppointmentsApiUrl(), {
       headers: { Accept: "application/json" }
     });
 
@@ -500,7 +500,7 @@ async function openOrientationWebExam(id) {
     let token = selected.orientation_token ? String(selected.orientation_token).trim() : "";
 
     if (!token) {
-      const response = await fetch(getGenerateOrientationQrApiUrl(id), {
+      const response = await webAdminFetch(getGenerateOrientationQrApiUrl(id), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -543,7 +543,7 @@ async function openOrientationWebExam(id) {
 
 async function generateOrientationQr(id) {
   try {
-    const response = await fetch(getGenerateOrientationQrApiUrl(id), {
+    const response = await webAdminFetch(getGenerateOrientationQrApiUrl(id), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -590,7 +590,7 @@ async function viewOrientationQr(id) {
     let token = selected.orientation_token ? String(selected.orientation_token).trim() : "";
 
     if (!token) {
-      const response = await fetch(getGenerateOrientationQrApiUrl(id), {
+      const response = await webAdminFetch(getGenerateOrientationQrApiUrl(id), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

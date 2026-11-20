@@ -1,3 +1,12 @@
+let appointmentRescheduleContext = null;
+let appointmentReschedulePicker = null;
+function appointmentExpectedState(id) {
+  const row = allAppointments.find(item => Number(item.id) === Number(id));
+  if (!row?.slot_schedule) throw new Error("Refresh the appointment before taking action.");
+  return { expected_status: String(row.status || "pending").trim().toLowerCase() || "pending",
+    expected_schedule: row.slot_schedule,
+    ...(row.appointment_revision != null ? { expected_revision: Number(row.appointment_revision) } : {}) };
+}
 /* =========================
    APPOINTMENTS MODULE
 ========================= */
@@ -79,12 +88,12 @@ function getAppointmentHistoryWithCompletedOrientation(activeRecords = [], histo
 async function loadAppointments() {
   try {
     const [activeRes, historyRes] = await Promise.all([
-      fetch(getActiveAppointmentsApiUrl(), {
+      webAdminFetch(getActiveAppointmentsApiUrl(), {
         headers: {
           "Accept": "application/json"
         }
       }),
-      fetch(getAppointmentHistoryApiUrl(), {
+      webAdminFetch(getAppointmentHistoryApiUrl(), {
         headers: {
           "Accept": "application/json"
         }
@@ -174,7 +183,7 @@ async function handleAppointmentDecision(id, action) {
   if (!confirmed) return;
 
   try {
-    const res = await fetch(getAppointmentDecisionApiUrl(id), {
+    const res = await webAdminFetch(getAppointmentDecisionApiUrl(id), {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
@@ -182,7 +191,7 @@ async function handleAppointmentDecision(id, action) {
       },
       body: JSON.stringify({
         action,
-        personnel_name
+        ...appointmentExpectedState(id)
       })
     });
 
@@ -196,7 +205,7 @@ async function handleAppointmentDecision(id, action) {
       throw new Error(`Appointment decision API did not return JSON. Response starts with: ${rawText.slice(0, 200)}`);
     }
 
-    if (!res.ok) {
+    if (!res.ok || data.success !== true) {
       showToast(data.message || "Failed to update appointment", "error");
       return;
     }
@@ -228,7 +237,7 @@ window.handleAppointmentDecision = handleAppointmentDecision;
 
 async function loadPersonnel() {
   try {
-    const res = await fetch(getWebUsersApiUrl());
+    const res = await webAdminFetch(getWebUsersApiUrl());
     const rawText = await res.text();
         let data = {};
 
@@ -769,7 +778,7 @@ async function openAppointmentHistory() {
   }
 
   try {
-    const res = await fetch(getAppointmentHistoryApiUrl(), {
+    const res = await webAdminFetch(getAppointmentHistoryApiUrl(), {
       headers: {
         "Accept": "application/json"
       }
@@ -896,20 +905,34 @@ function renderAppointmentHistory(history = [], preserveSearch = false) {
 
 function handleReschedule(id) {
   selectedRescheduleAppointmentId = id;
+  try { appointmentRescheduleContext = { row: allAppointments.find(item => Number(item.id) === Number(id)), expected: appointmentExpectedState(id) }; }
+  catch (error) { showToast(error.message, "error"); return; }
 
   const modal = document.getElementById("rescheduleAppointmentModal");
   const dateInput = document.getElementById("rescheduleAppointmentDate");
 
   if (dateInput) {
     dateInput.value = "";
-    dateInput.min = new Date().toISOString().split("T")[0];
+    dateInput.min = window.AppointmentSlots.today();
   }
 
+  appointmentReschedulePicker?.reset();
+  appointmentReschedulePicker = window.AppointmentSlots.picker({
+    service: () => appointmentRescheduleContext?.row?.purpose || "", date: dateInput,
+    input: document.getElementById("rescheduleAppointmentTime"),
+    container: document.getElementById("rescheduleAppointmentTime"),
+    status: document.getElementById("rescheduleAvailabilityStatus"), select: true,
+    base: getAppApiBase, request: webAdminFetch
+  });
+  dateInput.onchange = () => appointmentReschedulePicker.refresh();
+  appointmentReschedulePicker.refresh();
   modal?.classList.remove("hidden");
 }
 
 function closeRescheduleModal() {
   selectedRescheduleAppointmentId = null;
+  appointmentReschedulePicker?.reset();
+  appointmentRescheduleContext = null;
 
   const modal = document.getElementById("rescheduleAppointmentModal");
   const dateInput = document.getElementById("rescheduleAppointmentDate");
@@ -942,6 +965,9 @@ async function confirmRescheduleAppointment() {
     return;
   }
 
+  if (!appointmentRescheduleContext || !appointmentReschedulePicker?.selected()) {
+    showToast("Check availability and select an available time first.", "error"); return;
+  }
   const newDateTime = `${newDate} ${newTime}:00`;
 
   const personnel_name =
@@ -965,7 +991,7 @@ async function confirmRescheduleAppointment() {
       btn.disabled = true;
     }
 
-    const res = await fetch(url, {
+    const res = await webAdminFetch(url, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
@@ -973,7 +999,7 @@ async function confirmRescheduleAppointment() {
       },
       body: JSON.stringify({
         new_date: newDateTime,
-        personnel_name
+        ...appointmentRescheduleContext.expected
       })
     });
 
@@ -990,6 +1016,7 @@ async function confirmRescheduleAppointment() {
 
     if (!res.ok || !data.success) {
       showToast(data.message || "Failed to reschedule appointment.", "error");
+      if (res.status === 409) await appointmentReschedulePicker.refresh();
       return;
     }
 
@@ -1022,20 +1049,20 @@ async function handleCancel(id) {
     "WMO Admin";
 
   try {
-    const res = await fetch(getCancelAppointmentUrl(id), {
+    const res = await webAdminFetch(getCancelAppointmentUrl(id), {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
         "Accept": "application/json"
       },
       body: JSON.stringify({
-        personnel_name
+        ...appointmentExpectedState(id)
       })
     });
 
     const data = await res.json();
 
-    if (!res.ok) {
+    if (!res.ok || data.success !== true) {
       showToast(data.message || "Failed to cancel", "error");
       return;
     }

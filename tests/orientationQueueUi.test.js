@@ -159,7 +159,7 @@ test("purpose-filtered API rows render in the queue despite omitting purpose", a
   const current = record(9, dateOffset(0));
   delete current.purpose;
   context.getOrientationAppointmentsApiUrl = () => "/api/appointments/orientation";
-  context.fetch = async () => ({ ok: true, text: async () => JSON.stringify({ success: true, appointments: [current] }) });
+  context.webAdminFetch = async () => ({ ok: true, text: async () => JSON.stringify({ success: true, appointments: [current] }) });
   await context.loadOrientationAppointments();
   assert.match(queueBody.innerHTML, /Participant 9/);
   assert.match(queueBody.innerHTML, /Pending Orientation/);
@@ -353,7 +353,7 @@ test("an API refresh replaces cached history without clearing search or barangay
   barangayFilter.value = "alpha";
   const calls = [];
   context.getOrientationAppointmentsApiUrl = () => "/api/appointments/orientation";
-  context.fetch = async (url) => {
+  context.webAdminFetch = async (url) => {
     calls.push(url);
     return { ok: true, text: async () => JSON.stringify({ success: true, appointments: [terminal(42, "Ana refreshed"), terminal(43, "Other")] }) };
   };
