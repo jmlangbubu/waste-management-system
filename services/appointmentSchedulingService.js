@@ -9,6 +9,10 @@ const hash = text => crypto.createHash("sha256").update(text).digest("hex");
 const conflict = () => policy.fail(409, "SLOT_UNAVAILABLE", "This time slot is no longer available. Please select another time.");
 const unavailable = () => policy.fail(503, "APPOINTMENT_SCHEDULING_UNAVAILABLE", "Appointment scheduling is under maintenance or its reservation infrastructure is unverified. No successful change is confirmed; retry or contact WMO.");
 const normalizedStatus = row => String(row.status || "pending").trim().toLowerCase() || "pending";
+const cleanupDiagnostic = stage => {
+  // Fixed labels only: driver errors can contain SQL, credentials or citizen data.
+  try { console.warn("Appointment transaction safety", { stage }); } catch (_) { /* Diagnostics must not replace the operation's outcome. */ }
+};
 
 class AppointmentSchedulingService {
   constructor(db, { enabled = () => process.env.APPOINTMENT_RESERVATIONS_ENABLED === "true", now = () => new Date() } = {}) {
@@ -46,28 +50,67 @@ class AppointmentSchedulingService {
     // requires the same schema/backfill protocol; there is no legacy write fallback.
     await this.ready();
     const connection = await new Promise((resolve, reject) => this.db.getConnection((error, db) => error ? reject(error) : resolve(db)));
-    let previousTimezone, discard = false;
+    let previousTimezone;
+    const lifecycle = { setup: "pending", begin: "pending", operation: "pending",
+      commit: "pending", rollback: "pending", restore: "pending", unsafe: false };
     try {
       // SQL appointment strings are explicitly Philippine wall time; never depend on the host timezone.
+      lifecycle.setup = "attempted";
       previousTimezone = (await query(connection, "SELECT @@session.time_zone AS timezone"))[0]?.timezone;
-      if (typeof previousTimezone !== "string") throw unavailable();
+      if (typeof previousTimezone !== "string" || !previousTimezone) throw unavailable();
       await query(connection, "SET time_zone = '+08:00'");
+      lifecycle.setup = "acknowledged";
+      lifecycle.begin = "attempted";
       await invoke(connection, "beginTransaction");
+      lifecycle.begin = "acknowledged";
       const state = await query(connection, "SELECT schema_version, backfill_complete FROM appointment_feature_state WHERE feature_key = 'service_slots' FOR SHARE");
       if (state.length !== 1 || Number(state[0].schema_version) !== 1 || Number(state[0].backfill_complete) !== 1) throw unavailable();
+      lifecycle.operation = "in_progress";
       const result = await operation(connection);
-      await invoke(connection, "commit");
+      lifecycle.operation = "completed";
+      lifecycle.commit = "attempted";
+      try {
+        await invoke(connection, "commit");
+        lifecycle.commit = "acknowledged";
+      } catch (_) {
+        // ROLLBACK cannot establish whether a COMMIT with a lost acknowledgement persisted.
+        lifecycle.unsafe = true;
+        cleanupDiagnostic("commit_unconfirmed");
+        throw policy.fail(503, "APPOINTMENT_UNAVAILABLE", "Appointment operation could not be confirmed. Recover the original booking request, or refresh the appointment before retrying.");
+      }
       return result;
     } catch (error) {
-      try { await invoke(connection, "rollback"); } catch (_) { /* Preserve the original failure. */ }
+      if (error?.fatal) lifecycle.unsafe = true;
+      if (lifecycle.begin === "acknowledged" && lifecycle.commit === "pending") {
+        lifecycle.rollback = "attempted";
+        try {
+          await invoke(connection, "rollback");
+          lifecycle.rollback = "acknowledged";
+        } catch (_) {
+          lifecycle.unsafe = true;
+          cleanupDiagnostic("rollback_failed");
+        }
+      }
       throw error;
     } finally {
-      if (previousTimezone !== undefined) {
-        try { await query(connection, "SET time_zone = ?", [previousTimezone]); }
-        catch (_) { discard = true; }
+      const resolved = lifecycle.commit === "acknowledged" || lifecycle.rollback === "acknowledged";
+      if (resolved && !lifecycle.unsafe && lifecycle.setup === "acknowledged") {
+        lifecycle.restore = "attempted";
+        try {
+          await query(connection, "SET time_zone = ?", [previousTimezone]);
+          lifecycle.restore = "acknowledged";
+        } catch (_) {
+          lifecycle.unsafe = true;
+          cleanupDiagnostic("timezone_restore_failed");
+        }
       }
-      // Never return a connection with a changed timezone to unrelated modules.
-      if (discard) connection.destroy(); else connection.release();
+      const reusable = resolved && !lifecycle.unsafe && lifecycle.restore === "acknowledged";
+      const disposition = reusable ? "release" : "destroy";
+      // Exactly one terminal method attempt. Never fall back from a failed destroy to release,
+      // or let cleanup replace a business error / acknowledged committed success.
+      try { connection[disposition](); } catch (_) { cleanupDiagnostic(`${disposition}_failed`); }
+      // No cleanup deadline is approved. A callback that never settles can still stall here;
+      // adding a deadline requires a separate cancellation/disposal policy, not a release race.
     }
   }
   async availability(service, date) {

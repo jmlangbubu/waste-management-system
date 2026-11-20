@@ -11,12 +11,15 @@ const requestKey = suffix => `synthetic-request-key-${suffix}`;
 function fixture(options = {}) {
   let state = { next: 1, appointments: [], slots: [], requests: [], notifications: [] };
   let tail = Promise.resolve();
-  const calls = [], connections = [];
+  const calls = [], connections = [], leases = [], idle = [];
+  const metrics = { acquisitionAttempts: 0 };
+  const injectedError = (value, phase) => value instanceof Error ? value : new Error(`Synthetic ${phase} failure`);
   const duplicate = () => Object.assign(new Error("Synthetic duplicate"), { code: "ER_DUP_ENTRY" });
   const execute = (sql, values, connection) => {
     sql = sql.replace(/\s+/g, " ").trim(); calls.push(sql);
     const data = connection?.transaction || state;
-    if (options.failSql && sql.includes(options.failSql)) throw new Error("Synthetic write failure");
+    if (connection && /^(INSERT|UPDATE|DELETE) /.test(sql)) connection.businessSqlAttempts++;
+    if (options.failSql && sql.includes(options.failSql)) throw options.businessError || new Error("Synthetic write failure");
     if (sql.startsWith("SELECT schema_version")) {
       if (options.missingState) throw Object.assign(new Error("Missing readiness table"), { code: "ER_NO_SUCH_TABLE" });
       const locked = sql.endsWith("FOR SHARE");
@@ -32,8 +35,24 @@ function fixture(options = {}) {
       return keys.flatMap((key, i) => key.map((Column_name, j) => ({ Non_unique: 0, Key_name: `key${i}`, Seq_in_index: j + 1, Column_name })));
     }
     if (sql.startsWith("SHOW COLUMNS")) return [{ Type: sql.includes("'preferred_date'") ? "datetime" : "bigint unsigned", Null: "NO" }];
-    if (sql === "SELECT @@session.time_zone AS timezone") return [{ timezone: connection.timezone }];
-    if (sql.startsWith("SET time_zone")) { connection.timezone = values[0] || "+08:00"; return {}; }
+    if (sql === "SELECT @@session.time_zone AS timezone") {
+      connection.timezoneReadAttempts++; connection.events.push("timezone_read");
+      if (options.timezoneReadError) throw injectedError(options.timezoneReadError, "timezone read");
+      return [{ timezone: Object.hasOwn(options, "timezoneReadValue") ? options.timezoneReadValue : connection.timezone }];
+    }
+    if (sql === "SET time_zone = '+08:00'") {
+      connection.timezoneSetAttempts++; connection.events.push("timezone_set");
+      // A failed acknowledgement can follow an actual session change.
+      connection.timezone = "+08:00";
+      if (options.timezoneSetError) throw injectedError(options.timezoneSetError, "timezone set");
+      connection.timezoneSetAcknowledgements++; return {};
+    }
+    if (sql === "SET time_zone = ?") {
+      connection.timezoneRestoreAttempts++; connection.events.push("timezone_restore");
+      if (options.restoreError) throw injectedError(options.restoreError, "timezone restore");
+      connection.timezone = values[0]; connection.timezoneRestoreAcknowledgements++;
+      connection.events.push("timezone_restored"); return {};
+    }
     if (sql.startsWith("INSERT INTO appointment_booking_requests")) {
       if (data.requests.some(row => row.hash === values[0])) throw duplicate();
       data.requests.push({ hash: values[0], payload_hash: values[1] }); return { affectedRows: 1 };
@@ -88,23 +107,67 @@ function fixture(options = {}) {
     try { callback(null, execute(sql, values || [], connection)); } catch (error) { callback(error); }
   };
   const db = { query: callbackQuery(null), getConnection(callback) {
-    const connection = { timezone: "SYSTEM", transaction: null, unlock: null,
+    metrics.acquisitionAttempts++;
+    if (options.acquireError) return callback(injectedError(options.acquireError, "connection acquisition"));
+    let connection = options.reuseConnections ? idle.shift() : null;
+    if (!connection) {
+      connection = { id: connections.length + 1, timezone: options.originalTimezone || "SYSTEM", transaction: null, unlock: null,
+      poolState: "new", released: false, destroyed: false, events: [], checkoutCount: 0,
+      timezoneReadAttempts: 0, timezoneSetAttempts: 0, timezoneSetAcknowledgements: 0,
+      timezoneRestoreAttempts: 0, timezoneRestoreAcknowledgements: 0, businessSqlAttempts: 0,
+      beginAttempts: 0, beginAcknowledgements: 0, rollbackAttempts: 0, rollbackAcknowledgements: 0,
+      commitAttempts: 0, commitAcknowledgements: 0, committed: false, transactionUnresolved: false,
+      releaseCount: 0, destroyCount: 0, unresolvedAtCleanup: false,
       beginTransaction(done) {
+        this.beginAttempts++; this.events.push("begin");
         const previous = tail; tail = new Promise(resolve => { this.unlock = resolve; });
-        previous.then(() => { this.transaction = structuredClone(state); done(); });
+        previous.then(() => {
+          this.transaction = structuredClone(state); this.transactionUnresolved = true; this.committed = false;
+          // Model a BEGIN that reached the server but whose acknowledgement failed.
+          if (options.beginError) return done(injectedError(options.beginError, "begin"));
+          this.beginAcknowledgements++; this.events.push("begun"); done();
+        });
       },
       commit(done) {
-        state = this.transaction; this.transaction = null;
-        if (options.commitUncertain) { options.commitUncertain = false; return done(new Error("Synthetic lost commit acknowledgement")); }
+        this.commitAttempts++; this.events.push("commit");
+        const failure = options.commitError || options.commitUncertain;
+        if (!failure || options.commitPersisted !== false) {
+          state = this.transaction; this.transaction = null; this.transactionUnresolved = false; this.committed = true;
+        }
+        if (failure) {
+          options.commitUncertain = false; options.commitError = null;
+          return done(failure instanceof Error ? failure : new Error("Synthetic lost commit acknowledgement"));
+        }
+        this.commitAcknowledgements++; this.events.push("committed");
         done();
       },
-      rollback(done) { this.transaction = null; done(); },
-      release() { this.released = true; this.unlock?.(); }, destroy() { this.destroyed = true; this.unlock?.(); }
-    };
-    connection.query = callbackQuery(connection); connections.push(connection); callback(null, connection);
+      rollback(done) {
+        this.rollbackAttempts++; this.events.push("rollback");
+        if (options.rollbackError) return done(injectedError(options.rollbackError, "rollback"));
+        this.transaction = null; this.transactionUnresolved = false;
+        this.rollbackAcknowledgements++; this.events.push("rolled_back"); done();
+      },
+      release() {
+        this.releaseCount++; this.events.push("release"); this.unresolvedAtCleanup = this.transactionUnresolved;
+        if (options.releaseError) { this.poolState = "release_failed"; throw injectedError(options.releaseError, "release"); }
+        this.released = true; this.poolState = "idle"; this.unlock?.();
+        if (options.reuseConnections) idle.push(this);
+      },
+      destroy() {
+        this.destroyCount++; this.events.push("destroy"); this.unresolvedAtCleanup = this.transactionUnresolved;
+        if (options.destroyError) { this.poolState = "destroy_failed"; throw injectedError(options.destroyError, "destroy"); }
+        this.destroyed = true; this.poolState = "destroyed";
+        // Confirmed close drops uncommitted model work; it is NOT a ROLLBACK acknowledgement.
+        this.transaction = null; this.transactionUnresolved = false; this.unlock?.();
+      }
+      };
+      connection.query = callbackQuery(connection); connections.push(connection);
+    }
+    connection.released = false; connection.poolState = "leased"; connection.checkoutCount++;
+    leases.push(connection); callback(null, connection);
   } };
   const service = new AppointmentSchedulingService(db, { enabled: () => options.enabled !== false, now });
-  return { service, db, calls, connections, get state() { return state; }, expected(id) {
+  return { service, db, calls, connections, leases, metrics, get state() { return state; }, expected(id) {
     const row = state.appointments.find(row => row.id === id);
     return { expected_status: row.status, expected_schedule: row.slot_schedule, expected_revision: row.appointment_revision };
   } };

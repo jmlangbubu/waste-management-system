@@ -35,13 +35,15 @@ test("MODEL concurrent same service/date/time yields one success and one 409; di
 });
 test("MODEL duplicate and uncertain-commit retries retain original reference without duplicate notice", async () => {
   const f = fixture({ commitUncertain: true });
-  await assert.rejects(f.service.book(citizen, requestKey("retry")), /lost commit/);
+  await assert.rejects(f.service.book(citizen, requestKey("retry")), error => error.statusCode === 503 && error.code === "APPOINTMENT_UNAVAILABLE");
   f.service.now = () => new Date("2026-11-24T00:00:00Z"); // Recovery remains possible after the original slot elapses.
   const replay = await f.service.book(citizen, requestKey("retry"));
   assert.equal(replay.idempotent, true); assert.equal(replay.appointment_code, "APT-000001");
   assert.equal(f.state.appointments.length, 1); assert.equal(f.state.notifications.length, 1);
   await assert.rejects(f.service.book({ ...citizen, notes: "different" }, requestKey("retry")), error => error.code === "IDEMPOTENCY_CONFLICT");
-  assert.ok(f.connections.every(connection => connection.released && connection.timezone === "SYSTEM"));
+  assert.equal(f.connections[0].destroyCount, 1);
+  assert.equal(f.connections[0].releaseCount, 0);
+  assert.ok(f.connections.slice(1).every(connection => connection.released && connection.timezone === "SYSTEM"));
 });
 test("MODEL reference/notification failures roll back appointment, request and reservation", async () => {
   for (const failSql of ["SET appointment_code", "INSERT INTO notifications"]) {
@@ -171,7 +173,7 @@ test("missing, stale or invalidated readiness and inconsistent reservations fail
 });
 test("lookup-only recovery returns the committed reference after elapsed time without creating any records", async () => {
   const f = fixture({ commitUncertain: true }), key = requestKey("recover");
-  await assert.rejects(f.service.book(citizen, key), /lost commit/);
+  await assert.rejects(f.service.book(citizen, key), error => error.statusCode === 503 && error.code === "APPOINTMENT_UNAVAILABLE");
   f.service.now = () => new Date("2026-11-24T00:00:00Z");
   const before = structuredClone(f.state), callStart = f.calls.length;
   const recovered = await f.service.book(citizen, key, { recoveryOnly: true });
@@ -241,4 +243,245 @@ test("a failed appointment update rolls back moved/deleted reservations and pres
       { ...f.expected(id), new_date: "2026-11-24 11:00:00" }), /Synthetic write failure/);
     assert.deepEqual(f.state, before);
   }
+});
+
+function diagnostics(t) {
+  const messages = [];
+  t.mock.method(console, "warn", (...args) => messages.push(args));
+  return messages;
+}
+function noCommittedRecords(f) {
+  for (const key of ["appointments", "requests", "slots", "notifications"]) assert.equal(f.state[key].length, 0, key);
+}
+
+test("R1 normal booking commits once, restores the exact timezone and releases once", async () => {
+  const f = fixture({ originalTimezone: "+05:30" });
+  const result = await f.service.book(citizen, requestKey("r1-normal"));
+  assert.equal(result.success, true); assert.equal(result.appointment_code, "APT-000001");
+  for (const key of ["appointments", "requests", "slots", "notifications"]) assert.equal(f.state[key].length, 1, key);
+  const c = f.connections[0];
+  assert.equal(c.committed, true); assert.equal(c.transactionUnresolved, false);
+  assert.equal(c.commitAttempts, 1); assert.equal(c.commitAcknowledgements, 1);
+  assert.equal(c.rollbackAttempts, 0); assert.equal(c.timezone, "+05:30");
+  assert.equal(c.releaseCount, 1); assert.equal(c.destroyCount, 0);
+  assert.deepEqual(c.events, ["timezone_read", "timezone_set", "begin", "begun", "commit", "committed", "timezone_restore", "timezone_restored", "release"]);
+  const writes = f.calls.filter(sql => /^(INSERT|UPDATE|DELETE) /.test(sql));
+  assert.deepEqual(writes.map(sql => sql.match(/^(?:INSERT INTO|UPDATE) \w+/)[0]), [
+    "INSERT INTO appointment_booking_requests", "INSERT INTO appointments", "INSERT INTO appointment_reservations",
+    "UPDATE appointments", "INSERT INTO notifications", "UPDATE appointment_booking_requests"
+  ]);
+  assert.equal(f.calls.filter(sql => sql === "SELECT @@session.time_zone AS timezone").length, 1);
+  assert.equal(f.calls.filter(sql => sql === "SET time_zone = '+08:00'").length, 1);
+  assert.equal(f.calls.filter(sql => sql === "SET time_zone = ?").length, 1);
+});
+
+test("R1 readiness denial never acquires a connection or starts business work", async () => {
+  for (const options of [{ enabled: false }, { unready: true }, { missingUnique: true }]) {
+    const f = fixture(options);
+    await assert.rejects(f.service.book(citizen, requestKey("r1-readiness")), error => error.statusCode === 503);
+    assert.equal(f.metrics.acquisitionAttempts, 0); assert.equal(f.connections.length, 0);
+    assert.equal(f.calls.some(sql => /^(INSERT|UPDATE|DELETE) /.test(sql)), false);
+    noCommittedRecords(f);
+  }
+});
+
+test("R1 acquisition failure preserves its error without transaction or replacement work", async () => {
+  const primary = new Error("Synthetic acquisition error"), f = fixture({ acquireError: primary });
+  await assert.rejects(f.service.book(citizen, requestKey("r1-acquire")), error => error === primary);
+  assert.equal(f.metrics.acquisitionAttempts, 1); assert.equal(f.connections.length, 0);
+  assert.equal(f.calls.some(sql => /^(INSERT|UPDATE|DELETE|SET) /.test(sql)), false);
+  noCommittedRecords(f);
+});
+
+test("R1 timezone read, SET and invalid-state failures destroy without starting a transaction", async () => {
+  for (const fault of ["timezoneReadError", "timezoneSetError", "missingTimezone", "nullTimezone", "emptyTimezone"]) {
+    const primary = new Error(`Synthetic ${fault}`);
+    const options = fault === "missingTimezone" ? { timezoneReadValue: undefined }
+      : fault === "nullTimezone" ? { timezoneReadValue: null }
+      : fault === "emptyTimezone" ? { timezoneReadValue: "" } : { [fault]: primary };
+    const f = fixture(options);
+    await assert.rejects(f.service.book(citizen, requestKey("r1-setup")),
+      error => fault.endsWith("Error") ? error === primary : error.statusCode === 503);
+    const c = f.connections[0];
+    assert.equal(c.beginAttempts, 0); assert.equal(c.businessSqlAttempts, 0);
+    assert.equal(c.rollbackAttempts, 0); assert.equal(c.commitAttempts, 0);
+    assert.equal(c.timezoneRestoreAttempts, 0); assert.equal(c.releaseCount, 0);
+    assert.equal(c.destroyCount, 1); assert.equal(c.destroyed, true);
+    if (fault === "timezoneSetError") assert.equal(c.timezone, "+08:00", "failed SET acknowledgement can hide an applied change");
+    noCommittedRecords(f);
+  }
+});
+
+test("R1 failed BEGIN may leave a transaction active and must destroy without business SQL", async () => {
+  const primary = new Error("Synthetic lost BEGIN acknowledgement"), f = fixture({ beginError: primary });
+  await assert.rejects(f.service.book(citizen, requestKey("r1-begin")), error => error === primary);
+  const c = f.connections[0];
+  assert.equal(c.beginAttempts, 1); assert.equal(c.beginAcknowledgements, 0);
+  assert.equal(c.businessSqlAttempts, 0); assert.equal(c.commitAttempts, 0);
+  assert.equal(c.rollbackAttempts, 0); assert.equal(c.timezoneRestoreAttempts, 0);
+  assert.equal(c.unresolvedAtCleanup, true); assert.equal(c.transactionUnresolved, false);
+  assert.equal(c.destroyCount, 1); assert.equal(c.releaseCount, 0); noCommittedRecords(f);
+});
+
+test("R1 business error stays primary after acknowledged rollback and restoration", async () => {
+  const primary = policy.fail(409, "SLOT_UNAVAILABLE", "Synthetic business conflict");
+  const f = fixture({ failSql: "INSERT INTO notifications", businessError: primary, originalTimezone: "+05:30" });
+  await assert.rejects(f.service.book(citizen, requestKey("r1-business")), error => error === primary);
+  const c = f.connections[0];
+  assert.ok(c.businessSqlAttempts > 0); assert.equal(c.commitAttempts, 0);
+  assert.equal(c.rollbackAttempts, 1); assert.equal(c.rollbackAcknowledgements, 1);
+  assert.equal(c.timezoneRestoreAcknowledgements, 1); assert.equal(c.timezone, "+05:30");
+  assert.equal(c.releaseCount, 1); assert.equal(c.destroyCount, 0);
+  assert.equal(c.committed, false); assert.equal(c.transactionUnresolved, false); noCommittedRecords(f);
+});
+
+test("R1 rollback failure preserves the business error and destroys without a release or restore", async t => {
+  const warnings = diagnostics(t), primary = new Error("Synthetic business error");
+  const f = fixture({ failSql: "INSERT INTO notifications", businessError: primary, rollbackError: true });
+  await assert.rejects(f.service.book(citizen, requestKey("r1-rollback")), error => error === primary);
+  const c = f.connections[0];
+  assert.equal(c.rollbackAttempts, 1); assert.equal(c.rollbackAcknowledgements, 0);
+  assert.equal(c.unresolvedAtCleanup, true); assert.equal(c.committed, false);
+  assert.equal(c.timezoneRestoreAttempts, 0); assert.equal(c.releaseCount, 0);
+  assert.equal(c.destroyCount, 1); assert.equal(c.destroyed, true);
+  assert.equal(c.events.includes("rolled_back"), false);
+  assert.deepEqual(warnings.map(args => args[1].stage), ["rollback_failed"]); noCommittedRecords(f);
+});
+
+for (const persisted of [true, false]) {
+  test(`R1 lost COMMIT acknowledgement is unconfirmed when ${persisted ? "persisted" : "not persisted"}`, async t => {
+    const warnings = diagnostics(t), f = fixture({ commitUncertain: true, commitPersisted: persisted });
+    const key = requestKey(`r1-commit-${persisted}`), input = JSON.stringify(citizen);
+    await assert.rejects(f.service.book(citizen, key), error => error.statusCode === 503 &&
+      error.code === "APPOINTMENT_UNAVAILABLE" && /could not be confirmed/.test(error.message));
+    assert.equal(JSON.stringify(citizen), input);
+    const c = f.connections[0];
+    assert.equal(f.connections.length, 1, "no automatic transaction retry");
+    assert.equal(c.commitAttempts, 1); assert.equal(c.commitAcknowledgements, 0);
+    assert.equal(c.committed, persisted); assert.equal(c.rollbackAttempts, 0);
+    assert.equal(c.timezoneRestoreAttempts, 0); assert.equal(c.destroyCount, 1); assert.equal(c.releaseCount, 0);
+    assert.equal(c.unresolvedAtCleanup, !persisted);
+    assert.deepEqual(warnings.map(args => args[1].stage), ["commit_unconfirmed"]);
+    const before = structuredClone(f.state), callStart = f.calls.length;
+    f.service.now = () => new Date("2026-11-24T00:00:00Z");
+    if (persisted) {
+      const recovered = await f.service.book(citizen, key, { recoveryOnly: true });
+      assert.equal(recovered.appointment_code, "APT-000001"); assert.equal(recovered.idempotent, true);
+      assert.equal(f.state.requests[0].hash, require("node:crypto").createHash("sha256").update(key).digest("hex"));
+      assert.equal(f.state.appointments.length, 1); assert.equal(f.state.notifications.length, 1);
+    } else {
+      await assert.rejects(f.service.book(citizen, key, { recoveryOnly: true }), error => error.code === "BOOKING_NOT_FOUND");
+      noCommittedRecords(f);
+    }
+    assert.deepEqual(f.state, before);
+    assert.equal(f.calls.slice(callStart).some(sql => /^(INSERT|UPDATE|DELETE) /.test(sql)), false,
+      "recovery with the original key is lookup-only in both outcomes");
+  });
+}
+
+test("R1 acknowledged COMMIT remains successful when timezone restoration fails", async t => {
+  const warnings = diagnostics(t), options = { restoreError: true }, f = fixture(options);
+  const key = requestKey("r1-restore"), result = await f.service.book(citizen, key);
+  assert.equal(result.success, true); assert.equal(result.appointment_code, "APT-000001");
+  const c = f.connections[0];
+  assert.equal(c.commitAcknowledgements, 1); assert.equal(c.committed, true);
+  assert.equal(c.rollbackAttempts, 0); assert.equal(c.timezoneRestoreAttempts, 1);
+  assert.equal(c.timezoneRestoreAcknowledgements, 0); assert.equal(c.destroyCount, 1); assert.equal(c.releaseCount, 0);
+  assert.deepEqual(warnings.map(args => args[1].stage), ["timezone_restore_failed"]);
+  options.restoreError = false;
+  const recovered = await f.service.book(citizen, key, { recoveryOnly: true });
+  assert.equal(recovered.appointment_code, result.appointment_code);
+  assert.equal(f.state.appointments.length, 1); assert.equal(f.state.notifications.length, 1);
+});
+
+test("R1 restoration failure after rollback cannot replace the original business error", async t => {
+  diagnostics(t);
+  const primary = new Error("Synthetic primary business error");
+  const f = fixture({ failSql: "INSERT INTO notifications", businessError: primary, restoreError: true });
+  await assert.rejects(f.service.book(citizen, requestKey("r1-error-restore")), error => error === primary);
+  const c = f.connections[0];
+  assert.equal(c.rollbackAcknowledgements, 1); assert.equal(c.timezoneRestoreAcknowledgements, 0);
+  assert.equal(c.destroyCount, 1); assert.equal(c.releaseCount, 0); noCommittedRecords(f);
+});
+
+for (const scenario of [
+  { label: "release exception preserves committed success", releaseError: true },
+  { label: "destroy exception preserves committed success", destroyError: true, restoreError: true },
+  { label: "destroy exception preserves a failed-rollback business error", destroyError: true, rollbackError: true, businessFailure: true },
+  { label: "release exception preserves a rolled-back business error", releaseError: true, businessFailure: true }
+]) {
+  test(`R1 ${scenario.label}`, async t => {
+    const warnings = diagnostics(t), primary = new Error("Synthetic primary error");
+    const f = fixture({ ...scenario, ...(scenario.businessFailure ? { failSql: "INSERT INTO notifications", businessError: primary } : {}) });
+    if (scenario.businessFailure) {
+      await assert.rejects(f.service.book(citizen, requestKey("r1-terminal")), error => error === primary);
+      noCommittedRecords(f);
+    } else {
+      assert.equal((await f.service.book(citizen, requestKey("r1-terminal"))).success, true);
+      assert.equal(f.state.appointments.length, 1); assert.equal(f.state.notifications.length, 1);
+    }
+    const c = f.connections[0];
+    assert.equal(c.releaseCount, scenario.releaseError ? 1 : 0);
+    assert.equal(c.destroyCount, scenario.destroyError ? 1 : 0);
+    assert.equal(c.releaseCount + c.destroyCount, 1, "never retry cleanup through the other terminal method");
+    assert.equal(c.committed, !scenario.businessFailure);
+    assert.equal(c.transactionUnresolved, Boolean(scenario.rollbackError), "a failed destroy does not prove physical closure");
+    assert.ok(warnings.some(args => args[1].stage === (scenario.destroyError ? "destroy_failed" : "release_failed")));
+  });
+}
+
+test("R1 healthy pooled operations continue without reusing a destroyed connection", async t => {
+  diagnostics(t);
+  const f = fixture({ commitUncertain: true, reuseConnections: true }), key = requestKey("r1-reuse");
+  await assert.rejects(f.service.book(citizen, key), error => error.code === "APPOINTMENT_UNAVAILABLE");
+  const damaged = f.connections[0];
+  assert.equal((await f.service.book(citizen, key, { recoveryOnly: true })).appointment_code, "APT-000001");
+  await f.service.book({ ...citizen, purpose: "IEC Resource Speaker" }, requestKey("r1-next"));
+  assert.equal(f.connections.length, 2); assert.equal(f.leases.length, 3);
+  assert.equal(f.leases[0], damaged); assert.notEqual(f.leases[1], damaged);
+  assert.equal(f.leases[1], f.leases[2], "the healthy connection is actually reused by the model pool");
+  assert.equal(damaged.destroyCount, 1); assert.equal(damaged.releaseCount, 0);
+  assert.equal(f.connections[1].checkoutCount, 2); assert.equal(f.connections[1].releaseCount, 2);
+  assert.equal(f.connections[1].destroyCount, 0); assert.equal(f.connections[1].timezone, "SYSTEM");
+  assert.equal(f.state.appointments.length, 2); assert.equal(f.state.notifications.length, 2);
+});
+
+test("R1 fatal business errors cannot make a connection reusable even if cleanup callbacks succeed", async () => {
+  const primary = Object.assign(new Error("Synthetic fatal business error"), { fatal: true });
+  const f = fixture({ failSql: "INSERT INTO notifications", businessError: primary });
+  await assert.rejects(f.service.book(citizen, requestKey("r1-fatal")), error => error === primary);
+  const c = f.connections[0];
+  assert.equal(c.rollbackAcknowledgements, 1); assert.equal(c.timezoneRestoreAttempts, 0);
+  assert.equal(c.destroyCount, 1); assert.equal(c.releaseCount, 0); noCommittedRecords(f);
+});
+
+test("R1 commit failures and cleanup diagnostics never expose driver payloads or become slot conflicts", async t => {
+  const warnings = diagnostics(t);
+  const secret = "SYNTHETIC_PRIVATE_SQL synthetic@example.invalid ORI-private hash-private password-private";
+  const raw = Object.assign(new Error(secret), { statusCode: 409, code: "SLOT_UNAVAILABLE", sql: secret });
+  const f = fixture({ commitError: raw, commitPersisted: true });
+  await assert.rejects(f.service.book(citizen, requestKey("r1-private")), error => {
+    assert.equal(error.statusCode, 503); assert.equal(error.code, "APPOINTMENT_UNAVAILABLE");
+    assert.doesNotMatch(error.message, /SYNTHETIC_PRIVATE|example|ORI-private|hash-private|password-private/);
+    return true;
+  });
+  const g = fixture({ failSql: "INSERT INTO notifications", businessError: raw, rollbackError: raw, destroyError: raw });
+  await assert.rejects(g.service.book(citizen, requestKey("r1-private-cleanup")), error => error === raw);
+  const h = fixture({ restoreError: raw });
+  assert.equal((await h.service.book(citizen, requestKey("r1-private-restore"))).success, true);
+  assert.deepEqual(warnings.map(args => args[1].stage), ["commit_unconfirmed", "rollback_failed", "destroy_failed", "timezone_restore_failed"]);
+  assert.doesNotMatch(JSON.stringify(warnings), /SYNTHETIC_PRIVATE|example|ORI-private|hash-private|password-private|sql|requestKey/i);
+});
+
+test("R1 diagnostic logger exceptions cannot replace a committed success or primary failure", async t => {
+  t.mock.method(console, "warn", () => { throw new Error("Synthetic diagnostic failure"); });
+  const f = fixture({ restoreError: true });
+  assert.equal((await f.service.book(citizen, requestKey("r1-log-success"))).success, true);
+  assert.equal(f.connections[0].destroyCount, 1);
+  const primary = new Error("Synthetic original business error");
+  const g = fixture({ failSql: "INSERT INTO notifications", businessError: primary, rollbackError: true });
+  await assert.rejects(g.service.book(citizen, requestKey("r1-log-error")), error => error === primary);
+  const h = fixture({ commitUncertain: true });
+  await assert.rejects(h.service.book(citizen, requestKey("r1-log-commit")), error => error.code === "APPOINTMENT_UNAVAILABLE");
+  assert.equal(h.connections[0].destroyCount, 1);
 });
