@@ -6,35 +6,111 @@ const citizen = { full_name: "Synthetic Citizen", barangay: "Apopong", email: "s
 const actor = { id: 8, role: "clerk_admin", full_name: "Authenticated Clerk" };
 const requestKey = suffix => `synthetic-request-key-${suffix}`;
 
+// Independent synthetic DDL evidence: legacy column shapes from Q4 plus the commented
+// future draft. Literal defaults below are test choices, NOT recovered production defaults.
+function reviewedSchema() {
+  const schema = "fixture_wmo";
+  const definitions = {
+    appointments: [
+      ["id", "int", false, null, "auto_increment"], ["appointment_code", "varchar(30)", true],
+      ["full_name", "varchar(150)", false], ["barangay", "varchar(150)", false], ["contact_number", "varchar(50)", false],
+      ["email", "varchar(255)", true], ["purpose", "varchar(100)", false], ["preferred_date", "datetime", true], ["notes", "text", true],
+      ["status", "varchar(50)", false, "pending"], ["assigned_to", "varchar(255)", true], ["assigned_personnel_id", "int", true],
+      ["assigned_personnel_name", "varchar(150)", true], ["assigned_at", "timestamp", true],
+      ["created_at", "timestamp", false, "CURRENT_TIMESTAMP", "DEFAULT_GENERATED"], ["updated_at", "timestamp", true, null, "on update CURRENT_TIMESTAMP"],
+      ["orientation_token", "varchar(100)", true], ["orientation_qr_status", "varchar(30)", true, "not_generated"], ["orientation_completed", "tinyint(1)", false, "0"],
+      ["orientation_status", "varchar(50)", true, "approved"], ["orientation_started_at", "datetime", true], ["orientation_completed_at", "datetime", true],
+      ["orientation_score", "int", true], ["appointment_revision", "bigint unsigned", false, "0"]
+    ],
+    notifications: [
+      ["id", "int", false, null, "auto_increment"], ["type", "varchar(50)", true], ["title", "varchar(255)", true], ["message", "text", true],
+      ["isRead", "tinyint(1)", true, "0"], ["createdAt", "timestamp", false, "CURRENT_TIMESTAMP", "DEFAULT_GENERATED"],
+      ["status", "varchar(80)", true], ["reference_id", "varchar(120)", true]
+    ],
+    appointment_reservations: [["service_key", "varchar(32)", false, null, "", "ascii"], ["appointment_date", "date", false], ["appointment_time", "time", false], ["appointment_id", "int", false]],
+    appointment_booking_requests: [["request_hash", "char(64)", false, null, "", "ascii"], ["payload_hash", "char(64)", false, null, "", "ascii"], ["appointment_id", "int", true], ["appointment_code", "varchar(30)", true]],
+    appointment_feature_state: [["feature_key", "varchar(32)", false, null, "", "ascii"], ["schema_version", "int", false], ["backfill_complete", "tinyint", false, "0"]]
+  };
+  const columns = Object.entries(definitions).flatMap(([table, entries]) => entries.map(([name, type, nullable, value = null, extra = "", charset = "utf8mb4"], ordinal) => {
+    const dataType = type.match(/^\w+/)[0], size = type.match(/\((\d+)\)/);
+    const numeric = ["int", "bigint", "tinyint"].includes(dataType), string = ["varchar", "char", "text"].includes(dataType);
+    return { TABLE_CATALOG: "def", TABLE_SCHEMA: schema, TABLE_NAME: table, COLUMN_NAME: name, ORDINAL_POSITION: ordinal + 1,
+      DATA_TYPE: dataType, COLUMN_TYPE: type, IS_NULLABLE: nullable ? "YES" : "NO", COLUMN_DEFAULT: value, EXTRA: extra,
+      CHARACTER_MAXIMUM_LENGTH: string ? dataType === "text" ? 65535 : Number(size[1]) : null,
+      CHARACTER_OCTET_LENGTH: string ? dataType === "text" ? 65535 : Number(size[1]) * (charset === "ascii" ? 1 : 4) : null,
+      NUMERIC_PRECISION: numeric ? dataType === "int" ? 10 : dataType === "tinyint" ? 3 : 20 : null, NUMERIC_SCALE: numeric ? 0 : null,
+      DATETIME_PRECISION: ["datetime", "timestamp", "time"].includes(dataType) ? 0 : null,
+      CHARACTER_SET_NAME: string ? charset : null, COLLATION_NAME: string ? charset === "ascii" ? "ascii_bin" : "utf8mb4_general_ci" : null,
+      GENERATION_EXPRESSION: "", COLUMN_KEY: "", COLUMN_COMMENT: "synthetic metadata" };
+  }));
+  const metadata = { schema,
+    tables: Object.keys(definitions).map(TABLE_NAME => ({ TABLE_CATALOG: "def", TABLE_SCHEMA: schema, TABLE_NAME, TABLE_TYPE: "BASE TABLE", ENGINE: "InnoDB", TABLE_COLLATION: "utf8mb4_general_ci" })),
+    columns, indexes: [], foreignKeys: [], marker: [{ feature_key: "service_slots", schema_version: 1, backfill_complete: 1 }] };
+  addIndex(metadata, "appointments", "PRIMARY", ["id"]); addIndex(metadata, "appointments", "appointment_code", ["appointment_code"]);
+  addIndex(metadata, "notifications", "PRIMARY", ["id"]);
+  addIndex(metadata, "appointment_reservations", "PRIMARY", ["service_key", "appointment_date", "appointment_time"]);
+  addIndex(metadata, "appointment_reservations", "reservation_appointment", ["appointment_id"]);
+  addIndex(metadata, "appointment_booking_requests", "PRIMARY", ["request_hash"]);
+  addIndex(metadata, "appointment_booking_requests", "request_appointment", ["appointment_id"]);
+  addIndex(metadata, "appointment_feature_state", "PRIMARY", ["feature_key"]);
+  for (const table of ["appointment_reservations", "appointment_booking_requests"]) metadata.foreignKeys.push({
+    CONSTRAINT_CATALOG: "def", CONSTRAINT_SCHEMA: schema, CONSTRAINT_NAME: `${table}_appointment_fk`, TABLE_SCHEMA: schema, TABLE_NAME: table,
+    COLUMN_NAME: "appointment_id", ORDINAL_POSITION: 1, POSITION_IN_UNIQUE_CONSTRAINT: 1,
+    REFERENCED_TABLE_SCHEMA: schema, REFERENCED_TABLE_NAME: "appointments", REFERENCED_COLUMN_NAME: "id", UPDATE_RULE: "RESTRICT", DELETE_RULE: "RESTRICT"
+  });
+  return metadata;
+}
+function addIndex(metadata, table, name, columns, { unique = true, visible = "YES" } = {}) {
+  metadata.indexes.push(...columns.map((COLUMN_NAME, i) => ({ TABLE_CATALOG: "def", TABLE_SCHEMA: metadata.schema, TABLE_NAME: table,
+    INDEX_SCHEMA: metadata.schema, INDEX_NAME: name, NON_UNIQUE: unique ? 0 : 1, SEQ_IN_INDEX: i + 1, COLUMN_NAME,
+    SUB_PART: null, EXPRESSION: null, INDEX_TYPE: "BTREE", IS_VISIBLE: visible, COLLATION: "A", CARDINALITY: 0, INDEX_COMMENT: "" })));
+}
+
 // Explicitly a transaction MODEL, not MySQL. Serializing model transactions exercises
 // stale-snapshot/retry/rollback outcomes but does not prove InnoDB locking or SQL compatibility.
 function fixture(options = {}) {
   let state = { next: 1, appointments: [], slots: [], requests: [], notifications: [] };
   let tail = Promise.resolve();
   const calls = [], connections = [], leases = [], idle = [];
-  const metrics = { acquisitionAttempts: 0 };
+  const metadata = options.metadata || reviewedSchema();
+  const metrics = { acquisitionAttempts: 0, metadataQueries: 0 };
+  const queryContexts = [], metadataCalls = [];
   const injectedError = (value, phase) => value instanceof Error ? value : new Error(`Synthetic ${phase} failure`);
   const duplicate = () => Object.assign(new Error("Synthetic duplicate"), { code: "ER_DUP_ENTRY" });
   const execute = (sql, values, connection) => {
     sql = sql.replace(/\s+/g, " ").trim(); calls.push(sql);
+    queryContexts.push({ connectionId: connection?.id ?? null, sql });
     const data = connection?.transaction || state;
     if (connection && /^(INSERT|UPDATE|DELETE) /.test(sql)) connection.businessSqlAttempts++;
     if (options.failSql && sql.includes(options.failSql)) throw options.businessError || new Error("Synthetic write failure");
-    if (sql.startsWith("SELECT schema_version")) {
+    const kind = sql === "SELECT DATABASE() AS schema_name" ? "identity"
+      : sql.includes("FROM information_schema.TABLES") ? "tables"
+      : sql.includes("FROM information_schema.COLUMNS") ? "columns"
+      : sql.includes("FROM information_schema.STATISTICS") ? "indexes"
+      : sql.includes("FROM information_schema.KEY_COLUMN_USAGE") ? "foreignKeys"
+      : sql.startsWith("SELECT feature_key,") ? "marker" : null;
+    if (kind) {
+      metrics.metadataQueries++; if (connection) connection.metadataQueries++;
+      metadataCalls.push({ connectionId: connection?.id ?? null, kind, sql, values: [...values] });
+      if (options.metadataError && (!options.metadataErrorKind || options.metadataErrorKind === kind)) throw injectedError(options.metadataError, "metadata access");
+      if (kind === "identity") return [{ schema_name: Object.hasOwn(options, "schemaIdentity") ? options.schemaIdentity : metadata.schema }];
+      if (kind === "tables") return structuredClone(metadata.tables.map(row => options.engine ? { ...row, ENGINE: options.engine } : row));
+      if (kind === "columns") return structuredClone(metadata.columns);
+      if (kind === "indexes") return structuredClone(options.missingUnique ? [] : metadata.indexes);
+      if (kind === "foreignKeys") return structuredClone(metadata.foreignKeys);
+    }
+    if (kind === "marker" || sql.startsWith("SELECT schema_version")) {
       if (options.missingState) throw Object.assign(new Error("Missing readiness table"), { code: "ER_NO_SUCH_TABLE" });
       const locked = sql.endsWith("FOR SHARE");
-      return [{ schema_version: (locked && options.transactionSchemaVersion) || options.schemaVersion || 1,
-        backfill_complete: options.unready || (locked && options.unreadyInTransaction) ? 0 : 1 }];
+      let rows = structuredClone(options.missingMarker ? [] : metadata.marker);
+      if (options.duplicateMarker && rows.length) rows.push({ ...rows[0] });
+      for (const row of rows) {
+        if (locked && Object.hasOwn(options, "transactionSchemaVersion")) row.schema_version = options.transactionSchemaVersion;
+        else if (Object.hasOwn(options, "schemaVersion")) row.schema_version = options.schemaVersion;
+        if (options.unready || locked && options.unreadyInTransaction) row.backfill_complete = 0;
+      }
+      return locked ? rows.map(({ schema_version, backfill_complete }) => ({ schema_version, backfill_complete })) : rows;
     }
-    if (sql.startsWith("SELECT TABLE_NAME, ENGINE")) return ["appointments", "appointment_reservations", "appointment_booking_requests", "appointment_feature_state", "notifications"].map(TABLE_NAME => ({ TABLE_NAME, ENGINE: "InnoDB" }));
-    if (sql.startsWith("SELECT ENGINE")) return [{ ENGINE: options.engine || "InnoDB" }];
-    if (sql.startsWith("SELECT TABLE_NAME FROM information_schema.KEY_COLUMN_USAGE")) return ["appointment_reservations", "appointment_booking_requests"].map(TABLE_NAME => ({ TABLE_NAME }));
-    if (sql.startsWith("SHOW INDEX")) {
-      if (options.missingUnique) return [];
-      const keys = sql.endsWith("appointment_reservations") ? [["service_key", "appointment_date", "appointment_time"], ["appointment_id"]] : [["request_hash"]];
-      return keys.flatMap((key, i) => key.map((Column_name, j) => ({ Non_unique: 0, Key_name: `key${i}`, Seq_in_index: j + 1, Column_name })));
-    }
-    if (sql.startsWith("SHOW COLUMNS")) return [{ Type: sql.includes("'preferred_date'") ? "datetime" : "bigint unsigned", Null: "NO" }];
     if (sql === "SELECT @@session.time_zone AS timezone") {
       connection.timezoneReadAttempts++; connection.events.push("timezone_read");
       if (options.timezoneReadError) throw injectedError(options.timezoneReadError, "timezone read");
@@ -112,7 +188,7 @@ function fixture(options = {}) {
     let connection = options.reuseConnections ? idle.shift() : null;
     if (!connection) {
       connection = { id: connections.length + 1, timezone: options.originalTimezone || "SYSTEM", transaction: null, unlock: null,
-      poolState: "new", released: false, destroyed: false, events: [], checkoutCount: 0,
+      poolState: "new", released: false, destroyed: false, events: [], checkoutCount: 0, metadataQueries: 0,
       timezoneReadAttempts: 0, timezoneSetAttempts: 0, timezoneSetAcknowledgements: 0,
       timezoneRestoreAttempts: 0, timezoneRestoreAcknowledgements: 0, businessSqlAttempts: 0,
       beginAttempts: 0, beginAcknowledgements: 0, rollbackAttempts: 0, rollbackAcknowledgements: 0,
@@ -167,11 +243,11 @@ function fixture(options = {}) {
     leases.push(connection); callback(null, connection);
   } };
   const service = new AppointmentSchedulingService(db, { enabled: () => options.enabled !== false, now });
-  return { service, db, calls, connections, leases, metrics, get state() { return state; }, expected(id) {
+  return { service, db, calls, connections, leases, metrics, metadata, metadataCalls, queryContexts, get state() { return state; }, expected(id) {
     const row = state.appointments.find(row => row.id === id);
     return { expected_status: row.status, expected_schedule: row.slot_schedule, expected_revision: row.appointment_revision };
   } };
 }
 
 
-module.exports = { fixture, citizen, actor, requestKey };
+module.exports = { fixture, citizen, actor, requestKey, reviewedSchema, addIndex };

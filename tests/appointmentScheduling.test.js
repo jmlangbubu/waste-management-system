@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const policy = require("../services/appointmentPolicy");
-const { fixture, citizen, actor, requestKey } = require("./helpers/appointmentSchedulingFixture");
+const { fixture, citizen, actor, requestKey, reviewedSchema, addIndex } = require("./helpers/appointmentSchedulingFixture");
 const now = () => new Date("2026-11-20T02:00:00Z");
 
 test("policy preserves exact service keys, shared Others capacity, seven times and Manila boundaries", () => {
@@ -275,11 +275,13 @@ test("R1 normal booking commits once, restores the exact timezone and releases o
   assert.equal(f.calls.filter(sql => sql === "SET time_zone = ?").length, 1);
 });
 
-test("R1 readiness denial never acquires a connection or starts business work", async () => {
+test("R1 readiness denial never starts business work; R2 validates metadata on one lease", async () => {
   for (const options of [{ enabled: false }, { unready: true }, { missingUnique: true }]) {
     const f = fixture(options);
     await assert.rejects(f.service.book(citizen, requestKey("r1-readiness")), error => error.statusCode === 503);
-    assert.equal(f.metrics.acquisitionAttempts, 0); assert.equal(f.connections.length, 0);
+    const acquired = options.enabled === false ? 0 : 1;
+    assert.equal(f.metrics.acquisitionAttempts, acquired); assert.equal(f.connections.length, acquired);
+    if (acquired) { assert.equal(f.connections[0].destroyCount, 1); assert.equal(f.connections[0].releaseCount, 0); }
     assert.equal(f.calls.some(sql => /^(INSERT|UPDATE|DELETE) /.test(sql)), false);
     noCommittedRecords(f);
   }
@@ -484,4 +486,316 @@ test("R1 diagnostic logger exceptions cannot replace a committed success or prim
   const h = fixture({ commitUncertain: true });
   await assert.rejects(h.service.book(citizen, requestKey("r1-log-commit")), error => error.code === "APPOINTMENT_UNAVAILABLE");
   assert.equal(h.connections[0].destroyCount, 1);
+});
+
+const schemaColumn = (m, table, name) => m.columns.find(row => row.TABLE_NAME === table && row.COLUMN_NAME === name);
+const schemaIndex = (m, table, name) => m.indexes.filter(row => row.TABLE_NAME === table && row.INDEX_NAME === name);
+const changeLength = (row, length) => { row.CHARACTER_MAXIMUM_LENGTH = length; row.COLUMN_TYPE = `${row.DATA_TYPE}(${length})`; };
+const schemaDefects = [
+  ["missing table", m => { m.tables.pop(); }],
+  ["table view", m => { m.tables[0].TABLE_TYPE = "VIEW"; }],
+  ["nontransactional engine", m => { m.tables[1].ENGINE = "MyISAM"; }],
+  ["duplicate table evidence", m => { m.tables.push({ ...m.tables[0] }); }],
+  ["cross-schema table", m => { m.tables[0].TABLE_SCHEMA = "other"; }],
+  ["wrong table case", m => { m.tables[0].TABLE_NAME = "Appointments"; }],
+  ["missing revision", m => { m.columns = m.columns.filter(row => row.COLUMN_NAME !== "appointment_revision"); }],
+  ["similarly named revision", m => { schemaColumn(m, "appointments", "appointment_revision").COLUMN_NAME = "appointmentXrevision"; }],
+  ["wrong notification case", m => { schemaColumn(m, "notifications", "isRead").COLUMN_NAME = "isread"; }],
+  ["duplicate column metadata", m => { m.columns.push({ ...m.columns[0] }); }],
+  ["cross-schema column", m => { m.columns[0].TABLE_SCHEMA = "other"; }],
+  ["unsigned parent ID", m => { m.columns[0].COLUMN_TYPE = "int unsigned"; }],
+  ["missing parent auto increment", m => { m.columns[0].EXTRA = ""; }],
+  ["nullable parent ID", m => { m.columns[0].IS_NULLABLE = "YES"; }],
+  ["wrong numeric precision", m => { m.columns[0].NUMERIC_PRECISION = 9; }],
+  ["signed revision", m => { schemaColumn(m, "appointments", "appointment_revision").COLUMN_TYPE = "bigint"; }],
+  ["revision default one", m => { schemaColumn(m, "appointments", "appointment_revision").COLUMN_DEFAULT = "1"; }],
+  ["nullable revision", m => { schemaColumn(m, "appointments", "appointment_revision").IS_NULLABLE = "YES"; }],
+  ["inaccessible default", m => { delete schemaColumn(m, "appointments", "appointment_revision").COLUMN_DEFAULT; }],
+  ["boolean default substitute", m => { schemaColumn(m, "appointments", "appointment_revision").COLUMN_DEFAULT = false; }],
+  ["short booking name", m => { changeLength(schemaColumn(m, "appointments", "full_name"), 149); }],
+  ["short booking email", m => { changeLength(schemaColumn(m, "appointments", "email"), 253); }],
+  ["nonnullable preferred date", m => { schemaColumn(m, "appointments", "preferred_date").IS_NULLABLE = "NO"; }],
+  ["fractional preferred date", m => { schemaColumn(m, "appointments", "preferred_date").DATETIME_PRECISION = 6; }],
+  ["orientation timestamp substitute", m => { schemaColumn(m, "appointments", "orientation_started_at").DATA_TYPE = "timestamp"; }],
+  ["nonnullable orientation completion", m => { schemaColumn(m, "appointments", "orientation_completed_at").IS_NULLABLE = "NO"; }],
+  ["automatically updated orientation start", m => { schemaColumn(m, "appointments", "orientation_started_at").EXTRA = "on update CURRENT_TIMESTAMP"; }],
+  ["automatically updated assignment time", m => { schemaColumn(m, "appointments", "assigned_at").EXTRA = "on update CURRENT_TIMESTAMP"; }],
+  ["automatically updated notification creation", m => { schemaColumn(m, "notifications", "createdAt").EXTRA = "DEFAULT_GENERATED on update CURRENT_TIMESTAMP"; }],
+  ["generated orientation evidence", m => { schemaColumn(m, "appointments", "orientation_score").GENERATION_EXPRESSION = "1"; }],
+  ["ambiguous generated datetime default", m => { schemaColumn(m, "appointments", "orientation_started_at").EXTRA = "DEFAULT_GENERATED"; }],
+  ["invented orientation progress default", m => { schemaColumn(m, "appointments", "orientation_status").COLUMN_DEFAULT = "pending_orientation"; }],
+  ["unsigned reservation ID", m => { schemaColumn(m, "appointment_reservations", "appointment_id").COLUMN_TYPE = "int unsigned"; }],
+  ["bigint reservation ID", m => { schemaColumn(m, "appointment_reservations", "appointment_id").DATA_TYPE = "bigint"; }],
+  ["nullable reservation ID", m => { schemaColumn(m, "appointment_reservations", "appointment_id").IS_NULLABLE = "YES"; }],
+  ["nonnullable request ID", m => { schemaColumn(m, "appointment_booking_requests", "appointment_id").IS_NULLABLE = "NO"; }],
+  ["non-null initial request link", m => { schemaColumn(m, "appointment_booking_requests", "appointment_id").COLUMN_DEFAULT = "1"; }],
+  ["request reference length 32", m => { changeLength(schemaColumn(m, "appointment_booking_requests", "appointment_code"), 32); }],
+  ["varchar hash substitute", m => { const c = schemaColumn(m, "appointment_booking_requests", "request_hash"); c.DATA_TYPE = "varchar"; c.COLUMN_TYPE = "varchar(64)"; }],
+  ["short hash", m => { changeLength(schemaColumn(m, "appointment_booking_requests", "payload_hash"), 63); }],
+  ["non-ASCII hash", m => { schemaColumn(m, "appointment_booking_requests", "request_hash").CHARACTER_SET_NAME = "utf8mb4"; }],
+  ["nonbinary service collation", m => { schemaColumn(m, "appointment_reservations", "service_key").COLLATION_NAME = "ascii_general_ci"; }],
+  ["fractional slot time", m => { schemaColumn(m, "appointment_reservations", "appointment_time").DATETIME_PRECISION = 6; }],
+  ["ready-by-default marker", m => { schemaColumn(m, "appointment_feature_state", "backfill_complete").COLUMN_DEFAULT = "1"; }],
+  ["missing notification timestamp default", m => { schemaColumn(m, "notifications", "createdAt").COLUMN_DEFAULT = null; }],
+  ["unknown generated notification default", m => { schemaColumn(m, "notifications", "createdAt").COLUMN_DEFAULT = "(unknown_function())"; }],
+  ["mandatory notification extension without default", m => { m.columns.push({ ...schemaColumn(m, "notifications", "title"), COLUMN_NAME: "unprovided", IS_NULLABLE: "NO", COLUMN_DEFAULT: null }); }],
+  ["unknown expression extension", m => { m.columns.push({ ...schemaColumn(m, "notifications", "title"), COLUMN_NAME: "unprovided", IS_NULLABLE: "NO", COLUMN_DEFAULT: "(uuid())", EXTRA: "DEFAULT_GENERATED" }); }],
+  ["missing parent primary key", m => { m.indexes = m.indexes.filter(row => !(row.TABLE_NAME === "appointments" && row.INDEX_NAME === "PRIMARY")); }],
+  ["missing parent reference uniqueness", m => { m.indexes = m.indexes.filter(row => !(row.TABLE_NAME === "appointments" && row.INDEX_NAME === "appointment_code")); }],
+  ["nonunique capacity substitute", m => { schemaIndex(m, "appointment_reservations", "PRIMARY").forEach(row => { row.NON_UNIQUE = 1; }); }],
+  ["wrong capacity order", m => { const rows = schemaIndex(m, "appointment_reservations", "PRIMARY"); [rows[0].COLUMN_NAME, rows[1].COLUMN_NAME] = [rows[1].COLUMN_NAME, rows[0].COLUMN_NAME]; }],
+  ["prefix capacity key", m => { schemaIndex(m, "appointment_reservations", "PRIMARY")[0].SUB_PART = 5; }],
+  ["prefix request hash", m => { schemaIndex(m, "appointment_booking_requests", "PRIMARY")[0].SUB_PART = 63; }],
+  ["functional capacity substitute", m => { const r = schemaIndex(m, "appointment_reservations", "PRIMARY")[0]; r.COLUMN_NAME = null; r.EXPRESSION = "lower(service_key)"; }],
+  ["duplicate index ordinal", m => { schemaIndex(m, "appointment_reservations", "PRIMARY")[1].SEQ_IN_INDEX = 1; }],
+  ["missing request appointment uniqueness", m => { m.indexes = m.indexes.filter(row => row.INDEX_NAME !== "request_appointment"); }],
+  ["missing feature primary key", m => { m.indexes = m.indexes.filter(row => !(row.TABLE_NAME === "appointment_feature_state" && row.INDEX_NAME === "PRIMARY")); }],
+  ["cross-schema index", m => { m.indexes[0].TABLE_SCHEMA = "other"; }],
+  ["extra date-time uniqueness", m => { addIndex(m, "appointment_reservations", "restrictive", ["appointment_date", "appointment_time"]); }],
+  ["extra citizen-contact uniqueness", m => { addIndex(m, "appointments", "restrictive", ["contact_number"]); }],
+  ["extra notification-title uniqueness", m => { addIndex(m, "notifications", "restrictive", ["type", "title"]); }],
+  ["extra prefix uniqueness", m => { addIndex(m, "appointment_booking_requests", "restrictive", ["request_hash"]); schemaIndex(m, "appointment_booking_requests", "restrictive")[0].SUB_PART = 16; }],
+  ["missing child foreign key", m => { m.foreignKeys.pop(); }],
+  ["cross-schema foreign key", m => { m.foreignKeys[0].REFERENCED_TABLE_SCHEMA = "other"; }],
+  ["wrong foreign-key target", m => { m.foreignKeys[0].REFERENCED_TABLE_NAME = "other_appointments"; }],
+  ["wrong referenced column", m => { m.foreignKeys[0].REFERENCED_COLUMN_NAME = "assigned_personnel_id"; }],
+  ["wrong source foreign-key column", m => { m.foreignKeys[0].COLUMN_NAME = "service_key"; }],
+  ["cascade update", m => { m.foreignKeys[0].UPDATE_RULE = "CASCADE"; }],
+  ["nulling delete", m => { m.foreignKeys[0].DELETE_RULE = "SET NULL"; }],
+  ["inaccessible referential action", m => { delete m.foreignKeys[0].DELETE_RULE; }],
+  ["composite foreign-key substitution", m => { m.foreignKeys.push({ ...m.foreignKeys[0], COLUMN_NAME: "service_key", ORDINAL_POSITION: 2, POSITION_IN_UNIQUE_CONSTRAINT: 2 }); }],
+  ["duplicate relationship evidence", m => { m.foreignKeys.push({ ...m.foreignKeys[0] }); }],
+  ["missing marker", m => { m.marker = []; }],
+  ["duplicate marker", m => { m.marker.push({ ...m.marker[0] }); }],
+  ["wrong marker case", m => { m.marker[0].feature_key = "SERVICE_SLOTS"; }],
+  ["wrong schema version", m => { m.marker[0].schema_version = 2; }],
+  ["incomplete backfill", m => { m.marker[0].backfill_complete = 0; }],
+  ["ambiguous marker value", m => { m.marker[0].schema_version = true; }]
+];
+for (const [name, corrupt] of schemaDefects) {
+  test(`R2 rejects ${name} before BEGIN or business writes`, async () => {
+    const metadata = reviewedSchema(); corrupt(metadata);
+    const f = fixture({ metadata });
+    await assert.rejects(f.service.book(citizen, requestKey("r2-invalid")), error => error.statusCode === 503 && error.code === "APPOINTMENT_SCHEDULING_UNAVAILABLE");
+    assert.equal(f.metrics.acquisitionAttempts, 1);
+    const c = f.connections[0];
+    assert.equal(c.beginAttempts, 0); assert.equal(c.businessSqlAttempts, 0);
+    assert.equal(c.releaseCount, 0); assert.equal(c.destroyCount, 1); noCommittedRecords(f);
+  });
+}
+
+test("R2 valid contract preserves booking, availability, rescheduling and cancellation", async () => {
+  const f = fixture(); await f.service.ready();
+  const first = await f.service.book(citizen, requestKey("r2-first"));
+  await f.service.book({ ...citizen, purpose: "IEC Resource Speaker" }, requestKey("r2-other-service"));
+  assert.equal((await f.service.availability(citizen.purpose, "2026-11-23")).slots.find(row => row.time === "10:00").status, "occupied");
+  await f.service.change(first.id, "reschedule", actor, { ...f.expected(first.id), new_date: "2026-11-24 11:00:00" });
+  await f.service.change(first.id, "cancel", actor, f.expected(first.id));
+  assert.equal(f.state.appointments[0].status, "cancelled"); assert.equal(f.state.slots.length, 1);
+  assert.equal(f.state.notifications.length, 2);
+});
+
+test("R2 allows harmless indexes, nullable unique redundancy and safe omitted defaults", async () => {
+  const metadata = reviewedSchema();
+  addIndex(metadata, "appointments", "search_name", ["full_name"], { unique: false });
+  addIndex(metadata, "appointment_reservations", "service_search", ["service_key"], { unique: false });
+  schemaIndex(metadata, "appointment_reservations", "service_search")[0].SUB_PART = 8;
+  addIndex(metadata, "appointment_reservations", "redundant_by_appointment", ["appointment_id", "service_key"], { visible: "NO" });
+  addIndex(metadata, "appointment_reservations", "redundant_reordered_slot", ["appointment_time", "appointment_date", "service_key"]);
+  addIndex(metadata, "appointment_booking_requests", "redundant_nullable", ["appointment_id", "payload_hash"]);
+  schemaIndex(metadata, "appointment_booking_requests", "request_appointment")[0].IS_VISIBLE = "NO";
+  metadata.foreignKeys.forEach(row => { row.UPDATE_RULE = "NO ACTION"; row.DELETE_RULE = "NO ACTION"; });
+  metadata.columns.push({ ...schemaColumn(metadata, "notifications", "title"), COLUMN_NAME: "optional_extension", COLUMN_DEFAULT: null });
+  metadata.columns.push({ ...schemaColumn(metadata, "notifications", "title"), COLUMN_NAME: "default_extension", IS_NULLABLE: "NO", COLUMN_DEFAULT: "reviewed literal" });
+  const f = fixture({ metadata });
+  const outcomes = await Promise.allSettled([f.service.book(citizen, requestKey("r2-safe-a")), f.service.book(citizen, requestKey("r2-safe-b"))]);
+  assert.equal(outcomes.filter(row => row.status === "fulfilled").length, 1);
+  assert.equal(outcomes.find(row => row.status === "rejected").reason.code, "SLOT_UNAVAILABLE");
+  await f.service.book({ ...citizen, purpose: "IEC Resource Speaker" }, requestKey("r2-safe-other"));
+  assert.equal(f.state.appointments.length, 2);
+});
+
+test("R2 accepts documented numeric metadata strings and integer display widths", async () => {
+  const metadata = reviewedSchema();
+  for (const row of metadata.columns) {
+    for (const field of ["CHARACTER_MAXIMUM_LENGTH", "NUMERIC_PRECISION", "NUMERIC_SCALE", "DATETIME_PRECISION"]) if (row[field] !== null) row[field] = String(row[field]);
+    if (row.COLUMN_TYPE === "int") row.COLUMN_TYPE = "int(11)";
+    if (row.COLUMN_TYPE === "bigint unsigned") row.COLUMN_TYPE = "bigint(20) unsigned";
+  }
+  for (const row of metadata.indexes) { row.NON_UNIQUE = String(row.NON_UNIQUE); row.SEQ_IN_INDEX = String(row.SEQ_IN_INDEX); }
+  metadata.marker[0].schema_version = "1"; metadata.marker[0].backfill_complete = "1";
+  await fixture({ metadata }).service.ready();
+});
+
+test("R2 metadata access and identity failures return only the safe unavailable contract", async () => {
+  for (const kind of ["identity", "tables", "columns", "indexes", "foreignKeys", "marker"]) {
+    const f = fixture({ metadataError: new Error("PRIVATE_SCHEMA driver SQL credentials"), metadataErrorKind: kind });
+    await assert.rejects(f.service.ready(), error => error.statusCode === 503 && !/PRIVATE_SCHEMA|credentials|driver SQL/.test(error.message));
+    assert.equal(f.connections[0].destroyCount, 1); assert.equal(f.connections[0].releaseCount, 0);
+  }
+  for (const schemaIdentity of [null, "", "other_schema"]) {
+    const f = fixture({ schemaIdentity });
+    await assert.rejects(f.service.ready(), error => error.statusCode === 503);
+    assert.equal(f.connections[0].destroyCount, 1);
+  }
+  const f = fixture({ acquireError: true });
+  await assert.rejects(f.service.ready(), error => error.statusCode === 503);
+  assert.equal(f.connections.length, 0);
+});
+
+test("R2 every operation inspects and uses exactly its own leased connection", async () => {
+  for (const operation of ["ready", "availability", "book"]) {
+    const f = fixture();
+    if (operation === "ready") await f.service.ready();
+    else if (operation === "availability") await f.service.availability(citizen.purpose, "2026-11-23");
+    else await f.service.book(citizen, requestKey("r2-lease"));
+    assert.equal(f.metrics.acquisitionAttempts, 1); assert.equal(f.metadataCalls.length, 6);
+    assert.ok(f.queryContexts.every(call => call.connectionId === f.connections[0].id));
+    assert.ok(f.metadataCalls.filter(call => !["identity", "marker"].includes(call.kind)).every(call => call.values[0] === f.metadata.schema));
+    assert.equal(f.connections[0].releaseCount, 1); assert.equal(f.connections[0].destroyCount, 0);
+    assert.equal(f.calls.filter(sql => sql.endsWith("FOR SHARE")).length, operation === "book" ? 1 : 0);
+  }
+});
+
+test("R2 invalidation after schema inspection still denies the locked transaction before writes", async () => {
+  for (const options of [{ unreadyInTransaction: true }, { transactionSchemaVersion: 2 }, { transactionSchemaVersion: true }, { transactionSchemaVersion: "1.0" }]) {
+    const f = fixture(options);
+    await assert.rejects(f.service.book(citizen, requestKey("r2-invalidate")), error => error.statusCode === 503);
+    const c = f.connections[0];
+    assert.equal(c.beginAcknowledgements, 1); assert.equal(c.rollbackAcknowledgements, 1);
+    assert.equal(c.businessSqlAttempts, 0); assert.equal(c.releaseCount, 1); assert.equal(c.destroyCount, 0); noCommittedRecords(f);
+  }
+});
+
+test("R2 paired negative controls admit the golden schema and reject only its deliberate corruption", async () => {
+  for (const name of ["signed revision", "prefix request hash", "cross-schema foreign key", "extra date-time uniqueness"]) {
+    const f = fixture(); await f.service.ready();
+    schemaDefects.find(([label]) => label === name)[1](f.metadata);
+    await assert.rejects(f.service.ready(), error => error.statusCode === 503);
+    // Reset synthetic evidence only; the runtime validator never repairs a database.
+    Object.assign(f.metadata, reviewedSchema()); await f.service.ready();
+    assert.deepEqual(f.connections.map(c => [c.releaseCount, c.destroyCount]), [[1, 0], [0, 1], [1, 0]]);
+    noCommittedRecords(f);
+  }
+});
+
+test("R2 validates omitted integer defaults and rejects pool-based inspection", async () => {
+  for (const value of ["999", "-129", "0.5"]) {
+    const metadata = reviewedSchema();
+    metadata.columns.push({ ...schemaColumn(metadata, "notifications", "isRead"), COLUMN_NAME: "extra_counter", IS_NULLABLE: "NO", COLUMN_DEFAULT: value });
+    await assert.rejects(fixture({ metadata }).service.ready(), error => error.statusCode === 503);
+  }
+  const f = fixture();
+  await assert.rejects(f.service.ready(f.db), error => error.statusCode === 503);
+  assert.equal(f.metrics.acquisitionAttempts, 0); assert.equal(f.calls.length, 0);
+});
+
+test("R2 metadata query and connection costs stay bounded without caching", async t => {
+  const { performance } = require("node:perf_hooks");
+  const f = fixture({ reuseConnections: true }), sequential = 30, concurrent = 12;
+  const start = performance.now();
+  for (let i = 0; i < sequential; i++) await f.service.ready();
+  const elapsed = performance.now() - start;
+  assert.equal(f.metrics.metadataQueries, sequential * 6); assert.equal(f.metrics.acquisitionAttempts, sequential);
+  assert.equal(f.connections.length, 1); assert.equal(f.connections[0].releaseCount, sequential);
+  const g = fixture(); await Promise.all(Array.from({ length: concurrent }, () => g.service.ready()));
+  assert.equal(g.metrics.metadataQueries, concurrent * 6); assert.equal(g.metrics.acquisitionAttempts, concurrent);
+  assert.ok(g.connections.every(c => c.releaseCount === 1 && c.destroyCount === 0));
+  const bad = fixture({ metadataError: true });
+  await Promise.all(Array.from({ length: concurrent }, async () => assert.rejects(bad.service.ready(), error => error.statusCode === 503)));
+  assert.ok(bad.connections.every(c => c.destroyCount === 1 && c.releaseCount === 0));
+  noCommittedRecords(bad);
+  t.diagnostic(JSON.stringify({ metadataQueriesPerReadiness: 6, leasesPerOperation: 1, sequentialCalls: sequential,
+    sequentialMetadataQueries: f.metrics.metadataQueries, physicalModelConnectionsReused: f.connections.length,
+    averageSyntheticReadinessMs: Number((elapsed / sequential).toFixed(3)), concurrentCalls: concurrent,
+    concurrentMetadataQueries: g.metrics.metadataQueries, rejectedConnectionsDisposed: bad.connections.length,
+    realMySqlLatencyOrLockingMeasured: false }));
+});
+
+// Independent driver-shaped evidence; these columns/defaults are not derived from
+// the validator. Only the notification INSERT omits them throughout this service.
+function nullableNoticeSchema(column = "reference_id", keyColumns = [column]) {
+  const metadata = reviewedSchema();
+  if (column === "nullable_extension") metadata.columns.push({
+    ...schemaColumn(metadata, "notifications", "reference_id"), COLUMN_NAME: column
+  });
+  addIndex(metadata, "notifications", "nullable_notice", keyColumns);
+  return metadata;
+}
+
+for (const [column, keyColumns] of [["reference_id", ["reference_id"]], ["status", ["type", "status"]], ["nullable_extension", ["nullable_extension"]]]) {
+  test(`R2 nullable unique accepts proven NULL notification ${column} through booking and staff changes`, async () => {
+    const metadata = nullableNoticeSchema(column, keyColumns), definition = schemaColumn(metadata, "notifications", column);
+    assert.equal(definition.IS_NULLABLE, "YES"); assert.equal(definition.COLUMN_DEFAULT, null);
+    assert.equal(definition.EXTRA, ""); assert.equal(definition.GENERATION_EXPRESSION, "");
+    const f = fixture({ metadata });
+    const first = await f.service.book(citizen, requestKey("nullable-first"));
+    await f.service.book({ ...citizen, purpose: "IEC Resource Speaker" }, requestKey("nullable-other-service"));
+    await f.service.change(first.id, "accept", actor, f.expected(first.id));
+    await f.service.change(first.id, "reschedule", actor, { ...f.expected(first.id), new_date: "2026-11-24 11:00:00" });
+    await f.service.change(first.id, "cancel", actor, f.expected(first.id));
+    const inserts = f.calls.filter(sql => /^INSERT INTO notifications /.test(sql));
+    assert.equal(inserts.length, 2);
+    assert.ok(inserts.every(sql => sql === "INSERT INTO notifications (type, title, message) VALUES (?, ?, ?)"));
+    assert.equal(f.calls.some(sql => /^(UPDATE|DELETE FROM) notifications\b/.test(sql)), false);
+    assert.equal(f.state.notifications.length, 2);
+    assert.deepEqual(f.state.notifications.map(values => values.slice(0, 2)), [
+      ["appointment", "New Appointment Request"], ["appointment", "New Appointment Request"]
+    ], "repeated non-NULL key parts remain valid alongside the omitted NULL part");
+    assert.equal(f.state.appointments[0].status, "cancelled"); assert.equal(f.state.slots.length, 1);
+    assert.ok(f.connections.every(c => c.releaseCount === 1 && c.destroyCount === 0));
+  });
+}
+
+const nullableUniqueDefects = [
+  ["non-NULL extension default", m => { schemaColumn(m, "notifications", "nullable_extension").COLUMN_DEFAULT = "repeated"; }],
+  ["literal NULL string default", m => { schemaColumn(m, "notifications", "nullable_extension").COLUMN_DEFAULT = "NULL"; }],
+  ["non-NULL reference default", m => { schemaColumn(m, "notifications", "reference_id").COLUMN_DEFAULT = "repeated"; addIndex(m, "notifications", "reference_unique", ["reference_id"]); }],
+  ["non-NULL status default", m => { schemaColumn(m, "notifications", "status").COLUMN_DEFAULT = "repeated"; addIndex(m, "notifications", "status_unique", ["type", "status"]); }],
+  ["nullable type explicitly written non-NULL", m => { addIndex(m, "notifications", "type_unique", ["type"]); }],
+  ["omitted appointment field populated by later approval", m => { addIndex(m, "appointments", "staff_unique", ["assigned_to"]); }],
+  ["generated extension value", m => { Object.assign(schemaColumn(m, "notifications", "nullable_extension"), { EXTRA: "VIRTUAL GENERATED", GENERATION_EXPRESSION: "'repeated'" }); }],
+  ["unproven expression default", m => { Object.assign(schemaColumn(m, "notifications", "nullable_extension"), { EXTRA: "DEFAULT_GENERATED", COLUMN_DEFAULT: "(concat('repeated'))" }); }],
+  ["automatic update extension", m => { Object.assign(schemaColumn(m, "notifications", "nullable_extension"), {
+    DATA_TYPE: "timestamp", COLUMN_TYPE: "timestamp", CHARACTER_MAXIMUM_LENGTH: null, CHARACTER_SET_NAME: null, COLLATION_NAME: null,
+    DATETIME_PRECISION: 0, EXTRA: "on update CURRENT_TIMESTAMP"
+  }); }],
+  ["functional part beside proven NULL", m => {
+    addIndex(m, "notifications", "expression_unique", ["type", "nullable_extension"]);
+    Object.assign(schemaIndex(m, "notifications", "expression_unique")[0], { COLUMN_NAME: null, EXPRESSION: "lower(type)" });
+  }],
+  ["prefix NULL key", m => { schemaIndex(m, "notifications", "nullable_notice")[0].SUB_PART = 8; }],
+  ["missing default metadata", m => { delete schemaColumn(m, "notifications", "nullable_extension").COLUMN_DEFAULT; }],
+  ["missing nullability metadata", m => { delete schemaColumn(m, "notifications", "nullable_extension").IS_NULLABLE; }],
+  ["missing generation metadata", m => { delete schemaColumn(m, "notifications", "nullable_extension").GENERATION_EXPRESSION; }],
+  ["ambiguous default metadata", m => { schemaColumn(m, "notifications", "nullable_extension").COLUMN_DEFAULT = false; }],
+  ["service-independent slot uniqueness", m => { addIndex(m, "appointment_reservations", "date_time_unique", ["appointment_date", "appointment_time"]); }],
+  ["missing required request-appointment uniqueness", m => { m.indexes = m.indexes.filter(row => row.INDEX_NAME !== "request_appointment"); }],
+  ["prefix required request hash", m => { schemaIndex(m, "appointment_booking_requests", "PRIMARY")[0].SUB_PART = 8; }],
+  ["functional required capacity part", m => { Object.assign(schemaIndex(m, "appointment_reservations", "PRIMARY")[0], { COLUMN_NAME: null, EXPRESSION: "lower(service_key)" }); }]
+];
+for (const [name, corrupt] of nullableUniqueDefects) {
+  test(`R2 nullable unique still rejects ${name} before business writes`, async () => {
+    const metadata = nullableNoticeSchema("nullable_extension"); corrupt(metadata);
+    const f = fixture({ metadata });
+    await assert.rejects(f.service.book(citizen, requestKey("nullable-invalid")), error => error.statusCode === 503 && error.code === "APPOINTMENT_SCHEDULING_UNAVAILABLE");
+    assert.equal(f.metrics.acquisitionAttempts, 1);
+    const c = f.connections[0];
+    assert.equal(c.beginAttempts, 0); assert.equal(c.businessSqlAttempts, 0);
+    assert.equal(c.releaseCount, 0); assert.equal(c.destroyCount, 1); noCommittedRecords(f);
+  });
+}
+
+test("R2 nullable unique pairs compatible non-NULL extension defaults with restrictive-index denial", async () => {
+  for (const value of ["repeated", "", "NULL"]) {
+    const metadata = nullableNoticeSchema("nullable_extension");
+    schemaColumn(metadata, "notifications", "nullable_extension").COLUMN_DEFAULT = value;
+    metadata.indexes = metadata.indexes.filter(row => row.INDEX_NAME !== "nullable_notice");
+    const f = fixture({ metadata });
+    await f.service.ready();
+    addIndex(metadata, "notifications", "nullable_notice", ["nullable_extension"]);
+    await assert.rejects(f.service.ready(), error => error.statusCode === 503);
+    assert.deepEqual(f.connections.map(c => [c.releaseCount, c.destroyCount]), [[1, 0], [0, 1]]);
+    noCommittedRecords(f);
+  }
 });

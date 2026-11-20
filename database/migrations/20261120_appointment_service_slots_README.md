@@ -65,6 +65,110 @@ or rebuild existing tables automatically. No migration, backfill or feature acti
 performed by this patch; APPOINTMENT_RESERVATIONS_ENABLED must not be enabled by these changes.
 The draft adds no new staff roles and does not change certificates or Android.
 
+## R2 runtime schema-readiness contract
+
+R2 validates existing metadata only. It executes no DDL, repairs no schema, inserts no
+feature marker, performs no backfill and never changes APPOINTMENT_RESERVATIONS_ENABLED.
+The commented draft remains unchanged, including its initial backfill_complete = 0.
+Runtime approval still requires exactly one case-exact service_slots marker, schema_version
+1 and backfill_complete 1. Schema validity does not independently establish that backfill
+was complete, and this patch is not permission to attest production readiness.
+
+All five named objects must be exact BASE TABLE identities in the selected connection's
+schema and use InnoDB. Required columns are matched by exact name, not LIKE patterns.
+Structured metadata must expose type, signedness, nullability, applicable lengths/precision,
+defaults, EXTRA and generation information. Missing/duplicate/ambiguous rows and query errors
+produce the existing safe unavailable response without exposing schema or driver details.
+
+Accepted required definitions:
+
+- appointments: signed INT NOT NULL AUTO_INCREMENT primary id; nullable VARCHAR(30) code
+  with full uniqueness; BIGINT UNSIGNED NOT NULL DEFAULT 0 revision; nullable DATETIME(0)
+  preferred_date and orientation start/completion fields. Booking text remains VARCHAR with
+  at least the existing policy capacities (name 150, barangay 100, contact 11, email 254,
+  purpose 100), and notes TEXT with capacity for 2000 characters. Existing status, assignment,
+  timestamp, QR, token and score columns must retain compatible types/nullability/capacities.
+- reservations: service_key VARCHAR(32) ASCII/ascii_bin NOT NULL; DATE and TIME(0) NOT NULL;
+  signed INT NOT NULL appointment_id. Require full unique (service_key, appointment_date,
+  appointment_time) in that order and full unique (appointment_id).
+- booking requests: request_hash and payload_hash CHAR(64) ASCII/ascii_bin NOT NULL;
+  request_hash primary key; signed INT NULL appointment_id with full uniqueness;
+  VARCHAR(30) NULL appointment_code. Both initial references must default to NULL.
+- feature state: feature_key VARCHAR(32) ASCII/ascii_bin NOT NULL primary key;
+  signed INT NOT NULL schema_version; signed TINYINT NOT NULL DEFAULT 0 backfill_complete.
+- notifications: preserve id/type/title/message/isRead/createdAt/status/reference_id names.
+  Require the reviewed compatible column shapes and an auto-generated id. The omitted
+  createdAt timestamp must have an exposed CURRENT_TIMESTAMP default; isRead defaults to 0.
+
+The insertion protocol also requires NULL defaults for initial appointment references,
+assignment evidence and orientation date/score evidence. The omitted orientation_status
+default must be NULL, blank, or normalize to approved, matching the existing scheduling
+guard; a default inventing progress is rejected. The historical export withheld its value:
+the synthetic fixture's approved default is NOT a claim about production. Status/QR defaults
+that booking explicitly overrides are not treated as recovered historical facts.
+Automatic timestamp updates are allowed on updated_at only among the required columns;
+they must not invent orientation, assignment or creation history during later updates.
+
+Every omitted required/extra column is checked for insert compatibility. Nullable NULL
+defaults, compatible literal defaults, integer auto-generation and recognized current-time
+defaults are supported. Unknown expression defaults or generated-column extensions fail
+closed pending separate review. Metadata cannot prove arbitrary trigger/expression behavior.
+Legacy columns are never altered or narrowed to satisfy this contract.
+
+Index inspection checks complete groups, uniqueness, contiguous ordinals, column names,
+full versus prefix lengths and functional parts. Primary keys on appointment id, request
+hash and feature key are mandatory. Truncated/functional substitutes are rejected. Extra
+nonunique indexes are allowed; an extra unique index is accepted when a full existing
+unique determinant makes it redundant (including nullable keys), or an omitted integer
+AUTO_INCREMENT generator makes it nonrestrictive. The notification INSERT-only protocol
+also permits a full, nonfunctional extra unique key with an actual key column that is
+omitted, nullable, defaults to SQL NULL and has empty EXTRA/GENERATION_EXPRESSION metadata.
+The service inserts only type/title/message and never updates notifications; re-audit this
+exception if those writes change. Nullability alone, non-NULL defaults, generated values,
+prefix/functional keys and initially NULL appointment fields populated by later actions
+do not establish this exception. Required keys are still checked independently.
+Additional uniqueness on date/time alone,
+citizen contact or repeated notification fields is rejected. Invisible unique indexes still
+enforce uniqueness and are not discarded merely because of visibility.
+
+Both new child FKs must be complete single-column signed-INT links to appointments.id in
+the same selected schema. Verify source/target identities, positions and update/delete
+actions through KEY_COLUMN_USAGE and REFERENTIAL_CONSTRAINTS. RESTRICT and NO ACTION are
+accepted because all five tables must be InnoDB, where these actions are equivalent.
+CASCADE, SET NULL, wrong targets/schemas, partial/composite substitutes and inaccessible
+actions are rejected. No existing orientation FK is modified.
+
+Connection and cost boundaries:
+
+- Feature OFF is checked before acquiring a connection. A mutation leases once and validates
+  that intended connection before timezone setup/BEGIN, then retains the locked marker
+  recheck after BEGIN. R1 rollback, uncertain-commit and terminal cleanup rules remain intact.
+- Standalone ready() leases once. Availability validates and reads reservations on that same
+  lease. Valid read-only checks release; failed checks conservatively destroy, once only.
+- Each successful readiness scan uses six read-only queries: selected-schema identity,
+  TABLES, COLUMNS, STATISTICS, complete FK metadata and the unlocked marker. There is no
+  metadata cache. Mutations additionally retain the locked marker query.
+- Existing route guard chains can call ready() repeatedly. For example, enabled GET /active
+  performs two sequential scans (12 metadata queries/two sequential leases); booking,
+  availability and GET /orientation each perform one scan in the measured synthetic routes.
+  No operation nests simultaneous leases. QR image retrieval remains an authorized existing
+  maintenance read without a reservation dependency; no production route was changed.
+- Offline tests measure model query/connection counts and local validation overhead, not
+  MySQL network, data-dictionary contention or fleet-scale latency. Benchmark the actual
+  approved MySQL build in a separately authorized disposable environment before rollout.
+
+INFORMATION_SCHEMA is privilege-filtered. Required visible evidence must be complete, but
+the validator cannot establish the absence of all hidden extra objects or certify grants.
+Full metadata visibility, remaining DDL/default/trigger evidence and production parity need
+independent operator verification. No privileges are obtained or changed by the validator.
+One connection is not an atomic DDL snapshot: concurrent DDL/out-of-band writers remain
+outside this guarantee. External writer freeze and drain remain mandatory for cutover and
+attestation changes, especially for route-level orientation writes outside the transaction
+wrapper. No timeout policy, schema cache or R3 calendar/time handling is introduced.
+Residual findings remain: readiness exceptions have no diagnostic classification, and
+rejected readiness conservatively destroys potentially healthy connections. This nullable
+index correction changes neither behavior; real database/load verification remains required.
+
 ## Non-destructive backfill plan
 
 1. First obtain the disposable-MySQL and schema evidence described below. Freeze ALL writers

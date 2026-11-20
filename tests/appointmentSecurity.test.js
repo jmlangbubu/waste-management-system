@@ -399,3 +399,54 @@ test("appointment history presentation retains the latest real approver after an
   await f.service.change(id, "accept", later, f.expected(id)); check("Staff B");
   await f.service.change(id, "cancel", first, f.expected(id)); check("Staff B");
 });
+
+test("R2 actual route handlers deny incompatible metadata before reads, mutations or email", async () => {
+  const { fixture, citizen, requestKey } = require("./helpers/appointmentSchedulingFixture");
+  for (const defect of ["revision", "prefix", "foreign-key", "metadata-access"]) {
+    const f = fixture(defect === "metadata-access" ? { metadataError: new Error("PRIVATE_SCHEMA driver error") } : {});
+    if (defect === "revision") f.metadata.columns = f.metadata.columns.filter(row => row.COLUMN_NAME !== "appointment_revision");
+    if (defect === "prefix") f.metadata.indexes.find(row => row.TABLE_NAME === "appointment_booking_requests" && row.INDEX_NAME === "PRIMARY").SUB_PART = 8;
+    if (defect === "foreign-key") f.metadata.foreignKeys[0].DELETE_RULE = "CASCADE";
+    let emails = 0;
+    const h = harness({ service: f.service, sendEmail: async () => { emails++; } });
+    assert.equal((await h.request("get", "/active", { auth: false })).statusCode, 401);
+    assert.equal(f.metrics.acquisitionAttempts, 0, "authorization still precedes metadata inspection");
+    const staffBody = { action: "accept", expected_status: "pending", expected_schedule: citizen.preferred_date,
+      expected_revision: 0, new_date: "2026-11-24 11:00:00" };
+    // Existing QR image retrieval is an authorized maintenance read with no reservation
+    // dependency. Exercise the routes that already require reservation readiness.
+    for (const [method, url] of [...["/", "/active", "/history", "/orientation"].map(url => ["get", url]), ...writes,
+      ["put", "/orientation/start/:token"], ["put", "/orientation/complete/:token"]]) {
+      const response = await h.request(method, url, { body: staffBody, params: { token: "synthetic-token" } });
+      assert.equal(response.statusCode, 503, `${defect}: ${url}`);
+      assert.doesNotMatch(JSON.stringify(response.body), /PRIVATE_SCHEMA|information_schema|COLUMN_TYPE|CASCADE/);
+    }
+    for (const [url, body] of [["/", citizen], ["/", { ...citizen }]]) {
+      const response = await h.request("post", url, { auth: false, csrf: null, body,
+        headers: { "idempotency-key": requestKey("r2-route"), ...(body === citizen ? {} : { "idempotency-recovery": "true" }) } });
+      assert.equal(response.statusCode, 503);
+    }
+    assert.equal((await h.request("get", "/availability", { auth: false, csrf: null })).statusCode, 503);
+    const legacy = harness({ service: f.service, legacy: true });
+    for (const url of ["/appointments/active", "/appointments/history"]) assert.equal((await legacy.request("get", url)).statusCode, 503);
+    assert.equal((await legacy.request("put", "/appointments/:id/decision", { body: staffBody })).statusCode, 503);
+    assert.equal(h.state.queries.length, 0); assert.equal(legacy.state.queries.length, 0);
+    assert.equal(emails, 0); assert.equal(f.state.appointments.length, 0);
+    assert.equal(f.calls.some(sql => /^(INSERT|UPDATE|DELETE) /.test(sql)), false);
+    assert.ok(f.connections.every(c => c.destroyCount === 1 && c.releaseCount === 0 && c.beginAttempts === 0));
+  }
+});
+
+test("R2 request-level costs expose repeated existing readiness guards", async t => {
+  const { fixture, citizen } = require("./helpers/appointmentSchedulingFixture");
+  const measurements = [];
+  for (const [method, url, leases] of [["post", "/", 1], ["get", "/availability", 1], ["get", "/active", 2], ["get", "/orientation", 1]]) {
+    const f = fixture(), h = harness({ service: f.service });
+    const response = await h.request(method, url, { body: citizen });
+    assert.equal(response.statusCode, 200, url);
+    assert.equal(f.metrics.acquisitionAttempts, leases); assert.equal(f.metrics.metadataQueries, leases * 6);
+    assert.ok(f.connections.every(c => c.releaseCount === 1 && c.destroyCount === 0));
+    measurements.push({ method, url, sequentialLeases: leases, metadataQueries: f.metrics.metadataQueries });
+  }
+  t.diagnostic(JSON.stringify({ syntheticRequestCosts: measurements, realDatabaseLatencyMeasured: false }));
+});
