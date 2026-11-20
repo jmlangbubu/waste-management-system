@@ -604,7 +604,7 @@ router.get("/appointments/active", async (req, res) => {
             ${appointmentScheduling.enabled() ? "appointment_revision," : ""}
             full_name,
             barangay,
-            contact,
+            contact_number AS contact,
             purpose,
             preferred_date,
             DATE_FORMAT(preferred_date, '%Y-%m-%d %H:%i:%s') AS slot_schedule,
@@ -651,7 +651,7 @@ router.get("/appointments/history", async (req, res) => {
             ${appointmentScheduling.enabled() ? "appointment_revision," : ""}
             full_name,
             barangay,
-            contact,
+            contact_number AS contact,
             purpose,
             preferred_date,
             DATE_FORMAT(preferred_date, '%Y-%m-%d %H:%i:%s') AS slot_schedule,

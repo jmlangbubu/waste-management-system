@@ -7,8 +7,8 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 // Real session/role/CSRF middleware and route registrations; no packages, DB or providers.
-function harness({ service, legacy = false, sendEmail } = {}) {
-  const state = { role: "super_admin", expired: false, calls: [], queries: [], routes: [], middleware: [] };
+function harness({ service, legacy = false, sendEmail, selectRows } = {}) {
+  const state = { role: "super_admin", expired: false, calls: [], queries: [], queryCalls: [], routes: [], middleware: [] };
   const digest = value => crypto.createHash("sha256").update(value).digest("hex");
   const session = {
     hashOpaqueToken: digest, normalizeWebRole: value => String(value || "").trim().toLowerCase(),
@@ -20,7 +20,9 @@ function harness({ service, legacy = false, sendEmail } = {}) {
   const db = { query(sql, params, done) {
     if (typeof params === "function") { done = params; params = []; }
     state.queries.push(sql);
+    state.queryCalls.push({ sql, params });
     if (/^\s*UPDATE/.test(sql)) return done(null, { affectedRows: 0 });
+    if (selectRows) return done(null, selectRows(sql, params));
     // The fake respects SELECT projection: public tracking never asks for a token.
     done(null, [{ id: 1, appointment_code: "APT-000001", full_name: "Synthetic Citizen", status: "pending", assigned_to: "Verified Staff" }]);
   } };
@@ -217,6 +219,104 @@ test("actual legacy list handler chains deny unauthorized roles and return no-st
     assert.equal(response.headers["Cache-Control"], "no-store");
   }
 });
+
+for (const { url, envelope, tail } of [
+  { url: "/appointments/active", envelope: "appointments",
+    tail: "WHERE status IS NULL OR TRIM(status) = '' OR LOWER(status) = 'pending' ORDER BY preferred_date ASC, id DESC" },
+  { url: "/appointments/history", envelope: "history",
+    tail: "WHERE LOWER(status) IN ('approved', 'rejected') ORDER BY updated_at DESC, id DESC" }
+]) {
+  test(`legacy ${url} reads contact_number while retaining its contact response and filters`, async () => {
+    for (const enabled of [false, true]) {
+      let readinessChecks = 0;
+      const service = { enabled: () => enabled, async ready() { readinessChecks++; } };
+      const stored = { id: 17, contact_number: "09000000000", status: envelope === "history" ? "approved" : "pending" };
+      const h = harness({ legacy: true, service, selectRows(sql) {
+        // Capture the real handler's SQL against the reviewed schema; no database is loaded.
+        assert.match(sql, /^\s*SELECT\b/);
+        assert.match(sql, /\bcontact_number\s+AS\s+contact\s*,/i);
+        assert.doesNotMatch(sql, /(?:SELECT|,)\s*contact\s*(?:,|FROM)/i);
+        assert.equal(sql.slice(sql.indexOf("WHERE")).replace(/\s+/g, " ").trim(), tail);
+        assert.equal(/\bappointment_revision\b/.test(sql), enabled);
+        return [{ id: stored.id, contact: stored.contact_number, status: stored.status,
+          ...(enabled ? { appointment_revision: 0 } : {}) }];
+      } });
+      assert.equal((await h.request("get", url, { auth: false })).statusCode, 401);
+      h.state.role = "clerk_admin";
+      assert.equal((await h.request("get", url)).statusCode, 403);
+      assert.equal(h.state.queries.length, 0, "users.manage is required before any SQL");
+      h.state.role = "super_admin";
+      const response = await h.request("get", url, { csrf: null });
+      assert.equal(response.statusCode, 200);
+      assert.equal(response.headers["Cache-Control"], "no-store");
+      assert.deepEqual(Object.keys(response.body).sort(), [envelope, "success"].sort());
+      assert.equal(response.body.success, true);
+      assert.equal(response.body[envelope][0].contact, stored.contact_number);
+      assert.equal(Object.hasOwn(response.body[envelope][0], "contact_number"), false);
+      assert.equal(Object.hasOwn(response.body[envelope][0], "appointment_revision"), enabled);
+      assert.equal(readinessChecks, enabled ? 1 : 0);
+      assert.equal(h.state.queries.length, 1);
+    }
+  });
+}
+
+test("public tracker keeps contact as its request field for both email and phone matching", async () => {
+  for (const contact of ["synthetic@example.invalid", "09000000000"]) {
+    const h = harness();
+    const response = await h.request("post", "/check-status", { auth: false, csrf: null,
+      body: { appointment_code: " APT-000001 ", contact: ` ${contact} ` } });
+    assert.equal(response.statusCode, 200);
+    assert.equal(h.state.queryCalls.length, 1);
+    const { sql, params } = h.state.queryCalls[0];
+    assert.match(sql, /WHERE appointment_code = \?\s+AND \(\s*email = \?\s+OR contact_number = \?\s*\)/);
+    assert.deepEqual(params, ["APT-000001", contact, contact]);
+    assert.doesNotMatch(sql, /orientation_token/);
+  }
+  const h = harness();
+  const renamedField = await h.request("post", "/check-status", { auth: false, csrf: null,
+    body: { appointment_code: "APT-000001", contact_number: "09000000000" } });
+  assert.equal(renamedField.statusCode, 400, "contact_number must not replace the public contact request field");
+  assert.equal(h.state.queryCalls.length, 0);
+});
+
+test("reservation migration draft remains entirely commented and unready", () => {
+  const draft = fs.readFileSync(path.join(__dirname, "../database/migrations/20261120_appointment_service_slots.DRAFT.sql"), "utf8");
+  assert.ok(draft.split(/\r?\n/).filter(line => line.trim()).every(line => /^\s*--/.test(line)),
+    "every nonblank draft line must remain a SQL comment");
+  assert.doesNotMatch(draft, /<EXACT_APPOINTMENTS_ID_TYPE>/);
+  assert.match(draft, /appointment_revision BIGINT UNSIGNED NOT NULL DEFAULT 0/);
+  assert.match(draft, /backfill_complete TINYINT NOT NULL DEFAULT 0/);
+  assert.match(draft, /VALUES \('service_slots', 1, 0\)/);
+  assert.doesNotMatch(draft, /VALUES \('service_slots', 1, 1\)/);
+  assert.match(draft, /9\.7\.2/);
+});
+
+test("draft child foreign keys match signed INT with insertion-safe nullability and retained uniqueness", () => {
+  // Text inspection only: the commented definitions are never sent to a SQL executor.
+  const draft = fs.readFileSync(path.join(__dirname, "../database/migrations/20261120_appointment_service_slots.DRAFT.sql"), "utf8");
+  const definition = name => {
+    const match = draft.match(new RegExp(`CREATE TABLE ${name} \\([\\s\\S]*?\\) ENGINE=InnoDB;`));
+    assert.ok(match, name);
+    return match[0];
+  };
+  const reservations = definition("appointment_reservations");
+  const requests = definition("appointment_booking_requests");
+  assert.match(reservations, /appointment_id INT NOT NULL,/);
+  assert.match(requests, /appointment_id INT NULL,/);
+  for (const table of [reservations, requests]) {
+    assert.doesNotMatch(table, /appointment_id[^\r\n]*(?:UNSIGNED|AUTO_INCREMENT)/i);
+    assert.match(table, /FOREIGN KEY \(appointment_id\) REFERENCES appointments\(id\) ON DELETE RESTRICT ON UPDATE RESTRICT/);
+  }
+  assert.match(reservations, /PRIMARY KEY \(service_key, appointment_date, appointment_time\)/);
+  assert.match(reservations, /UNIQUE KEY reservation_appointment \(appointment_id\)/);
+  assert.match(requests, /request_hash CHAR\(64\) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY/);
+  assert.match(requests, /payload_hash CHAR\(64\) CHARACTER SET ascii COLLATE ascii_bin NOT NULL/);
+  assert.match(requests, /appointment_code VARCHAR\(30\) NULL,/);
+  assert.match(requests, /UNIQUE KEY request_appointment \(appointment_id\)/);
+  assert.equal((draft.match(/ENGINE=InnoDB;/g) || []).length, 3);
+  assert.doesNotMatch(draft, /ALTER TABLE appointments[^\r\n]*(?:MODIFY|CHANGE|DROP)/i);
+});
+
 test("protected mutation routes use real scheduling guards and never send email for blocked reschedules", async () => {
   const { fixture, citizen, actor, requestKey } = require("./helpers/appointmentSchedulingFixture");
   const f = fixture(); const { id } = await f.service.book({ ...citizen, purpose: "SWM Orientation & Clearance" }, requestKey("email-block"));

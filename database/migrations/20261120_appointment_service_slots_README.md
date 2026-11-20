@@ -1,7 +1,8 @@
 # Appointment service slots — draft rollout contract
 
-Nothing in this directory was executed. The SQL draft deliberately contains an invalid
-type placeholder. It is a review artifact, not an approved migration.
+Nothing in this directory was executed. Every SQL statement in the draft remains commented
+out. The reviewed signed appointment ID type is recorded below, but the file remains a
+review artifact, not an executable or approved migration.
 
 ## Current gate
 
@@ -28,10 +29,40 @@ backfill completeness or detect every out-of-band writer.
 
 ## Required evidence before approval
 
-Obtain separately authorized DDL/index/FK/trigger/engine evidence. Confirm the exact signed
-type of appointments.id; preferred_date must retain a Philippine wall-clock date and time.
-Confirm field lengths, status constraints, MySQL 8 `FOR SHARE` support and connection time-zone
-permissions. Match FK types exactly; do not convert or rebuild existing tables automatically.
+The reviewed Q4 column export contains 23 appointments columns and eight notifications columns:
+
+- appointments.id is signed INT, primary key, AUTO_INCREMENT. The draft therefore uses
+  INT NOT NULL for appointment_reservations.appointment_id and INT NULL for
+  appointment_booking_requests.appointment_id. Child IDs do not inherit AUTO_INCREMENT.
+- appointments.appointment_code is nullable VARCHAR(30), marked unique. The proposed request
+  copy is VARCHAR(30) NULL. Booking inserts the appointment before assigning its reference,
+  and inserts request hashes before linking the appointment; preserve both nullable references.
+- appointments.contact_number is VARCHAR(50) NOT NULL; contact is absent. Legacy list SQL
+  reads contact_number AS contact to preserve the existing response property.
+- preferred_date is nullable DATETIME(0); appointment_revision is absent. Preserve existing
+  appointment columns and propose only the additive BIGINT UNSIGNED NOT NULL DEFAULT 0 revision.
+- Notification column names include isRead and createdAt. Do not rename them. The existing
+  booking insert supplies type, title and message; exact withheld default expressions still
+  require review.
+
+The owner reports MySQL 9.7.2, InnoDB appointments/notifications, and an existing
+orientation_quiz_results foreign key to appointments.id. Preserve that relationship and the
+parent ID without rebuilding either. Both proposed child FKs retain ON DELETE RESTRICT and
+document ON UPDATE RESTRICT. Required unique reservation-slot, reservation-appointment,
+request-hash and request-appointment keys remain in the draft. Initial backfill_complete stays 0.
+
+The three reservation infrastructure tables were not reported in the reviewed inventory;
+that alone does not prove absence if metadata visibility is uncertain. The Q4 export does not
+establish engines, complete indexes, FK actions or triggers. The prior metadata screenshots
+were unavailable for independent inspection during this patch. Full schema compatibility and
+production deployment parity remain UNVERIFIED; the reported version is not migration approval.
+
+Obtain separately authorized complete DDL/index/FK/trigger/engine evidence, including the
+orientation child-table FK columns/actions. preferred_date must retain a Philippine wall-clock
+date and time. Verify defaults, status constraints, MySQL 9.7.2 locking-read behavior and
+connection time-zone permissions in disposable tests. Match FK types exactly; do not convert
+or rebuild existing tables automatically. No migration, backfill or feature activation is
+performed by this patch; APPOINTMENT_RESERVATIONS_ENABLED must not be enabled by these changes.
 The draft adds no new staff roles and does not change certificates or Android.
 
 ## Non-destructive backfill plan
@@ -42,7 +73,7 @@ The draft adds no new staff roles and does not change certificates or Android.
    Stop old instances and drain in-flight requests/transactions; UI closure alone is insufficient.
 2. Take an operator-approved backup/snapshot. An approved operator invalidates backfill
    readiness (zero) while writers remain frozen. No commands here perform that change.
-   Resolve/review the ID placeholder and DDL, apply only separately approved schema, and deploy
+   Review the resolved signed-INT child definitions and DDL, apply only separately approved schema, and deploy
    a uniform reservation-aware fleet with its flag disabled BEFORE backfilling/reopening.
 3. Inventory every capacity-consuming appointment: pending, approved, rescheduled. Normalize
    status using trim + lowercase, with null/empty/whitespace defaulting to pending, matching
@@ -109,7 +140,8 @@ The unchanged Assigned Personnel report column uses this value. Historical value
 have been overwritten by older writers; they remain unverified and are never reconstructed.
 action_by in mutation responses identifies the authenticated current actor but is not a
 durable action history. Existing appointment-specific uses of assigned_to/assigned_at were
-reviewed; their live types and compatibility still require schema validation.
+reviewed; Q4 reports nullable assigned_to VARCHAR(255) and assigned_at TIMESTAMP(0).
+Historical attribution and runtime compatibility remain unverified.
 
 BLOCKED separate persistence proposal (not executable SQL, no schema change in this patch):
 an append-only appointment action table containing appointment_id (exact verified ID type),
@@ -127,7 +159,8 @@ No quiz evidence is reset and no email is sent for a blocked reschedule.
 ## Limitations and rollback
 
 Mock tests validate code paths, not actual InnoDB locking or production compatibility.
-Live schema, backfill conflicts, migration execution and real concurrency are UNVERIFIED.
+Q4 column metadata was reviewed; complete live schema, backfill conflicts, migration execution
+and real concurrency remain UNVERIFIED.
 During failure, freeze ALL writers listed above and drain requests before operator-approved
 readiness invalidation. Keep the flag off across every instance. The service rechecks the
 readiness row under a shared transaction lock, so invalidation must wait for running protocol
