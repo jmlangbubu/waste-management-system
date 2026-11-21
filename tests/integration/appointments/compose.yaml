@@ -1,0 +1,18 @@
+# INERT PHASE 4A SPECIFICATION. There are deliberately no runnable services.
+# Phase 4B must separately review and change this file before any provisioning.
+services: {}
+x-wmo-appointment-phase4a:
+  provisioning_authorized: false
+  candidate_official_image: mysql:9.7.2-oraclelinux9
+  verified_manifest_digest: null
+  required_identity: exact-container-id-and-run-ownership-labels
+  required_network: dedicated-internal-network-with-verified-loopback-binding
+  required_mysql_binding: literal-127.0.0.1-only-to-container-port-3306
+  mysql_x_protocol_publication: prohibited
+  production_mounts_dumps_and_secrets: prohibited
+  production_credentials_and_configuration: prohibited
+  fixture_data: synthetic-only
+  proposed_limits:
+    cpus: 2
+    memory_mib: 1024
+  teardown: exact-recorded-owned-resource-ids-only-no-global-prune
