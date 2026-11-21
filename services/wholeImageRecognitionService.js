@@ -143,7 +143,7 @@ function belongsToCapture(item,capture) {
     box_2d:[b.top,b.left,b.bottom,b.right].map(n=>Math.round(n*1000))}]}).objects[0];
   return rebuilt.itemId===item.itemId;
 }
-function merge(vision,proposals,samePhysicalObject,capture,hasNormalizationConflict=()=>false) {
+function merge(vision,proposals,samePhysicalObject,capture,hasNormalizationConflict=()=>false,admission) {
   const retained=[];
   const copyOwner=item=>{
     const owner={...item},evidence=classificationEvidence.get(item);
@@ -304,7 +304,10 @@ function merge(vision,proposals,samePhysicalObject,capture,hasNormalizationConfl
     }
   }
   // Broad taxonomy phrases are not specific just because they contain more words.
-  const ranked=proposals.map((item,index)=>({...item,index})).sort((a,b)=>Number(b.category!=="Unknown")-Number(a.category!=="Unknown")
+  // Proposal-path option only: a request-local hazard-unit tier precedes the unchanged comparator.
+  // It grants no category, confidence or ID; when absent, ranking is exactly the existing order.
+  const ranked=proposals.map((item,index)=>({...item,index})).sort((a,b)=>(admission?admission.tier(proposals[a.index])-admission.tier(proposals[b.index]):0)
+    || Number(b.category!=="Unknown")-Number(a.category!=="Unknown")
     || Number(containerIdentity(b))-Number(containerIdentity(a))
     || Number(generic(a))-Number(generic(b)) || a.index-b.index);
   for(const {index} of ranked) {
