@@ -44,16 +44,19 @@ function similarObjectNames(a, b) {
   const first = words(a), second = words(b);
   return first.every((word) => second.includes(word)) || second.every((word) => first.includes(word));
 }
+// Name-free strict region identity (unchanged thresholds, shared by samePhysicalObject).
+function strictlySameRegion(x, y) {
+  return overlapRatio(x, y) >= .90
+      && Math.abs((x.left + x.right - y.left - y.right) / 2) <= .05 * Math.min(x.right - x.left, y.right - y.left)
+      && Math.abs((x.top + x.bottom - y.top - y.bottom) / 2) <= .05 * Math.min(x.bottom - x.top, y.bottom - y.top);
+}
 function samePhysicalObject(a, b) {
   const x = a.boundingBox, y = b.boundingBox;
   if (!normalizeBoundingBox(x) || !normalizeBoundingBox(y)) return false;
   // Both same-provider and independent observations can disagree on the same
   // object. Require nearly identical extents and centers for a name-free match;
   // different-size nested objects and partial overlaps must remain independent.
-  const strict = overlapRatio(x, y) >= .90
-      && Math.abs((x.left + x.right - y.left - y.right) / 2) <= .05 * Math.min(x.right - x.left, y.right - y.left)
-      && Math.abs((x.top + x.bottom - y.top - y.bottom) / 2) <= .05 * Math.min(x.bottom - x.top, y.bottom - y.top);
-  if (strict) return true;
+  if (strictlySameRegion(x, y)) return true;
   // Only independent providers with compatible physical identities may tolerate
   // small translation error. Containment and same-provider overlap are not proof.
   const sources = new Set([a.analysisSource, b.analysisSource]);
@@ -66,6 +69,25 @@ function samePhysicalObject(a, b) {
     && closeSize(x.bottom - x.top, y.bottom - y.top)
     && Math.abs((x.left + x.right - y.left - y.right) / 2) <= .08 * Math.min(x.right - x.left, y.right - y.left)
     && Math.abs((x.top + x.bottom - y.top - y.bottom) / 2) <= .08 * Math.min(x.bottom - x.top, y.bottom - y.top);
+}
+// Proposal path only (P-2): samePhysicalObject compares centre offsets without a tolerance, so at an exact
+// boundary it can answer differently for (a, b) and (b, a). The proposal reconciler and its merge use this
+// argument-order-independent form. Thresholds are unchanged; feature-off and discovery keep the original.
+function sameObjectEitherOrder(a, b) {
+  return samePhysicalObject(a, b) || samePhysicalObject(b, a);
+}
+// P-2c: the merge keeps symmetric same-object matching (P-2) everywhere except a Gemini pair split across a Vision
+// owner region (exactly one of the two is the same object as an owner): such a pair matches only when the existing
+// comparison holds in both orders, so a one-directional boundary match cannot move valid owner evidence to a card.
+function createMergeMatcher(owners) {
+  const visionOwners = owners.filter((owner) => owner.analysisSource === "google_vision_object_localization" && owner.boundingBox);
+  const onOwner = new Map();
+  const ownerSide = (item) => { if (!onOwner.has(item)) onOwner.set(item, visionOwners.some((owner) => sameObjectEitherOrder(owner, item))); return onOwner.get(item); };
+  return (a, b) => {
+    if (a.analysisSource === "google_vision_object_localization" || b.analysisSource === "google_vision_object_localization") return sameObjectEitherOrder(a, b);
+    if (ownerSide(a) !== ownerSide(b)) return samePhysicalObject(a, b) && samePhysicalObject(b, a);
+    return sameObjectEitherOrder(a, b);
+  };
 }
 
 function normalizeDetectedItems(objects, analysisSource, allowClassifierCategory = false) {
@@ -491,7 +513,7 @@ function postJson(urlString, payload, timeoutMs = 35000, invocationHeaders = {})
   });
 }
 
-async function classifyWithExternalGeminiService(image, timeoutMs = 35000) {
+async function classifyWithExternalGeminiService(image, timeoutMs = 35000, proposalRequest = null) {
   const classifierUrl =
     getEnvValue("GEMINI_CLASSIFIER_URL") ||
     getEnvValue("CLOUD_RUN_GEMINI_CLASSIFIER_URL");
@@ -510,9 +532,14 @@ async function classifyWithExternalGeminiService(image, timeoutMs = 35000) {
       ? await require("./cloudRunAuth").invocationHeaders(classifierUrl, { timeoutMs }) : {};
     if (deadlineAt <= Date.now()) throw new Error("Classifier request deadline exceeded.");
     failureStage = "classifier_network_transport";
-    const response = await postJson(classifierUrl, {
+    // Feature-off requests keep the exact legacy body and headers. An eligible
+    // proposal request adds only the opt-in flag and its Cloud Run token header.
+    const response = await postJson(classifierUrl, proposalRequest ? {
+      image, objectProposals: true
+    } : {
       image
-    }, Math.max(1, deadlineAt-Date.now()), headers);
+    }, Math.max(1, deadlineAt-Date.now()), proposalRequest
+      ? { ...headers, "X-Classify-Proposals-Token": proposalRequest.token } : headers);
 
     console.log("[WasteAnalysis] External classifier response success:", response?.success === true);
 
@@ -604,7 +631,7 @@ function buildAiResultFromClassifier(classifierResult, sourceFallback) {
   }), itemName: result.itemName || result.detectedObject || category };
 }
 
-async function analyzeWasteLegacy({ image, detectedObject, mlKitLabels = [], boundedDiscovery = false }) {
+async function analyzeWasteLegacy({ image, detectedObject, mlKitLabels = [], boundedDiscovery = false }, proposalContext = null) {
   console.log("=== analyzeWaste START ===");
 
   /*
@@ -614,7 +641,8 @@ async function analyzeWasteLegacy({ image, detectedObject, mlKitLabels = [], bou
     This avoids the Render -> Gemini location restriction:
     "User location is not supported for the API use."
   */
-  const externalGeminiResult = await classifyWithExternalGeminiService(image, boundedDiscovery ? 15000 : 35000);
+  const externalGeminiResult = await classifyWithExternalGeminiService(image, boundedDiscovery ? 15000 : 35000,
+    proposalContext ? proposalContext.request : null);
   let externalItems = [];
   if (externalGeminiResult?.success) {
     externalItems = normalizeDetectedItems(externalGeminiResult.result?.detectedItems, "cloud_run_gemini_vision", true);
@@ -628,6 +656,12 @@ async function analyzeWasteLegacy({ image, detectedObject, mlKitLabels = [], bou
 
 
   if (externalAiResult) {
+    // Request-local: proposals are only ever considered beside a VALID primary
+    // returned by this same classifier response; never serialized from here.
+    if (proposalContext) {
+      proposalContext.primaryValid = true;
+      proposalContext.raw = externalGeminiResult.result.objectProposals;
+    }
     console.log("[WasteAnalysis] RETURNING external Gemini category:", externalAiResult.category);
     return enrichWithGoogleObjects(externalAiResult, localizedObjects, true);
   }
@@ -716,8 +750,653 @@ async function analyzeWasteLegacy({ image, detectedObject, mlKitLabels = [], bou
   }), localizedObjects);
 }
 
+/*
+  OPTIONAL CLASSIFY-CALL OBJECT PROPOSALS (backend flag, default OFF)
+  -------------------------------------------------------------------
+  WMO_CLASSIFY_OBJECT_PROPOSALS_ENABLED === "true" lets an ELIGIBLE request ask
+  the EXISTING Cloud Run classifier call for identity/geometry proposals. They
+  are observations only: re-normalized here by the existing strict discovery
+  normalizer under an ephemeral server capture, then reconciled with the SAME
+  scan's Vision boxes by the existing discovery merge, whose capture-bound
+  category authority and deterministic rules alone decide categories.
+  No /discover-objects, /recognize-crops, assessment or second Gemini call.
+  All modules below are loaded lazily so the feature-off path is unchanged.
+*/
+function proposalDiagnostics(summary) {
+  try { require("./wasteAssessmentDiagnostics").logObjectProposals(summary, console); }
+  catch (_) { /* Diagnostics never affect analysis. */ }
+}
+
+function objectProposalContext(input) {
+  if (process.env.WMO_CLASSIFY_OBJECT_PROPOSALS_ENABLED !== "true") return null;
+  const ineligible = (reason) => { proposalDiagnostics({ status: "ineligible", reason }); return null; };
+  // Route-derived from the exact v2 capability header; protocol negotiation only.
+  if (input?.independentCategoryV2 !== true) return ineligible("capability_missing");
+  // The existing discovery mode keeps sole ownership of its own pipeline.
+  if (process.env.WHOLE_IMAGE_DISCOVERY_ENABLED === "true") return ineligible("discovery_mode");
+  const token = getEnvValue("CLASSIFY_OBJECT_PROPOSALS_SHARED_TOKEN");
+  if (token.length < 32) return ineligible("token_unconfigured");
+  let classifierUrl;
+  try { classifierUrl = new URL(getEnvValue("GEMINI_CLASSIFIER_URL") || getEnvValue("CLOUD_RUN_GEMINI_CLASSIFIER_URL")); }
+  catch (_) { return ineligible("classifier_unconfigured"); }
+  // The proposal token is never sent over plain HTTP or with URL credentials.
+  if (classifierUrl.protocol !== "https:" || classifierUrl.username || classifierUrl.password) {
+    return ineligible("classifier_insecure");
+  }
+  try {
+    const whole = require("../gemini-waste-classifier-cloudrun/wholeImageRecognition");
+    const shared = require("../gemini-waste-classifier-cloudrun/cropRecognition");
+    const { randomUUID } = require("node:crypto");
+    const image = input.image;
+    // Existing whole-image bounds (canonical JPEG base64, size, dimensions, no EXIF APP1).
+    if (typeof image !== "string" || image.length > 4 * Math.ceil(whole.LIMITS.bytes / 3)) return ineligible("image");
+    const dimensions = shared.imageDimensions(Buffer.from(image, "base64"), "image/jpeg");
+    if (!dimensions) return ineligible("image");
+    // Ephemeral, request-local server capture: never serialized, persisted,
+    // reused, or presented to Android as a client capture or assessment sidecar.
+    const capture = whole.validateRequest({ requestId: randomUUID(), captureId: randomUUID(), image,
+      width: dimensions.width, height: dimensions.height, orientation: "upright" });
+    return { capture, request: { token }, primaryValid: false, raw: undefined };
+  } catch (_) {
+    return ineligible("image");
+  }
+}
+
+// Set-level validation: any violation rejects every proposal (legacy fallback).
+function normalizeObjectProposals(capture, raw) {
+  const whole = require("../gemini-waste-classifier-cloudrun/wholeImageRecognition");
+  const reject = () => { throw new Error("Object proposals rejected."); };
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)
+      || Object.keys(raw).some((key) => key !== "objects" && key !== "primaryObjectIndex")) reject();
+  const { objects, primaryObjectIndex: index } = raw;
+  if (!Array.isArray(objects) || objects.length < 1 || objects.length > whole.LIMITS.items) reject();
+  for (const object of objects) {
+    if (!object || typeof object !== "object" || Array.isArray(object)) reject();
+    // A supplied box must satisfy the existing y-first 0..1000 integer convention.
+    if (Object.prototype.hasOwnProperty.call(object, "box_2d") && !whole.box(object.box_2d)) reject();
+  }
+  if (index !== undefined && !(Number.isInteger(index) && index >= 0 && index < objects.length)) reject();
+  // Existing normalizer: exact keys, label bounds, capture-bound IDs; no remote
+  // categories, confidences or IDs are accepted (it rejects any extra field).
+  const normalized = whole.normalize(capture, { objects: objects.map((object) => ({ ...object })) }).objects;
+  if (new Set(normalized.map((item) => item.itemId)).size !== normalized.length) reject();
+  return { objects: normalized, primaryIndex: Number.isInteger(index) ? index : null };
+}
+
+/*
+  ON-path proposal reconciliation BEFORE the unchanged discovery merge.
+  Provisional, uncalibrated offline geometry; never a category grant:
+  - F1: a one-to-one proposal confirming the SAME exact physical Special Waste
+    identity of an independently authorized Vision owner is removed, so that
+    owner keeps exactly its feature-off result (no asymmetric-metadata demotion).
+  - F2: a one-to-one near-duplicate (not strict) proposal is removed so one
+    physical object yields one card. Disagreeing, hazardous, contradictory or
+    adverse-state evidence makes the owner Unknown through the merge's existing
+    normalization-conflict channel; it is never promoted.
+  - Ambiguous associations are never resolved by guessing, yet hazard or
+    adverse-state evidence still fails closed for ordinary owners.
+  Strict non-confirming pairs stay entirely under existing merge authority.
+*/
+const PROPOSAL_DUPLICATE_IOU = 0.70;             // inclusive
+const PROPOSAL_DUPLICATE_CENTER = 0.15;          // x smaller width / height
+const PROPOSAL_DUPLICATE_SIZE = 0.80;            // min/max width and height
+const PROPOSAL_DUPLICATE_CONTAINED_SIZE = 0.90;  // when one box contains the other
+const PROPOSAL_HAZARD_OVERLAP = 0.50;            // intersection / smaller area
+const PROPOSAL_GEOMETRY_TOLERANCE = 1e-9;
+const ORDINARY_CATEGORIES = ["Recyclable", "Residual", "Biodegradable"];
+
+function regionMetrics(a, b) {
+  const intersection = Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left))
+    * Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+  const area = (r) => (r.right - r.left) * (r.bottom - r.top);
+  const contains = (p, q) => p.left <= q.left && p.top <= q.top && p.right >= q.right && p.bottom >= q.bottom;
+  return { intersection, smallerArea: Math.min(area(a), area(b)), contained: contains(a, b) || contains(b, a) };
+}
+
+function nearDuplicateRegion(a, b) {
+  const widths = [a.right - a.left, b.right - b.left], heights = [a.bottom - a.top, b.bottom - b.top];
+  const sizeFloor = regionMetrics(a, b).contained ? PROPOSAL_DUPLICATE_CONTAINED_SIZE : PROPOSAL_DUPLICATE_SIZE;
+  const t = PROPOSAL_GEOMETRY_TOLERANCE;
+  return overlapRatio(a, b) >= PROPOSAL_DUPLICATE_IOU - t
+    && Math.abs((a.left + a.right - b.left - b.right) / 2) <= PROPOSAL_DUPLICATE_CENTER * Math.min(...widths) + t
+    && Math.abs((a.top + a.bottom - b.top - b.bottom) / 2) <= PROPOSAL_DUPLICATE_CENTER * Math.min(...heights) + t
+    && Math.min(...widths) / Math.max(...widths) >= sizeFloor - t
+    && Math.min(...heights) / Math.max(...heights) >= sizeFloor - t;
+}
+
+function hazardRegionOverlap(a, b) {
+  const { intersection, smallerArea } = regionMetrics(a, b);
+  return intersection > 0 && intersection >= PROPOSAL_HAZARD_OVERLAP * smallerArea - PROPOSAL_GEOMETRY_TOLERANCE;
+}
+
+function reconcileProposalOverlaps(owners, proposals, captureId, finalSafe = null, mode = null) {
+  const mapper = require("./automaticWasteCategoryMapper");
+  const { categoryAuthority } = require("./wholeImageRecognitionService");
+  // Original evidence as an unclassified observation; never the display name.
+  const observation = (item) => ({ ...item, category: "Unknown" });
+  const label = (item) => String((item.analysisSource === "gemini_whole_image" ? item.observedIdentity
+    : item.observedIdentity || item.originalItemName || item.canonicalItem) || "").trim().toLowerCase().replace(/\s+/g, " ");
+  const specialIdentity = (item) => mapper.physicalSpecialWasteIdentity(observation(item));
+  // X2/H1: a normalized Gemini proposal's Special Waste category comes only from the validated
+  // catalog (the normalizer rejects remote categories), so it is hazard evidence too. Veto and
+  // support only, never a category grant; Vision owners are unaffected.
+  const hazardEvidence = (item) => !!specialIdentity(item)
+    || (item.analysisSource === "gemini_whole_image" && item.category === "Special Waste")
+    || (mapper.unsafeIdentity(observation(item)) && !mapper.unreliablePhysicalIdentity(observation(item)));
+  const adverseState = (owner, proposal) => mapper.productStateVeto(owner, owner.category, label(proposal));
+  const ordinary = (item) => ORDINARY_CATEGORIES.includes(item.category);
+  // Exact helper-normalized physical identity only: no synonyms, no shared words.
+  const confirmsSpecial = (owner, proposal) => owner.category === "Special Waste"
+    && categoryAuthority(owner, captureId) === "independent"
+    && !!specialIdentity(owner) && specialIdentity(owner) === specialIdentity(proposal);
+  const agrees = (owner, proposal) => {
+    const item = observation(proposal);
+    if (mapper.unsafeIdentity(item) || mapper.unreliablePhysicalIdentity(item) || specialIdentity(proposal)
+        || adverseState(owner, proposal)) return false;
+    return label(proposal) === label(owner) || mapper.automaticCategory(item) === owner.category;
+  };
+  // Contradicting same-region evidence for an ordinary stream: a hazard; the
+  // existing product-state veto (Residual/Recyclable only); explicit full, sealed,
+  // unopened or uncertain/representational state, which that helper skips for
+  // labels without a packaging word; and, because it does not cover Biodegradable,
+  // a non-neutral description whose own stream differs when either is Biodegradable.
+  const neutral = (proposal) => /^(?:item|object|household item|household object)$/.test(label(proposal));
+  const contradicts = (owner, category, proposal) => {
+    const stream = mapper.automaticCategory(observation(proposal));
+    return hazardEvidence(proposal) || mapper.productStateVeto(owner, category, label(proposal))
+      || /\b(?:unopened|sealed|full|filled|containing|contains|not empty|not discarded)\b/.test(label(proposal))
+      || mapper.unreliablePhysicalIdentity(observation(proposal))
+      || (!neutral(proposal) && (category === "Biodegradable" || stream === "Biodegradable") && stream !== category);
+  };
+  // F-2R: ONE standard for every credible same-region claim on an independently
+  // categorized ordinary owner (strict, ambiguous strict/near, or an overlap reaching
+  // the duplicate IoU), as the near one-to-one rule below already applies. The owner
+  // keeps its stream only when the claim agrees (exact label or the same mapped
+  // stream) or is neutral, and never when it contradicts. A description the mapper
+  // cannot place is unresolved identity: it withholds the stream but proves no
+  // contents, hazard or category.
+  const disputesOrdinary = (owner, proposal) => contradicts(owner, owner.category, proposal)
+    || !(neutral(proposal) || agrees(owner, proposal));
+  // A credible competing claim on the same region (never a merge or suppression):
+  // the existing duplicate IoU with the existing centre rule. A contained pair at
+  // that IoU is already within 0.15 x the containing box on each axis; the
+  // contained-size floor only decides whether two observations collapse into one card.
+  const competingRegion = (a, b) => {
+    const t = PROPOSAL_GEOMETRY_TOLERANCE;
+    if (overlapRatio(a, b) < PROPOSAL_DUPLICATE_IOU - t) return false;
+    if (regionMetrics(a, b).contained) return true;
+    const widths = [a.right - a.left, b.right - b.left], heights = [a.bottom - a.top, b.bottom - b.top];
+    return Math.abs((a.left + a.right - b.left - b.right) / 2) <= PROPOSAL_DUPLICATE_CENTER * Math.min(...widths) + t
+      && Math.abs((a.top + a.bottom - b.top - b.bottom) / 2) <= PROPOSAL_DUPLICATE_CENTER * Math.min(...heights) + t;
+  };
+  const edges = [];
+  for (const owner of owners) {
+    if (!normalizeBoundingBox(owner.boundingBox)) continue;
+    for (const proposal of proposals) {
+      if (!proposal.boundingBox) continue;
+      const kind = strictlySameRegion(owner.boundingBox, proposal.boundingBox) ? "strict"
+        : nearDuplicateRegion(owner.boundingBox, proposal.boundingBox) ? "near"
+        : hazardRegionOverlap(owner.boundingBox, proposal.boundingBox) ? "overlap" : "";
+      if (kind) edges.push({ owner, proposal, kind });
+    }
+  }
+  // Order-independent one-to-one test over every strict/near association.
+  const associated = edges.filter((edge) => edge.kind !== "overlap");
+  const oneToOne = (edge) => associated.filter((other) => other.owner === edge.owner).length === 1
+    && associated.filter((other) => other.proposal === edge.proposal).length === 1;
+  const suppressed = new Map(), vetoed = new Set(), observedBy = new Map();
+  for (const edge of associated) {
+    const { owner, proposal } = edge;
+    if (!oneToOne(edge)) {
+      if (ordinary(owner) && disputesOrdinary(owner, proposal)) vetoed.add(owner);
+      continue;
+    }
+    if (confirmsSpecial(owner, proposal)) { suppressed.set(proposal, owner.itemId); continue; }
+    // A strict one-to-one pair stays under merge authority for identity, but it is
+    // the most credible same-object evidence: an unsupported claim fails the owner closed.
+    if (edge.kind === "strict") {
+      if (ordinary(owner) && disputesOrdinary(owner, proposal)) vetoed.add(owner);
+      continue;
+    }
+    suppressed.set(proposal, owner.itemId);
+    observedBy.set(owner, proposal);
+    if (owner.category === "Unknown") continue;
+    const supported = owner.category === "Special Waste" ? hazardEvidence(proposal) : agrees(owner, proposal);
+    if (!supported) vetoed.add(owner);
+  }
+  // Substantial hazardous overlap below the duplicate geometry: keep both
+  // observations, but never leave the ordinary owner as an unqualified stream.
+  // F-2/F-3/F-2R: an overlap still reaching the duplicate IoU (nested, enclosing or
+  // offset) is a credible competing claim under the same standard as a strict pair.
+  for (const edge of edges) {
+    if (edge.kind !== "overlap" || !ordinary(edge.owner)) continue;
+    if (hazardEvidence(edge.proposal) || (competingRegion(edge.owner.boundingBox, edge.proposal.boundingBox)
+        && disputesOrdinary(edge.owner, edge.proposal))) vetoed.add(edge.owner);
+  }
+  // G1/G1-C/F-2/F-3: an initially Unknown owner can still receive an ordinary
+  // stream inside the merge from a STRICTLY aligned proposal (the only alignment
+  // the merge uses to derive categories). Lacking independent category authority,
+  // it keeps that stream only if every other credible claim on its region supports
+  // the same single stream; otherwise conflict-mark it so the merge's existing
+  // authority keeps it Unknown. Credible claims: ambiguous strict/near associations
+  // and overlaps reaching the duplicate IoU. Any other substantial hazardous overlap
+  // also competes, except a smaller hazard nested inside the owner below that IoU,
+  // which stays a distinct object under the existing F2 geometry.
+  const nestedInside = (outer, inner) => outer.left <= inner.left && outer.top <= inner.top
+    && outer.right >= inner.right && outer.bottom >= inner.bottom;
+  for (const owner of owners) {
+    if (owner.category !== "Unknown" || vetoed.has(owner)) continue;
+    const promotion = [...new Set(associated.filter((edge) => edge.owner === owner && edge.kind === "strict")
+      .map((edge) => mapper.automaticCategory(observation(edge.proposal)))
+      .filter((category) => ORDINARY_CATEGORIES.includes(category)))];
+    if (!promotion.length) continue;
+    const disputes = (proposal) => promotion.length > 1 || contradicts(owner, promotion[0], proposal)
+      || mapper.automaticCategory(observation(proposal)) !== promotion[0];
+    const competing = edges.some((edge) => edge.owner === owner && (edge.kind !== "overlap"
+      ? !oneToOne(edge) && disputes(edge.proposal)
+      : (competingRegion(owner.boundingBox, edge.proposal.boundingBox) && disputes(edge.proposal))
+        || (hazardEvidence(edge.proposal) && !nestedInside(owner.boundingBox, edge.proposal.boundingBox))));
+    if (competing) vetoed.add(owner);
+  }
+  const reconciledOwners = owners.map((owner) => {
+    if (!vetoed.has(owner) && !observedBy.has(owner)) return owner;
+    // Request-local copy; the legacy owner object and its evidence are never mutated.
+    const copy = { ...owner };
+    if (normalizationConflicts.has(owner)) normalizationConflicts.add(copy);
+    const proposal = observedBy.get(owner);
+    if (proposal && !copy.identityObservation) {
+      copy.identityObservation = proposal.itemName;
+      copy.identitySource = "gemini_whole_image";
+      copy.requiresConfirmation = true;
+    }
+    if (vetoed.has(owner)) {
+      copy.category = "Unknown";
+      copy.requiresConfirmation = true;
+      for (const field of ["guidance", "modelKey", "modelHotspots", "explanation", "action", "warning"]) delete copy[field];
+      normalizationConflicts.add(copy);
+    }
+    return copy;
+  });
+  // F-2R: an owner failed closed here leaves its region unresolved, so no other
+  // credible observation of that region (a near or competing-overlap claim) may stay
+  // an actionable ordinary card. One the merge matches to an owner (samePhysicalObject,
+  // which includes every strict pair) is left to the merge; one-to-one near ones were
+  // removed above. Any other keeps its own ID, geometry and card, but enters the merge
+  // with the owners as a conflict-marked observation so the merge's existing
+  // normalization-conflict authority keeps it Unknown. Unknown and Special Waste
+  // observations, and separate objects, are left untouched.
+  const unresolved = new Set(edges.filter((edge) => vetoed.has(edge.owner) && (edge.kind === "near"
+      || (edge.kind === "overlap" && competingRegion(edge.owner.boundingBox, edge.proposal.boundingBox))))
+    .map((edge) => edge.proposal).filter((proposal) => !suppressed.has(proposal)
+      && ORDINARY_CATEGORIES.includes(proposal.category)
+      && !owners.some((owner) => sameObjectEitherOrder(owner, proposal))));
+  // W-1: likewise, no ordinary proposal may stay an actionable stream where it substantially
+  // overlaps (the existing hazard-overlap threshold) independent hazard evidence: a Special
+  // Waste or hazardous-identity owner, or an unsuppressed localized hazardous proposal. Overlap
+  // is not proof of one object, so it is never deleted or re-categorized here: it keeps its ID,
+  // geometry and card and joins the conflict-marked observations, under the capacity rules below.
+  // Pairs the existing same-object association links stay under merge authority.
+  // X2/H2: suppression only removes a duplicate card; a suppressed hazard claim still anchors with
+  // its own validated identity and box (it never becomes a card or lends its category).
+  const hazardAnchors = owners.filter((owner) => normalizeBoundingBox(owner.boundingBox)
+      && (owner.category === "Special Waste" || hazardEvidence(owner)))
+    .concat(proposals.filter((proposal) => proposal.boundingBox && hazardEvidence(proposal)));
+  for (const proposal of proposals) {
+    if (!proposal.boundingBox || suppressed.has(proposal) || !ORDINARY_CATEGORIES.includes(proposal.category)
+        || owners.some((owner) => sameObjectEitherOrder(owner, proposal))) continue;
+    if (hazardAnchors.some((anchor) => anchor !== proposal && !sameObjectEitherOrder(anchor, proposal)
+        && hazardRegionOverlap(anchor.boundingBox, proposal.boundingBox))) unresolved.add(proposal);
+  }
+  // X2/H3: merge authority can adjudicate a same-object hazard claim only one-to-one. A suppressed
+  // claim never reaches the merge, and one with two or more same-object partners (owners or any
+  // unsuppressed proposal, unresolved or not) is skipped there as ambiguous, recording no conflict.
+  // Its ordinary same-object proposal partners then join the conflict-marked observations, so the
+  // lost claim cannot leave them actionable. Set-based over complete evidence: order-independent.
+  for (const hazard of proposals) {
+    if (!hazard.boundingBox || !hazardEvidence(hazard)) continue;
+    const ownerPartners = owners.filter((owner) => sameObjectEitherOrder(owner, hazard)).length;
+    const proposalPartners = proposals.filter((other) => other !== hazard && other.boundingBox
+      && !suppressed.has(other) && sameObjectEitherOrder(other, hazard));
+    if (!suppressed.has(hazard) && ownerPartners + proposalPartners.length < 2) continue;
+    for (const partner of proposalPartners) {
+      if (ORDINARY_CATEGORIES.includes(partner.category)
+          && !owners.some((owner) => sameObjectEitherOrder(owner, partner))) unresolved.add(partner);
+    }
+  }
+  // W-7: such an observation re-describes a region its Unknown owner card already
+  // shows, so it may use only capacity no other card can need. Admit them (all or
+  // none, so input order never matters) only if the owners, every proposal that may
+  // still need its own card (an upper bound) and these observations fit the existing
+  // cap; otherwise omit them so the merge ranks only independent proposals.
+  const remaining = proposals.filter((proposal) => !suppressed.has(proposal) && !unresolved.has(proposal));
+  const localized = remaining.filter((proposal) => proposal.boundingBox
+    && !owners.some((owner) => sameObjectEitherOrder(owner, proposal)));
+  // CE-1: an ordinary proposal that samePhysicalObject places on the same object as a
+  // disputed observation re-describes that unresolved region. An observation matching no
+  // other one is always admitted ahead of every proposal (no owner matches it), so the
+  // merge folds such a proposal into it: credit that only while no Special Waste or
+  // Unknown proposal could be folded and hidden the same way.
+  const disputed = [...unresolved], ordinaryProposal = (proposal) => ORDINARY_CATEGORIES.includes(proposal.category);
+  const sameObject = (group, proposal) => group.some((other) => sameObjectEitherOrder(other, proposal));
+  const isolated = disputed.filter((observation) => !sameObject(disputed.filter((other) => other !== observation), observation));
+  const folded = localized.some((proposal) => !ordinaryProposal(proposal) && sameObject(disputed, proposal)) ? []
+    : localized.filter((proposal) => ordinaryProposal(proposal) && sameObject(isolated, proposal));
+  const fits = reconciledOwners.length + unresolved.size + localized.length - folded.length <= MAX_DETECTED_ITEMS;
+  // Omitting the observations must not release their ordinary re-descriptions (or theirs)
+  // as actionable cards that also take capacity ahead of independent objects.
+  const withheld = new Set(disputed);
+  for (let grew = !fits; grew;) {
+    grew = false;
+    for (const proposal of localized) {
+      if (withheld.has(proposal) || !ordinaryProposal(proposal) || !sameObject([...withheld], proposal)) continue;
+      withheld.add(proposal);
+      grew = true;
+    }
+  }
+  const observations = !fits ? [] : proposals.filter((proposal) => unresolved.has(proposal)).map((proposal) => {
+    const copy = { ...proposal }; // Request-local; the normalized proposal is never mutated.
+    normalizationConflicts.add(copy);
+    return copy;
+  });
+  // MHPA2 (proposal path only): request-local admission tiers for the merge's ranked stream, used only when
+  // the remaining candidates cannot all fit the existing cap. Candidate H ranks by spatial coverage, not identity.
+  // Tier 0: an uncovered localized hazard claim with no same-object owner or proposal, or an uncovered disputed
+  // group whose one card also covers such a claim (P-1b). Tier 1: every other uncovered unowned same-object group
+  // holding hazard evidence, including an H3 claim whose ordinary copies were withheld above. Tier 2: a hazard
+  // claim already spatially represented by a non-actionable Vision owner card or by a kept overlapping hazard unit
+  // (P-1, P-3). Tier 3: all other candidates. Half tiers rank an at-risk unit first within its tier (P-7).
+  // A group that reaches a Vision owner keeps its existing order, so owner matching and adjudication are
+  // unchanged. A tier orders admission only: it never grants a category, confidence, ID, guidance or card,
+  // proves no physical identity, and is never attached to an item, response or diagnostic.
+  const pending = localized.filter((proposal) => !withheld.has(proposal));
+  const overflow = !fits && reconciledOwners.length + pending.length > MAX_DETECTED_ITEMS;
+  const tiers = new Map(), relied = new Set();
+  const alt = mode || {};
+  let altChanged = 0, hazardClaims = [];
+  let hintable = false;
+  if (overflow) {
+    // FAIL-1: a strict/near owner edge recorded above (associated) is an owner association too, even when
+    // samePhysicalObject does not match it; such a claim is never an independent Tier-0 unit.
+    // FAIL-2: so is an overlap owner edge that the existing competingRegion rule (as F-2R uses it) treats as a
+    // credible competing claim on that owner's region, e.g. a box contained below the contained-size floor.
+    const ownerMatched = (proposal) => owners.some((owner) => sameObjectEitherOrder(owner, proposal))
+      || associated.some((edge) => edge.proposal === proposal)
+      || edges.some((edge) => edge.proposal === proposal && edge.kind === "overlap"
+        && competingRegion(edge.owner.boundingBox, edge.proposal.boundingBox));
+    const partnered = (claim) => proposals.some((other) => other !== claim && other.boundingBox
+      && !suppressed.has(other) && sameObjectEitherOrder(other, claim));
+    const pool = remaining.filter((proposal) => proposal.boundingBox && !withheld.has(proposal));
+    hazardClaims = pool.filter((proposal) => hazardEvidence(proposal));
+    const parent = new Map(pool.map((proposal) => [proposal, proposal]));
+    const find = (node) => { while (parent.get(node) !== node) node = parent.get(node); return node; };
+    for (let i = 0; i < pool.length; i++) for (let j = i + 1; j < pool.length; j++) {
+      if (!sameObjectEitherOrder(pool[i], pool[j])) continue;
+      const a = find(pool[i]), b = find(pool[j]);
+      if (a !== b) parent.set(a, b);
+    }
+    const groups = new Map();
+    for (const proposal of pool) {
+      const root = find(proposal);
+      if (!groups.has(root)) groups.set(root, []);
+      groups.get(root).push(proposal);
+    }
+    // P-1 coverage: a hazard claim whose own box lies at least PROPOSAL_HAZARD_OVERLAP inside a Vision owner card
+    // that this reconciler already keeps non-actionable is spatially represented by that card: failed closed above,
+    // Special Waste, or Unknown with no strict ordinary promotion (the G1 promotion set). A G1-promotable Unknown
+    // owner counts only when a first local merge left it Unknown or Special Waste (P-6 finalSafe); every such owner
+    // consulted is recorded so the caller keeps the second result only if each one is still non-actionable.
+    const promotable = (owner) => associated.some((edge) => edge.owner === owner && edge.kind === "strict"
+      && ORDINARY_CATEGORIES.includes(mapper.automaticCategory(observation(edge.proposal))));
+    const verifiedSafe = (owner) => !!finalSafe && finalSafe.has(owner.itemId) && !!relied.add(owner.itemId);
+    const safeOwner = (owner) => vetoed.has(owner) || owner.category === "Special Waste"
+      || (owner.category === "Unknown" && (!promotable(owner) || verifiedSafe(owner)));
+    // Directional: measured against the claim's own area, so a small owner inside a large claim never covers it.
+    const covers = (outer, inner) => regionMetrics(outer, inner).intersection
+      >= PROPOSAL_HAZARD_OVERLAP * (inner.right - inner.left) * (inner.bottom - inner.top) - PROPOSAL_GEOMETRY_TOLERANCE;
+    const ownerCovered = (proposal) => edges.some((edge) => edge.proposal === proposal && safeOwner(edge.owner)
+      && covers(edge.owner.boundingBox, proposal.boundingBox));
+    hintable = edges.some((edge) => edge.owner.category === "Unknown" && promotable(edge.owner)
+      && hazardEvidence(edge.proposal) && covers(edge.owner.boundingBox, edge.proposal.boundingBox));
+    const hazardMembers = (group) => group.filter((proposal) => hazardEvidence(proposal));
+    const groupCovered = (group) => hazardMembers(group).every(ownerCovered);
+    const uncoveredGroups = [...groups.values()].filter((group) => group.some((proposal) => hazardEvidence(proposal))
+      && !group.some((proposal) => ownerMatched(proposal)) && !groupCovered(group));
+    const coversAll = (group, claim) => group.every((member) => covers(member.boundingBox, claim.boundingBox));
+    const servesUncovered = (group) => { const served = uncoveredGroups.flatMap(hazardMembers).filter((claim) => !group.includes(claim) && coversAll(group, claim));
+      return served.length >= 2 && served.some((claim) => !uncoveredGroups.some((other) => !other.includes(claim) && coversAll(other, claim))); };
+    // A covered claim keeps its own card whenever capacity remains; it only stops outranking hazard regions with no card.
+    for (const group of groups.values()) {
+      const associated = group.some((proposal) => ownerMatched(proposal));
+      const representative = associated && !!alt.ownerAssoc && group.some((proposal) => hazardEvidence(proposal)) && servesUncovered(group);
+      if (!group.some((proposal) => hazardEvidence(proposal)) || (associated && !representative)) continue;
+      if (representative) altChanged++;
+      const tier = !representative && groupCovered(group) && (alt.h || !servesUncovered(group)) ? 2 : group.length === 1 && !partnered(group[0]) ? 0 : 1;
+      for (const proposal of group) tiers.set(proposal, tier === 2 && !hazardEvidence(proposal) ? 3 : tier);
+    }
+    const tierOf = (proposal) => (tiers.has(proposal) ? tiers.get(proposal) : 3);
+    const area = (proposal) => (proposal.boundingBox.right - proposal.boundingBox.left)
+      * (proposal.boundingBox.bottom - proposal.boundingBox.top);
+    const geometryKey = (proposal) => { const box = proposal.boundingBox; return [box.left, box.top, box.right, box.bottom, label(proposal)]; };
+    const compareKeys = (x, y) => { for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return x[i] < y[i] ? -1 : 1; return 0; };
+    // A transitive same-object chain can still yield a second card for one disputed region: a non-hazard member that
+    // is not same-object with the group's strict clique but lies inside every clique member ranks with ordinary items.
+    // Strict pairs are untouched, so the existing card identity of a disputed pair does not change.
+    for (const group of groups.values()) {
+      if (group.length < 2 || !group.some((proposal) => tierOf(proposal) <= 1)) continue;
+      const clique = [];
+      for (const member of [...group].sort((a, b) => area(b) - area(a) || compareKeys(geometryKey(a), geometryKey(b)))) {
+        if (clique.every((other) => sameObjectEitherOrder(other, member))) { clique.push(member); continue; }
+        if ((!alt.h || !hazardEvidence(member)) && clique.every((other) => covers(other.boundingBox, member.boundingBox))) tiers.set(member, !alt.h && hazardEvidence(member) ? 2 : 3);
+      }
+    }
+    // Hazard units still ranked 0 or 1, compared by tier, then by the existing validated catalog category, then geometry.
+    const unitTier = (group) => Math.min(...group.map(tierOf));
+    const unitArea = (group) => Math.max(...hazardMembers(group).map(area));
+    const unitCatalog = (group) => Number(hazardMembers(group).some((proposal) => proposal.category !== "Unknown"));
+    const unitGeometry = (group) => hazardMembers(group).map(geometryKey).sort()[0];
+    const byTierAreaCatalog = (a, b) => unitTier(a) - unitTier(b) || unitArea(b) - unitArea(a)
+      || unitCatalog(b) - unitCatalog(a) || compareKeys(unitGeometry(a), unitGeometry(b));
+    const units = [...groups.values()].filter((group) => group.some((proposal) => tierOf(proposal) <= 1)).sort(byTierAreaCatalog);
+    // P-1b: an uncovered disputed group whose every member covers an uncovered independent claim ranks as
+    // independent, so its one card represents both regions.
+    for (const group of units) {
+      if (unitTier(group) !== 1) continue;
+      const outer = units.some((unit) => unit !== group && unitTier(unit) === 0 && hazardMembers(unit)
+        .every((proposal) => group.every((other) => covers(other.boundingBox, proposal.boundingBox))));
+      if (outer) for (const proposal of group) if (tiers.get(proposal) === 1) tiers.set(proposal, 0);
+    }
+    // P-3 (narrowed): no size preference between near-identical claims. Re-order with the updated tiers, then rank by
+    // catalog category and geometry (Array.prototype.sort is stable, so equal keys keep the previous order).
+    units.sort(byTierAreaCatalog);
+    units.sort((a, b) => unitTier(a) - unitTier(b) || unitCatalog(b) - unitCatalog(a) || compareKeys(unitGeometry(a), unitGeometry(b)));
+    const demote = (group) => { for (const proposal of group) tiers.set(proposal, hazardEvidence(proposal) ? 2 : 3); };
+    const coverers = (unit) => (alt.groupHazardOnly ? hazardMembers(unit) : unit);
+    if (alt.groupHazardOnly && units.some((unit) => hazardMembers(unit).length !== unit.length)) altChanged++;
+    const inside = (inner, outer) => hazardMembers(inner)
+      .every((proposal) => coverers(outer).every((other) => covers(other.boundingBox, proposal.boundingBox)));
+    const relevant = units.flatMap(hazardMembers);
+    const coverage = (unit) => new Set(relevant.filter((claim) => hazardMembers(unit).includes(claim)
+      || coverers(unit).every((other) => covers(other.boundingBox, claim.boundingBox))));
+    const preserves = (inner, outer) => { const kept = coverage(outer); return [...coverage(inner)].every((claim) => kept.has(claim)); };
+    let kept = [];
+    for (const group of units) {
+      if (kept.some((other) => inside(group, other) && (alt.h || preserves(group, other)))) demote(group); else kept.push(group);
+    }
+    // A kept unit strictly inside another kept unit of no lower priority is covered only by that container's card.
+    for (const group of [...kept].sort((a, b) => unitArea(b) - unitArea(a))) {
+      const container = kept.find((other) => other !== group && unitTier(other) <= unitTier(group)
+        && inside(group, other) && (alt.h ? !inside(other, group) : (preserves(group, other) && (!inside(other, group) || !preserves(other, group)))));
+      if (container) { demote(group); kept = kept.filter((other) => other !== group); }
+    }
+    if (alt.union) for (const group of [...kept].sort((a, b) => unitTier(b) - unitTier(a) || unitCatalog(a) - unitCatalog(b) || compareKeys(unitGeometry(a), unitGeometry(b)))) {
+      const others = kept.filter((other) => other !== group), union = new Set(others.flatMap((other) => [...coverage(other)]));
+      if (others.some((other) => unitTier(other) <= unitTier(group) && inside(group, other)) && [...coverage(group)].every((claim) => union.has(claim))) { demote(group); kept = others; altChanged++; }
+    }
+    // P-7: within its tier, a unit whose only apparent cover is a G1-promotable Unknown owner (which the merge may
+    // still make actionable) is admitted first. This is coverage state, not hazard severity.
+    const atRisk = (group) => group.some((proposal) => hazardEvidence(proposal) && edges.some((edge) => edge.proposal === proposal
+      && edge.owner.category === "Unknown" && promotable(edge.owner) && !(finalSafe && finalSafe.has(edge.owner.itemId))
+      && covers(edge.owner.boundingBox, proposal.boundingBox)));
+    for (const group of kept) {
+      const tier = unitTier(group);
+      if (tier <= 1 && atRisk(group)) for (const proposal of group) if (tiers.get(proposal) === tier) tiers.set(proposal, tier - 0.5);
+    }
+  }
+  // retry and relied are request-local caller hints (P-6); they never reach an item, response or diagnostic.
+  return { owners: reconciledOwners.concat(observations),
+    proposals: remaining.filter((proposal) => !withheld.has(proposal)), suppressed,
+    admission: { tier: (item) => (tiers.has(item) ? tiers.get(item) : 3) }, retry: hintable && !finalSafe, relied, altChanged, hazardClaims };
+}
+
+// Diagnostic-only physical association. Never renames, re-categorizes, reorders
+// or re-owns any item, and never changes the primary or its history record.
+function primaryObjectLink(primary, proposals, primaryIndex, detectedItems, captureId, suppressed = new Map()) {
+  if (primaryIndex === null) return "none";
+  const proposal = proposals[primaryIndex];
+  if (!proposal || !proposal.boundingBox) return "unresolved";
+  const sameRegion = (a, b) => !!normalizeBoundingBox(a) && !!normalizeBoundingBox(b) && strictlySameRegion(a, b);
+  // A removed proposal resolves only through its single recorded owner, never by its own ID.
+  const candidates = suppressed.has(proposal)
+    ? detectedItems.filter((item) => item.itemId === suppressed.get(proposal))
+    : detectedItems.filter((item) => item.itemId === proposal.itemId
+      || (item.analysisSource === "google_vision_object_localization" && sameRegion(item.boundingBox, proposal.boundingBox)));
+  if (candidates.length !== 1) return candidates.length ? "ambiguous" : "unresolved";
+  const owner = candidates[0];
+  if (proposals.some((other) => other !== proposal && other.boundingBox && sameRegion(other.boundingBox, owner.boundingBox))) {
+    return "ambiguous";
+  }
+  if (require("./wholeImageRecognitionService").identityConflict(owner, captureId)) return "identity_conflict";
+  if (owner.category !== "Unknown" && owner.category !== primary.category) return "category_conflict";
+  const { unsafeIdentity } = require("./automaticWasteCategoryMapper");
+  if (primary.category !== "Special Waste"
+      && (unsafeIdentity({ ...owner, category: "Unknown" }) || unsafeIdentity({ ...proposal, category: "Unknown" }))) {
+    return "safety_conflict";
+  }
+  return "linked";
+}
+
+async function analyzeWasteWithObjectProposals(input, context) {
+  // Same bounded classifier budget and no direct-Gemini fallback as the existing
+  // discovery path. Vision keeps its existing single bounded call and schedule.
+  const legacy = await analyzeWasteLegacy({ ...input, boundedDiscovery: true }, context);
+  const legacyResult = () => withDisplayNames(reconcilePrimary(legacy, legacy.detectedItems || []));
+  if (!context.primaryValid) { proposalDiagnostics({ status: "primary_unavailable" }); return legacyResult(); }
+  if (context.raw === undefined) { proposalDiagnostics({ status: "absent" }); return legacyResult(); }
+  let proposals;
+  try { proposals = normalizeObjectProposals(context.capture, context.raw); }
+  catch (_) { proposalDiagnostics({ status: "rejected" }); return legacyResult(); }
+  let detectedItems, reconciled;
+  const discovery = require("./wholeImageRecognitionService");
+  try {
+    // A9 (owner policy D-A / D-B / D-C): the base is Candidate H's own tiers with the P-2c matcher. A fixed, bounded list
+    // of local alternatives (A5 rules and its union / group / owner-association modes, the unranked X2 order on the same
+    // reconciled owners, each admitted card moved last, each other proposal moved first) is merged locally. An alternative
+    // is adopted only when its actual final items are strictly safer than the base: no represented hazard claim, fully
+    // covered region or touched region of the base is lost, no hazard claim becomes actionable-only, no more strictly
+    // redundant cards, Vision owners byte-identical, and a hazard that loses its own card stays covered by a
+    // hazard-labelled non-actionable card and only for a region gain (an ordinary-labelled or Vision cover never replaces
+    // an identity). The first adopted alternative that no other adopted alternative is strictly safer than wins (list
+    // order); otherwise the base stands. Local merges only; no new fields, provider calls or category grants.
+    const conflict = (item) => normalizationConflicts.has(item);
+    const coversClaim = (outer, inner) => regionMetrics(outer, inner).intersection
+      >= PROPOSAL_HAZARD_OVERLAP * (inner.right - inner.left) * (inner.bottom - inner.top) - PROPOSAL_GEOMETRY_TOLERANCE;
+    const regionsOf = (hazards) => { const parent = hazards.map((_, i) => i), find = (i) => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+      for (let i = 0; i < hazards.length; i++) for (let j = i + 1; j < hazards.length; j++)
+        if (hazardRegionOverlap(hazards[i].boundingBox, hazards[j].boundingBox)) parent[find(i)] = find(j);
+      return new Map(hazards.map((claim, i) => [claim.itemId, find(i)])); };
+    const safeCard = (item) => item.category === "Unknown" || item.category === "Special Waste";
+    const coverState = (items, hazards, regionOf) => {
+      const hazardIds = new Set(hazards.map((claim) => claim.itemId)), rep = new Set(), act = new Set(), own = new Set(), hazardCover = new Set(), labelCover = new Set(), regions = new Map();
+      const covering = (claim, list) => list.filter((item) => item.boundingBox && (item.itemId === claim.itemId || coversClaim(item.boundingBox, claim.boundingBox)));
+      for (const claim of hazards) { const cover = covering(claim, items), safe = cover.filter(safeCard), region = regionOf.get(claim.itemId);
+        if (!regions.has(region)) regions.set(region, []); regions.get(region).push(claim.itemId);
+        if (safe.length) { rep.add(claim.itemId); if (safe.some((item) => item.itemId === claim.itemId)) own.add(claim.itemId);
+          if (safe.some((item) => item.itemId !== claim.itemId && item.analysisSource === "gemini_whole_image" && hazardIds.has(item.itemId))) hazardCover.add(claim.itemId);
+          if (safe.some((item) => item.itemId !== claim.itemId && item.analysisSource === "gemini_whole_image" && item.observedIdentity === claim.observedIdentity)) labelCover.add(claim.itemId); }
+        else if (cover.length) act.add(claim.itemId); }
+      const complete = new Set(), touched = new Set();
+      for (const [region, ids] of regions) { const n = ids.filter((id) => rep.has(id)).length; if (n === ids.length) complete.add(region); if (n) touched.add(region); }
+      let redundant = 0;
+      if (rep.size < hazards.length) for (const card of items) { if (card.analysisSource !== "gemini_whole_image" || !safeCard(card)) continue;
+        const rest = items.filter((item) => item !== card);
+        if (hazards.every((claim) => !rep.has(claim.itemId) || covering(claim, rest).some(safeCard))) redundant++; }
+      return { rep, act, own, hazardCover, labelCover, complete, touched, redundant }; };
+    const within = (a, b) => [...a].every((x) => b.has(x));
+    const safer = (c, b) => {
+      if (!(within(b.rep, c.rep) && within(b.complete, c.complete) && within(b.touched, c.touched) && within(c.act, b.act) && c.redundant <= b.redundant)) return false;
+      const regionGain = c.complete.size > b.complete.size || c.touched.size > b.touched.size, lost = [...b.own].filter((id) => !c.own.has(id) && !c.labelCover.has(id));
+      if (lost.length && !(regionGain && lost.every((id) => c.hazardCover.has(id)))) return false;
+      return c.rep.size > b.rep.size || regionGain || c.act.size < b.act.size || c.redundant < b.redundant || (within(b.own, c.own) && c.own.size > b.own.size); };
+    const visionKey = (items) => JSON.stringify(items.filter((item) => item.analysisSource === "google_vision_object_localization"));
+    const tierKey = (rec) => rec.proposals.map((proposal) => proposal.itemId + ":" + rec.admission.tier(proposal)).join("|");
+    const MODES = [{}, { union: true, groupHazardOnly: true }, { ownerAssoc: true }];
+    const pass = (finalSafe) => {
+      reconciled = reconcileProposalOverlaps(legacy.detectedItems || [], proposals.objects, context.capture.captureId, finalSafe, { h: true });
+      const matcher = createMergeMatcher(reconciled.owners);
+      const items = discovery.merge(reconciled.owners, reconciled.proposals, matcher, context.capture, conflict, reconciled.admission);
+      const baseRec = reconciled, hazards = baseRec.hazardClaims;
+      if (!hazards.length) return [baseRec, items];
+      const regionOf = regionsOf(hazards), base = coverState(items, hazards, regionOf);
+      if (base.own.size === hazards.length) return [baseRec, items];   // every hazard already shows its own card
+      const baseVision = visionKey(items), seen = new Set([tierKey(baseRec)]), adopted = [];
+      const consider = (rec, candidateItems, label) => { if (visionKey(candidateItems) !== baseVision) return;
+        const state = coverState(candidateItems, hazards, regionOf); if (safer(state, base)) adopted.push({ rec, items: candidateItems, state, label }); };
+      for (const mode of MODES) {
+        const candidate = reconcileProposalOverlaps(legacy.detectedItems || [], proposals.objects, context.capture.captureId, finalSafe, mode);
+        const key = tierKey(candidate); if (seen.has(key)) continue; seen.add(key);
+        consider(candidate, discovery.merge(candidate.owners, candidate.proposals, createMergeMatcher(candidate.owners), context.capture, conflict, candidate.admission), "mode");
+      }
+      const tier = (proposal) => baseRec.admission.tier(proposal);
+      const ranked = baseRec.proposals.map((proposal, index) => ({ proposal, index })).sort((a, b) => tier(a.proposal) - tier(b.proposal) || a.index - b.index).map((entry) => entry.proposal);
+      const moved = (target, value) => discovery.merge(baseRec.owners, baseRec.proposals, matcher, context.capture, conflict, { tier: (proposal) => (proposal === target ? value : tier(proposal)) });
+      consider(baseRec, discovery.merge(baseRec.owners, baseRec.proposals, matcher, context.capture, conflict), "x2order");
+      const admitted = new Set(items.filter((item) => item.analysisSource === "gemini_whole_image").map((item) => item.itemId));
+      for (const proposal of ranked) if (admitted.has(proposal.itemId)) consider(baseRec, moved(proposal, 1e9), "demote");
+      for (const proposal of ranked) if (!admitted.has(proposal.itemId) && proposal.boundingBox) consider(baseRec, moved(proposal, -1e9), "promote");
+      const maximal = adopted.filter((a) => !adopted.some((b) => b !== a && safer(b.state, a.state))), best = maximal[0];
+      return best ? [best.rec, best.items] : [baseRec, items];
+    };
+    [reconciled, detectedItems] = pass(null);
+    // P-6: when a hazard claim's only cover is a G1-promotable Unknown owner, re-rank once using the owners this
+    // local merge actually left Unknown or Special Waste. The second result is kept only if every owner it relied
+    // on is still Unknown or Special Waste in it; otherwise the first result stands. No provider is called again.
+    if (reconciled.retry) {
+      const safeOwnerIds = (items) => new Set(items.filter((item) => item.analysisSource === "google_vision_object_localization"
+        && (item.category === "Unknown" || item.category === "Special Waste")).map((item) => item.itemId));
+      const first = reconciled;
+      const [second, again] = pass(safeOwnerIds(detectedItems));
+      reconciled = first;
+      const stillSafe = safeOwnerIds(again);
+      if ([...second.relied].every((id) => stillSafe.has(id))) { reconciled = second; detectedItems = again; }
+    }
+  } catch (_) {
+    proposalDiagnostics({ status: "merge_failed" });
+    return legacyResult();
+  }
+  const primary = reconcilePrimary(legacy, detectedItems);
+  // A valid classifier primary is returned unchanged; proposals never create one.
+  if (primary !== legacy) { proposalDiagnostics({ status: "merge_failed" }); return legacyResult(); }
+  let primaryLink = "not_evaluated";
+  try {
+    primaryLink = primaryObjectLink(primary, proposals.objects, proposals.primaryIndex, detectedItems,
+      context.capture.captureId, reconciled.suppressed);
+  }
+  catch (_) { /* Optional diagnostic only. */ }
+  const visionOwned = detectedItems.filter((item) => item.analysisSource === "google_vision_object_localization");
+  proposalDiagnostics({ status: "accepted", proposals: proposals.objects.length,
+    localized: proposals.objects.filter((item) => item.boundingBox).length, physical: detectedItems.length,
+    visionOwned: visionOwned.length,
+    geminiOwned: detectedItems.filter((item) => item.analysisSource === "gemini_whole_image").length,
+    alignedVisionOwners: visionOwned.filter((item) => !!discovery.alignedIdentity(item, context.capture.captureId)).length,
+    finalUnknown: detectedItems.filter((item) => item.category === "Unknown").length, primaryLink });
+  return withDisplayNames({ ...primary, detectedItems, scanSummary: buildScanSummary(detectedItems) });
+}
+
 async function analyzeWaste(input) {
   if(process.env.WHOLE_IMAGE_DISCOVERY_ENABLED!=="true" || !input.objectDiscovery || !input.principal) {
+    // Backend flag OFF (default) returns null without any work or logging.
+    const proposalContext = objectProposalContext(input);
+    if (proposalContext) return analyzeWasteWithObjectProposals(input, proposalContext);
     const legacy = await analyzeWasteLegacy(input);
     return withDisplayNames(reconcilePrimary(legacy, legacy.detectedItems || []));
   }

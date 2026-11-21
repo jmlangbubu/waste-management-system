@@ -361,7 +361,104 @@ function extractGeminiText(response) {
   return allText.join("\n").trim();
 }
 
-function parseJsonFromGeminiText(text) {
+/*
+  OPTIONAL CLASSIFY-CALL OBJECT PROPOSALS (default OFF)
+  ------------------------------------------------------
+  Enabled ONLY when CLASSIFY_OBJECT_PROPOSALS_ENABLED === "true", the request
+  body carries objectProposals === true, a >=32 character
+  CLASSIFY_OBJECT_PROPOSALS_SHARED_TOKEN matches X-Classify-Proposals-Token,
+  and the classifier model is the discovery-verified gemini-2.5-flash.
+  Otherwise the existing request, prompt, parsing and envelope are unchanged.
+
+  The SAME single Gemini request additionally returns identity/geometry
+  observations using the existing discovery rules and object schema. They carry
+  no category, confidence or advice, travel separately as
+  result.objectProposals (never detectedItems/items), and are re-normalized
+  by the backend under its own capture. No second request or retry is made.
+*/
+const OBJECT_PROPOSAL_MODEL = "gemini-2.5-flash";
+
+function objectProposalsAuthorized(req) {
+  try {
+    const token = process.env.CLASSIFY_OBJECT_PROPOSALS_SHARED_TOKEN;
+    return process.env.CLASSIFY_OBJECT_PROPOSALS_ENABLED === "true"
+      && req.body?.objectProposals === true
+      && typeof token === "string" && token.length >= 32
+      && safeEnv(process.env.GEMINI_MODEL || OBJECT_PROPOSAL_MODEL) === OBJECT_PROPOSAL_MODEL
+      && typeof req.get === "function"
+      && cropContract.tokenMatches(req.get("X-Classify-Proposals-Token"), token);
+  } catch (_) {
+    return false;
+  }
+}
+
+function applyObjectProposalRequest(body) {
+  // Reuse the existing discovery instructions, output bound and object schema.
+  const discovery = require("./wholeImageRecognition").geminiBody({ image: "" });
+  const objectRules = discovery.contents[0].parts[0].text;
+  body.contents[0].parts[0].text = buildGeminiPrompt()
+    + "\nSeparately, in the same JSON object, include an \"objects\" array for this independent observation task. "
+    + "It is identity and location evidence only and must not change how the main item above is chosen or classified. "
+    + objectRules
+    + " If the main item above is one of the returned objects, set \"primaryObjectIndex\" to its zero-based index in the objects array; otherwise omit primaryObjectIndex.";
+  body.generationConfig = {
+    ...body.generationConfig,
+    maxOutputTokens: discovery.generationConfig.maxOutputTokens,
+    thinkingConfig: { ...discovery.generationConfig.thinkingConfig },
+    responseSchema: {
+      type: "OBJECT",
+      required: ["itemName", "category", "confidence", "explanation", "action", "warning", "objects"],
+      properties: {
+        itemName: { type: "STRING" },
+        category: { type: "STRING" },
+        confidence: { type: "NUMBER" },
+        explanation: { type: "STRING" },
+        action: { type: "STRING" },
+        warning: { type: "STRING" },
+        objects: discovery.generationConfig.responseSchema.properties.objects,
+        primaryObjectIndex: { type: "INTEGER" }
+      }
+    }
+  };
+  return body;
+}
+
+// Primary fields only: proposal text must never feed primary category inference.
+function primaryFieldsOnly(parsed) {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const { objects, primaryObjectIndex, ...primary } = parsed;
+  return primary;
+}
+
+// Rejects the WHOLE set on any violation; never repairs, filters or retries.
+function validateObjectProposals(parsed) {
+  try {
+    const whole = require("./wholeImageRecognition");
+    const objects = parsed?.objects;
+    if (!Array.isArray(objects) || objects.length < 1 || objects.length > whole.LIMITS.items) return null;
+    for (const object of objects) {
+      if (!object || typeof object !== "object" || Array.isArray(object)) return null;
+      const keys = Object.keys(object);
+      if (!keys.includes("label") || keys.some((key) => key !== "label" && key !== "box_2d")) return null;
+      const label = object.label;
+      if (typeof label !== "string" || !label.trim() || label.length > 128 || /[\x00-\x1f<>]/.test(label)) return null;
+      // Identity-only observations may omit box_2d; a supplied box must be valid.
+      if (Object.prototype.hasOwnProperty.call(object, "box_2d") && !whole.box(object.box_2d)) return null;
+    }
+    const index = parsed.primaryObjectIndex;
+    if (index !== undefined && index !== null
+        && !(Number.isInteger(index) && index >= 0 && index < objects.length)) return null;
+    return {
+      objects: objects.map((object) => Object.prototype.hasOwnProperty.call(object, "box_2d")
+        ? { label: object.label, box_2d: object.box_2d.slice() } : { label: object.label }),
+      ...(Number.isInteger(index) ? { primaryObjectIndex: index } : {})
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
+function parseJsonFromGeminiText(text, { proposalMode = false } = {}) {
   if (!text) return null;
 
   let cleaned = String(text).trim();
@@ -382,6 +479,11 @@ function parseJsonFromGeminiText(text) {
   try {
     return JSON.parse(cleaned);
   } catch (error) {
+    if (proposalMode) {
+      // Fixed code only: SyntaxError messages can quote untrusted model output.
+      console.error("[CloudRunGemini] CLOUD_RUN_PROPOSAL_JSON_INVALID");
+      return null;
+    }
     console.error("[CloudRunGemini] Failed to parse JSON:", error.message);
     console.error("[CloudRunGemini] Raw text:", text);
     return null;
@@ -463,7 +565,7 @@ function sanitizeGeminiResult(parsed, rawText = "") {
   };
 }
 
-async function classifyWasteWithGemini(base64Image) {
+async function classifyWasteWithGemini(base64Image, { objectProposals = false } = {}) {
   const apiKey = safeEnv(process.env.GEMINI_API_KEY);
   const model = safeEnv(process.env.GEMINI_MODEL || "gemini-2.5-flash");
   const cleanedBase64 = cleanBase64Image(base64Image);
@@ -512,6 +614,9 @@ async function classifyWasteWithGemini(base64Image) {
     }
   };
 
+  // Applied only after the unchanged legacy body is built, and only when authorized.
+  if (objectProposals) applyObjectProposalRequest(body);
+
   console.log("[CloudRunGemini] Starting classification.");
   console.log("[CloudRunGemini] Model:", model);
   console.log("[CloudRunGemini] Image length:", cleanedBase64.length);
@@ -524,11 +629,27 @@ async function classifyWasteWithGemini(base64Image) {
     });
 
     const text = extractGeminiText(response);
-    const parsed = parseJsonFromGeminiText(text);
-    const result = sanitizeGeminiResult(parsed, text);
+    let result;
+    let proposals = null;
 
-    console.log("[CloudRunGemini] Raw text:", text || "[empty]");
-    console.log("[CloudRunGemini] Result:", result);
+    if (!objectProposals) {
+      const parsed = parseJsonFromGeminiText(text);
+      result = sanitizeGeminiResult(parsed, text);
+
+      console.log("[CloudRunGemini] Raw text:", text || "[empty]");
+      console.log("[CloudRunGemini] Result:", result);
+    } else {
+      // Proposal mode: never log raw text (it carries object labels/geometry) and
+      // never infer the primary from text that includes proposals.
+      const parsed = parseJsonFromGeminiText(text, { proposalMode: true });
+      const primary = primaryFieldsOnly(parsed);
+      result = primary ? sanitizeGeminiResult(primary, JSON.stringify(primary)) : null;
+      // Proposals can never rescue an invalid primary.
+      proposals = result ? validateObjectProposals(parsed) : null;
+
+      console.log("[CloudRunGemini] Result:", result);
+      console.log(`[CloudRunGemini] Object proposals: status=${proposals ? "accepted" : "unavailable"} count=${proposals ? proposals.objects.length : 0}`);
+    }
 
     if (!result) {
       return {
@@ -544,7 +665,8 @@ async function classifyWasteWithGemini(base64Image) {
       success: true,
       source: "cloud_run_gemini_vision",
       model,
-      result,
+      // Separate internal field; the primary fields above are never overwritten.
+      result: proposals ? { ...result, objectProposals: proposals } : result,
       rawText: text
     };
   } catch (error) {
@@ -590,7 +712,8 @@ app.post("/classify-waste", async (req, res) => {
       });
     }
 
-    const classification = await classifyWasteWithGemini(image);
+    const classification = await classifyWasteWithGemini(image,
+      objectProposalsAuthorized(req) ? { objectProposals: true } : undefined);
 
     return res.status(200).json(classification);
   } catch (error) {
