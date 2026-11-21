@@ -43,12 +43,18 @@ async function selfCheck() {
   return Object.freeze({ phase: "4A", outcome: "pass", checks: Object.freeze(checks), databaseEvidence: false });
 }
 async function main(args, io = { stdout: process.stdout, stderr: process.stderr }) {
+  if (Array.isArray(args) && args.length === 1 && args[0] === "--native-smoke") {
+    try { const report = await runtime.nativeSmoke(io); io.stdout.write(JSON.stringify(report) + "\n"); return 0; }
+    catch (caught) { const safe = require("./helpers/nativeHost.cjs").error(caught);
+      io.stderr.write("NATIVE_EXECUTION_REFUSED: " + safe.code + ". No native success has been established.\n"); return 2; }
+  }
   if (Array.isArray(args) && args.length === 1 && args[0] === "--plan") {
     io.stdout.write(JSON.stringify({ phase: "4B", classification: "offline-preparation", capabilities: runtime.phase4BCapabilities(),
       candidateImage: environment.IMAGE, approvedIndexDigest: null, approvedPlatformDigest: null,
       fixtureProfile: environment.PHASE4B_PROFILE, fixtureFingerprint: schema.provisioningFingerprint(),
       applicationCommit: environment.BASELINE, harnessCommit: "must-be-observed-from-clean-reviewed-checkout",
-      prerequisites: ["reviewed-execution-scope", "node-22.23.5", "local-linux-engine-at-least-28", "official-registry-proof",
+      nativeAdapterCode: "implemented-offline-review-required", nativeActivation: "blocked-owner-trust-anchor-unavailable",
+      prerequisites: ["source-owned-owner-public-key-and-signing-procedure", "reviewed-execution-scope", "node-22.23.5", "verified-installed-dependency-tree", "local-linux-engine-at-least-28", "official-registry-proof",
         "windows-isolation-proof", "credential-acl-and-grants-adapter", "trusted-native-observation-adapter"],
       performsExternalOperations: false, writeAccess: false }) + "\n");
     return 0;

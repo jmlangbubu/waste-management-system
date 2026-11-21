@@ -51,3 +51,34 @@ function createMockDisposableRuntime(configuration, transport) {
   });
 }
 Object.assign(module.exports, { phase4BCapabilities, createMockDisposableRuntime });
+async function nativeSmoke(io = { stdout: process.stdout, stderr: process.stderr }, input = process.stdin) {
+  const host = require("./nativeHost.cjs");
+  host.requireOwnerTrust(); // Deliberately before stdin listeners, challenge randomness or any native transport.
+  const native = require("./nativeLifecycle.cjs");
+  let buffer = "", pending, closed = false, frames = 0;
+  const accept = () => {
+    if (!pending || !buffer.includes("\n")) return;
+    const end = buffer.indexOf("\n"), line = buffer.slice(0, end); buffer = buffer.slice(end + 1);
+    const waiter = pending; pending = null; clearTimeout(waiter.timer);
+    try { frames++; host.check(frames <= 2, "AUTH_INVALID"); waiter.resolve(host.data(JSON.parse(line))); }
+    catch (_) { waiter.reject(new host.NativeError("AUTH_INVALID")); }
+  };
+  const fail = () => { closed = true; if (pending) { clearTimeout(pending.timer); pending.reject(new host.NativeError("AUTH_INVALID")); pending = null; } };
+  const receive = chunk => { buffer += chunk.toString("utf8"); if (Buffer.byteLength(buffer) > 131072) fail(); else accept(); };
+  function frame() { return new Promise((resolve, reject) => {
+    if (closed) return reject(new host.NativeError("AUTH_INVALID"));
+    pending = { resolve, reject, timer: setTimeout(fail, 120000) }; accept();
+  }); }
+  input.on("data", receive); input.on("end", fail); input.on("error", fail);
+  try {
+    const config = await frame(), challenge = native.createNativeChallenge(config);
+    io.stdout.write(JSON.stringify({ classification: "unsigned-challenge-not-authority", nonce: challenge.nonce }) + "\n");
+    const receipt = await frame(), lifecycle = native.createNativeLifecycle(challenge, receipt);
+    try { return await native.smoke(lifecycle); }
+    catch (caught) {
+      // Only the coordinator's fixed, sanitized evidence is reportable; never serialize a native exception or SQL.
+      io.stdout.write(JSON.stringify({ outcome: "failed", ...lifecycle.describe() }) + "\n"); throw host.error(caught);
+    }
+  } finally { fail(); input.removeListener("data", receive); input.removeListener("end", fail); input.removeListener("error", fail); input.pause(); }
+}
+module.exports.nativeSmoke = nativeSmoke;

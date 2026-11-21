@@ -106,10 +106,9 @@ function createMockScope(transport, input, actions, lifecycle) {
     scopes.set(scope, state); owner.scopes.add(state); return scope;
   });
 }
-function createNativeLifecycle() {
-  // Missing reviewed native trust anchor, Windows isolation proof, credential ACL implementation and effective-GRANT parser.
-  // Do not lazily import child_process/mysql2 or attempt discovery as a fallback.
-  throw e.p4bError(null, "P4B_NATIVE_UNSUPPORTED");
+function createNativeLifecycle(...args) {
+  try { return require("./nativeLifecycle.cjs").createNativeLifecycle(...args); }
+  catch (_) { throw e.p4bError(null, "P4B_NATIVE_UNSUPPORTED"); }
 }
 function createMockLifecycle(input, transport) {
   return guarded(() => {

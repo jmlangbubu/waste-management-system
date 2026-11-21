@@ -647,17 +647,19 @@ test("P4B original defect fixes remain live under the extended import path", () 
     assert.ok(![caught.message, caught.stack, JSON.stringify(caught)].join("\n").includes("PRIVATE_P4B_CANARY"));
   }
 });
-test("P4B Compose is canonical opt-in JSON/YAML with mandatory inputs and no active default", async t => {
+test("P4B Compose is canonical declarative JSON/YAML with no executable resources", async t => {
   const text = fs.readFileSync(path.join(__dirname, "compose.yaml"), "utf8"), spec = JSON.parse(text);
-  assert.deepEqual(environment.assertPhase4BCompose(text), { defaultRunnableServices: 0, optInServices: 1, nativeExecutionAvailable: false, writeAccess: false });
-  assert.deepEqual(spec.services.mysql.profiles, ["wmo-disposable"]); assert.equal(spec.services.mysql.ports.length, 1);
-  assert.equal(spec.services.mysql.ports[0].host_ip, "127.0.0.1"); assert.equal(spec.networks.owned.internal, true);
+  assert.deepEqual(environment.assertPhase4BCompose(text), { defaultRunnableServices: 0, optInServices: 0, nativeExecutionAvailable: false, writeAccess: false });
+  assert.deepEqual(spec.services, {}); assert.equal(spec.networks, undefined); assert.equal(spec.volumes, undefined);
+  const reference = spec["x-wmo-appointment-phase4b"].reference;
+  assert.deepEqual(reference.services.mysql.profiles, ["wmo-disposable"]); assert.equal(reference.services.mysql.ports.length, 1);
+  assert.equal(reference.services.mysql.ports[0].host_ip, "127.0.0.1"); assert.equal(reference.networks.owned.internal, true);
   for (const [name, change] of Object.entries({
-    public_port: s => { s.services.mysql.ports[0].host_ip = "0.0.0.0"; },
-    x_protocol: s => s.services.mysql.ports.push({ target: 33060, published: "33060" }),
-    unpinned: s => { s.services.mysql.image = "mysql:latest"; }, privileged: s => { s.services.mysql.privileged = true; },
-    host_network: s => { s.services.mysql.network_mode = "host"; }, no_profile: s => { delete s.services.mysql.profiles; },
-    inherited_env: s => { s.services.mysql.env_file = ".env"; }, missing_scope: s => { delete s["x-wmo-appointment-phase4b"].execution_scope; }
+    public_port: s => { s.services.mysql = { ports: ["3306:3306"] }; },
+    x_protocol: s => { s.services.mysql = { ports: ["33060:33060"] }; },
+    unpinned: s => { s.services.mysql = { image: "mysql:latest" }; }, privileged: s => { s.services.mysql = { privileged: true }; },
+    host_network: s => { s.services.mysql = { network_mode: "host" }; }, no_profile: s => { delete s["x-wmo-appointment-phase4b"].reference.services.mysql.profiles; },
+    inherited_env: s => { s.services.mysql = { env_file: ".env" }; }, missing_scope: s => { delete s["x-wmo-appointment-phase4b"].reference["x-wmo-appointment-phase4b"].execution_scope; }
   })) await t.test(name, () => { const v = clone(spec); change(v); refused(() => environment.assertPhase4BCompose(JSON.stringify(v, null, 2) + "\n"), "P4B_COMPOSE_INVALID"); });
 });
 test("P4B mandatory configuration fields reject unsafe defaults and production-like endpoints", async t => {

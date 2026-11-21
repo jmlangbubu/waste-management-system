@@ -1,88 +1,96 @@
 {
-  "services": {
-    "mysql": {
-      "profiles": [
-        "wmo-disposable"
-      ],
-      "image": "mysql:9.7.2-oraclelinux9@${WMO_MYSQL_PLATFORM_DIGEST:?Required reviewed Phase 4B input}",
-      "platform": "linux/${WMO_MYSQL_ARCH:?Required reviewed Phase 4B input}",
-      "container_name": "wmo_appointments_${WMO_RUN_COMPACT:?Required reviewed Phase 4B input}_mysql",
-      "command": [
-        "--mysqlx=0"
-      ],
-      "restart": "no",
-      "privileged": false,
-      "cpus": 2,
-      "mem_limit": "1024m",
-      "environment": {
-        "MYSQL_ROOT_PASSWORD_FILE": "/run/secrets/wmo-root-password",
-        "MYSQL_ROOT_HOST": "localhost"
-      },
-      "ports": [
-        {
-          "target": 3306,
-          "published": "${WMO_MYSQL_HOST_PORT:?Required reviewed Phase 4B input}",
-          "host_ip": "127.0.0.1",
-          "protocol": "tcp"
-        }
-      ],
-      "networks": [
-        "owned"
-      ],
-      "volumes": [
-        {
-          "type": "volume",
-          "source": "owned",
-          "target": "/var/lib/mysql"
-        }
-      ],
-      "secrets": [
-        "wmo-root-password",
-        "wmo-root-client"
-      ],
-      "labels": {
-        "wmo.test.purpose": "wmo-appointment-disposable",
-        "wmo.test.run": "${WMO_RUN_ID:?Required reviewed Phase 4B input}"
-      }
-    }
-  },
-  "networks": {
-    "owned": {
-      "name": "wmo_appointments_${WMO_RUN_COMPACT:?Required reviewed Phase 4B input}_net",
-      "driver": "bridge",
-      "internal": true,
-      "enable_ipv6": false,
-      "labels": {
-        "wmo.test.purpose": "wmo-appointment-disposable",
-        "wmo.test.run": "${WMO_RUN_ID:?Required reviewed Phase 4B input}"
-      }
-    }
-  },
-  "volumes": {
-    "owned": {
-      "name": "wmo_appointments_${WMO_RUN_COMPACT:?Required reviewed Phase 4B input}_data",
-      "driver": "local",
-      "labels": {
-        "wmo.test.purpose": "wmo-appointment-disposable",
-        "wmo.test.run": "${WMO_RUN_ID:?Required reviewed Phase 4B input}"
-      }
-    }
-  },
-  "secrets": {
-    "wmo-root-password": {
-      "file": "${WMO_ROOT_PASSWORD_FILE:?Required reviewed Phase 4B input}"
-    },
-    "wmo-root-client": {
-      "file": "${WMO_ROOT_CLIENT_FILE:?Required reviewed Phase 4B input}"
-    }
-  },
+  "services": {},
   "x-wmo-appointment-phase4b": {
-    "execution_scope": "${WMO_EXECUTION_SCOPE:?Required reviewed Phase 4B input}",
-    "image_index_digest": "${WMO_MYSQL_INDEX_DIGEST:?Required reviewed Phase 4B input}",
-    "image_config_digest": "${WMO_MYSQL_CONFIG_DIGEST:?Required reviewed Phase 4B input}",
-    "synthetic_schema": "${WMO_SYNTHETIC_SCHEMA:?Required reviewed Phase 4B input}",
-    "default_execution": "disabled",
-    "native_adapter": "unsupported",
-    "profiles_are_not_authorization": true
+    "classification": "declarative-only",
+    "nativeExecutionAvailable": false,
+    "profilesAreNotAuthorization": true,
+    "reference": {
+      "services": {
+        "mysql": {
+          "profiles": [
+            "wmo-disposable"
+          ],
+          "image": "mysql:9.7.2-oraclelinux9@${WMO_MYSQL_PLATFORM_DIGEST:?Required reviewed Phase 4B input}",
+          "platform": "linux/${WMO_MYSQL_ARCH:?Required reviewed Phase 4B input}",
+          "container_name": "wmo_appointments_${WMO_RUN_COMPACT:?Required reviewed Phase 4B input}_mysql",
+          "command": [
+            "--mysqlx=0"
+          ],
+          "restart": "no",
+          "privileged": false,
+          "cpus": 2,
+          "mem_limit": "1024m",
+          "environment": {
+            "MYSQL_ROOT_PASSWORD_FILE": "/run/secrets/wmo-root-password",
+            "MYSQL_ROOT_HOST": "localhost"
+          },
+          "ports": [
+            {
+              "target": 3306,
+              "published": "${WMO_MYSQL_HOST_PORT:?Required reviewed Phase 4B input}",
+              "host_ip": "127.0.0.1",
+              "protocol": "tcp"
+            }
+          ],
+          "networks": [
+            "owned"
+          ],
+          "volumes": [
+            {
+              "type": "volume",
+              "source": "owned",
+              "target": "/var/lib/mysql"
+            }
+          ],
+          "secrets": [
+            "wmo-root-password",
+            "wmo-root-client"
+          ],
+          "labels": {
+            "wmo.test.purpose": "wmo-appointment-disposable",
+            "wmo.test.run": "${WMO_RUN_ID:?Required reviewed Phase 4B input}"
+          }
+        }
+      },
+      "networks": {
+        "owned": {
+          "name": "wmo_appointments_${WMO_RUN_COMPACT:?Required reviewed Phase 4B input}_net",
+          "driver": "bridge",
+          "internal": true,
+          "enable_ipv6": false,
+          "labels": {
+            "wmo.test.purpose": "wmo-appointment-disposable",
+            "wmo.test.run": "${WMO_RUN_ID:?Required reviewed Phase 4B input}"
+          }
+        }
+      },
+      "volumes": {
+        "owned": {
+          "name": "wmo_appointments_${WMO_RUN_COMPACT:?Required reviewed Phase 4B input}_data",
+          "driver": "local",
+          "labels": {
+            "wmo.test.purpose": "wmo-appointment-disposable",
+            "wmo.test.run": "${WMO_RUN_ID:?Required reviewed Phase 4B input}"
+          }
+        }
+      },
+      "secrets": {
+        "wmo-root-password": {
+          "file": "${WMO_ROOT_PASSWORD_FILE:?Required reviewed Phase 4B input}"
+        },
+        "wmo-root-client": {
+          "file": "${WMO_ROOT_CLIENT_FILE:?Required reviewed Phase 4B input}"
+        }
+      },
+      "x-wmo-appointment-phase4b": {
+        "execution_scope": "${WMO_EXECUTION_SCOPE:?Required reviewed Phase 4B input}",
+        "image_index_digest": "${WMO_MYSQL_INDEX_DIGEST:?Required reviewed Phase 4B input}",
+        "image_config_digest": "${WMO_MYSQL_CONFIG_DIGEST:?Required reviewed Phase 4B input}",
+        "synthetic_schema": "${WMO_SYNTHETIC_SCHEMA:?Required reviewed Phase 4B input}",
+        "default_execution": "disabled",
+        "native_adapter": "unsupported",
+        "profiles_are_not_authorization": true
+      }
+    }
   }
 }

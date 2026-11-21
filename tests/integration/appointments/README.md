@@ -1,211 +1,200 @@
-# Appointment disposable MySQL harness — Phase 4B preparation
+# Appointment disposable MySQL harness
 
-This directory is test-only. No real Docker/MySQL executor is installed.
-A successful mock protocol is not database, isolation, durability or production evidence.
+Native adapters are implemented for offline review. **Real execution remains
+blocked:** source-owned OWNER_TRUST is null. No owner key/signing procedure,
+approved immutable image digests, Node22 verification or installed dependency
+tree is available. Offline success proves no Docker isolation, connectivity,
+booking correctness, durability or production parity.
 
-## Current executable modes
-
-From the repository root:
+## Safe commands
 
     node tests/integration/appointments/run.cjs --self-check
     node tests/integration/appointments/run.cjs --plan
     node --test --test-reporter=tap tests/integration/appointments/harness.offline.test.cjs
+    node --test --test-reporter=tap tests/integration/appointments/native.offline.test.cjs
 
-Self-check retains the original eight Phase 4A checks and output.
-Plan prints non-secret requirements, unresolved digests and capabilities; it reads no
-environment file and does not inspect Docker, Git, the network or MySQL.
-No arguments, unknown arguments and bypass arguments exit 2.
-The recognized --provision, --verify, --attest and --teardown modes also exit 2:
-PHASE4B_NATIVE_UNSUPPORTED. They do not load a process or database adapter.
+The eight Phase4A checks, pure five-table contract, fingerprints, assertions and
+controls remain intact. Individual provision/verify/attest/teardown modes and
+unknown/bypass arguments still refuse. --native-smoke refuses before stdin,
+native transports or challenge randomness while the owner key is missing.
 
-| Interface | Implemented behavior | Native execution |
-|---|---|---|
-| Self-check / plan | Inert local computation | None |
-| Identity/configuration validators | Strict, frozen pure DTO checks | None |
-| Manifest proof | Digest and platform-chain checks on supplied bytes | No registry authentication or fetch |
-| Command/account/fixture recipes | Inspectable, non-executable data | No commands, secret generation or SQL |
-| Mock lifecycle | Scripted in-memory protocol and admission tests | None |
-| Native lifecycle | Explicit refusal | Unsupported |
-| Application pools / route loading | Explicit refusal; integration contract only | Unsupported |
-| Phase 4C suites | Not implemented | Not authorized |
+Both test suites intercept network/process/filesystem/production-module effects.
+The native tests additionally intercept credential generation. Fixed synthetic
+signing keys and fake host/ACL/Docker/registry/MySQL responses cannot select real
+drivers. Their evidence is offline-native-protocol, with nativeVerified=false,
+connected=false, durableVerified=false and zero native command/query counts.
 
-No real execution capability can be minted from a flag, approved boolean, returned
-writeAccess object, callback, cloned scope or supplied observation DTO. Module-private
-WeakMaps bind mock scopes to one scripted transport, configuration, run and action.
-They remain mock-only. Native execution fails before importing mysql2/child_process.
+## Boundaries and authorization
 
-## Preserved Phase 4A foundation
+- nativeHost: signatures, private sessions/scopes, source/binaries, Windows ACLs,
+  recovery journal and sanitized child environment.
+- nativeDocker: fixed CLI operations, official registry bytes, owned resources,
+  actual bindings/routing and exact removal.
+- nativeMysql: finite root protocol, accounts/grants, fixture metadata/transactions,
+  explicit attestation and pinned-TLS connections/pool.
+- nativeLifecycle: stage ordering, permits, cancellation/quarantine and evidence.
 
-The five-table Phase 4A specification, fingerprint algorithm, deferred runtime,
-provider guards, evidence class and controls remain intact. Pure identity acceptance
-always retains offlineOnly=true, writeAccess=false, independentlyObservedHere=false.
-They are never database write permits.
+No import performs native work. No general-purpose SQL/subprocess API is exposed.
+Docker command tokens and adapter identities are private and session-bound.
+Public scope guards disclose no mutable state. Mock sessions cannot become native
+sessions. The real factory rejects test challenges and caller-supplied trust keys.
 
-The original ownership, phantom-arrival and sanitized-diagnostic regressions remain.
-The offline suite installs network, server, DNS, production-module, filesystem-write,
-environment-file and subprocess traps, including before helper imports. Child probes
-use an absolute Node executable and explicit OS-plumbing-only child environment.
-The updated Compose assertion additionally checks the opt-in Phase 4B template.
-The original inert Compose validator and its negative controls remain covered.
+A separately authorized source change must establish the owner's Ed25519 public
+key and signing procedure. No flag, environment variable or receipt configures
+that trust anchor. Receipt format is {payload,signature}, signature canonical
+base64 over UTF-8 JSON with recursively sorted object keys and retained array
+order. Exact payload fields:
+- version:1; trusted owner; fresh challenge nonce (64 lowercase hex).
+- issuedAt/expiresAt, maximum fifteen-minute validity.
+- configuration: exact Phase4B configuration, including source manifest, reviewed
+  harness commit, application hashes, run/schema, fixture, binaries and digests.
+- execution: daemonId, ownerSid, dependencyRoot, dependencyHash,
+  backendExecutable, backendHash.
+- actions: provision, verify, attest, connect-check, teardown; distinct and explicit.
 
-Control scopes still own independent named barriers, with no global mutex.
-Waits and observers remain bounded to 1–5000 ms, default 2000 ms.
-Invalid/pre-aborted waits cannot create arrivals. Always attach rejection handlers
-and dispose controls; a test watchdog is not an application transaction deadline.
+The future stdin protocol has two bounded JSON lines: configuration, then the
+signed receipt after an unsigned challenge is printed. This is currently
+unreachable. No receipt-file discovery is performed. Actual use separately
+requires GO EXECUTE. The smoke command requires all action permits before any
+provisioning; provision alone cannot attest.
 
-## Explicit source identities
+Private scopes belong to one lifecycle/run/action, cannot be cloned/serialized,
+and consume write permission before dispatch, including failed writes. Challenge
+admission is one-time. Source/environment failure, cancellation and disposal revoke
+remaining permits. An exclusive owner-restricted directory/journal prevents
+cross-process run reuse. Interrupted recovery always requires fresh approval.
 
-Application under test: R3 97872ea96e3cf01035f3dac52a5fadfe74e63a72.
-Phase 4A harness checkpoint: 9d582f5691dc9d09798a97f300c356d9890e1b93.
-A future execution must observe its own clean, reviewed harness commit and manifest;
-there is no self-referential future commit SHA embedded in implementation code.
+Application baseline is R3 97872ea96e3cf01035f3dac52a5fadfe74e63a72.
+APPLICATION_FILES retains the raw-byte hashes. Execution must observe its own
+clean reviewed harness commit. Harness-manifest SHA256 covers nativeHost.FILES
+in declared order as canonical {path,sha256} entries; no newline normalization
+or self-referential future commit is used.
 
-APPLICATION_FILES pins the reviewed raw bytes of the scheduling service, policy and
-package lock independently of the harness revision. Any different bytes fail closed,
-including line-ending changes. No automatic normalization/rebasing is performed.
-Future suites loading additional application modules must extend this manifest
-explicitly. Current scripted Git observations are not real source verification.
+## Docker and registry
 
-The old fixture sourceCommit remains R3. The separate provisioning profile is
-wmo-appointments-p4b-v1; its fingerprint covers the old fingerprint, control-table
-definition, seed variant and unready defaults. Run-specific application/harness
-identities are recorded separately in appointment_harness_identity.
+One provisioning path: reviewed absolute docker.exe, argument arrays, shell:false,
+explicit approved local named pipe and private config directory. Independently
+read the expected context's non-secret metadata. Inherit no Docker/Compose
+overrides, credentials, DATABASE_URL, provider keys, NODE_OPTIONS/NODE_PATH or
+proxies. Windows system PowerShell/Git paths are fixed; other layouts stop.
 
-## Image and local Docker contract — unverified on a real host
+Require native architecture, Linux Engine>=28, reviewed executable hashes and
+stable approved daemon ID. Reject remote contexts, mirrors and unreviewed proxies.
+HTTPS registry/token origins and library/mysql:pull scope are fixed. Hash bounded
+raw manifest bytes before parsing, then reuse descriptor/platform validators.
+All redirects, including CDN redirects, are refused. An encountered redirect is
+a compatibility STOP, not authority to widen transport. No digest is invented.
 
-The only candidate is mysql:9.7.2-oraclelinux9. No real digest is embedded or approved.
-Configuration requires distinct full image-index, platform-manifest and image-config
-digests; supplied manifest bytes must hash to them and select the exact Linux
-architecture. The config/image ID is not interchangeable with a manifest digest.
-Synthetic digest fixtures are explicitly fabricated and must never be pulled.
+Pull only the approved platform digest. Creation uses --pull=never. Create one
+labelled container/network/local volume. Verify full container/network IDs;
+volume name, driver/scope, fresh creation evidence and mount association; upstream
+image labels separately from ownership labels; only intended network members;
+two CPUs, 1GiB, no privilege/restart/extra mounts; only literal loopback TCP3306
+publication; disabled X Plugin. EXPOSE without a binding is not publication.
 
-Require a reviewed local Docker context/named pipe, Linux Engine >=28.0.0, matching
-native architecture, reviewed executable hashes and official Node 22.23.5 identity.
-Refuse remote daemons, moving tags, substituted versions or missing inputs.
-Actual registry provenance, image distribution and server-version observation still
-require a native adapter. Expected server distribution is MySQL Community Server - GPL;
-expected image OS is Oracle Linux 9. These are requirements, not observed results.
+The native network is internal, IPv4-only, with gateway mode isolated. If this
+prevents host access, STOP; do not broaden networking or silently add a co-located
+runner. The Compose file has empty services and only an x- reference: no runnable
+services/networks/volumes/secrets. Profiles and metadata confer no authority.
+An independently privileged Docker administrator can bypass any launcher.
 
-Each run owns one UUID-derived container, internal bridge network and local data
-volume. All carry exact purpose/run labels. Require exactly those identities,
-network members and mounts, 2 CPUs, 1 GiB memory, restart=no, privileged=false,
-mysqlx disabled, and exactly one literal 127.0.0.1 publication to TCP 3306.
-Reject extra ports, IPv6 publications, host networking and Docker socket mounts.
-Dockerfile EXPOSE metadata alone is not an actual published socket.
+## Windows secrets and isolation
 
-Windows Docker Desktop forwarding and internal-network host reachability are NOT
-verified. Engine >=28 is necessary but not sufficient isolation proof. A future
-observer must verify actual socket destination, listener/forwarder, resource identity
-and egress boundary. If the internal network cannot safely support the host client,
-STOP; do not automatically add an external network or broaden host publication.
-A no-publication co-located runner is a separately reviewed alternative.
+Generate fresh disposable root/setup/application/observer base64url passwords only
+after authorization. A protected owner/SYSTEM-only DACL, disabled inheritance,
+exclusive creation and reparse checks precede secret writes. Root files mount
+read-only. App/observer passwords stay in memory. Never discover .env or expose
+passwords through argv/logs. Cancellation clears session-held secrets.
 
-## Compose preparation
+Observe actual loopback listener/backend, enabled blocking firewall profiles and
+absence of broad backend inbound allow rules. Inspect container routes for
+default/host gateways and unintended IPv6. Ambiguous/inaccessible policy stops.
+These strict checks may reject a normal Desktop setup; no firewall change is
+automatic. Actual LAN/egress isolation still requires separately approved
+negative reachability probes; configuration/fake responses are not proof.
 
-compose.yaml uses canonical JSON, a YAML subset, to avoid adding a YAML dependency.
-It defines one wmo-disposable profile with mandatory unresolved run/image/port/secret/
-scope inputs, a dedicated internal network and volume, fixed limits and no restart.
-There is no default-active service. Do not invoke Compose during offline work.
+## MySQL protocol
 
-A profile or WMO_EXECUTION_SCOPE value is NOT authorization. A future native runner
-must select the exact reviewed file and an explicit, run-owned NON-SECRET input file,
-disable automatic .env loading, reject implicit override files and pass an allowlisted
-child environment. Never run Compose with inherited DATABASE_URL, NODE_OPTIONS,
-NODE_PATH, provider credentials or arbitrary COMPOSE/DOCKER settings.
+Root is limited to the exact owned container's Unix socket/protected option file.
+Fixed SQL arrives on stdin. Finite operations validate roles/hosts/tables/password
+slots; no arbitrary SQL or database identifier is accepted. Administrative text
+templates use a restricted generated-password alphabet; administrative prepared
+statement placeholders are not assumed valid.
 
-Only the owned data volume and two newly created, read-only bootstrap secret files
-are contemplated. No production mounts, credentials, dumps or application startup.
-No real credential generation, ACL management, secret delivery/deletion, image pull
-or Compose invocation is implemented.
+1. Verify server UUID/MySQL9.7.2/distribution/X Plugin and Oracle Linux9.
+2. Correlate a held host greeting's connection ID with server-side address.
+   No guessed address or wildcard account host.
+3. Create only synthetic schema and three accounts requiring TLS.
+4. Grant initial table-scoped setup CREATE/INSERT/SELECT and required REFERENCES;
+   independently prove the schema empty.
+5. Execute unchanged six-table DDL; only afterward grant the two setup update
+   columns, reviewed application rights and observer SELECT.
+6. Observe effective grants and granted/default/mandatory roles/proxy privileges.
+7. Execute unchanged bound seed DML in an explicit transaction.
+8. Independently observe actual metadata and synthetic rows.
 
-## Accounts and privileges
+No global privileges, GRANT OPTION, production migration or readiness shortcut.
+The approved wmo-appointments-p4b-v1 profile and both fingerprints are unchanged.
+Partial DDL is quarantined; rollback is never claimed to remove created tables.
+Initial schema_version=1, backfill_complete=0 and reconciled=0 remain unready.
 
-Run-specific setup/application/observer account names are deterministic descriptors,
-not real accounts or credentials. No passwords are accepted by configuration.
+Attestation requires fresh reconciliation and a separate permit. It locks all six
+tables deterministically, rechecks metadata/rows, applies only the two approved
+conditional updates, requires one affected row each and acknowledged COMMIT, then
+uses a new observer connection to verify committed markers. No app writer enters
+earlier. Production feature flags remain untouched.
 
-- Setup: table-scoped CREATE/SELECT/INSERT, parent REFERENCES, and only the two
-  reconciliation/readiness column UPDATE privileges.
-- Application: appointments SELECT/INSERT/UPDATE; reservations SELECT/INSERT/UPDATE/
-  DELETE; requests SELECT/INSERT/UPDATE; notifications INSERT; feature state SELECT.
-  No access to the harness identity table.
-- Observer: SELECT on the six synthetic tables, no writes.
-- No global administrative privileges, inherited roles or grant option.
+Harness transactions save/restore only their own session timezone. Failed
+rollback/restoration retires the connection. Uncertain COMMIT destroys its lease,
+revokes writes and quarantines; no replay or readiness claim. Settled persistent
+state must later be independently inspected with fresh approval. Crash durability
+remains Phase4C; durableVerified stays false.
 
-grantRecipe produces separate inert account-creation and table-qualified grant
-recipes. Password parameter slots contain role names, not secret values. It requires
-a literal, privately scoped observed client host and refuses host wildcards/URLs.
-Table qualification makes schema underscores literal; never replace it with an
-unescaped schema.* grant. Real authenticated-account matching, effective SHOW GRANTS
-normalization and role observation remain native-unsupported. Bootstrap root must
-remain container-local on the verified disposable instance.
+## mysql2 and cleanup
 
-## Fixtures, reconciliation and explicit attestation
+Lockfile selects mysql2 3.20.0; this worktree has no node_modules. No installation
+is performed. Lazy loading requires an approved isolated dependency tree whose
+regular files hash to the signed dependencyHash in sorted traversal order.
+Reject symlinks/environment files/unexpected driver version; no NODE_PATH search.
 
-The original five InnoDB application tables retain signed appointment IDs, unsigned
-revisions, nullable initial request links, full unique slot keys, ASCII/binary keys,
-restricted same-schema foreign keys and reviewed notification defaults.
-Phase 4B adds one TEST-ONLY appointment_harness_identity table with run/schema,
-application/harness revisions, profile/fingerprint, synthetic-only and reconciliation
-fields. It is not a production requirement.
+Use explicit loopback/schema/account options; five-second connect/query/acquisition
+bounds; one application-pool connection and separate setup/observer connections.
+Disable multiple statements, LOCAL_FILES and debugging; return deterministic date
+strings. Import no production pools/routes/server/provider clients.
 
-All generated table/seed/attestation SQL is inert and fully schema-qualified.
-Setup contains no ALTER/DROP/backfill/production-migration execution or readiness=1.
-Feature state starts at schema_version=1, backfill_complete=0; identity reconciled=0.
-The seed is one synthetic pending accreditation booking with linked reservation,
-request and notification. The synthetic staff DTO is not a User Management row.
-The fixture clock/date are fixed and explicitly recorded; real timezone/driver
-behavior is unverified. Do not treat this seed as production schema/default evidence.
+Trust only the fresh CA/public server certificate read from the owned container.
+Verify certificate signature/validity and exact TLS1.2/1.3 peer certificate/socket
+before SQL. rejectUnauthorized stays true. verifyIdentity=false is explicit:
+autogenerated MySQL CNs do not name loopback; run-specific CA and leaf pinning
+supply identity. No plaintext/permissive-TLS fallback. The mysql2 TLS stream API
+is version-coupled and requires checking against the approved installed tree.
 
-The mock lifecycle separates bootstrap, empty-schema admission, fixture creation,
-grant admission, fresh metadata/snapshot reconciliation, explicit attestation and
-post-commit observation. Only a distinct attest scope can request the conditional
-two-update protocol. It requires modeled row locks, one affected row per update,
-acknowledged commit and matching post-commit state. No mock acknowledgement proves
-an actual lock/transaction. Uncertain commit or failed reconciliation quarantines
-the model. Partial DDL failure never claims a rollback removed created tables.
+Journal intent before effects and observed IDs afterward. Timeout does not mean
+an operation never happened. Ambiguous stages preserve the journal and quarantine.
+Successful teardown drains connections/pool/providers, rechecks source/daemon/
+ownership, stops/removes the exact container/network/volume, verifies absence,
+deletes only recorded ACL-verified files and the empty owned directory. Failure
+cannot report completed cleanup. No force/prune/wildcards/Compose teardown.
+Image-cache deletion is outside cleanup.
 
-Native attestation is NOT implemented. A real adapter must reobserve/lock/reconcile
-the disposable state atomically and independently before enabling only its marker.
+Recovery is intentionally not automatic adoption. Preserve signed identity and
+journal, obtain fresh approval, independently resolve resources/persistent
+markers, then authorize exact cleanup. Unknown resources remain quarantined.
+There is no generic repair/recovery SQL interface.
 
-## Isolation, evidence and cleanup
+## Separate execution gates
 
-Do not import config/db, config/dbPromise, production routers or server/server.js.
-The scheduling-service constructor can later receive a disposable pool/fixed clock
-and constructor-only enablement; this change neither loads it nor enables production.
-Routes/providers remain unsupported or guarded. No real pools are opened.
+Before real execution: focused independent review of effectful boundaries;
+approved owner key/signing procedure; clean reviewed commit; exact Node22.23.5
+binary and locked dependencies; passing offline/self-check/refusal and all nine
+appointment/orientation regressions under Node22; approved daemon/context/image
+digests/run/schema/actions/credentials/isolation probes/cleanup.
 
-Phase 4A evidence remains offline-model. Separate Phase 4B evidence is currently
-mock-provisioning-protocol, with zero actual Docker commands/database queries,
-nativeVerified=false, connected=false, durableVerified=false and writeAccess=false.
-Only fixed safe stages, digests, revisions, schemas, counts and invariant labels
-can appear; no raw SQL, passwords, cookies, tokens or native exception content.
-Expected/observed invariants are explicitly labeled mock-match.
+Node22, installed-driver behavior, registry redirects, server startup/host-address
+observation, Windows ACL/firewall behavior, TLS and internal-network host access
+remain real-environment gates. Node24/mock success does not establish them.
 
-Teardown reobserves the pinned daemon and exact resources/labels, verifies modeled
-workers/connections/providers drained, then models stop and exact-ID removal.
-No --force, wildcard cleanup, broad Compose down or prune. Changed/ambiguous targets
-are quarantined. dispose does not claim external cleanup occurred.
-
-## Remaining operational work and separate authorization
-
-Native execution remains unsupported because this task has no approved native
-execution authority, authenticated observation adapter, Windows isolation proof,
-credential ACL/transport implementation or effective-grant parser. Inventing those
-proofs from caller DTOs would break the safety boundary. Scripted successes cannot
-unlock this path. The fixed command/SQL recipes are not a generic executable runner.
-
-Next independent review should focus on configuration/admission, observation
-provenance, source manifests, fixture fingerprints, least privilege, attestation
-separation, cleanup identity and guard/mutation-test quality.
-
-Before any real execution: separately review/implement the native adapters, approve
-a clean harness revision and exact image/platform digests, establish Node 22.23.5
-compatibility and prove local isolation. Node 22 execution is still UNVERIFIED;
-no installation, PATH change or dependency upgrade is included.
-
-Phase 4C remains separate: schema/grants/readiness; real capacity/races; transaction/
-fault/idempotency/durable recovery; Philippine time, staff/orientation/notifications.
-Independent connections/lock observations must replace serialized mocks. Production
-schema/defaults, transport behavior, existing orientation dependencies, certificate
-security and activation/backfill remain outside this offline evidence.
-No Git publication, production activation, migration or deployment is authorized.
+Phase4C is separate: real booking capacity/races, cancellation/rescheduling,
+idempotency, fault/uncertain-commit settlement, durability/recovery, Philippine
+time and staff/orientation/notification preservation. No activation, migration,
+deployment, Git publication, production or Android change is authorized.

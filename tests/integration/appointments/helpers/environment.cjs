@@ -248,12 +248,12 @@ function validatePhase4BHost(input, observation) {
 }
 function expectedPhase4BGrants(input, stage = "runtime") {
   const c = validatePhase4BConfiguration(input);
-  p4bCheck(["provisioning", "runtime"].includes(stage), "P4B_GRANTS_INVALID");
+  p4bCheck(["bootstrap", "provisioning", "runtime"].includes(stage), "P4B_GRANTS_INVALID");
   const tables = ["appointments", "notifications", "appointment_reservations", "appointment_booking_requests", "appointment_feature_state", "appointment_harness_identity"];
   const grant = (account, rights) => ({ account, global: [], roles: [], rights });
   const setup = Object.fromEntries(tables.map(t => [t, ["CREATE", "INSERT", "SELECT",
-    ...(t === "appointments" ? ["REFERENCES"] : []), ...(t === "appointment_feature_state" ? ["UPDATE(backfill_complete)"] : []),
-    ...(t === "appointment_harness_identity" ? ["UPDATE(reconciled)"] : [])].sort()]));
+    ...(t === "appointments" ? ["REFERENCES"] : []), ...(stage !== "bootstrap" && t === "appointment_feature_state" ? ["UPDATE(backfill_complete)"] : []),
+    ...(stage !== "bootstrap" && t === "appointment_harness_identity" ? ["UPDATE(reconciled)"] : [])].sort()]));
   const app = { appointments: ["INSERT", "SELECT", "UPDATE"], appointment_reservations: ["DELETE", "INSERT", "SELECT", "UPDATE"],
     appointment_booking_requests: ["INSERT", "SELECT", "UPDATE"], notifications: ["INSERT"], appointment_feature_state: ["SELECT"] };
   const scoped = rights => Object.entries(rights).map(([table, privileges]) => ({ schema: c.schema, table, privileges }));
@@ -313,7 +313,7 @@ function validatePhase4BServer(input, observation, expectedUuid, emptySchema = f
 function phase4bComposeTemplate() {
   const required = key => "$" + "{" + key + ":?Required reviewed Phase 4B input}";
   const labels = { "wmo.test.purpose": PURPOSE, "wmo.test.run": required("WMO_RUN_ID") };
-  return {
+  const reference = {
     services: { mysql: { profiles: ["wmo-disposable"], image: IMAGE + "@" + required("WMO_MYSQL_PLATFORM_DIGEST"),
       platform: "linux/" + required("WMO_MYSQL_ARCH"), container_name: "wmo_appointments_" + required("WMO_RUN_COMPACT") + "_mysql",
       command: ["--mysqlx=0"], restart: "no", privileged: false, cpus: 2, mem_limit: "1024m",
@@ -328,12 +328,14 @@ function phase4bComposeTemplate() {
       image_config_digest: required("WMO_MYSQL_CONFIG_DIGEST"), synthetic_schema: required("WMO_SYNTHETIC_SCHEMA"),
       default_execution: "disabled", native_adapter: "unsupported", profiles_are_not_authorization: true }
   };
+  return { services: {}, "x-wmo-appointment-phase4b": { classification: "declarative-only", nativeExecutionAvailable: false,
+    profilesAreNotAuthorization: true, reference } };
 }
 function assertPhase4BCompose(text) {
   try {
     // Fixed JSON is a YAML subset. Exact canonical bytes avoid YAML tags, merges, duplicate-key ambiguity and parser dependencies.
     p4bCheck(text === JSON.stringify(phase4bComposeTemplate(), null, 2) + "\n", "P4B_COMPOSE_INVALID");
-    return freeze({ defaultRunnableServices: 0, optInServices: 1, nativeExecutionAvailable: false, writeAccess: false });
+    return freeze({ defaultRunnableServices: 0, optInServices: 0, nativeExecutionAvailable: false, writeAccess: false });
   } catch (error) { throw p4bError(error); }
 }
 Object.assign(module.exports, { PHASE4B_PROFILE, APPLICATION_FILES, p4bData, p4bError, p4bCheck, exactKeys, same, freeze, runNames,
