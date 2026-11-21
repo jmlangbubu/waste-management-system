@@ -3011,16 +3011,25 @@ test("CH-10 P-7: hazards whose only cover is a G1-promotable owner are admitted 
  }
 });
 
-test("CH-11 P-7 limit: two at-risk hazards inside one G1-promoted owner and one slot leave one of them under that owner (P-8 not authorized)",async()=>{
+test("CH-11 P-7 limit: two at-risk hazards inside one G1-promoted owner and one slot leave one of them under that owner, which the P-8 hold returns Unknown",async()=>{
  const atRisk=[["bleach bottle",[38,101,84,136]],["power bank",[34,123,131,197]]];
  for(const [index,[order,owners]] of mhpOrders(CH_TWO_AT_RISK_OBJECTS,chOwners(CH_TWO_AT_RISK_OWNERS)).entries()){
-  const why="CH-11 order "+index,{on}=await w1Scan(order,owners,why),traces=x2Trace(on,x2Hazards(order,owners));
+  const why="CH-11 order "+index,{on,off}=await w1Scan(order,owners,why),traces=x2Trace(on,x2Hazards(order,owners));
   assert.equal(8-visionOwners(on).length,1,why+": one free slot");
   const cards=geminiItems(on);assert.equal(cards.length,1,why);
   assert.ok(atRisk.some(([label,box_2d])=>cards[0].observedIdentity===label&&JSON.stringify(oaArr(cards[0].boundingBox))===JSON.stringify(fromBox2d(box_2d))),
    why+": the slot goes to an at-risk hazard");
   // Two distinct at-risk units exceed the one free slot: the other stays only under the G1-promoted owner card (recorded).
-  assert.equal(atRisk.filter(([label,box_2d])=>chTrace(traces,label,box_2d).disposition==="unrepresented").length,1,why+": capacity-forced");
+  // P-8 (owner-authorized hold): that owner is returned Unknown, so the other unit, still without a card of its own, now
+  // lies in an Unknown region with no actionable card over it. Before P-8 it was "unrepresented" under a Recyclable card.
+  const dispositions=atRisk.map(([label,box_2d])=>chTrace(traces,label,box_2d));
+  assert.equal(dispositions.filter(trace=>trace.disposition==="region-unknown").length,1,why+": capacity-forced, under the held owner");
+  assert.deepEqual(dispositions.flatMap(trace=>trace.actionable),[],why+": no actionable ordinary card over either at-risk unit");
+  assert.ok(["Unknown","Special Waste"].includes(cards[0].category),why+": the slotted unit's own card is not actionable");
+  const owner=visionOwners(on).find(item=>item.canonicalItem==="packaged goods");
+  assert.equal(off.detectedItems.find(item=>item.itemId===owner.itemId).category,"Unknown",why+": precondition, the owner's stream is G1-derived");
+  assert.deepEqual([owner.category,owner.requiresConfirmation,"guidance" in owner,"modelKey" in owner],["Unknown",true,false,false],
+   why+": the G1-promoted owner is held Unknown and requires confirmation");
  }
 });
 
@@ -3463,5 +3472,288 @@ test("IA-3 independent-audit pin, deterministic tie-break: in H3:fresh1 the firs
  for(const [label,value] of runs){
   assert.deepEqual(iaCards(value),IA_TIE_CARDS,why+" "+label+": the same tie-break choice");
   assert.equal(a9Stable(value),a9Stable(on),why+" "+label+": byte-identical apart from capture-bound IDs");
+ }
+});
+
+// ---------------------------------------------------------------------------
+// P-8 G1 hazard hold (owner-authorized narrow fail-closed fix, A9 feature-ON path only). The merge's G1 derivation can
+// give a Vision owner that entered the merge Unknown an ordinary stream while a localized hazard claim it covers has no
+// Unknown or Special Waste card at all (min-g1a: a power bank under a "Bottle" shown as Recyclable). That owner is
+// returned in the merge's own Unknown downgrade shape; any other ordinary cover makes the request fall back to the
+// feature-OFF result. A claim that already has a safe card changes nothing ("G1 controls E/F" above is unchanged).
+// The accounting below is independent of the service: claims are the Gemini hazard proposals of x2Hazards, and a card
+// covers a claim when it holds at least half of the claim's area. Synthetic and saved-corpus geometry only: this proves
+// no real-photo accuracy and no universal safety. Claims with no card at all remain and are pinned as "unrepresented".
+// ---------------------------------------------------------------------------
+const P8_SAFE=["Unknown","Special Waste"],P8_STRIPPED=["action","explanation","guidance","modelHotspots","modelKey","warning"];
+const P8_CAPABILITY="waste-scan-independent-category-v2";
+const p8Covers=(card,claim)=>Math.max(0,Math.min(card.right,claim.right)-Math.max(card.left,claim.left))
+ *Math.max(0,Math.min(card.bottom,claim.bottom)-Math.max(card.top,claim.top))>=.5*(claim.right-claim.left)*(claim.bottom-claim.top)-1e-9;
+const p8Name=item=>(item.analysisSource==="gemini_whole_image"?"G:"+item.observedIdentity:"V:"+item.canonicalItem)+"="+item.category;
+// Per Gemini hazard claim: its own card, a covering safe card, ordinary covers only (the P-8 defect) or no card at all.
+const p8Trace=(result,{owners,objects})=>x2Hazards(objects,owners).filter(hazard=>hazard.src==="G").map(hazard=>{
+ const own=geminiItems(result).find(item=>item.observedIdentity===hazard.label&&JSON.stringify(item.boundingBox)===JSON.stringify(hazard.box));
+ const cover=result.detectedItems.filter(item=>item!==own&&item.boundingBox&&p8Covers(item.boundingBox,hazard.box));
+ const safe=cover.filter(item=>P8_SAFE.includes(item.category));
+ return hazard.id+"=>"+(own?(P8_SAFE.includes(own.category)?"own:":"OWN-ACTIONABLE:")+own.category
+  :safe.length?"covered:"+safe.map(p8Name).join("+"):cover.length?"ACTIONABLE-ONLY:"+cover.map(p8Name).join("+"):"unrepresented");
+});
+// Both proposal orders by both owner orders.
+const p8Orders=({owners,objects})=>[[objects,owners],[[...objects].reverse(),owners],[objects,[...owners].reverse()],
+ [[...objects].reverse(),[...owners].reverse()]].map(([objects,owners])=>({owners,objects}));
+const p8Status=logs=>((proposalLogs(logs)[0]||"").match(/status=(\w+)/)||[])[1];
+const p8Calls=calls=>[calls.classifier.length,calls.vision,calls.directGemini,calls.discovery,calls.assessment];
+// Every P-8 scan: provider calls, the A9 result (not a fallback), the existing card contract, and no hazard claim whose
+// only covers are ordinary cards.
+async function p8Scan(scene,why){
+ const reply=envelope({objects:scene.objects}),off=await backend({visionObjects:scene.owners,reply}).run();
+ const be=backend({env:BACKEND_ON,visionObjects:scene.owners,reply}),on=await be.run();
+ assert.deepEqual(p8Calls(be.calls),[1,1,0,0,0],why+": provider calls");
+ assert.equal(p8Status(be.logs),"accepted",why+": the A9 result is returned");
+ assert.ok(on.detectedItems.length<=8,why+": the existing 8-card cap");
+ assert.deepEqual(withoutItems(on),withoutItems(off),why+": primary unchanged");
+ assert.deepEqual(on.scanSummary,buildScanSummary(on.detectedItems),why+": summary of the final cards");
+ const pick=item=>[item.itemId,item.confidence,JSON.stringify(item.boundingBox),item.analysisSource].join("|");
+ assert.deepEqual(visionOwners(on).map(pick).sort(),off.detectedItems.map(pick).sort(),why+": Vision IDs, scores, boxes and sources kept");
+ const offCategory=new Map(off.detectedItems.map(item=>[item.itemId,item.category]));
+ for(const item of on.detectedItems){
+  if(item.analysisSource==="gemini_whole_image"){
+   assert.deepEqual(Object.keys(item).sort(),A9_CARD_KEYS,why+": "+item.observedIdentity+" keeps the existing card fields");
+   assert.ok(["Unknown",shared.matchIdentity(item.observedIdentity)?.category].includes(item.category),
+    why+": "+item.observedIdentity+" is Unknown or its catalog category");
+   assert.equal(item.requiresConfirmation,true,why+": "+item.observedIdentity+" needs confirmation");
+  }
+  else if(item.category==="Special Waste")assert.equal(offCategory.get(item.itemId),"Special Waste",why+": no fabricated Special Waste");
+  if(item.category==="Unknown"){
+   assert.ok(!item.modelKey&&!(item.guidance&&Object.keys(item.guidance).length)&&!item.action&&!item.warning&&!item.explanation,
+    why+": Unknown carries no stream guidance");
+   assert.equal(sortingEligible(item),false,why);
+  }
+ }
+ const trace=p8Trace(on,scene);
+ assert.deepEqual(trace.filter(entry=>/=>(ACTIONABLE-ONLY|OWN-ACTIONABLE)/.test(entry)),[],why+": no hazard claim is covered only by ordinary cards");
+ return {on,off,trace,logs:be.logs};
+}
+// A held owner: G1-derived (Unknown with the feature OFF), returned in the merge's own downgrade shape.
+function p8AssertHeld(item,off,why){
+ assert.equal(item.analysisSource,"google_vision_object_localization",why+": a Vision owner");
+ assert.equal(off.detectedItems.find(prior=>prior.itemId===item.itemId).category,"Unknown",why+": precondition, its stream is G1-derived (Unknown with the feature OFF)");
+ assert.deepEqual([item.category,item.requiresConfirmation,typeof item.identityObservation],["Unknown",true,"string"],
+  why+": held Unknown, confirmation required, aligned identity kept");
+ for(const key of P8_STRIPPED)assert.ok(!(key in item),why+": the held card has no "+key);
+ assert.equal(sortingEligible(item),false,why+": excluded from the Sorting Challenge");
+ assert.ok(!CATEGORIES.includes(item.category),why+": no Household List / Plan category");
+}
+const p8VisionUnchanged=(on,off,held,why)=>{
+ for(const item of visionOwners(on).filter(item=>!held.includes(item)))
+  assert.deepEqual(item,off.detectedItems.find(prior=>prior.itemId===item.itemId),why+": "+item.canonicalItem+" byte-identical to feature OFF");
+};
+
+// CX-1 (cases-min.json#min-g1a = cases.json#fresh2, one order): seven Vision owners fill the cap with one Gemini slot.
+const P8_MIN=iaScene(
+ [["Aluminum can",.87,[.75,.27,.95,.47]],["Packaged goods",.911628761026077,[.472,.747,.7,.943]],["Water bottle",.86,[.03,.51,.23,.71]],
+  ["Cardboard",.85,[.27,.51,.47,.71]],["Tin can",.9,[.03,.27,.23,.47]],["Glass bottle",.89,[.27,.27,.47,.47]],["Paper",.88,[.51,.27,.71,.47]]],
+ [["bleach bottle",[762,355,958,583]],["power bank",[758,502,828,584]],["mobile phone",[773,542,889,677]],["plastic water bottle",[748,473,945,700]]]);
+const P8_MIN_HELD={itemId:"item_2",itemName:"Bottle",canonicalItem:"packaged goods",category:"Unknown",confidence:.911628761026077,
+ analysisSource:"google_vision_object_localization",boundingBox:{left:.472,top:.747,right:.7,bottom:.943},requiresConfirmation:true,
+ identityObservation:"Plastic Bottle",identitySource:"gemini_whole_image",originalItemName:"Plastic Bottle"};
+const P8_MIN_CARDS=["V:aluminum can=Recyclable","V:packaged goods=Unknown","V:water bottle=Recyclable","V:cardboard=Recyclable",
+ "V:tin can=Recyclable","V:glass bottle=Recyclable","V:paper=Recyclable","G:mobile phone=Unknown"];
+const P8_MIN_TRACE=["G:bleach bottle@762,355,958,583=>unrepresented","G:power bank@758,502,828,584=>covered:V:packaged goods=Unknown",
+ "G:mobile phone@773,542,889,677=>own:Unknown"];
+test("P8-1 HOLD-1 min-g1a: the G1-promoted Bottle owner covering the cardless power bank is returned Unknown with no stream guidance, in the service and the serialized route response",async()=>{
+ const why="P8-1 min-g1a",{on,off,trace}=await p8Scan(P8_MIN,why);
+ assert.deepEqual(iaCards(on),P8_MIN_CARDS,why+": the final cards, in order");
+ const held=on.detectedItems.find(item=>item.itemId==="item_2");
+ assert.deepEqual(held,P8_MIN_HELD,why+": the held card: ID, name, geometry, confidence and provenance kept");
+ p8AssertHeld(held,off,why);
+ p8VisionUnchanged(on,off,[held],why);
+ const phone=geminiItems(on);
+ assert.equal(phone.length,1,why+": one Gemini card");
+ assert.deepEqual([phone[0].observedIdentity,phone[0].itemName,phone[0].category,phone[0].requiresConfirmation,"confidence" in phone[0]],
+  ["mobile phone","Phone","Unknown",true,false],why+": the phone keeps its own conservative card");
+ assert.deepEqual(trace,P8_MIN_TRACE,why+": per-claim trace; the bleach bottle stays unrepresented (no card holds half of it)");
+ assert.deepEqual(on.scanSummary.categories,{biodegradable:0,recyclable:6,residual:0,specialWaste:0},why+": the held card is not counted as Recyclable");
+ // Actual route serialization: no downstream step re-derives a category, and history stores the unchanged primary only.
+ const [savedOff,savedOn]=[await route(off,{capability:P8_CAPABILITY}),await route(on,{capability:P8_CAPABILITY})];
+ assert.deepEqual([savedOff.status,savedOn.status],[200,200],why+": capability-aware client");
+ assert.deepEqual(savedOn.body.result,savedOff.body.result,why+": serialized primary unchanged");
+ assert.deepEqual(savedOn.writes,savedOff.writes,why+": the same scan_history insert");
+ assert.deepEqual(savedOn.body.detectedItems,on.detectedItems,why+": the route serializes the held result unchanged");
+ assert.deepEqual(savedOn.body.detectedItems.find(item=>item.itemId==="item_2"),P8_MIN_HELD,why+": the Android-facing held card");
+ assert.deepEqual(savedOn.body.scanSummary,on.scanSummary,why+": the Android-facing summary");
+ const [legacyOff,legacyOn]=[await route(off),await route(on)];
+ assert.equal(legacyOff.status,503,why+": precondition, an Unknown card already requires the capability with the feature OFF");
+ assert.deepEqual([legacyOn.status,legacyOn.body,legacyOn.writes],[legacyOff.status,legacyOff.body,legacyOff.writes],
+  why+": a client without the capability is refused exactly as with the feature OFF");
+ const make=()=>backend({env:BACKEND_ON,visionObjects:P8_MIN.owners,reply:envelope({objects:P8_MIN.objects})}),be=make();
+ for(const value of [await be.run(),await be.run(),await make().run(),...await Promise.all([make().run(),make().run(),be.run()])])
+  assert.equal(a9Stable(value),a9Stable(on),why+": repeated, fresh and concurrent scans are byte-identical apart from capture-bound IDs");
+});
+
+// HOLD-2: the saved-corpus counterexamples CX-2 ... CX-6 ([name, owners, objects, order-0 final cards]). In every order
+// the A9 base left at least one hazard claim covered only by the G1 "packaged goods" owner promoted to Recyclable.
+const P8_CX=[
+ ["CX-2 cases.json#fresh2: power bank and bleach bottle",
+  [["Water bottle",.86,[.03,.51,.23,.71]],["Packaged goods",.9170133131090552,[.094,.758,.332,.959]],["Cardboard",.85,[.27,.51,.47,.71]],["Tin can",.9,[.03,.27,.23,.47]],["Paper",.88,[.51,.27,.71,.47]],["Aluminum can",.87,[.75,.27,.95,.47]],["Glass bottle",.89,[.27,.27,.47,.47]]],
+  [["button cell battery",[852,95,930,186]],["power bank",[810,179,909,296]],["bleach bottle",[840,188,943,310]],["glass bottle",[758,94,960,332]],["insecticide can",[41,740,202,906]]],
+  ["V:water bottle=Recyclable","V:packaged goods=Unknown","V:cardboard=Recyclable","V:tin can=Recyclable","V:paper=Recyclable","V:aluminum can=Recyclable","V:glass bottle=Recyclable","G:button cell battery=Unknown"]],
+ ["CX-3 cases.json#fresh4: used battery and medicine bottle",
+  [["Water bottle",.86,[.03,.51,.23,.71]],["Tin can",.9,[.03,.27,.23,.47]],["Aluminum can",.87,[.75,.27,.95,.47]],["Packaged goods",.9338069135206751,[.417,.025,.616,.21]],["Glass bottle",.89,[.27,.27,.47,.47]],["Cardboard",.85,[.27,.51,.47,.71]],["Paper",.88,[.51,.27,.71,.47]]],
+  [["power bank",[24,536,209,734]],["plastic water bottle",[26,418,209,615]],["mobile phone",[41,437,138,541]],["motor oil bottle",[38,30,197,143]],["used battery",[91,478,199,594]],["medicine bottle",[153,560,200,610]]],
+  ["V:water bottle=Recyclable","V:tin can=Recyclable","V:aluminum can=Recyclable","V:packaged goods=Unknown","V:glass bottle=Recyclable","V:cardboard=Recyclable","V:paper=Recyclable","G:mobile phone=Unknown"]],
+ ["CX-6 cases-hold.json#fresh1: medicine bottles and paint can",
+  [["Glass bottle",.89,[.27,.27,.47,.47]],["Aluminum can",.87,[.75,.27,.95,.47]],["Tin can",.9,[.03,.27,.23,.47]],["Paper",.88,[.51,.27,.71,.47]],["Water bottle",.86,[.03,.51,.23,.71]],["Packaged goods",.9496408464154229,[.12,.025,.373,.229]],["Cardboard",.85,[.27,.51,.47,.71]]],
+  [["medicine bottle",[48,182,129,283]],["phone charger",[760,720,882,842]],["cardboard box",[25,118,230,373]],["medicine bottle",[92,199,168,295]],["paint can",[25,168,125,292]]],
+  ["V:glass bottle=Recyclable","V:aluminum can=Recyclable","V:tin can=Recyclable","V:paper=Recyclable","V:water bottle=Recyclable","V:packaged goods=Unknown","V:cardboard=Recyclable","G:medicine bottle=Unknown"]],
+ ["CX-6 cases-hold.json#fresh1: used battery and motor oil bottle",
+  [["Packaged goods",.9246258405852131,[.194,.748,.452,.956]],["Tin can",.9,[.03,.27,.23,.47]],["Aluminum can",.87,[.75,.27,.95,.47]],["Cardboard",.85,[.27,.51,.47,.71]],["Water bottle",.86,[.03,.51,.23,.71]],["Glass bottle",.89,[.27,.27,.47,.47]],["Paper",.88,[.51,.27,.71,.47]]],
+  [["used battery",[794,310,882,420]],["medicine bottle",[848,336,938,448]],["motor oil bottle",[782,252,902,402]],["glass bottle",[748,196,957,453]]],
+  ["V:packaged goods=Unknown","V:tin can=Recyclable","V:aluminum can=Recyclable","V:cardboard=Recyclable","V:water bottle=Recyclable","V:glass bottle=Recyclable","V:paper=Recyclable","G:medicine bottle=Unknown"]],
+ ["CX-4 cases-hold.json#fresh2: bleach bottle, lithium battery and phone charger",
+  [["Paper",.88,[.51,.27,.71,.47]],["Tin can",.9,[.03,.27,.23,.47]],["Cardboard",.85,[.27,.51,.47,.71]],["Glass bottle",.89,[.27,.27,.47,.47]],["Aluminum can",.87,[.75,.27,.95,.47]],["Packaged goods",.9146382558275946,[.406,.027,.602,.232]],["Water bottle",.86,[.03,.51,.23,.71]]],
+  [["bleach bottle",[50,459,110,517]],["light bulb",[147,485,223,559]],["glass bottle",[28,405,233,603]],["lithium battery",[35,415,134,510]],["phone charger",[42,509,103,568]]],
+  ["V:paper=Recyclable","V:tin can=Recyclable","V:cardboard=Recyclable","V:glass bottle=Recyclable","V:aluminum can=Recyclable","V:packaged goods=Unknown","V:water bottle=Recyclable","G:light bulb=Unknown"]],
+ ["CX-4 cases-hold.json#fresh2: lithium battery, light bulb and bleach bottle",
+  [["Tin can",.9,[.03,.27,.23,.47]],["Glass bottle",.89,[.27,.27,.47,.47]],["Packaged goods",.9146382558275946,[.406,.027,.602,.232]],["Water bottle",.86,[.03,.51,.23,.71]],["Aluminum can",.87,[.75,.27,.95,.47]],["Cardboard",.85,[.27,.51,.47,.71]],["Paper",.88,[.51,.27,.71,.47]]],
+  [["glass bottle",[28,405,233,603]],["phone charger",[42,509,103,568]],["lithium battery",[35,415,134,510]],["light bulb",[147,485,223,559]],["bleach bottle",[50,459,110,517]]],
+  ["V:tin can=Recyclable","V:glass bottle=Recyclable","V:packaged goods=Unknown","V:water bottle=Recyclable","V:aluminum can=Recyclable","V:cardboard=Recyclable","V:paper=Recyclable","G:phone charger=Unknown"]],
+ ["CX-4 cases-hold.json#fresh2: needle",
+  [["Packaged goods",.9117123509990052,[.484,.049,.711,.232]],["Aluminum can",.87,[.75,.27,.95,.47]],["Paper",.88,[.51,.27,.71,.47]],["Tin can",.9,[.03,.27,.23,.47]],["Water bottle",.86,[.03,.51,.23,.71]],["Glass bottle",.89,[.27,.27,.47,.47]]],
+  [["light bulb",[131,582,220,693]],["glass bottle",[50,482,232,711]],["light bulb",[59,503,145,609]],["bleach bottle",[105,507,160,575]],["needle",[129,500,183,567]],["lithium battery",[760,30,891,195]]],
+  ["V:packaged goods=Unknown","V:aluminum can=Recyclable","V:paper=Recyclable","V:tin can=Recyclable","V:water bottle=Recyclable","V:glass bottle=Recyclable","G:light bulb=Unknown","G:light bulb=Unknown"]],
+ ["CX-4 cases-hold.json#fresh2: two medicine bottles",
+  [["Paper",.88,[.51,.27,.71,.47]],["Glass bottle",.89,[.27,.27,.47,.47]],["Cardboard",.85,[.27,.51,.47,.71]],["Water bottle",.86,[.03,.51,.23,.71]],["Tin can",.9,[.03,.27,.23,.47]],["Aluminum can",.87,[.75,.27,.95,.47]],["Packaged goods",.9029869094258175,[.406,.754,.585,.964]]],
+  [["cardboard box",[753,405,964,587]],["medicine bottle",[780,470,861,540]],["bleach bottle",[749,720,918,841]],["motor oil bottle",[841,451,940,535]],["medicine bottle",[763,429,861,513]]],
+  ["V:paper=Recyclable","V:glass bottle=Recyclable","V:cardboard=Recyclable","V:water bottle=Recyclable","V:tin can=Recyclable","V:aluminum can=Recyclable","V:packaged goods=Unknown","G:motor oil bottle=Unknown"]],
+ ["CX-6 cases-hold.json#fresh3: paint can",
+  [["Packaged goods",.9434748473227955,[.446,.742,.649,.94]],["Aluminum can",.87,[.75,.27,.95,.47]],["Glass bottle",.89,[.27,.27,.47,.47]],["Paper",.88,[.51,.27,.71,.47]],["Tin can",.9,[.03,.27,.23,.47]],["Water bottle",.86,[.03,.51,.23,.71]]],
+  [["spray paint can",[751,520,851,623]],["lithium battery",[788,529,903,647]],["cardboard box",[740,446,938,650]],["paint can",[753,575,821,644]],["insecticide can",[787,531,893,640]],["light bulb",[40,30,195,136]]],
+  ["V:packaged goods=Unknown","V:aluminum can=Recyclable","V:glass bottle=Recyclable","V:paper=Recyclable","V:tin can=Recyclable","V:water bottle=Recyclable","G:lithium battery=Unknown","G:light bulb=Unknown"]],
+ ["CX-5 cases-hold.json#fresh4: aa battery, syringe and motor oil bottle",
+  [["Tin can",.9,[.03,.27,.23,.47]],["Water bottle",.86,[.03,.51,.23,.71]],["Aluminum can",.87,[.75,.27,.95,.47]],["Glass bottle",.89,[.27,.27,.47,.47]],["Paper",.88,[.51,.27,.71,.47]],["Cardboard",.85,[.27,.51,.47,.71]],["Packaged goods",.9041401444352232,[.33,.043,.492,.235]]],
+  [["aa battery",[149,431,217,488]],["aerosol can",[47,440,96,482]],["plastic water bottle",[44,330,234,491]],["syringe",[133,370,217,441]],["motor oil bottle",[81,394,191,487]]],
+  ["V:tin can=Recyclable","V:water bottle=Recyclable","V:aluminum can=Recyclable","V:glass bottle=Recyclable","V:paper=Recyclable","V:cardboard=Recyclable","V:packaged goods=Unknown","G:aerosol can=Unknown"]]];
+test("P8-2 HOLD-2 CX-2 ... CX-6 in both proposal orders and both owner orders: no hazard claim is left covered only by an ordinary card, and only the G1 owner is held",async()=>{
+ for(const [name,owners,objects,cards] of P8_CX)for(const [index,scene] of p8Orders(iaScene(owners,objects)).entries()){
+  const why="P8-2 "+name+" order "+index,{on,off,trace}=await p8Scan(scene,why);
+  const held=visionOwners(on).filter(item=>item.canonicalItem==="packaged goods");
+  assert.equal(held.length,1,why+": one G1 owner");
+  p8AssertHeld(held[0],off,why);
+  assert.ok(trace.some(entry=>entry.endsWith("=>covered:V:packaged goods=Unknown")),why+": the held owner is the only safe card on a hazard claim");
+  p8VisionUnchanged(on,off,held,why);
+  if(index===0)assert.deepEqual(iaCards(on),cards,why+": the final cards, in order");
+ }
+});
+
+// Two independent G1 regions with a full cap: six Vision-native owners and two G1 "packaged goods" owners, each with a
+// nested hazard (a power bank, a used battery) that gets no card of its own.
+const P8_GRID=[[.03,.03,.23,.23],[.27,.03,.47,.23],[.51,.03,.71,.23],[.75,.03,.95,.23],[.03,.27,.23,.47],[.27,.27,.47,.47]];
+const P8_LEFT=[.05,.7,.25,.95],P8_RIGHT=[.55,.7,.75,.95];
+const P8_TWO={owners:[...["Tin can","Glass bottle","Paper","Aluminum can","Water bottle","Cardboard"].map((name,i)=>vision(name,.9-i*.01,P8_GRID[i])),
+  vision("Packaged goods",.8,P8_LEFT),vision("Packaged goods",.79,P8_RIGHT)],
+ objects:[proposal("plastic water bottle",P8_LEFT),proposal("power bank",[.1,.75,.17,.85]),proposal("plastic water bottle",P8_RIGHT),proposal("used battery",[.6,.75,.67,.85])]};
+test("P8-3 capacity-constrained scene with two independent hazard regions: both G1 owners are held and nothing else changes",async()=>{
+ for(const [index,scene] of p8Orders(P8_TWO).entries()){
+  const why="P8-3 order "+index,{on,off,trace}=await p8Scan(scene,why);
+  const held=visionOwners(on).filter(item=>item.canonicalItem==="packaged goods");
+  assert.equal(held.length,2,why+": both G1 owners");
+  for(const item of held)p8AssertHeld(item,off,why);
+  p8VisionUnchanged(on,off,held,why);
+  assert.equal(geminiItems(on).length,0,why+": the cap leaves no Gemini slot");
+  assert.deepEqual([...trace].sort(),["G:power bank@750,100,850,170=>covered:V:packaged goods=Unknown",
+   "G:used battery@750,600,850,670=>covered:V:packaged goods=Unknown"],why+": each nested hazard is covered by its held owner");
+  assert.equal(on.scanSummary.categories.recyclable,6,why+": only the six native cards count as Recyclable");
+ }
+});
+
+test("P8-4 controls: a hazard with its own retained card, a non-hazard nested label, and a scene with no cap pressure keep the G1 promotion",async()=>{
+ const scenes=[["own card: the phone keeps its own card, no power bank",{owners:P8_MIN.owners,objects:P8_MIN.objects.filter(object=>object.label!=="power bank")},
+   ["G:bleach bottle@762,355,958,583=>unrepresented","G:mobile phone@773,542,889,677=>own:Unknown"]],
+  ["non-hazard: the power bank proposal relabelled snack wrapper",{owners:P8_MIN.owners,
+   objects:P8_MIN.objects.map(object=>object.label==="power bank"?{...object,label:"snack wrapper"}:object)},
+   ["G:bleach bottle@762,355,958,583=>unrepresented","G:mobile phone@773,542,889,677=>own:Unknown"]],
+  ["no cap pressure: two Vision owners only",{owners:P8_MIN.owners.filter(owner=>["Packaged goods","Paper"].includes(owner.name)),objects:P8_MIN.objects},
+   ["G:bleach bottle@762,355,958,583=>own:Unknown","G:power bank@758,502,828,584=>own:Unknown","G:mobile phone@773,542,889,677=>own:Unknown"]]];
+ for(const [name,scene,expected] of scenes){
+  const why="P8-4 "+name,{on,off,trace}=await p8Scan(scene,why);
+  const owner=visionOwners(on).find(item=>item.canonicalItem==="packaged goods");
+  assert.equal(off.detectedItems.find(prior=>prior.itemId===owner.itemId).category,"Unknown",why+": precondition, a G1-derived stream");
+  assert.deepEqual([owner.category,owner.identityObservation],["Recyclable","Plastic Bottle"],why+": the G1 promotion is kept");
+  assert.deepEqual(trace,expected,why+": per-claim trace");
+ }
+});
+
+// Vision-native ordinary owners (Recyclable with the feature OFF) with nested or covered hazards: the existing veto
+// already fails them closed, so no native ordinary card is ever the only cover and the native fallback is not reached.
+const p8Grid=count=>Array.from({length:count},(_,i)=>[.02+(i%4)*.24,.02+Math.floor(i/4)*.3,.22+(i%4)*.24,.28+Math.floor(i/4)*.3]);
+const P8_NATIVE_NAMES=["Water bottle","Tin can","Cardboard","Glass bottle","Paper","Aluminum can","Bottle","Newspaper"];
+const p8Natives=count=>p8Grid(count).map((box,i)=>vision(P8_NATIVE_NAMES[i],.9-i*.01,box));
+const P8_NATIVE=[
+ ["S1 one native owner with a nested battery",{owners:[vision("Water bottle",.9,[.2,.2,.6,.8])],
+  objects:[proposal("plastic water bottle",[.2,.2,.6,.8]),proposal("used battery",[.3,.35,.4,.5])]},
+  ["V:water bottle=Unknown","G:used battery=Special Waste"],["G:used battery@350,300,500,400=>own:Special Waste"]],
+ ["S2 eight native owners at the cap with a nested battery",{owners:p8Natives(8),objects:[proposal("used battery",[.06,.06,.14,.18])]},
+  ["V:water bottle=Unknown","V:tin can=Recyclable","V:cardboard=Recyclable","V:glass bottle=Recyclable","V:paper=Recyclable","V:aluminum can=Recyclable",
+   "V:bottle=Recyclable","V:newspaper=Recyclable"],["G:used battery@60,60,180,140=>covered:V:water bottle=Unknown"]],
+ ["S3 seven native owners with two nested hazards",{owners:p8Natives(7),objects:[proposal("used battery",[.06,.06,.14,.18]),proposal("syringe",[.30,.06,.40,.18])]},
+  ["V:water bottle=Unknown","V:tin can=Unknown","V:cardboard=Recyclable","V:glass bottle=Recyclable","V:paper=Recyclable","V:aluminum can=Recyclable",
+   "V:bottle=Recyclable","G:used battery=Special Waste"],["G:used battery@60,60,180,140=>own:Special Waste","G:syringe@60,300,180,400=>covered:V:tin can=Unknown"]],
+ ["S4 seven native owners with an aligned bottle and two nested hazards",{owners:p8Natives(7),
+  objects:[proposal("plastic water bottle",[.02,.02,.22,.28]),proposal("power bank",[.06,.06,.14,.18]),proposal("needle",[.30,.06,.40,.18])]},
+  ["V:water bottle=Unknown","V:tin can=Unknown","V:cardboard=Recyclable","V:glass bottle=Recyclable","V:paper=Recyclable","V:aluminum can=Recyclable",
+   "V:bottle=Recyclable","G:power bank=Unknown"],["G:power bank@60,60,180,140=>own:Unknown","G:needle@60,300,180,400=>covered:V:tin can=Unknown"]]];
+test("P8-5 HOLD-4 Vision-native ordinary owners: the existing veto already fails closed, the A9 result is returned and no native card is rewritten by the hold",async()=>{
+ for(const [name,scene,cards,expected] of P8_NATIVE){
+  const why="P8-5 "+name,{on,off,trace}=await p8Scan(scene,why);
+  assert.deepEqual(iaCards(on),cards,why+": the final cards, in order");
+  assert.deepEqual(trace,expected,why+": per-claim trace");
+  assert.ok(visionOwners(on).every(item=>off.detectedItems.find(prior=>prior.itemId===item.itemId).category!=="Unknown"),why+": precondition, every owner is Vision-native");
+ }
+});
+
+// HOLD-4 native guard. No saved or synthetic scene reaches it, so the merge result is altered in the test realm only:
+// a Vision-native card (Recyclable with the feature OFF) moved onto the cardless bleach bottle, or every Gemini card
+// made ordinary (whichever hazard card the selection keeps then lies on its own claim). Neither may be rewritten; the
+// whole request returns the exact feature-OFF result.
+async function p8Patched(scene,patch){
+ const real=discovery.merge;
+ discovery.merge=function(...args){return real.apply(this,args).map(patch);};
+ try{const be=backend({env:BACKEND_ON,visionObjects:scene.owners,reply:envelope({objects:scene.objects})});return {on:await be.run(),logs:be.logs,calls:be.calls};}
+ finally{discovery.merge=real;}
+}
+const P8_BLEACH={left:.355,top:.762,right:.583,bottom:.958},P8_EMPTY={left:.75,top:.03,right:.95,bottom:.2};
+const p8Paper=box=>item=>item.analysisSource==="google_vision_object_localization"&&item.confidence===.88?{...item,boundingBox:box}:item;
+test("P8-6 HOLD-4 native guard: an ordinary cover whose stream did not come from G1 is never rewritten; the request falls back to the exact feature-OFF result",async()=>{
+ const off=await backend({visionObjects:P8_MIN.owners,reply:envelope({objects:P8_MIN.objects})}).run();
+ const control=await p8Patched(P8_MIN,p8Paper(P8_EMPTY));
+ assert.equal(p8Status(control.logs),"accepted","control: moving Paper to an empty region does not by itself force a fallback");
+ assert.deepEqual(visionOwners(control.on).find(item=>item.confidence===.88).boundingBox,P8_EMPTY,"control: the altered merge result is the one returned");
+ assert.equal(control.on.detectedItems.find(item=>item.itemId==="item_2").category,"Unknown","control: the G1 owner is still held");
+ for(const [name,patch] of [["Vision-native Paper moved onto the cardless bleach bottle",p8Paper(P8_BLEACH)],
+  ["every Gemini card made ordinary",item=>item.analysisSource==="gemini_whole_image"?{...item,category:"Recyclable"}:item]]){
+  const {on,logs,calls}=await p8Patched(P8_MIN,patch);
+  assert.deepEqual(on,off,name+": byte-identical to feature OFF");
+  assert.equal(p8Status(logs),"merge_failed",name+": the existing fallback status, no new diagnostic vocabulary");
+  assert.deepEqual(p8Calls(calls),[1,1,0,0,0],name+": no extra provider call");
+ }
+});
+
+test("P8-7 HOLD-6 feature OFF, near-miss flag values and discovery mode: the P-8 scenes stay byte-identical to legacy with no proposal merge",async()=>{
+ const OFF_ENVS=[{},{WMO_CLASSIFY_OBJECT_PROPOSALS_ENABLED:"TRUE",CLASSIFY_OBJECT_PROPOSALS_SHARED_TOKEN:TOKEN},
+  {WMO_CLASSIFY_OBJECT_PROPOSALS_ENABLED:"1",CLASSIFY_OBJECT_PROPOSALS_SHARED_TOKEN:TOKEN},{...BACKEND_ON,WHOLE_IMAGE_DISCOVERY_ENABLED:"true"}];
+ for(const [name,scene] of [["min-g1a",P8_MIN],["two G1 regions",P8_TWO],[P8_CX[0][0],iaScene(P8_CX[0][1],P8_CX[0][2])]]){
+  const reply=envelope({objects:scene.objects}),legacy=await backend({visionObjects:scene.owners,reply}).run();
+  assert.deepEqual(legacy,await backend({visionObjects:scene.owners}).run(),"P8-7 "+name+": precondition, OFF ignores the proposal field");
+  for(const env of OFF_ENVS){
+   const why="P8-7 "+name+" "+JSON.stringify(env),real=discovery.merge;let merges=0;
+   discovery.merge=function(...args){merges++;return real.apply(this,args);};
+   let be,result;
+   try{be=backend({env,visionObjects:scene.owners,reply});result=await be.run();}finally{discovery.merge=real;}
+   assert.deepEqual(result,legacy,why+": byte-identical to legacy");
+   assert.deepEqual([merges,...p8Calls(be.calls)],[0,1,1,0,0,0],why+": no proposal merge and no extra provider call");
+   assert.deepEqual(proposalLogs(be.logs),env.WHOLE_IMAGE_DISCOVERY_ENABLED?["[WasteScanProposals] status=ineligible reason=discovery_mode"]:[],
+    why+": only the existing ineligibility diagnostic");
+  }
  }
 });

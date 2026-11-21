@@ -1243,9 +1243,12 @@ function reconcileProposalOverlaps(owners, proposals, captureId, finalSafe = nul
     }
   }
   // retry and relied are request-local caller hints (P-6); they never reach an item, response or diagnostic.
+  // localizedHazards (P-8): every localized hazard claim, the same proposal set W-1 anchors on (suppressed claims
+  // included), whether or not the cap overflows. Read only by the post-selection hold; never a card or a field.
   return { owners: reconciledOwners.concat(observations),
     proposals: remaining.filter((proposal) => !withheld.has(proposal)), suppressed,
-    admission: { tier: (item) => (tiers.has(item) ? tiers.get(item) : 3) }, retry: hintable && !finalSafe, relied, altChanged, hazardClaims };
+    admission: { tier: (item) => (tiers.has(item) ? tiers.get(item) : 3) }, retry: hintable && !finalSafe, relied, altChanged, hazardClaims,
+    localizedHazards: proposals.filter((proposal) => proposal.boundingBox && hazardEvidence(proposal)) };
 }
 
 // Diagnostic-only physical association. Never renames, re-categorizes, reorders
@@ -1369,6 +1372,35 @@ async function analyzeWasteWithObjectProposals(input, context) {
       const stillSafe = safeOwnerIds(again);
       if ([...second.relied].every((id) => stillSafe.has(id))) { reconciled = second; detectedItems = again; }
     }
+    // P-8 G1 hazard hold, on the final selection after P-6. The merge's G1 derivation can give an initially Unknown
+    // Vision owner an ordinary stream while a localized hazard claim in its region was left without any Unknown or
+    // Special Waste card, its own or a covering one (the coverState rule above). Every ordinary card covering such
+    // a claim fails closed. If its stream came from G1 (the owner entered the merge Unknown), it becomes a
+    // request-local copy in the merge's own downgrade shape: Unknown, confirmation required, no guidance, model,
+    // hotspot or text fields; ID, name, geometry, confidence and provenance are kept. Any other ordinary cover is
+    // never rewritten: the whole request falls back to the feature-OFF result. A claim that already has a safe card
+    // changes nothing (G1 controls E/F). Selection and every other card are unchanged; no category is granted.
+    const premerge = new Map(reconciled.owners.filter((owner) => owner.analysisSource === "google_vision_object_localization")
+      .map((owner) => [owner.itemId, owner]));
+    const held = new Set();
+    for (const claim of reconciled.localizedHazards) {
+      const cover = detectedItems.filter((item) => item.boundingBox
+        && (item.itemId === claim.itemId || coversClaim(item.boundingBox, claim.boundingBox)));
+      if (cover.some(safeCard)) continue;
+      for (const item of cover) {
+        if (item.analysisSource !== "google_vision_object_localization" || premerge.get(item.itemId)?.category !== "Unknown") {
+          proposalDiagnostics({ status: "merge_failed" });
+          return legacyResult();
+        }
+        held.add(item.itemId);
+      }
+    }
+    if (held.size) detectedItems = detectedItems.map((item) => {
+      if (!held.has(item.itemId)) return item;
+      const copy = { ...item, category: "Unknown", requiresConfirmation: true };
+      for (const field of ["guidance", "modelKey", "modelHotspots", "explanation", "action", "warning"]) delete copy[field];
+      return copy;
+    });
   } catch (_) {
     proposalDiagnostics({ status: "merge_failed" });
     return legacyResult();
