@@ -293,7 +293,10 @@ test("FIX documented identity rejection codes remain stable", async t => {
   });
 });
 test("Compose has zero services and an intentionally absent verified digest", () => {
-  const text = fs.readFileSync(path.join(__dirname, "compose.yaml"), "utf8");
+  const prepared = fs.readFileSync(path.join(__dirname, "compose.yaml"), "utf8");
+  assert.equal(environment.assertPhase4BCompose(prepared).defaultRunnableServices, 0);
+  // Keep the original inert Phase 4A validator and both negative controls covered.
+  const text = "# INERT PHASE 4A SPECIFICATION. There are deliberately no runnable services.\n# Phase 4B must separately review and change this file before any provisioning.\nservices: {}\nx-wmo-appointment-phase4a:\n  provisioning_authorized: false\n  candidate_official_image: mysql:9.7.2-oraclelinux9\n  verified_manifest_digest: null\n  required_identity: exact-container-id-and-run-ownership-labels\n  required_network: dedicated-internal-network-with-verified-loopback-binding\n  required_mysql_binding: literal-127.0.0.1-only-to-container-port-3306\n  mysql_x_protocol_publication: prohibited\n  production_mounts_dumps_and_secrets: prohibited\n  production_credentials_and_configuration: prohibited\n  fixture_data: synthetic-only\n  proposed_limits:\n    cpus: 2\n    memory_mib: 1024\n  teardown: exact-recorded-owned-resource-ids-only-no-global-prune\n";
   assert.equal(environment.assertInertCompose(text).services, 0);
   assert.match(text, /verified_manifest_digest: null/); assert.match(text, /mysql:9\.7\.2-oraclelinux9/);
   refused(() => environment.assertInertCompose(text.replace("services: {}", "services:\n  mysql:\n    image: mysql:latest")), "COMPOSE_NOT_INERT");
@@ -550,4 +553,541 @@ test("evidence rejects secrets, URLs, arbitrary diagnostics and invented databas
   let reads = 0; const input = evidence();
   Object.defineProperty(input.counts, "modelQueries", { get() { reads++; return "SECRET_CANARY"; }, enumerable: true });
   refused(() => invariants.createOfflineEvidence(input), "EVIDENCE_INVALID"); assert.equal(reads, 0);
+});
+// Phase 4B uses fabricated observations only. None of these digests or acknowledgements is real.
+const disposable = (() => { const guard = traps(); try { return require("./helpers/disposable.cjs"); } finally { guard.restore(); noEffects(guard); } })();
+function p4bFixture(runId = RUN) {
+  const crypto = require("node:crypto"), d = text => "sha256:" + crypto.createHash("sha256").update(text).digest("hex");
+  const configRaw = JSON.stringify({ os: "linux", architecture: "amd64", rootfs: { type: "layers", diff_ids: ["sha256:" + "d".repeat(64)] } });
+  const manifestRaw = JSON.stringify({ schemaVersion: 2, mediaType: "application/vnd.oci.image.manifest.v1+json",
+    config: { mediaType: "application/vnd.oci.image.config.v1+json", digest: d(configRaw), size: Buffer.byteLength(configRaw) },
+    layers: [{ mediaType: "application/vnd.oci.image.layer.v1.tar+gzip", digest: "sha256:" + "d".repeat(64), size: 100 }] });
+  const indexRaw = JSON.stringify({ schemaVersion: 2, mediaType: "application/vnd.oci.image.index.v1+json",
+    manifests: [{ mediaType: "application/vnd.oci.image.manifest.v1+json", digest: d(manifestRaw), size: Buffer.byteLength(manifestRaw), platform: { os: "linux", architecture: "amd64" } }] });
+  const names = environment.runNames(runId);
+  const c = { runId, schema: "wmo_synthetic_" + runId.replace(/-/g, ""),
+    docker: { context: "desktop-linux", endpoint: "npipe:////./pipe/dockerDesktopLinuxEngine",
+      executable: "C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.exe", executableHash: "a".repeat(64) },
+    node: { executable: "C:\\SyntheticNode22\\node.exe", executableHash: "b".repeat(64), version: "22.23.5" },
+    image: { reference: environment.IMAGE, indexDigest: d(indexRaw), platformDigest: d(manifestRaw), configDigest: d(configRaw),
+      os: "linux", architecture: "amd64", version: "9.7.2", distribution: "MySQL Community Server - GPL", osId: "ol", osVersion: "9" },
+    endpoint: { host: "127.0.0.1", port: 33307, containerPort: 3306, protocol: "tcp" },
+    source: { applicationCommit: environment.BASELINE, harnessCommit: "9d582f5691dc9d09798a97f300c356d9890e1b93",
+      applicationFiles: clone(environment.APPLICATION_FILES), harnessManifestHash: "e".repeat(64) },
+    fixture: { profile: environment.PHASE4B_PROFILE, fingerprint: schema.provisioningFingerprint() },
+    accounts: { setup: names.setup, application: names.application, observer: names.observer },
+    secretDirectory: "C:\\Windows\\Temp\\wmo_appointments_" + runId.replace(/-/g, "") + "_secrets" };
+  const labels = { "wmo.test.purpose": environment.PURPOSE, "wmo.test.run": runId }, uuid = "22222222-2222-4222-8222-222222222222";
+  const resources = [
+    { kind: "container", id: "a".repeat(64), name: names.container, labels: clone(labels), imageConfig: c.image.configDigest,
+      networkId: "b".repeat(64), ports: [clone(c.endpoint)], mounts: [
+        { type: "volume", source: names.volume, target: "/var/lib/mysql", readOnly: false },
+        { type: "bind", source: c.secretDirectory + "\\root-password", target: "/run/secrets/wmo-root-password", readOnly: true },
+        { type: "bind", source: c.secretDirectory + "\\root-client", target: "/run/secrets/wmo-root-client", readOnly: true }
+      ], privileged: false, networkMode: "bridge", restart: "no", cpus: 2, memory: 1073741824, mysqlx: false },
+    { kind: "network", id: "b".repeat(64), name: names.network, labels: clone(labels), driver: "bridge", internal: true, ipv6: false, members: ["a".repeat(64)] },
+    { kind: "volume", id: names.volume, name: names.volume, labels: clone(labels), driver: "local", scope: "local" }
+  ];
+  const server = tables => ({ uuid, schema: c.schema, version: c.image.version, distribution: c.image.distribution,
+    osId: "ol", osVersion: "9", socket: clone(c.endpoint), tables });
+  const metadata = schema.provisioningMetadata(c), tableNames = metadata.tables.map(t => t.TABLE_NAME);
+  const fixture = ready => ({ server: server(tableNames), grants: environment.expectedPhase4BGrants(c), metadata: clone(metadata),
+    identity: schema.identityRow(c, ready ? 1 : 0), marker: { feature_key: "service_slots", schema_version: 1, backfill_complete: ready ? 1 : 0 },
+    snapshot: schema.provisioningSnapshot() });
+  const one = value => ({ results: [clone(value)] }), ack = () => one({ modelAck: true });
+  const script = {
+    host: one({ context: c.docker.context, endpoint: c.docker.endpoint, engineVersion: "28.0.0", os: "linux", architecture: "amd64",
+      daemonId: "c".repeat(64), dockerExecutableHash: c.docker.executableHash, node: clone(c.node), source: { ...clone(c.source), clean: true } }),
+    registry: one({ indexRaw, manifestRaw, configRaw }), resources: one(resources),
+    bootstrapIdentity: one({ uuid, containerId: resources[0].id, version: c.image.version, distribution: c.image.distribution, osId: "ol", osVersion: "9" }),
+    provisioning: one({ server: server([]), grants: environment.expectedPhase4BGrants(c, "provisioning") }),
+    fixture: one(fixture(false)), runtime: one(fixture(true)), cleanup: one({ workers: 0, connections: 0, providers: 0 }),
+    connections: one(Object.fromEntries(["application", "observer"].map(role => [role, { account: c.accounts[role], uuid, schema: c.schema, socket: clone(c.endpoint) }]))),
+    createResources: ack(), startContainer: ack(), bootstrap: ack(), createFixtures: ack(), grantRuntime: ack(),
+    attest: one({ modelAck: true, affectedRows: [1, 1], commit: "acknowledged", snapshotLocked: true }), stopContainer: ack(), removeResources: ack()
+  };
+  return { c, script };
+}
+function model(f = p4bFixture(), actions = disposable.ACTIONS) {
+  const transport = disposable.createMockTransport(f.script);
+  const lifecycle = disposable.createMockLifecycle(f.c, transport);
+  const scope = disposable.createMockScope(transport, f.c, actions, lifecycle);
+  return { ...f, transport, scope, lifecycle };
+}
+const eventNames = m => m.transport.inspect().events.map(v => v.operation);
+function noNativeEffects(m) {
+  const counts = m.transport.inspect();
+  assert.equal(counts.dockerCommands, 0); assert.equal(counts.databaseQueries, 0);
+  assert.equal(counts.networkConnections, 0); assert.equal(counts.filesystemWrites, 0);
+}
+test("P4B module imports, plan and disabled modes are inert behind independent child traps", () => {
+  const r = child([
+    "require('./helpers/disposable.cjs');",
+    "const launcher=require('./run.cjs');let out='',err='';",
+    "const io={stdout:{write:s=>out+=s},stderr:{write:s=>err+=s}};",
+    "assert.equal(await launcher.main(['--plan'],io),0);const plan=JSON.parse(out);",
+    "assert.equal(plan.writeAccess,false);assert.equal(plan.capabilities.nativeExecutionAvailable,false);",
+    "for(const mode of ['--provision','--verify','--attest','--teardown']) {",
+    "assert.equal(await launcher.main([mode],io),2);assert.equal(await launcher.main([mode,'--force'],io),2);}",
+    "assert.equal(await launcher.main(['--plan','--unsafe'],io),2);",
+    "console.log(JSON.stringify({counters}));"
+  ].join("\n"));
+  noEffects(r.counters);
+});
+test("P4B original defect fixes remain live under the extended import path", () => {
+  const { c } = pair(), rs = [0, 1, 2].map(() => ({ kind: ["container"], id: c.containerId, labels: clone(c.labels) }));
+  refused(() => environment.planOwnedTeardown(c, rs), "OWNERSHIP_INVALID");
+  const controls = control.createControls(), b = controls.barrier("p4b-phantom");
+  refused(() => b.wait({ signal: {} }), "CONTROL_INVALID"); assert.equal(b.inspect().arrivals, 0); controls.dispose();
+  const supplied = new environment.SafetyError("PRIVATE_P4B_CANARY");
+  const proxy = new Proxy({}, { getPrototypeOf() { throw supplied; } });
+  for (const operation of [() => environment.validatePhase4BConfiguration(proxy), () => disposable.createMockTransport(proxy)]) {
+    let caught; try { operation(); } catch (error) { caught = error; }
+    assert.ok(caught); assert.notEqual(caught, supplied);
+    assert.ok(![caught.message, caught.stack, JSON.stringify(caught)].join("\n").includes("PRIVATE_P4B_CANARY"));
+  }
+});
+test("P4B Compose is canonical opt-in JSON/YAML with mandatory inputs and no active default", async t => {
+  const text = fs.readFileSync(path.join(__dirname, "compose.yaml"), "utf8"), spec = JSON.parse(text);
+  assert.deepEqual(environment.assertPhase4BCompose(text), { defaultRunnableServices: 0, optInServices: 1, nativeExecutionAvailable: false, writeAccess: false });
+  assert.deepEqual(spec.services.mysql.profiles, ["wmo-disposable"]); assert.equal(spec.services.mysql.ports.length, 1);
+  assert.equal(spec.services.mysql.ports[0].host_ip, "127.0.0.1"); assert.equal(spec.networks.owned.internal, true);
+  for (const [name, change] of Object.entries({
+    public_port: s => { s.services.mysql.ports[0].host_ip = "0.0.0.0"; },
+    x_protocol: s => s.services.mysql.ports.push({ target: 33060, published: "33060" }),
+    unpinned: s => { s.services.mysql.image = "mysql:latest"; }, privileged: s => { s.services.mysql.privileged = true; },
+    host_network: s => { s.services.mysql.network_mode = "host"; }, no_profile: s => { delete s.services.mysql.profiles; },
+    inherited_env: s => { s.services.mysql.env_file = ".env"; }, missing_scope: s => { delete s["x-wmo-appointment-phase4b"].execution_scope; }
+  })) await t.test(name, () => { const v = clone(spec); change(v); refused(() => environment.assertPhase4BCompose(JSON.stringify(v, null, 2) + "\n"), "P4B_COMPOSE_INVALID"); });
+});
+test("P4B mandatory configuration fields reject unsafe defaults and production-like endpoints", async t => {
+  const variants = {
+    missing_index: c => { delete c.image.indexDigest; }, missing_platform: c => { delete c.image.platformDigest; },
+    missing_config: c => { delete c.image.configDigest; }, moving_tag: c => { c.image.reference = "mysql:latest"; },
+    wrong_patch: c => { c.image.version = "9.7.4"; }, windows_image: c => { c.image.os = "windows"; },
+    wrong_arch: c => { c.image.architecture = "386"; }, public_host: c => { c.endpoint.host = "0.0.0.0"; },
+    database_url: c => { c.databaseUrl = "mysql://PRIVATE_P4B_CANARY@railway.app/railway"; },
+    production_schema: c => { c.schema = "railway"; }, caller_approval: c => { c.approved = true; },
+    old_node: c => { c.node.version = "24.14.1"; }, bad_account: c => { c.accounts.application = "root"; },
+    source_commit: c => { c.source.applicationCommit = c.source.harnessCommit; }, app_bytes: c => { c.source.applicationFiles["services/appointmentPolicy.js"] = "0".repeat(64); },
+    scope_in_config: c => { c.authorization = { approved: true }; }, traversal: c => { c.secretDirectory = "C:\\..\\wmo_appointments_" + RUN.replace(/-/g, "") + "_secrets"; }
+  };
+  for (const [name, change] of Object.entries(variants)) await t.test(name, () => {
+    const { c } = p4bFixture(); change(c); refused(() => environment.validatePhase4BConfiguration(c));
+  });
+});
+test("P4B host, registry and source negatives stop before every modeled resource write", async t => {
+  const variants = {
+    wrong_context: s => { s.host.results[0].context = "other"; },
+    missing_daemon: s => { s.host.results[0].daemonId = ""; },
+    remote_daemon: s => { s.host.results[0].endpoint = "tcp://remote:2376"; },
+    old_engine: s => { s.host.results[0].engineVersion = "27.5.1"; },
+    wrong_os: s => { s.host.results[0].os = "windows"; }, wrong_cpu: s => { s.host.results[0].architecture = "arm64"; },
+    wrong_executable: s => { s.host.results[0].dockerExecutableHash = "0".repeat(64); },
+    dirty: s => { s.host.results[0].source.clean = false; },
+    stale_harness: s => { s.host.results[0].source.harnessCommit = "0".repeat(40); },
+    wrong_harness_bytes: s => { s.host.results[0].source.harnessManifestHash = "0".repeat(64); },
+    missing_app_manifest: s => { delete s.host.results[0].source.applicationFiles; },
+    registry_bytes: s => { s.registry.results[0].configRaw += " "; },
+    registry_digest: s => { s.registry.results[0].manifestRaw = "{}"; }
+  };
+  for (const [name, change] of Object.entries(variants)) await t.test(name, () => {
+    const f = p4bFixture(); change(f.script); const m = model(f);
+    refused(() => m.lifecycle.provision(m.scope));
+    assert.ok(!eventNames(m).includes("createResources")); assert.equal(m.transport.inspect().modelCommands, 0); noNativeEffects(m);
+  });
+});
+test("P4B resource isolation refuses extras and unowned identities before bootstrap", async t => {
+  const variants = {
+    public_binding: r => { r[0].ports[0].host = "0.0.0.0"; }, extra_binding: r => r[0].ports.push({ ...r[0].ports[0], containerPort: 33060 }),
+    mysqlx_enabled: r => { r[0].mysqlx = true; }, privileged: r => { r[0].privileged = true; },
+    mount: r => r[0].mounts.push({ type: "bind", source: "C:\\production", target: "/production", readOnly: true }),
+    wrong_volume: r => { r[0].mounts[0].source = "other"; }, extra_member: r => r[1].members.push("d".repeat(64)),
+    external_network: r => { r[1].internal = false; }, wrong_labels: r => { delete r[2].labels["wmo.test.run"]; },
+    duplicate: r => { r[2] = clone(r[0]); }, coerced: r => { r[1].kind = ["network"]; }, missing: r => { r.pop(); },
+    volume_driver: r => { r[2].driver = "cloud"; }, config_identity: r => { r[0].imageConfig = "sha256:" + "0".repeat(64); }
+  };
+  for (const [name, change] of Object.entries(variants)) await t.test(name, () => {
+    const f = p4bFixture(); change(f.script.resources.results[0]); const m = model(f);
+    refused(() => m.lifecycle.provision(m.scope), "P4B_RESOURCE_INVALID");
+    assert.ok(!eventNames(m).includes("startContainer")); assert.ok(!eventNames(m).includes("bootstrap"));
+    assert.equal(m.transport.inspect().modelSqlStatements, 0); noNativeEffects(m);
+  });
+});
+test("P4B empty-schema and grant admission refuse fixture writes", async t => {
+  const variants = {
+    wrong_uuid: s => { s.provisioning.results[0].server.uuid = "33333333-3333-4333-8333-333333333333"; },
+    missing_uuid: s => { delete s.bootstrapIdentity.results[0].uuid; },
+    wrong_schema: s => { s.provisioning.results[0].server.schema = "railway"; },
+    nonempty: s => { s.provisioning.results[0].server.tables.push("legacy"); },
+    wrong_socket: s => { s.provisioning.results[0].server.socket.port++; },
+    distro: s => { s.bootstrapIdentity.results[0].distribution = "MariaDB"; },
+    wrong_container: s => { s.bootstrapIdentity.results[0].containerId = "d".repeat(64); },
+    global_grant: s => { s.provisioning.results[0].grants.setup.global.push("ALL"); },
+    inherited_role: s => { s.provisioning.results[0].grants.setup.roles.push("admin"); },
+    broad_scope: s => { s.provisioning.results[0].grants.setup.rights[0].schema = "wmo_synthetic_%"; }
+  };
+  for (const [name, change] of Object.entries(variants)) await t.test(name, () => {
+    const f = p4bFixture(); change(f.script); const m = model(f);
+    refused(() => m.lifecycle.provision(m.scope)); assert.ok(!eventNames(m).includes("createFixtures")); noNativeEffects(m);
+  });
+});
+test("P4B fixture and runtime grant inconsistencies never enable attestation", async t => {
+  const variants = {
+    missing_table: o => { o.metadata.tables.pop(); }, wrong_signedness: o => { o.metadata.columns[0].COLUMN_TYPE = "int unsigned"; },
+    missing_unique: o => { o.metadata.indexes.pop(); }, wrong_fk: o => { o.metadata.foreignKeys[0].DELETE_RULE = "CASCADE"; },
+    unknown_table: o => { o.server.tables.push("web_users"); }, stale_fingerprint: o => { o.identity.fixture_fingerprint = "sha256:" + "0".repeat(64); },
+    premature_ready: o => { o.marker.backfill_complete = 1; }, forged_reconciled: o => { o.identity.reconciled = 1; },
+    reservation_missing: o => { o.snapshot.reservations = []; }, notification_missing: o => { o.snapshot.notifications = []; },
+    app_identity_access: o => { o.grants.application.rights.push({ schema: SCHEMA, table: "appointment_harness_identity", privileges: ["SELECT"] }); },
+    observer_write: o => { o.grants.observer.rights[0].privileges.push("UPDATE"); },
+    application_role: o => { o.grants.application.roles.push("admin"); }
+  };
+  for (const [name, change] of Object.entries(variants)) await t.test(name, () => {
+    const f = p4bFixture(); change(f.script.fixture.results[0]); const m = model(f);
+    refused(() => m.lifecycle.provision(m.scope));
+    assert.ok(!eventNames(m).includes("attest")); assert.equal(m.lifecycle.describe().stage, "quarantined"); noNativeEffects(m);
+  });
+});
+test("P4B valid model separates unready fixtures, explicit attestation and durable proof", () => {
+  const m = model(), first = m.lifecycle.provision(m.scope);
+  assert.equal(first.stage, "fixtures-unready"); assert.equal(first.evidenceSource, "mock"); assert.equal(first.writeAccess, false);
+  assert.equal(first.persistence.durableVerified, false); assert.equal(first.nativeVerified, false);
+  assert.ok(!eventNames(m).includes("attest")); assert.equal(m.lifecycle.verify(m.scope).stage, "fixtures-unready");
+  const ready = m.lifecycle.attest(m.scope); assert.equal(ready.stage, "ready"); assert.equal(ready.engine.connected, false);
+  assert.equal(m.lifecycle.checkConnections(m.scope).nativeVerified, false);
+  assert.equal(m.lifecycle.teardown(m.scope).cleanup, "mock-owned-removed"); noNativeEffects(m);
+  assert.ok(Object.isFrozen(ready.counts)); refused(() => m.lifecycle.provision(m.scope), "P4B_SCOPE_INVALID");
+});
+test("P4B connection checks cannot run before readiness", () => {
+  const m = model(); m.lifecycle.provision(m.scope);
+  refused(() => m.lifecycle.checkConnections(m.scope), "P4B_STAGE_INVALID");
+  assert.ok(!eventNames(m).includes("connections")); assert.ok(!eventNames(m).includes("attest")); noNativeEffects(m);
+});
+test("P4B fresh reconciliation and acknowledged conditional attestation are mandatory", async t => {
+  for (const [name, change] of Object.entries({
+    zero_updated: s => { s.attest.results[0].affectedRows = [1, 0]; },
+    uncertain_commit: s => { s.attest.results[0].commit = "unconfirmed"; },
+    no_locked_snapshot: s => { s.attest.results[0].snapshotLocked = false; },
+    stale_after_commit: s => { s.runtime.results[0].marker.backfill_complete = 0; },
+    fresh_reconciliation: s => { const bad = clone(s.fixture.results[0]); bad.snapshot.reservations = []; s.fixture.results.push(bad); }
+  })) await t.test(name, () => {
+    const f = p4bFixture(); change(f.script); const m = model(f);
+    m.lifecycle.provision(m.scope); refused(() => m.lifecycle.attest(m.scope));
+    assert.equal(m.lifecycle.describe().stage, "quarantined"); assert.ok(!eventNames(m).includes("connections")); noNativeEffects(m);
+  });
+});
+test("P4B scopes are transport/run/action bound and never constitute native authority", () => {
+  const m = model();
+  for (const forged of [{ approved: true }, { writeAccess: true }, environment.verifyRuntimeIdentity(pair().c, pair().o), clone(m.scope)]) {
+    refused(() => m.lifecycle.provision(forged), "P4B_SCOPE_INVALID");
+  }
+  assert.equal(eventNames(m).length, 0);
+  const another = model(); refused(() => m.lifecycle.provision(another.scope), "P4B_SCOPE_INVALID");
+  const verifyOnly = disposable.createMockScope(m.transport, m.c, ["verify"], m.lifecycle);
+  refused(() => m.lifecycle.provision(verifyOnly), "P4B_SCOPE_INVALID");
+  refused(() => disposable.createMockLifecycle(m.c, { inspect() { throw new Error("PRIVATE_P4B_CANARY"); } }), "P4B_SCOPE_INVALID");
+  refused(() => disposable.createNativeLifecycle(m.c, m.scope), "P4B_NATIVE_UNSUPPORTED");
+  assert.equal(eventNames(m).length, 0); noNativeEffects(m);
+});
+test("P4B teardown reobserves ownership and drains before any removal", async t => {
+  for (const [name, change] of Object.entries({
+    changed_owner: s => { const changed = clone(s.resources.results[0]); changed[2].labels["wmo.test.run"] = "other"; s.resources.results.push(changed); },
+    changed_id: s => { const changed = clone(s.resources.results[0]); changed[0].id = "d".repeat(64); changed[1].members = ["d".repeat(64)]; s.resources.results.push(changed); },
+    active_connection: s => { s.cleanup.results[0].connections = 1; },
+    changed_daemon: s => { const changed = clone(s.host.results[0]); changed.daemonId = "d".repeat(64); s.host.results.push(changed); }
+  })) await t.test(name, () => {
+    const f = p4bFixture(); change(f.script); const m = model(f);
+    m.lifecycle.provision(m.scope); refused(() => m.lifecycle.teardown(m.scope));
+    assert.ok(!eventNames(m).includes("removeResources")); assert.ok(!eventNames(m).includes("stopContainer")); noNativeEffects(m);
+  });
+});
+test("P4B injected failures never pretend partial DDL was rolled back", () => {
+  const f = p4bFixture(); f.script.createFixtures.results[0] = { failure: "PRIVATE_P4B_CANARY" };
+  const m = model(f); refused(() => m.lifecycle.provision(m.scope), "P4B_ADAPTER_FAILED");
+  assert.equal(m.lifecycle.describe().stage, "quarantined"); assert.ok(!eventNames(m).includes("grantRuntime"));
+  assert.ok(!JSON.stringify(m.transport.inspect()).includes("PRIVATE_P4B_CANARY"));
+  assert.equal(m.lifecycle.dispose().externalCleanupPerformed, false);
+});
+test("P4B runtime keeps production pools, routes and providers inaccessible", () => {
+  const m = model(), rt = runtime.createMockDisposableRuntime(m.c, m.transport);
+  assert.equal(rt.integrationContract().productionPoolAllowed, false);
+  assert.equal(rt.integrationContract().productionEnvironmentMutation, false);
+  refused(() => rt.openPools(), "P4B_NATIVE_UNSUPPORTED"); refused(() => rt.loadRoutes(), "P4B_NATIVE_UNSUPPORTED");
+  refused(() => rt.providers.email.send(), "OUTBOUND_PROVIDER_BLOCKED"); assert.equal(rt.providers.counts().email, 1);
+  noNativeEffects(m);
+});
+test("P4B separate profile preserves Phase 4A semantics and leaves readiness outside setup", () => {
+  const { c } = p4bFixture(), profile = schema.provisioningProfile(c);
+  assert.equal(schema.fixtureSpecification().sourceCommit, environment.BASELINE);
+  assert.equal(Object.keys(schema.fixtureSpecification().tables).length, 5);
+  assert.equal(profile.applicationTables.length, 5); assert.equal(schema.provisioningMetadata(c).tables.length, 6);
+  assert.equal(profile.identity.reconciled, 0); assert.equal(profile.marker.backfill_complete, 0);
+  for (const item of [...profile.ddl, ...profile.seed]) {
+    assert.ok(item.sql.includes(c.schema)); assert.ok(!/backfill_complete\s*=\s*1|SET\s+reconciled\s*=\s*1/i.test(item.sql));
+    assert.ok(!/ALTER|DROP|GRANT|CREATE USER|railway/i.test(item.sql));
+  }
+  assert.equal(schema.attestationStatements(c).updates.length, 2);
+  assert.equal(profile.productionSchemaVerified, false); assert.equal(profile.realMysqlVerified, false);
+  const commands = disposable.commandPlan(c);
+  assert.equal(commands.executable, false); assert.equal(commands.secretContract.generatedHere, false);
+  assert.ok(commands.create.every(x => x.shell === false && x.executableNow === false && x.timeoutMs === 10000));
+  assert.ok(!JSON.stringify(commands).includes("DATABASE_URL"));
+  assert.equal(commands.childEnvironment.COMPOSE_DISABLE_ENV_FILE, "1");
+});
+test("P4B evidence rejects secret-bearing extras and native claims from mock inputs", async t => {
+  const m = model(), evidence = m.lifecycle.provision(m.scope);
+  const inputKeys = ["runId", "applicationCommit", "harnessCommit", "harnessManifestHash", "fixtureProfile", "fixtureFingerprint",
+    "imageIndexDigest", "imagePlatformDigest", "imageConfigDigest", "platform", "schema", "stage", "evidenceSource", "counts", "checks", "cleanup"];
+  const input = Object.fromEntries(inputKeys.map(k => [k, clone(evidence[k])]));
+  for (const [name, change] of Object.entries({
+    password: v => { v.password = "PRIVATE_P4B_CANARY"; }, driver_error: v => { v.cause = new Error("PRIVATE_P4B_CANARY"); },
+    native: v => { v.evidenceSource = "native"; }, queries: v => { v.counts.databaseQueries = 1; },
+    actual_commands: v => { v.counts.dockerCommands = 1; }, token: v => { v.checks.push("ORI-PRIVATE_P4B_CANARY"); },
+    native_flag: v => { v.nativeVerified = true; }, false_cleanup: v => { v.cleanup = "mock-owned-removed"; }
+  })) await t.test(name, () => { const v = clone(input); change(v); refused(() => invariants.createProvisioningEvidence(v), "P4B_EVIDENCE_INVALID"); });
+});
+test("P4B in-memory mutations demonstrate meaningful dirty-source and digest guards", () => {
+  const Module = require("node:module"), file = path.join(__dirname, "helpers/environment.cjs"), source = fs.readFileSync(file, "utf8");
+  const { c, script } = p4bFixture(), bad = clone(script.host.results[0]); bad.source.clean = false;
+  refused(() => environment.validatePhase4BHost(c, bad), "P4B_SOURCE_INVALID");
+  const needle = "o.source.clean === true &&";
+  assert.equal(source.split(needle).length, 2);
+  const m = new Module(file, module); m.filename = file; m.paths = module.paths; m._compile(source.replace(needle, ""), file);
+  assert.equal(m.exports.validatePhase4BHost(c, bad).writeAccess, false);
+  const adapterFile = path.join(__dirname, "helpers/disposable.cjs"), adapterSource = fs.readFileSync(adapterFile, "utf8");
+  const proof = clone(script.registry.results[0]); proof.configRaw = proof.configRaw.replace("d".repeat(64), "e".repeat(64));
+  refused(() => disposable.verifyRegistryProof(c, proof), "P4B_IMAGE_INVALID");
+  const digestNeedle = 'fail(digest(p.indexRaw) === c.image.indexDigest && digest(p.manifestRaw) === c.image.platformDigest && digest(p.configRaw) === c.image.configDigest, "P4B_IMAGE_INVALID");';
+  assert.equal(adapterSource.split(digestNeedle).length, 2);
+  const mutant = new Module(adapterFile, module); mutant.filename = adapterFile; mutant.paths = module.paths;
+  mutant._compile(adapterSource.replace(digestNeedle, ""), adapterFile);
+  assert.equal(mutant.exports.verifyRegistryProof(c, proof).writeAccess, false);
+});
+test("P4B account recipes use table-qualified literal scopes without passwords or host wildcards", () => {
+  const { c } = p4bFixture(), recipe = disposable.grantRecipe(c, "192.168.65.1");
+  assert.equal(recipe.executable, false); assert.equal(recipe.nativeBootstrapSupported, false);
+  assert.equal(recipe.globalGrants, false); assert.equal(recipe.inheritedRolesAllowed, false);
+  const q = String.fromCharCode(96);
+  for (const item of recipe.grants) {
+    assert.ok(item.sql.includes(q + c.schema + q + "." + q)); assert.ok(!item.sql.includes(".*"));
+    assert.ok(!/ALL PRIVILEGES|WITH GRANT OPTION|CREATE USER|FILE|PROCESS/i.test(item.sql));
+    if (item.role === "application") assert.ok(!item.sql.includes("appointment_harness_identity"));
+    if (item.role === "observer") assert.ok(item.sql.startsWith("GRANT SELECT ON "));
+  }
+  for (const host of ["%", "localhost", "railway.app", "0.0.0.0", "256.1.1.1", "192.168.65.1' OR 1=1"]) {
+    refused(() => disposable.grantRecipe(c, host), "P4B_GRANTS_INVALID");
+  }
+  assert.equal(recipe.accounts.filter(v => v.sql.startsWith("CREATE USER")).length, 3);
+  assert.ok(!JSON.stringify(recipe).includes("PRIVATE_P4B_CANARY"));
+});
+// Narrow corrections: capabilities below are mock-only; direct Compose invocation bypasses
+// this Node admission path. Profiles/x-annotations remain a future operational gate, not enforcement.
+function scopeRefusalWithoutEffects(m, operation) {
+  const before = m.transport.inspect();
+  refused(operation, "P4B_SCOPE_INVALID");
+  assert.deepEqual(m.transport.inspect(), before);
+}
+test("FIX P4B disposed-scope replay cannot provision a fresh lifecycle", () => {
+  const m = model(); m.lifecycle.provision(m.scope); m.lifecycle.dispose();
+  const next = disposable.createMockLifecycle(m.c, m.transport);
+  scopeRefusalWithoutEffects(m, () => next.provision(m.scope));
+  const freshScope = disposable.createMockScope(m.transport, m.c, disposable.ACTIONS, next);
+  assert.equal(next.provision(freshScope).stage, "fixtures-unready");
+  noNativeEffects(m);
+});
+test("FIX P4B scopes bind identical configurations to distinct lifecycle instances", () => {
+  const m = model(), next = disposable.createMockLifecycle(m.c, m.transport);
+  const nextScope = disposable.createMockScope(m.transport, m.c, disposable.ACTIONS, next);
+  scopeRefusalWithoutEffects(m, () => next.provision(m.scope));
+  scopeRefusalWithoutEffects(m, () => m.lifecycle.provision(nextScope));
+  assert.equal(m.lifecycle.provision(m.scope).stage, "fixtures-unready");
+  assert.equal(next.provision(nextScope).stage, "fixtures-unready");
+  noNativeEffects(m);
+});
+test("FIX P4B completed write actions cannot replay while valid multi-action reads may repeat", () => {
+  const m = model();
+  m.lifecycle.provision(m.scope);
+  scopeRefusalWithoutEffects(m, () => m.lifecycle.provision(m.scope));
+  assert.equal(m.lifecycle.verify(m.scope).stage, "fixtures-unready");
+  assert.equal(m.lifecycle.verify(m.scope).stage, "fixtures-unready");
+  assert.equal(m.lifecycle.attest(m.scope).stage, "ready");
+  scopeRefusalWithoutEffects(m, () => m.lifecycle.attest(m.scope));
+  assert.equal(m.lifecycle.describe().stage, "ready");
+  m.lifecycle.checkConnections(m.scope); m.lifecycle.checkConnections(m.scope);
+  assert.equal(m.lifecycle.teardown(m.scope).stage, "removed");
+  scopeRefusalWithoutEffects(m, () => m.lifecycle.teardown(m.scope));
+  noNativeEffects(m);
+});
+test("FIX P4B disposal revokes unused scopes and never affects unrelated lifecycles", () => {
+  const m = model(), other = model(p4bFixture("33333333-3333-4333-8333-333333333333"));
+  m.lifecycle.dispose();
+  scopeRefusalWithoutEffects(m, () => m.lifecycle.provision(m.scope));
+  scopeRefusalWithoutEffects(m, () => disposable.createMockScope(m.transport, m.c, ["provision"], m.lifecycle));
+  scopeRefusalWithoutEffects(other, () => other.lifecycle.provision(m.scope));
+  assert.equal(other.lifecycle.provision(other.scope).stage, "fixtures-unready");
+  assert.equal(other.lifecycle.attest(other.scope).stage, "ready"); other.lifecycle.teardown(other.scope);
+  noNativeEffects(m); noNativeEffects(other);
+});
+test("FIX P4B run, transport, action, forged, cloned and serialized scope negatives have zero effects", () => {
+  const m = model(), other = model(p4bFixture("33333333-3333-4333-8333-333333333333"));
+  for (const forged of [{ approved: true }, clone(m.scope), JSON.parse(JSON.stringify(m.scope))]) {
+    scopeRefusalWithoutEffects(m, () => m.lifecycle.provision(forged));
+  }
+  scopeRefusalWithoutEffects(m, () => disposable.createMockScope(m.transport, other.c, ["provision"], m.lifecycle));
+  scopeRefusalWithoutEffects(m, () => disposable.createMockScope(other.transport, m.c, ["provision"], m.lifecycle));
+  scopeRefusalWithoutEffects(m, () => disposable.createMockScope(m.transport, m.c, ["provision"], { ...m.lifecycle }));
+  const readOnly = disposable.createMockScope(m.transport, m.c, ["verify"], m.lifecycle);
+  scopeRefusalWithoutEffects(m, () => m.lifecycle.provision(readOnly));
+  scopeRefusalWithoutEffects(m, () => m.lifecycle.provision(other.scope));
+  assert.equal(m.lifecycle.provision(m.scope).stage, "fixtures-unready"); noNativeEffects(m);
+});
+test("FIX P4B failed write permission is consumed but separately authorized cleanup remains possible", () => {
+  const f = p4bFixture(); f.script.createFixtures.results[0] = { failure: "synthetic-failure" };
+  const m = model(f);
+  refused(() => m.lifecycle.provision(m.scope), "P4B_ADAPTER_FAILED");
+  scopeRefusalWithoutEffects(m, () => m.lifecycle.provision(m.scope));
+  assert.equal(m.lifecycle.teardown(m.scope).stage, "removed"); noNativeEffects(m);
+});
+function mutatedSchema(from, to) {
+  const Module = require("node:module"), file = path.join(__dirname, "helpers/schema.cjs"), source = fs.readFileSync(file, "utf8");
+  assert.equal(source.split(from).length, 2, "Mutation anchor must be unique");
+  const m = new Module(file, module); m.filename = file; m.paths = module.paths;
+  m._compile(source.replace(from, to), file); return m.exports;
+}
+test("FIX P4B payload mutation changes fingerprint together with actual seed and expected snapshot", () => {
+  const changed = mutatedSchema('"synthetic-payload-v1"', '"synthetic-payload-v2"');
+  assert.notEqual(changed.provisioningSnapshot().requests[0].payload_hash, schema.provisioningSnapshot().requests[0].payload_hash);
+  assert.notEqual(changed.provisioningFingerprint(), schema.provisioningFingerprint());
+  const f = p4bFixture(), updated = clone(f.c); updated.fixture.fingerprint = changed.provisioningFingerprint();
+  assert.notDeepEqual(changed.provisioningProfile(updated).seed[3].parameters, schema.provisioningProfile(f.c).seed[3].parameters);
+  refused(() => changed.provisioningProfile(f.c), "P4B_FIXTURE_INVALID");
+});
+test("FIX P4B fingerprint covers other seed values, generated DDL, schema structure and persisted expectations", async t => {
+  const mutations = {
+    seed_title: ['"Synthetic appointment"', '"Changed synthetic appointment"'],
+    control_column: ['schema_name: ascii("varchar(64)")', 'schema_name: ascii("varchar(63)")'],
+    control_ddl: ['quoted("harness_schema")', 'quoted("harness_schema_v2")'],
+    persisted_status: ['status: "pending", appointment_revision: 0', 'status: "approved", appointment_revision: 0']
+  };
+  for (const [name, [from, to]] of Object.entries(mutations)) await t.test(name, () => {
+    const changed = mutatedSchema(from, to);
+    assert.notEqual(changed.provisioningFingerprint(), schema.provisioningFingerprint());
+    assert.equal(changed.fixtureFingerprint(), schema.fixtureFingerprint(), "Phase 4A fingerprint must remain intact");
+  });
+});
+test("FIX P4B static seeds equal to dynamic identities remain fingerprinted as static values", async t => {
+  const { c } = p4bFixture();
+  for (const value of [c.runId, c.schema, c.source.harnessCommit]) await t.test(value, () => {
+    const changed = mutatedSchema('"Synthetic appointment"', JSON.stringify(value));
+    assert.notEqual(changed.provisioningFingerprint(), schema.provisioningFingerprint());
+  });
+});
+test("FIX P4B deterministic template binding preserves fingerprints across equivalent synthetic runs", () => {
+  assert.equal(schema.fixtureFingerprint(), "sha256:4cb53e3f85feb78cb3359f59b7e8b88f8de423f11fabcc27b81f6cdb52e142c1");
+  const a = p4bFixture(), b = p4bFixture("33333333-3333-4333-8333-333333333333");
+  b.c.source.harnessCommit = "4".repeat(40); b.c.source.harnessManifestHash = "5".repeat(64);
+  const first = schema.provisioningProfile(a.c), second = schema.provisioningProfile(b.c);
+  assert.equal(first.fingerprint, second.fingerprint);
+  assert.notDeepEqual(first.seed[0].parameters, second.seed[0].parameters);
+  assert.deepEqual(first.seed.slice(1), second.seed.slice(1).map((item, i) => ({ ...item, sql: first.seed[i + 1].sql })));
+  assert.equal(schema.validateInstantiatedProvisioningProfile(a.c, first).dynamicBindingsMatch, true);
+  assert.equal(schema.validateInstantiatedProvisioningProfile(b.c, second).matchesCanonicalTemplate, true);
+  refused(() => schema.validateInstantiatedProvisioningProfile(a.c, second), "P4B_FIXTURE_INVALID");
+  const canonical = schema.canonicalProvisioningContract(), crypto = require("node:crypto");
+  const sorted = value => Array.isArray(value) ? value.map(sorted) : value && typeof value === "object"
+    ? Object.fromEntries(Object.keys(value).sort().map(k => [k, sorted(value[k])])) : value;
+  assert.equal("sha256:" + crypto.createHash("sha256").update(JSON.stringify(sorted(canonical))).digest("hex"), first.fingerprint);
+  assert.deepEqual(canonical.identity.run_id, { dynamicBinding: "runId" });
+  assert.equal(canonical.identity.application_commit, environment.BASELINE);
+  assert.deepEqual(schema.canonicalProvisioningContract(), canonical);
+});
+test("FIX P4B actual instantiated profile must match canonical seed, DDL, snapshot and dynamic bindings", async t => {
+  const { c } = p4bFixture(), original = schema.provisioningProfile(c);
+  const changes = {
+    seed: p => { p.seed[3].parameters[1] = "a".repeat(64); },
+    static_looks_dynamic: p => { p.seed[4].parameters[2] = c.runId; },
+    ddl: p => { p.ddl[0].sql += " "; },
+    snapshot: p => { p.expectedSnapshot.notifications[0].id = 18; },
+    metadata: p => { p.expectedMetadata.columns[0].COLUMN_TYPE = "int unsigned"; },
+    dynamic_run: p => { p.seed[0].parameters[0] = "33333333-3333-4333-8333-333333333333"; },
+    dynamic_harness: p => { p.identity.harness_commit = "4".repeat(40); },
+    fingerprint: p => { p.fingerprint = "sha256:" + "a".repeat(64); }
+  };
+  for (const [name, change] of Object.entries(changes)) await t.test(name, () => {
+    const p = clone(original); change(p);
+    refused(() => schema.validateInstantiatedProvisioningProfile(c, p), "P4B_FIXTURE_INVALID");
+  });
+});
+test("FIX P4B lifecycle validates instantiated fixture before any modeled downstream effect", () => {
+  const f = p4bFixture(), transport = disposable.createMockTransport(f.script), original = schema.provisioningProfile;
+  try {
+    schema.provisioningProfile = input => { const profile = clone(original(input)); profile.seed[4].parameters[2] = "tampered"; return profile; };
+    refused(() => disposable.createMockLifecycle(f.c, transport), "P4B_FIXTURE_INVALID");
+    assert.deepEqual(transport.inspect().events, []);
+  } finally { schema.provisioningProfile = original; }
+});
+function rechainProof(f, change) {
+  const crypto = require("node:crypto"), digest = text => "sha256:" + crypto.createHash("sha256").update(text).digest("hex");
+  const p = f.script.registry.results[0], index = JSON.parse(p.indexRaw), manifest = JSON.parse(p.manifestRaw), configuration = JSON.parse(p.configRaw);
+  change(index, manifest, configuration);
+  p.configRaw = JSON.stringify(configuration); f.c.image.configDigest = digest(p.configRaw);
+  manifest.config.digest = f.c.image.configDigest; manifest.config.size = Buffer.byteLength(p.configRaw);
+  p.manifestRaw = JSON.stringify(manifest); f.c.image.platformDigest = digest(p.manifestRaw);
+  index.manifests[0].digest = f.c.image.platformDigest; index.manifests[0].size = Buffer.byteLength(p.manifestRaw);
+  p.indexRaw = JSON.stringify(index); f.c.image.indexDigest = digest(p.indexRaw);
+  f.script.resources.results[0][0].imageConfig = f.c.image.configDigest;
+  return f;
+}
+test("FIX P4B supported OCI and Docker descriptor combinations retain valid workflows", async t => {
+  const cases = [
+    ["oci-gzip", "application/vnd.oci.image.index.v1+json", "application/vnd.oci.image.manifest.v1+json", "application/vnd.oci.image.config.v1+json", "application/vnd.oci.image.layer.v1.tar+gzip"],
+    ["oci-tar", "application/vnd.oci.image.index.v1+json", "application/vnd.oci.image.manifest.v1+json", "application/vnd.oci.image.config.v1+json", "application/vnd.oci.image.layer.v1.tar"],
+    ["oci-zstd", "application/vnd.oci.image.index.v1+json", "application/vnd.oci.image.manifest.v1+json", "application/vnd.oci.image.config.v1+json", "application/vnd.oci.image.layer.v1.tar+zstd"],
+    ["docker-gzip", "application/vnd.docker.distribution.manifest.list.v2+json", "application/vnd.docker.distribution.manifest.v2+json", "application/vnd.docker.container.image.v1+json", "application/vnd.docker.image.rootfs.diff.tar.gzip"],
+    ["docker-tar", "application/vnd.docker.distribution.manifest.list.v2+json", "application/vnd.docker.distribution.manifest.v2+json", "application/vnd.docker.container.image.v1+json", "application/vnd.docker.image.rootfs.diff.tar"],
+    ["oci-index-docker-image", "application/vnd.oci.image.index.v1+json", "application/vnd.docker.distribution.manifest.v2+json", "application/vnd.docker.container.image.v1+json", "application/vnd.docker.image.rootfs.diff.tar.gzip"]
+  ];
+  for (const [name, indexType, manifestType, configType, layerType] of cases) await t.test(name, () => {
+    const f = rechainProof(p4bFixture(), (index, manifest) => {
+      index.mediaType = indexType; index.manifests[0].mediaType = manifestType; manifest.mediaType = manifestType;
+      manifest.config.mediaType = configType; manifest.layers[0].mediaType = layerType;
+    });
+    assert.equal(disposable.verifyRegistryProof(f.c, f.script.registry.results[0]).writeAccess, false);
+    const m = model(f); assert.equal(m.lifecycle.provision(m.scope).stage, "fixtures-unready"); noNativeEffects(m);
+  });
+});
+test("FIX P4B every descriptor role rejects unknown, missing, empty and incorrectly placed media types", async t => {
+  const roles = [
+    ["index", (i, m) => i, "application/vnd.oci.image.config.v1+json"],
+    ["selected", (i, m) => i.manifests[0], "application/vnd.oci.image.index.v1+json"],
+    ["manifest", (i, m) => m, "application/vnd.oci.image.config.v1+json"],
+    ["configuration", (i, m) => m.config, "application/vnd.oci.image.layer.v1.tar+gzip"],
+    ["layer", (i, m) => m.layers[0], "application/vnd.oci.image.config.v1+json"]
+  ];
+  for (const [name, select, wrongRole] of roles) for (const [variant, value] of [
+    ["unsupported", "application/x-audit-unsupported"], ["missing", undefined], ["empty", ""], ["null", null],
+    ["coerced-array", ["application/vnd.oci.image.manifest.v1+json"]], ["incorrect-role", wrongRole]
+  ]) await t.test(name + "-" + variant, () => {
+    const f = rechainProof(p4bFixture(), (index, manifest) => {
+      const target = select(index, manifest); if (value === undefined) delete target.mediaType; else target.mediaType = value;
+    });
+    const m = model(f); refused(() => m.lifecycle.provision(m.scope), "P4B_IMAGE_INVALID");
+    assert.equal(m.transport.inspect().modelCommands, 0); assert.equal(m.transport.inspect().modelSqlStatements, 0); noNativeEffects(m);
+  });
+});
+test("FIX P4B descriptor family conflicts and otherwise-valid hash mismatches fail closed", async t => {
+  const cases = {
+    selected_conflict: (i, m) => { i.manifests[0].mediaType = "application/vnd.docker.distribution.manifest.v2+json"; },
+    config_conflict: (i, m) => { m.config.mediaType = "application/vnd.docker.container.image.v1+json"; },
+    layer_conflict: (i, m) => { m.layers[0].mediaType = "application/vnd.docker.image.rootfs.diff.tar.gzip"; }
+  };
+  for (const [name, change] of Object.entries(cases)) await t.test(name, () => {
+    const f = rechainProof(p4bFixture(), change);
+    refused(() => disposable.verifyRegistryProof(f.c, f.script.registry.results[0]), "P4B_IMAGE_INVALID");
+  });
+  await t.test("hash-with-valid-types", () => {
+    const f = p4bFixture(); f.script.registry.results[0].configRaw = f.script.registry.results[0].configRaw.replace("d".repeat(64), "e".repeat(64));
+    refused(() => disposable.verifyRegistryProof(f.c, f.script.registry.results[0]), "P4B_IMAGE_INVALID");
+  });
 });

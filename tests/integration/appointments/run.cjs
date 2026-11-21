@@ -43,6 +43,20 @@ async function selfCheck() {
   return Object.freeze({ phase: "4A", outcome: "pass", checks: Object.freeze(checks), databaseEvidence: false });
 }
 async function main(args, io = { stdout: process.stdout, stderr: process.stderr }) {
+  if (Array.isArray(args) && args.length === 1 && args[0] === "--plan") {
+    io.stdout.write(JSON.stringify({ phase: "4B", classification: "offline-preparation", capabilities: runtime.phase4BCapabilities(),
+      candidateImage: environment.IMAGE, approvedIndexDigest: null, approvedPlatformDigest: null,
+      fixtureProfile: environment.PHASE4B_PROFILE, fixtureFingerprint: schema.provisioningFingerprint(),
+      applicationCommit: environment.BASELINE, harnessCommit: "must-be-observed-from-clean-reviewed-checkout",
+      prerequisites: ["reviewed-execution-scope", "node-22.23.5", "local-linux-engine-at-least-28", "official-registry-proof",
+        "windows-isolation-proof", "credential-acl-and-grants-adapter", "trusted-native-observation-adapter"],
+      performsExternalOperations: false, writeAccess: false }) + "\n");
+    return 0;
+  }
+  if (Array.isArray(args) && args.length === 1 && ["--provision", "--verify", "--attest", "--teardown"].includes(args[0])) {
+    io.stderr.write("PHASE4A_MODE_REFUSED: PHASE4B_NATIVE_UNSUPPORTED; no reviewed native execution authority or transport is installed. No operation was performed.\n");
+    return 2;
+  }
   if (!Array.isArray(args) || args.length !== 1 || args[0] !== "--self-check") {
     io.stderr.write("PHASE4A_MODE_REFUSED: only --self-check is available. Database and provisioning execution are not authorized.\n");
     return 2;

@@ -134,3 +134,29 @@ function createOfflineEvidence(input) {
 }
 module.exports = { assertReservationIntegrity, assertBookingDelta, assertChange, assertRecoveryUnchanged,
   assertPhilippineSnapshot, assertTerminalDisposition, createOfflineEvidence };
+// Separate Phase 4B schema: only mock evidence can currently be constructed.
+// A later native implementation needs a private provenance capability, not a caller's "verified" boolean.
+function createProvisioningEvidence(value) {
+  const e = require("./environment.cjs");
+  try {
+    const v = e.p4bData(value);
+    e.exactKeys(v, ["runId", "applicationCommit", "harnessCommit", "harnessManifestHash", "fixtureProfile", "fixtureFingerprint",
+      "imageIndexDigest", "imagePlatformDigest", "imageConfigDigest", "platform", "schema", "stage", "evidenceSource", "counts", "checks", "cleanup"], "P4B_EVIDENCE_INVALID");
+    e.p4bCheck(/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/.test(v.runId) && v.applicationCommit === BASELINE &&
+      /^[0-9a-f]{40}$/.test(v.harnessCommit) && /^[0-9a-f]{64}$/.test(v.harnessManifestHash) &&
+      v.fixtureProfile === e.PHASE4B_PROFILE && v.schema === "wmo_synthetic_" + v.runId.replace(/-/g, ""), "P4B_EVIDENCE_INVALID");
+    e.p4bCheck([v.fixtureFingerprint, v.imageIndexDigest, v.imagePlatformDigest, v.imageConfigDigest].every(x => /^sha256:[0-9a-f]{64}$/.test(x)) &&
+      ["linux/amd64", "linux/arm64"].includes(v.platform), "P4B_EVIDENCE_INVALID");
+    e.p4bCheck(["planned", "fixtures-unready", "ready", "removed"].includes(v.stage) && v.evidenceSource === "mock" &&
+      ["not-run", "mock-owned-removed"].includes(v.cleanup) && (v.stage === "removed") === (v.cleanup === "mock-owned-removed"), "P4B_EVIDENCE_INVALID");
+    e.exactKeys(v.counts, ["resources", "connections", "modelCommands", "modelSqlStatements", "dockerCommands", "databaseQueries"], "P4B_EVIDENCE_INVALID");
+    e.p4bCheck(Object.values(v.counts).every(n => Number.isSafeInteger(n) && n >= 0) &&
+      [0, 3].includes(v.counts.resources) && v.counts.connections === 0 && v.counts.dockerCommands === 0 && v.counts.databaseQueries === 0, "P4B_EVIDENCE_INVALID");
+    const allowed = ["source", "image", "ownership", "server", "fixture"];
+    e.p4bCheck(Array.isArray(v.checks) && new Set(v.checks).size === v.checks.length && v.checks.every(c => allowed.includes(c)), "P4B_EVIDENCE_INVALID");
+    return e.freeze({ phase: "4B", evidenceClass: "mock-provisioning-protocol", ...v, nativeVerified: false,
+      writeAccess: false, independentlyObservedHere: false, engine: { connected: false, versionVerified: false },
+      persistence: { durableVerified: false }, invariants: v.checks.map(name => ({ name, expected: "match", observed: "mock-match" })) });
+  } catch (_) { throw new SafetyError("P4B_EVIDENCE_INVALID"); }
+}
+module.exports.createProvisioningEvidence = createProvisioningEvidence;

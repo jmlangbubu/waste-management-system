@@ -29,3 +29,25 @@ function createProviderGuards() {
     socket: Object.freeze({ emit: deny("socket") }), counts: () => Object.freeze({ ...counts }) });
 }
 module.exports = { createDeferredRuntime, createProviderGuards };
+function phase4BCapabilities() {
+  return Object.freeze({ phase: "4B", selfCheck: "offline", plan: "offline", provision: "native-unsupported",
+    verify: "native-unsupported", attest: "native-unsupported", teardown: "native-unsupported",
+    requiredScopes: Object.freeze({ provision: "provision", verify: "verify", attest: "attest", teardown: "teardown" }),
+    nativeExecutionAvailable: false, writeAccess: false, databaseAccess: false });
+}
+function createMockDisposableRuntime(configuration, transport) {
+  // Loading this adapter is inert. No production router, database pool or provider client is imported.
+  const disposable = require("./disposable.cjs");
+  const lifecycle = disposable.createMockLifecycle(configuration, transport);
+  return Object.freeze({ lifecycle, capabilities: phase4BCapabilities,
+    integrationContract: () => Object.freeze({
+      applicationService: "services/appointmentSchedulingService.js", productionPoolAllowed: false,
+      poolFactory: "requires-reviewed-disposable-connection-adapter", observerFactory: "separate-read-only-account",
+      clock: "explicit-fixed-clock", sessionIdentity: "synthetic-only", routeLoader: "unsupported",
+      featureEnablement: "test-constructor-injection-only", productionEnvironmentMutation: false
+    }),
+    openPools: disposable.createNativeLifecycle, loadRoutes: disposable.createNativeLifecycle,
+    providers: createProviderGuards()
+  });
+}
+Object.assign(module.exports, { phase4BCapabilities, createMockDisposableRuntime });

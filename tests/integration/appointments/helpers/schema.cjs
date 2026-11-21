@@ -113,3 +113,132 @@ function fixtureMetadata(name) {
   return metadata;
 }
 module.exports = { SERVICES, TIMES, fixtureSpecification, fixtureDdl, fixtureMetadata, fixtureFingerprint };
+// Versioned Phase 4B profile. The Phase 4A TABLES, DDL and fingerprint above remain unchanged.
+const p4b = require("./environment.cjs");
+const IDENTITY_COLUMNS = freeze({
+  run_id: ascii("char(36)"), schema_name: ascii("varchar(64)"), application_commit: ascii("char(40)"),
+  harness_commit: ascii("char(40)"), fixture_profile: ascii("varchar(32)"), fixture_fingerprint: ascii("char(71)"),
+  synthetic_only: col("tinyint", false, { default: 1 }), reconciled: col("tinyint", false, { default: 0 })
+});
+const CANONICAL_SQL_SCHEMA = "wmo_synthetic_" + "0".repeat(32);
+const BINDING_POLICY = freeze({
+  canonicalSqlSchema: CANONICAL_SQL_SCHEMA,
+  identityParameterSlots: ["runId", "schema", "harnessCommit", "fixtureFingerprint"],
+  staticApplicationCommit: BASELINE,
+  normalization: "explicit-template-bindings-only-no-value-based-replacement"
+});
+const quoted = name => String.fromCharCode(96) + name + String.fromCharCode(96);
+const slot = name => freeze({ dynamicBinding: name });
+function canonicalJson(value) {
+  if (Array.isArray(value)) return "[" + value.map(canonicalJson).join(",") + "]";
+  if (value && typeof value === "object") return "{" + Object.keys(value).sort().map(k => JSON.stringify(k) + ":" + canonicalJson(value[k])).join(",") + "}";
+  return JSON.stringify(value);
+}
+function provisioningSnapshot() {
+  const requestHash = crypto.createHash("sha256").update(IDENTIFIERS.requestKey).digest("hex");
+  return freeze({
+    appointments: [{ id: 17, purpose: "Accreditation", appointment_code: "APT-000017", preferred_date: CITIZEN.preferred_date,
+      status: "pending", appointment_revision: 0, assigned_to: null, assigned_at: null }],
+    reservations: [{ appointment_id: 17, service_key: "accreditation", appointment_date: "2026-11-23", appointment_time: "10:00:00" }],
+    requests: [{ request_hash: requestHash, payload_hash: crypto.createHash("sha256").update("synthetic-payload-v1").digest("hex"),
+      appointment_id: 17, appointment_code: "APT-000017" }],
+    notifications: [{ id: 17, type: "appointment" }]
+  });
+}
+function boundIdentity(bindings, reconciled = 0) {
+  return freeze({ run_id: bindings.runId, schema_name: bindings.identitySchema, application_commit: bindings.applicationCommit,
+    harness_commit: bindings.harnessCommit, fixture_profile: p4b.PHASE4B_PROFILE, fixture_fingerprint: bindings.fingerprint,
+    synthetic_only: 1, reconciled });
+}
+function buildMetadata(name) {
+  const m = fixtureMetadata(name);
+  m.tables.push({ TABLE_SCHEMA: name, TABLE_NAME: "appointment_harness_identity", TABLE_TYPE: "BASE TABLE", ENGINE: "InnoDB" });
+  for (const [column, spec] of Object.entries(IDENTITY_COLUMNS)) {
+    const string = spec.type.startsWith("char") || spec.type.startsWith("varchar"), match = spec.type.match(/\((\d+)\)/);
+    m.columns.push({ TABLE_SCHEMA: name, TABLE_NAME: "appointment_harness_identity", COLUMN_NAME: column,
+      DATA_TYPE: spec.type.split("(")[0], COLUMN_TYPE: spec.type, IS_NULLABLE: "NO",
+      COLUMN_DEFAULT: spec.default === null ? null : String(spec.default), EXTRA: "", CHARACTER_MAXIMUM_LENGTH: string ? Number(match[1]) : null,
+      NUMERIC_PRECISION: string ? null : 3, NUMERIC_SCALE: string ? null : 0, DATETIME_PRECISION: null,
+      CHARACTER_SET_NAME: string ? "ascii" : null, COLLATION_NAME: string ? "ascii_bin" : null, GENERATION_EXPRESSION: "" });
+  }
+  for (const [index, column] of [["PRIMARY", "run_id"], ["harness_schema", "schema_name"]]) m.indexes.push({
+    TABLE_SCHEMA: name, TABLE_NAME: "appointment_harness_identity", INDEX_NAME: index, NON_UNIQUE: 0, SEQ_IN_INDEX: 1,
+    COLUMN_NAME: column, SUB_PART: null, EXPRESSION: null, INDEX_TYPE: "BTREE", IS_VISIBLE: "YES" });
+  return freeze(m);
+}
+function buildAttestation(bindings) {
+  const prefix = quoted(bindings.sqlSchema) + ".";
+  // Inert protocol only. A native implementation still requires locked reconciliation,
+  // one affected row per update and acknowledged COMMIT. Never included in setup.
+  return freeze({ executable: false, requiresSeparateAuthorization: true, requiresFreshReconciliation: true,
+    updates: [
+      { sql: "UPDATE " + prefix + quoted("appointment_harness_identity") + " SET reconciled = 1 WHERE run_id = ? AND fixture_fingerprint = ? AND reconciled = 0;",
+        parameters: [bindings.runId, bindings.fingerprint] },
+      { sql: "UPDATE " + prefix + quoted("appointment_feature_state") + " SET backfill_complete = 1 WHERE feature_key = ? AND schema_version = 1 AND backfill_complete = 0;",
+        parameters: ["service_slots"] }
+    ] });
+}
+function buildProvisioningContract(bindings) {
+  const prefix = quoted(bindings.sqlSchema) + ".", snapshot = provisioningSnapshot(), row = boundIdentity(bindings);
+  const columnSql = Object.entries(IDENTITY_COLUMNS).map(([name, spec]) => quoted(name) + " " + spec.type.toUpperCase() +
+    (spec.charset ? " CHARACTER SET ascii COLLATE ascii_bin" : "") + " NOT NULL" + (spec.default !== null ? " DEFAULT " + spec.default : ""));
+  columnSql.push("PRIMARY KEY (" + quoted("run_id") + ")", "UNIQUE KEY " + quoted("harness_schema") + " (" + quoted("schema_name") + ")");
+  const ddl = statements(bindings.sqlSchema).map(sql => ({ sql, parameters: [] }));
+  ddl.push({ sql: "CREATE TABLE " + prefix + quoted("appointment_harness_identity") + " (" + columnSql.join(", ") + ") ENGINE=InnoDB;", parameters: [] });
+  const markerColumns = Object.keys(row);
+  const seed = [
+    { sql: "INSERT INTO " + prefix + quoted("appointment_harness_identity") + " (" + markerColumns.map(quoted).join(", ") + ") VALUES (" + markerColumns.map(() => "?").join(", ") + ");", parameters: Object.values(row) },
+    { sql: "INSERT INTO " + prefix + quoted("appointments") + " (id, appointment_code, full_name, barangay, contact_number, email, purpose, preferred_date, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);",
+      parameters: [17, "APT-000017", CITIZEN.full_name, CITIZEN.barangay, CITIZEN.contact_number, CITIZEN.email, CITIZEN.purpose, CITIZEN.preferred_date, CITIZEN.notes] },
+    { sql: "INSERT INTO " + prefix + quoted("appointment_reservations") + " (service_key, appointment_date, appointment_time, appointment_id) VALUES (?, ?, ?, ?);",
+      parameters: ["accreditation", "2026-11-23", "10:00:00", 17] },
+    { sql: "INSERT INTO " + prefix + quoted("appointment_booking_requests") + " (request_hash, payload_hash, appointment_id, appointment_code) VALUES (?, ?, ?, ?);",
+      parameters: Object.values(snapshot.requests[0]) },
+    { sql: "INSERT INTO " + prefix + quoted("notifications") + " (id, type, title, message) VALUES (?, ?, ?, ?);",
+      parameters: [17, "appointment", "Synthetic appointment", "Synthetic fixture only"] }
+  ];
+  return freeze({ profile: p4b.PHASE4B_PROFILE, phase4AFingerprint: fixtureFingerprint(), bindingPolicy: BINDING_POLICY,
+    identityDefinition: { engine: "InnoDB", columns: IDENTITY_COLUMNS, primary: ["run_id"], unique: ["schema_name"] },
+    applicationTables: Object.keys(TABLES), controlTable: "appointment_harness_identity", ddl, seed, marker: MARKER,
+    identity: row, expectedSnapshot: snapshot, expectedMetadata: buildMetadata(bindings.sqlSchema),
+    syntheticActor: IDENTIFIERS.staff, clock: "2026-11-21T00:00:00Z", attestation: buildAttestation(bindings) });
+}
+function canonicalProvisioningContract() {
+  // Only these known identity bindings are placeholders. Static values are never normalized
+  // by comparing them with an actual run ID/schema/commit: coincidentally equal seed values remain hashed.
+  return buildProvisioningContract({ sqlSchema: CANONICAL_SQL_SCHEMA, identitySchema: slot("schema"), runId: slot("runId"),
+    applicationCommit: BASELINE, harnessCommit: slot("harnessCommit"), fingerprint: slot("fixtureFingerprint") });
+}
+function provisioningFingerprint() {
+  return "sha256:" + crypto.createHash("sha256").update(canonicalJson(canonicalProvisioningContract())).digest("hex");
+}
+function profileConfiguration(input) {
+  const c = p4b.validatePhase4BConfiguration(input);
+  p4b.p4bCheck(c.fixture.fingerprint === provisioningFingerprint(), "P4B_FIXTURE_INVALID");
+  return c;
+}
+function actualBindings(c) {
+  return { sqlSchema: c.schema, identitySchema: c.schema, runId: c.runId, applicationCommit: c.source.applicationCommit,
+    harnessCommit: c.source.harnessCommit, fingerprint: c.fixture.fingerprint };
+}
+function instantiatedProfile(c) {
+  return freeze({ ...buildProvisioningContract(actualBindings(c)), fingerprint: c.fixture.fingerprint, executable: false,
+    requiresSeparateAuthorization: true, productionSchemaVerified: false, realMysqlVerified: false });
+}
+function provisioningProfile(input) { return instantiatedProfile(profileConfiguration(input)); }
+function validateInstantiatedProvisioningProfile(input, supplied) {
+  try {
+    const c = profileConfiguration(input), actual = p4b.p4bData(supplied);
+    p4b.p4bCheck(p4b.same(actual, instantiatedProfile(c)), "P4B_FIXTURE_INVALID");
+    return freeze({ matchesCanonicalTemplate: true, dynamicBindingsMatch: true, writeAccess: false, independentlyObservedHere: false });
+  } catch (_) { throw p4b.p4bError(null, "P4B_FIXTURE_INVALID"); }
+}
+function identityRow(input, reconciled = 0) {
+  const c = profileConfiguration(input);
+  p4b.p4bCheck([0, 1].includes(reconciled), "P4B_FIXTURE_INVALID");
+  return boundIdentity(actualBindings(c), reconciled);
+}
+function provisioningMetadata(input) { return buildMetadata(profileConfiguration(input).schema); }
+function attestationStatements(input) { return buildAttestation(actualBindings(profileConfiguration(input))); }
+Object.assign(module.exports, { provisioningFingerprint, provisioningSnapshot, identityRow, provisioningProfile, provisioningMetadata, attestationStatements,
+  canonicalProvisioningContract, validateInstantiatedProvisioningProfile });
