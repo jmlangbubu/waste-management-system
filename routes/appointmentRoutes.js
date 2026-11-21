@@ -6,7 +6,20 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 const { buildAppointmentUpdateEmail } = require("../utils/appointmentUpdateEmail");
 const { requireWebAuth, requireWebRole, requireWebCapability, requireCsrf } = require("../middleware/webSessionAuth");
 const { AppointmentSchedulingService } = require("../services/appointmentSchedulingService");
+const { manilaNow, validateDate } = require("../services/appointmentPolicy");
 const scheduling = new AppointmentSchedulingService(db);
+const appointmentTimeSnapshot = Symbol("appointmentTimeSnapshot");
+function appointmentRequestTime(req) {
+  if (!req[appointmentTimeSnapshot]) {
+    try {
+      const instant = new Date();
+      if (!Number.isFinite(instant.getTime())) throw new Error("Invalid application clock");
+      const timestamp = manilaNow(instant);
+      req[appointmentTimeSnapshot] = Object.freeze({ timestamp, date: validateDate(timestamp.slice(0, 10)) });
+    } catch (_) { throw new Error("Appointment clock unavailable"); }
+  }
+  return req[appointmentTimeSnapshot];
+}
 const staffView = requireWebCapability("appointments.view");
 const staffManage = [...requireWebCapability("appointments.manage"), requireCsrf];
 const orientationView = requireWebCapability("orientation.view");
@@ -53,22 +66,26 @@ const requireOrientationWebMutation = [
 
 console.log("appointmentRoutes loaded");
 
-// Reconcile attendance on the database's calendar date, not a rolling timer.
+// Reconcile on the request's Philippine calendar date, not a rolling timer.
 async function reconcileOverdueOrientationNoShows(req, res, next) {
   // Maintenance reads must not become unguarded writes or skip revisions.
-  if (!scheduling.enabled()) return next();
-  try { await scheduling.ready(); } catch (error) { return actionError(res, error); }
+  let today;
+  try {
+    today = appointmentRequestTime(req).date;
+    if (!scheduling.enabled()) return next();
+    await scheduling.ready();
+  } catch (error) { return actionError(res, error); }
   db.query(
     `UPDATE appointments
      SET orientation_status = 'no_show', updated_at = NOW(), appointment_revision = appointment_revision + 1
      WHERE purpose = ?
        AND LOWER(TRIM(status)) = 'approved'
-       AND preferred_date < CURDATE()
+       AND preferred_date < ?
        AND orientation_started_at IS NULL
        AND orientation_completed_at IS NULL
        AND COALESCE(orientation_completed, 0) = 0
        AND LOWER(COALESCE(NULLIF(TRIM(orientation_status), ''), 'approved')) = 'approved'`,
-    [ORIENTATION_PURPOSE],
+    [ORIENTATION_PURPOSE, today],
     (error) => {
       if (error) {
         console.error("orientation no-show reconciliation error:", error);
@@ -160,7 +177,7 @@ router.get("/active", ...staffView, privateResponse, reservationSchema, reconcil
       OR TRIM(status) = ''
       OR LOWER(TRIM(status)) IN ('pending', 'approved', 'rescheduled')
     )
-    AND preferred_date >= CURDATE()
+    AND preferred_date >= ?
     AND NOT (
       purpose = 'SWM Orientation & Clearance'
       AND (
@@ -180,7 +197,7 @@ router.get("/active", ...staffView, privateResponse, reservationSchema, reconcil
     ORDER BY preferred_date ASC, id DESC
   `;
 
-  db.query(sql, (err, results) => {
+  db.query(sql, [appointmentRequestTime(req).date], (err, results) => {
     if (err) {
       console.error("get active appointments error:", err);
       return res.status(500).json({
@@ -252,7 +269,7 @@ router.get("/history", ...staffView, privateResponse, reservationSchema, reconci
       LOWER(TRIM(status)) IN ('rejected', 'cancelled', 'completed')
       OR (
         LOWER(TRIM(status)) IN ('approved', 'rescheduled')
-        AND preferred_date < CURDATE()
+        AND preferred_date < ?
         AND NOT (
           purpose = 'SWM Orientation & Clearance'
           AND LOWER(TRIM(COALESCE(orientation_status, ''))) IN
@@ -278,7 +295,7 @@ router.get("/history", ...staffView, privateResponse, reservationSchema, reconci
     ORDER BY updated_at DESC, id DESC
   `;
 
-  db.query(sql, (err, results) => {
+  db.query(sql, [appointmentRequestTime(req).date], (err, results) => {
     if (err) {
       console.error("get appointment history error:", err);
       return res.status(500).json({
@@ -409,10 +426,10 @@ router.post("/orientation/:id/mark-incomplete", requireOrientationWebMutation, r
 
     db.query(
       `UPDATE appointments SET orientation_status = 'incomplete_orientation',
-         orientation_completed = 0, orientation_completed_at = NOW(), updated_at = NOW(), appointment_revision = appointment_revision + 1
+         orientation_completed = 0, orientation_completed_at = ?, updated_at = NOW(), appointment_revision = appointment_revision + 1
        WHERE id = ? AND purpose = ? AND status = 'approved'
          AND COALESCE(orientation_status, 'approved') = ?`,
-      [record.id, ORIENTATION_PURPOSE, current],
+      [appointmentRequestTime(req).timestamp, record.id, ORIENTATION_PURPOSE, current],
       (error, result) => {
         if (error) {
           console.error("mark orientation incomplete error:", error);
@@ -816,14 +833,14 @@ router.put("/orientation/start/:token", privateResponse, reservationWrite, recon
     UPDATE appointments
     SET
       orientation_status = 'pending_orientation',
-      orientation_started_at = COALESCE(orientation_started_at, NOW()),
+      orientation_started_at = COALESCE(orientation_started_at, ?),
       updated_at = NOW(), appointment_revision = appointment_revision + 1
     WHERE orientation_token = ? AND purpose = ? AND status = 'approved'
       AND COALESCE(orientation_status, 'approved') IN
         ('approved', 'pending_orientation', 'ready_for_retake')
   `;
 
-  db.query(sql, [token, ORIENTATION_PURPOSE], (err, result) => {
+  db.query(sql, [appointmentRequestTime(req).timestamp, token, ORIENTATION_PURPOSE], (err, result) => {
     if (err) {
       console.error("start orientation error:", err);
       return res.status(500).json({
@@ -899,7 +916,7 @@ router.put("/orientation/complete/:token", privateResponse, reservationWrite, re
       const nextStatus = resultValue.passed ? "completed_orientation" : "failed_orientation";
       const sql = resultValue.passed
         ? `UPDATE appointments SET status = 'completed', orientation_completed = 1,
-             orientation_status = 'completed_orientation', orientation_completed_at = NOW(),
+             orientation_status = 'completed_orientation', orientation_completed_at = ?,
              orientation_score = ?, updated_at = NOW(), appointment_revision = appointment_revision + 1
            WHERE id = ? AND purpose = ? AND status = 'approved'
              AND COALESCE(orientation_status, 'approved') = ?`
@@ -909,7 +926,10 @@ router.put("/orientation/complete/:token", privateResponse, reservationWrite, re
            WHERE id = ? AND purpose = ? AND status = 'approved'
              AND COALESCE(orientation_status, 'approved') = ?`;
 
-      db.query(sql, [resultValue.score, record.id, ORIENTATION_PURPOSE, current], (err, result) => {
+      const values = resultValue.passed
+        ? [appointmentRequestTime(req).timestamp, resultValue.score, record.id, ORIENTATION_PURPOSE, current]
+        : [resultValue.score, record.id, ORIENTATION_PURPOSE, current];
+      db.query(sql, values, (err, result) => {
         if (err) {
           console.error("submit orientation result error:", err);
           return res.status(500).json({

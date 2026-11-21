@@ -164,10 +164,57 @@ independent operator verification. No privileges are obtained or changed by the 
 One connection is not an atomic DDL snapshot: concurrent DDL/out-of-band writers remain
 outside this guarantee. External writer freeze and drain remain mandatory for cutover and
 attestation changes, especially for route-level orientation writes outside the transaction
-wrapper. No timeout policy, schema cache or R3 calendar/time handling is introduced.
+wrapper. R2 introduces no timeout policy or schema cache; the separate R3 time contract is below.
 Residual findings remain: readiness exceptions have no diagnostic classification, and
 rejected readiness conservatively destroys potentially healthy connections. This nullable
 index correction changes neither behavior; real database/load verification remains required.
+
+## R3 Philippine calendar and orientation DATETIME contract
+
+The appointment router captures one valid application Date instant at its first calendar
+operation. It uses the unchanged appointmentPolicy.manilaNow() formatter (Asia/Manila),
+then validates the YYYY-MM-DD portion with the existing policy validator. The frozen
+date/timestamp snapshot is stored under a private request Symbol. It is reused throughout
+that request, never returned in API responses, and refreshed for the next request. There
+is no global date cache or extra database query for the clock. An invalid application
+clock returns safe unavailability before calendar SQL.
+
+Three former CURDATE() predicates now bind the Philippine date as a query parameter:
+
+- No-show reconciliation: preferred_date < ?.
+- GET /active: preferred_date >= ?.
+- GET /history: preferred_date < ?.
+
+The boundary is the Philippine calendar day, not a rolling 24-hour interval. Reconciliation
+and the following list query share the same date even across midnight. Maintenance reads
+also capture/bind that date while skipping reconciliation; disabled orientation mutations
+remain denied by the existing readiness guards. Existing status/exclusion rules and
+revision increments remain unchanged. Legacy web-user list routes are unchanged.
+
+The same request snapshot supplies explicit YYYY-MM-DD HH:mm:ss Philippine strings for
+orientation_started_at = COALESCE(orientation_started_at, ?) on start, and for
+orientation_completed_at = ? on Mark Incomplete and a passed quiz. These nullable DATETIME(0)
+fields no longer obtain their new values from the pooled session's NOW(). A failed quiz
+still sets completion time to NULL. COALESCE retains an existing start time; idempotent
+completed/failed/incomplete responses issue no second result UPDATE and preserve their
+stored time, score and revision. Existing state guards, scoring and certificate eligibility
+are preserved. All new dates/timestamps are bound values, with IDs/scores/tokens following
+their unchanged SQL guards.
+
+The seven unrelated updated_at = NOW() expressions, token generation, and existing
+created_at/assigned_at/TIMESTAMP conventions are preserved. R3 makes no global application
+or database timezone changes, session timezone mutations, timezone-table dependencies,
+historical timestamp conversion, migration, backfill or activation. Existing historical
+DATETIME values remain unverified and are retained rather than repaired automatically.
+
+Offline tests cover UTC instants 2026-11-20T15:59:59Z, 16:00:00Z and 16:00:01Z, corresponding
+to Manila 23:59:59 on November 20, then 00:00:00 and 00:00:01 on November 21. The route VM's
+clock is isolated from the test host; the SQL model independently controls its session
+calendar/NOW values. Tests cover midnight-crossing requests, lifecycle exclusions,
+parameter order, COALESCE, idempotency, maintenance and authorization/readiness denial.
+These are synthetic SQL tests. Actual MySQL DATETIME comparison/binding, preserved
+TIMESTAMP behavior, historical encoding, concurrency, production parity and all existing
+metadata/backfill/freeze/drain/deployment approvals remain separate rollout gates.
 
 ## Non-destructive backfill plan
 

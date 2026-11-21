@@ -7,7 +7,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 // Real session/role/CSRF middleware and route registrations; no packages, DB or providers.
-function harness({ service, legacy = false, sendEmail, selectRows } = {}) {
+function harness({ service, legacy = false, sendEmail, selectRows, clock } = {}) {
   const state = { role: "super_admin", expired: false, calls: [], queries: [], queryCalls: [], routes: [], middleware: [] };
   const digest = value => crypto.createHash("sha256").update(value).digest("hex");
   const session = {
@@ -59,7 +59,13 @@ function harness({ service, legacy = false, sendEmail, selectRows } = {}) {
     }
     return original.call(this, name, parent, isMain);
   };
-  try { require(routeFile); } finally { Module._load = original; }
+  try {
+    if (clock) vm.runInNewContext(fs.readFileSync(routeFile, "utf8"), {
+      require: Module.createRequire(routeFile), module: { exports: {} }, console,
+      Date: clock.Date, process: { env: {} }, Buffer
+    }, { filename: routeFile });
+    else require(routeFile);
+  } finally { Module._load = original; }
   return { state, async request(method, url, { auth = true, csrf = "valid-csrf", body = {}, params = {}, headers = {} } = {}) {
     const route = state.routes.find(row => row.method === method && row.url === url);
     assert.ok(route, `${method} ${url}`);
@@ -449,4 +455,79 @@ test("R2 request-level costs expose repeated existing readiness guards", async t
     measurements.push({ method, url, sequentialLeases: leases, metadataQueries: f.metrics.metadataQueries });
   }
   t.diagnostic(JSON.stringify({ syntheticRequestCosts: measurements, realDatabaseLatencyMeasured: false }));
+});
+
+function isolatedRouteClock(...instants) {
+  let reads = 0;
+  return { get reads() { return reads; }, Date: class extends Date {
+    constructor(...args) {
+      if (args.length) super(...args);
+      else super(instants[Math.min(reads++, instants.length - 1)]);
+    }
+    static now() { return Date.parse(instants[Math.min(reads, instants.length - 1)]); }
+  } };
+}
+
+test("R3 existing session, capability and CSRF guards precede clock capture", async () => {
+  const nativeDate = Date;
+  for (const scenario of [
+    { method: "get", url: "/active", options: { auth: false }, status: 401 },
+    { method: "get", url: "/history", expired: true, status: 401 },
+    { method: "get", url: "/active", role: "unknown", status: 403 },
+    { method: "post", url: "/orientation/:id/mark-incomplete", options: { auth: false }, status: 401 },
+    { method: "post", url: "/orientation/:id/mark-incomplete", options: { csrf: null }, status: 403 },
+    { method: "post", url: "/orientation/:id/mark-incomplete", role: "clerk_admin", status: 403 }
+  ]) {
+    const clock = isolatedRouteClock("2026-11-20T16:00:00Z"); let readiness = 0;
+    const h = harness({ clock, service: { enabled: () => true, async ready() { readiness++; } } });
+    h.state.expired = !!scenario.expired; if (scenario.role) h.state.role = scenario.role;
+    assert.equal((await h.request(scenario.method, scenario.url, scenario.options)).statusCode, scenario.status);
+    assert.equal(clock.reads, 0); assert.equal(readiness, 0); assert.equal(h.state.queries.length, 0);
+  }
+  assert.equal(Date, nativeDate, "isolated VM clock never replaces the global Date");
+});
+
+test("R3 R2 schema denial still occurs before clock capture or route SQL", async () => {
+  const { fixture } = require("./helpers/appointmentSchedulingFixture");
+  for (const [method, url] of [["get", "/active"], ["get", "/history"], ["put", "/orientation/start/:token"], ["post", "/orientation/:id/mark-incomplete"]]) {
+    const f = fixture({ unready: true }), clock = isolatedRouteClock("2026-11-20T16:00:00Z");
+    const h = harness({ service: f.service, clock });
+    assert.equal((await h.request(method, url)).statusCode, 503);
+    assert.equal(clock.reads, 0); assert.equal(h.state.queries.length, 0);
+    assert.equal(f.metrics.acquisitionAttempts, 1);
+    assert.equal(f.connections[0].beginAttempts, 0); assert.equal(f.connections[0].destroyCount, 1);
+  }
+});
+
+test("R3 actual maintenance guards retain parameterized Manila reads and deny writes", async () => {
+  const { fixture } = require("./helpers/appointmentSchedulingFixture");
+  const f = fixture({ enabled: false });
+  const clock = isolatedRouteClock("2026-11-20T16:00:00Z", "2026-11-20T16:00:01Z");
+  const h = harness({ service: f.service, clock, selectRows: () => [] });
+  for (const [url, envelope] of [["/active", "appointments"], ["/history", "history"]]) {
+    const response = await h.request("get", url);
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(Object.keys(response.body).sort(), [envelope, "success"].sort());
+    const call = h.state.queryCalls.at(-1);
+    assert.deepEqual(Array.from(call.params), ["2026-11-21"]);
+    assert.match(call.sql, /preferred_date (?:>=|<) \?/);
+    assert.doesNotMatch(call.sql, /CURDATE\(\)|2026-11-21/);
+  }
+  assert.equal(clock.reads, 2); assert.equal(h.state.queries.length, 2);
+  for (const [method, url] of [["put", "/orientation/start/:token"], ["put", "/orientation/complete/:token"], ["post", "/orientation/:id/mark-incomplete"]]) {
+    assert.equal((await h.request(method, url, { body: { score: 8 } })).statusCode, 503);
+  }
+  assert.equal(clock.reads, 2); assert.equal(h.state.queries.length, 2);
+  assert.ok(h.state.queries.every(sql => /^\s*SELECT/.test(sql)));
+  assert.equal(f.metrics.acquisitionAttempts, 0); assert.equal(f.calls.length, 0);
+});
+
+test("R3 invalid application clock fails safely before calendar SQL", async () => {
+  for (const url of ["/active", "/history"]) {
+    const clock = isolatedRouteClock("not-an-instant"), h = harness({ clock });
+    const response = await h.request("get", url);
+    assert.equal(response.statusCode, 503); assert.equal(response.body.code, "APPOINTMENT_UNAVAILABLE");
+    assert.doesNotMatch(JSON.stringify(response.body), /clock|RangeError|not-an-instant/i);
+    assert.equal(clock.reads, 1); assert.equal(h.state.queries.length, 0);
+  }
 });
