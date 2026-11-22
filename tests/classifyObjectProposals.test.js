@@ -38,6 +38,18 @@ const geminiReply=text=>({candidates:[{content:{parts:[{text}]},finishReason:"ST
 const envelope=(objectProposals,primary=PRIMARY)=>({success:true,source:"cloud_run_gemini_vision",
  result:{...primary,...(objectProposals===undefined?{}:{objectProposals})}});
 const withoutItems=({detectedItems,scanSummary,...primary})=>primary;
+// P-9: the optional item-level hazardNotice is the only response field P-9 adds. Card-shape assertions written before
+// P-9 compare every other field through bare / bareItems, which first require that a present notice is exactly the
+// fixed code on an Unknown or Special Waste card. NOTE-1 ... NOTE-8 pin which cards carry it.
+const NOTICE=Object.freeze({code:"possible_hazard_confirmation_required"});
+const hasNotice=item=>Object.prototype.hasOwnProperty.call(item,"hazardNotice");
+function bare(item,why="P-9"){
+ if(!item||typeof item!=="object"||!hasNotice(item))return item;
+ assert.deepEqual(item.hazardNotice,NOTICE,why+": a notice is exactly the fixed code");
+ assert.ok(["Unknown","Special Waste"].includes(item.category),why+": a notice is only on an Unknown or Special Waste card");
+ const {hazardNotice:_notice,...rest}=item;return rest;
+}
+const bareItems=(items,why)=>items.map(item=>bare(item,why));
 const byName=(result,name)=>result.detectedItems.find(item=>item.itemName===name);
 const proposalLogs=logs=>logs.filter(line=>line.startsWith("[WasteScanProposals]"));
 // Request deadlines are Date.now()-relative; compare whole-second budgets, not ms drift.
@@ -561,7 +573,7 @@ for(const [id,visionName,label] of CONFIRMED)test(`${id}/F1-13 confirming ${labe
   const {off,on,calls}=await scan([vision(visionName,.9,R0)],[proposal(label,geometry)]);
   assert.equal(off.detectedItems[0].category,"Special Waste",label);
   assert.equal(on.detectedItems.length,1,"one physical item, no Gemini duplicate");
-  assert.deepEqual(on.detectedItems[0],off.detectedItems[0],"category, Vision confidence, guidance and modelKey are unchanged");
+  assert.deepEqual(bare(on.detectedItems[0]),off.detectedItems[0],"category, Vision confidence, guidance and modelKey are unchanged");
   assert.equal(sortingEligible(on.detectedItems[0]),sortingEligible(off.detectedItems[0]));
   assert.deepEqual([calls.classifier.length,calls.vision,calls.directGemini,calls.discovery,calls.assessment],[1,1,0,0,0]);
  }
@@ -584,7 +596,7 @@ for(const [id,visionName,label,why] of [["F1-08","Syringe","toy syringe","toy/re
 test("F1-12 two genuinely separate hazardous objects each keep their own confirmed result",async()=>{
  const visionObjects=[vision("Syringe",.9,R0),vision("Paint can",.85,FAR)];
  const {off,on}=await scan(visionObjects,[proposal("syringe",R0),proposal("paint can",FAR)]);
- assert.equal(on.detectedItems.length,2);assert.deepEqual(on.detectedItems,off.detectedItems);
+ assert.equal(on.detectedItems.length,2);assert.deepEqual(bareItems(on.detectedItems),off.detectedItems);
  assert.deepEqual(on.detectedItems.map(item=>item.category),["Special Waste","Special Waste"]);
 });
 
@@ -744,7 +756,7 @@ test("P1-P12 preservation across a mixed corrected scene",async()=>{
   if(item.analysisSource==="gemini_whole_image"){assert.ok(!("confidence" in item));assert.ok(["Unknown",...shared.CATALOG.map(c=>c.category)].includes(item.category));continue;}
   const prior=before.get(item.itemId);assert.ok(prior,"P9 every Vision owner keeps its ID");
   assert.ok([prior.category,"Unknown"].includes(item.category),"P6/P10 no promotion");assert.equal(item.confidence,prior.confidence);
-  for(const key of Object.keys(item))assert.ok(key in prior||["identityObservation","identitySource"].includes(key),"P9 no new item fields: "+key);
+  for(const key of Object.keys(bare(item)))assert.ok(key in prior||["identityObservation","identitySource"].includes(key),"P9 no new item fields: "+key);
  }
  assert.deepEqual(Object.keys(on).sort(),Object.keys(off).sort(),"P9 top-level response contract unchanged");
  assert.deepEqual(withoutItems(on),withoutItems(off),"P7 primary unchanged");
@@ -753,7 +765,7 @@ test("P1-P12 preservation across a mixed corrected scene",async()=>{
  for(const item of on.detectedItems.filter(item=>item.category==="Unknown"))assert.equal(sortingEligible(item),false,"P11");
  const model=on.detectedItems.find(item=>item.confidence===.88);
  assert.equal(model.modelKey,"plastic_bottle");assert.equal(model.modelHotspots.length,3);assert.equal(model.itemName,before.get(model.itemId).itemName,"P12");
- assert.deepEqual(on.detectedItems[0],off.detectedItems[0],"confirmed Special Waste owner identical to OFF");
+ assert.deepEqual(bare(on.detectedItems[0]),off.detectedItems[0],"confirmed Special Waste owner identical to OFF");
 });
 
 // ---------------------------------------------------------------------------
@@ -809,7 +821,7 @@ test("G1 controls C/D: ordinary near confirmation and exact Special Waste confir
  const bottle=await scan([vision("Bottle",.91,R0)],[proposal("plastic bottle",shift(R0,.02))]);
  assert.deepEqual(cards(bottle.on),[["Bottle","Recyclable","V"]]);
  const syringe=await scan([vision("Syringe",.9,R0)],[proposal("syringe",R0)]);
- assert.deepEqual(syringe.on.detectedItems,syringe.off.detectedItems);
+ assert.deepEqual(bareItems(syringe.on.detectedItems),syringe.off.detectedItems);
 });
 
 test("G1 controls E/F: clearly separate, edge-touching or nested hazards do not veto an independently supported owner",async()=>{
@@ -940,7 +952,7 @@ test("G1C-09 an ordinary Vision Bottle with the same nested bleach geometry stil
 test("G1C-10 a matched Special Waste owner with a legitimate confirming observation keeps its exact feature-off result",async()=>{
  for(const [name,label] of [["Syringe","syringe"],["Battery","battery"]])for(const box of [G1_OWNER,G1_NEAR]){
   const {off,on}=await bothOrders([proposal(label,box)],[vision(name,.8,G1_OWNER)]);
-  assert.equal(off.detectedItems[0].category,"Special Waste");assert.deepEqual(on.detectedItems,off.detectedItems,label);
+  assert.equal(off.detectedItems[0].category,"Special Waste");assert.deepEqual(bareItems(on.detectedItems),off.detectedItems,label);
  }
 });
 
@@ -1804,7 +1816,7 @@ function assertW1Contract(result,off,why){
    :offCategory.get(item.itemId)==="Special Waste",why+": no fabricated Special Waste ("+w1Label(item)+")");
   if(item.analysisSource==="gemini_whole_image"){
    assert.equal(item.requiresConfirmation,true,why);
-   for(const key of Object.keys(item))assert.ok(W1_GEMINI_KEYS.includes(key),why+": unexpected Gemini field "+key);
+   for(const key of Object.keys(bare(item,why)))assert.ok(W1_GEMINI_KEYS.includes(key),why+": unexpected Gemini field "+key);
   }
   if(item.category==="Unknown"){
    assert.ok(!item.modelKey&&!(item.guidance&&Object.keys(item.guidance).length)&&!item.action&&!item.warning&&!item.explanation,why+": Unknown carries no stream guidance");
@@ -2372,7 +2384,7 @@ test("MHP-11 approved annotation: an Unknown Vision owner may gain only an evide
   for(const [index,[objects,vision]] of orders.entries()){
    const why="MHP-11 "+id+" order "+index,{on,off}=await mhpScan(objects,vision,why);
    const owner=w1Owner(on,confidence),legacy=off.detectedItems.find(item=>item.confidence===confidence);
-   assert.deepEqual(Object.keys(owner).filter(key=>!["identityObservation","identitySource"].includes(key)).sort(),X2_OWNER_KEYS,why+": no guidance, model or other field is added");
+   assert.deepEqual(Object.keys(bare(owner,why)).filter(key=>!["identityObservation","identitySource"].includes(key)).sort(),X2_OWNER_KEYS,why+": no guidance, model or other field is added");
    assert.deepEqual([owner.category,owner.itemName,owner.canonicalItem,owner.originalItemName,owner.requiresConfirmation],["Unknown","Bottle","water bottle","Water bottle",true],why+": X2 owner values kept");
    for(const key of ["itemId","confidence","boundingBox","analysisSource"])assert.deepEqual(owner[key],legacy[key],why+": "+key+" equals feature OFF");
    if(owner.identityObservation!==undefined){
@@ -3166,7 +3178,7 @@ test("CR-1 A9 disputed card: in every order of every reviewed scene the hazard p
    const [card]=own;
    assert.deepEqual([card.category,card.requiresConfirmation,...["confidence","guidance","modelKey","modelHotspots"].map(key=>key in card)],
     ["Unknown",true,false,false,false,false],why+": conservative, confirmation required, no confidence and no disposal guidance");
-   assert.deepEqual(Object.keys(card).sort(),A9_CARD_KEYS,why+": exactly the existing Gemini card fields, no new schema field");
+   assert.deepEqual(Object.keys(bare(card,why)).sort(),A9_CARD_KEYS,why+": exactly the existing Gemini card fields, no new schema field");
    assert.deepEqual([card.observedIdentity,card.itemName,card.canonicalItem],[hazard.label,title,canonical],why+": the existing display mapping of "+hazard.label);
   }
 });
@@ -3382,9 +3394,9 @@ async function iaScan(scene,why){
  const on=await backend({env:BACKEND_ON,visionObjects:scene.owners,reply:envelope({objects:scene.objects})}).run();
  const off=await backend({visionObjects:scene.owners,reply:envelope({objects:scene.objects})}).run();
  assert.ok(on.detectedItems.length<=8,why+": the existing 8-card cap");
- assert.deepEqual(visionOwners(on),visionOwners(off),why+": Vision owners byte-identical to feature OFF");
+ assert.deepEqual(bareItems(visionOwners(on),why),visionOwners(off),why+": Vision owners byte-identical to feature OFF");
  for(const item of geminiItems(on)){
-  assert.deepEqual(Object.keys(item).sort(),A9_CARD_KEYS,why+": "+item.observedIdentity+" keeps the existing card fields");
+  assert.deepEqual(Object.keys(bare(item,why)).sort(),A9_CARD_KEYS,why+": "+item.observedIdentity+" keeps the existing card fields");
   assert.ok(["Unknown",shared.matchIdentity(item.observedIdentity)?.category].includes(item.category),
    why+": "+item.observedIdentity+" category is Unknown or its catalog category");
   assert.equal(item.requiresConfirmation,true,why+": "+item.observedIdentity+" needs confirmation");
@@ -3518,7 +3530,7 @@ async function p8Scan(scene,why){
  const offCategory=new Map(off.detectedItems.map(item=>[item.itemId,item.category]));
  for(const item of on.detectedItems){
   if(item.analysisSource==="gemini_whole_image"){
-   assert.deepEqual(Object.keys(item).sort(),A9_CARD_KEYS,why+": "+item.observedIdentity+" keeps the existing card fields");
+   assert.deepEqual(Object.keys(bare(item,why)).sort(),A9_CARD_KEYS,why+": "+item.observedIdentity+" keeps the existing card fields");
    assert.ok(["Unknown",shared.matchIdentity(item.observedIdentity)?.category].includes(item.category),
     why+": "+item.observedIdentity+" is Unknown or its catalog category");
    assert.equal(item.requiresConfirmation,true,why+": "+item.observedIdentity+" needs confirmation");
@@ -3546,7 +3558,7 @@ function p8AssertHeld(item,off,why){
 }
 const p8VisionUnchanged=(on,off,held,why)=>{
  for(const item of visionOwners(on).filter(item=>!held.includes(item)))
-  assert.deepEqual(item,off.detectedItems.find(prior=>prior.itemId===item.itemId),why+": "+item.canonicalItem+" byte-identical to feature OFF");
+  assert.deepEqual(bare(item,why),off.detectedItems.find(prior=>prior.itemId===item.itemId),why+": "+item.canonicalItem+" byte-identical to feature OFF");
 };
 
 // CX-1 (cases-min.json#min-g1a = cases.json#fresh2, one order): seven Vision owners fill the cap with one Gemini slot.
@@ -3565,7 +3577,7 @@ test("P8-1 HOLD-1 min-g1a: the G1-promoted Bottle owner covering the cardless po
  const why="P8-1 min-g1a",{on,off,trace}=await p8Scan(P8_MIN,why);
  assert.deepEqual(iaCards(on),P8_MIN_CARDS,why+": the final cards, in order");
  const held=on.detectedItems.find(item=>item.itemId==="item_2");
- assert.deepEqual(held,P8_MIN_HELD,why+": the held card: ID, name, geometry, confidence and provenance kept");
+ assert.deepEqual(bare(held,why),P8_MIN_HELD,why+": the held card: ID, name, geometry, confidence and provenance kept");
  p8AssertHeld(held,off,why);
  p8VisionUnchanged(on,off,[held],why);
  const phone=geminiItems(on);
@@ -3580,7 +3592,7 @@ test("P8-1 HOLD-1 min-g1a: the G1-promoted Bottle owner covering the cardless po
  assert.deepEqual(savedOn.body.result,savedOff.body.result,why+": serialized primary unchanged");
  assert.deepEqual(savedOn.writes,savedOff.writes,why+": the same scan_history insert");
  assert.deepEqual(savedOn.body.detectedItems,on.detectedItems,why+": the route serializes the held result unchanged");
- assert.deepEqual(savedOn.body.detectedItems.find(item=>item.itemId==="item_2"),P8_MIN_HELD,why+": the Android-facing held card");
+ assert.deepEqual(bare(savedOn.body.detectedItems.find(item=>item.itemId==="item_2"),why),P8_MIN_HELD,why+": the Android-facing held card");
  assert.deepEqual(savedOn.body.scanSummary,on.scanSummary,why+": the Android-facing summary");
  const [legacyOff,legacyOn]=[await route(off),await route(on)];
  assert.equal(legacyOff.status,503,why+": precondition, an Unknown card already requires the capability with the feature OFF");
@@ -3756,4 +3768,201 @@ test("P8-7 HOLD-6 feature OFF, near-miss flag values and discovery mode: the P-8
     why+": only the existing ineligibility diagnostic");
   }
  }
+});
+
+// ---------------------------------------------------------------------------
+// P-9 item-level hazard notice (NOTE-1 ... NOTE-8). On the A9 accepted path only, after the P-8 hold, a localized
+// Gemini hazard claim marks its own retained card; a claim without one marks every Unknown or Special Waste card covering
+// at least half of it. The notice is exactly {code:"possible_hazard_confirmation_required"}: no label, text, category or
+// confidence, and nothing else on any card, the selection, the primary, the diagnostics or the provider calls changes.
+// The oracle below re-derives the expected cards from the scene in the test, independently of the service.
+// ---------------------------------------------------------------------------
+const noted=result=>result.detectedItems.filter(hasNotice).map(item=>item.itemId);
+function noteExpected(result,{owners,objects}){
+ const expected=new Set();
+ for(const hazard of x2Hazards(objects,owners).filter(hazard=>hazard.src==="G")){
+  const own=geminiItems(result).find(item=>item.observedIdentity===hazard.label&&JSON.stringify(item.boundingBox)===JSON.stringify(hazard.box));
+  if(own){expected.add(own.itemId);continue;}
+  for(const item of result.detectedItems)if(item.boundingBox&&P8_SAFE.includes(item.category)&&p8Covers(item.boundingBox,hazard.box))expected.add(item.itemId);
+ }
+ return result.detectedItems.filter(item=>expected.has(item.itemId)).map(item=>item.itemId);
+}
+const NOTE_JSON=JSON.stringify(NOTICE);
+function noteAssert(result,scene,why){
+ assert.deepEqual(noted(result),noteExpected(result,scene),why+": notices exactly on own cards and on safe cards covering a cardless claim");
+ const notices=result.detectedItems.filter(hasNotice).map(item=>item.hazardNotice);
+ for(const item of result.detectedItems.filter(hasNotice)){
+  bare(item,why);
+  assert.equal(JSON.stringify(item.hazardNotice),NOTE_JSON,why+": exactly one key with the fixed value");
+  for(const object of scene.objects)assert.ok(!JSON.stringify(item.hazardNotice).includes(object.label),why+": no proposal label in the notice");
+  // The existing Unknown rule (p8Scan / W1): no non-empty guidance, model, hotspot or text (a vetoed owner keeps guidance {}).
+  const empty=value=>value===undefined||value===""||(typeof value==="object"&&value!==null&&Object.keys(value).length===0);
+  if(item.category==="Unknown")for(const key of P8_STRIPPED)assert.ok(empty(item[key]),why+": a noticed Unknown card carries no "+key+" "+JSON.stringify([item.analysisSource,item.canonicalItem,item[key]]));
+  if(item.analysisSource==="gemini_whole_image")assert.ok(!("confidence" in item),why+": no confidence on a noticed Gemini card");
+ }
+ assert.equal(new Set(notices).size,notices.length,why+": a new notice object for each card");
+ assert.ok(!proposalLogs(scene.logs||[]).some(line=>/notice|hazard/i.test(line)),why+": no new diagnostic vocabulary");
+}
+
+test("NOTE-1 a lone power bank: its own Unknown Item card carries exactly the notice; name, category and every other field are unchanged",async()=>{
+ const scene={owners:[],objects:[proposal("power bank",[.3,.3,.5,.6])]};
+ for(const [index,ordered] of [scene,{owners:[],objects:[proposal("power bank",shift([.3,.3,.5,.6],.02))]}].entries()){
+  const why="NOTE-1 geometry "+index,{on,logs}=await p8Scan(ordered,why);
+  assert.equal(on.detectedItems.length,1,why+": one card");
+  const [card]=on.detectedItems;
+  assert.deepEqual(card.hazardNotice,NOTICE,why+": the notice");
+  assert.deepEqual([card.analysisSource,card.itemName,card.canonicalItem,card.observedIdentity,card.category,card.requiresConfirmation,"confidence" in card],
+   ["gemini_whole_image","Item","power bank","power bank","Unknown",true,false],why+": the existing conservative card");
+  assert.deepEqual(Object.keys(bare(card,why)).sort(),A9_CARD_KEYS,why+": no other new field");
+  noteAssert(on,{...ordered,logs},why);
+  assert.equal(sortingEligible(card),false,why+": still excluded from the Sorting Challenge");
+ }
+});
+
+test("NOTE-2 min-g1a: the held item_2 (covering the cardless power bank) and the phone's own card carry the notice; the bleach bottle stays unattributed",async()=>{
+ const why="NOTE-2 min-g1a",{on,off,trace,logs}=await p8Scan(P8_MIN,why);
+ const phone=geminiItems(on)[0];
+ assert.deepEqual(noted(on),["item_2",phone.itemId],why+": exactly the held owner and the phone");
+ assert.deepEqual(bare(on.detectedItems.find(item=>item.itemId==="item_2"),why),P8_MIN_HELD,why+": the P-8 held card is otherwise unchanged");
+ p8AssertHeld(on.detectedItems.find(item=>item.itemId==="item_2"),off,why);
+ assert.deepEqual(iaCards(on),P8_MIN_CARDS,why+": the P-8 final cards, in order");
+ assert.deepEqual(trace,P8_MIN_TRACE,why+": the P-8 per-claim trace");
+ const bleach=x2Box(P8_MIN.objects.find(object=>object.label==="bleach bottle"));
+ assert.ok(!on.detectedItems.some(item=>p8Covers(item.boundingBox,bleach)),why+": precondition, no card covers half of the bleach bottle (item_2 covers 45 %)");
+ for(const item of visionOwners(on).filter(item=>item.itemId!=="item_2"))assert.ok(!hasNotice(item),why+": "+item.canonicalItem+" has no notice");
+ noteAssert(on,{...P8_MIN,logs},why);
+ assert.deepEqual(on.scanSummary,buildScanSummary(on.detectedItems),why+": summary unchanged by the notice");
+ assert.deepEqual(on.scanSummary.categories,{biodegradable:0,recyclable:6,residual:0,specialWaste:0},why+": no category counted differently");
+});
+
+test("NOTE-2b every reviewed corpus scene in every order: notices exactly match the independent oracle and never sit on an ordinary card",async()=>{
+ let scenes=0,marked=0,covered=0;
+ const check=(on,scene,why)=>{
+  noteAssert(on,scene,why);scenes++;marked+=noted(on).length;
+  for(const item of on.detectedItems.filter(hasNotice))if(item.analysisSource!=="gemini_whole_image")covered++;
+  assert.ok(!on.detectedItems.some(item=>hasNotice(item)&&ORDINARY.includes(item.category)),why+": no notice on an ordinary card");
+ };
+ check((await p8Scan(P8_MIN,"NOTE-2b min-g1a")).on,P8_MIN,"NOTE-2b min-g1a");
+ for(const [name,owners,objects] of P8_CX)for(const [index,scene] of p8Orders(iaScene(owners,objects)).entries())
+  check((await p8Scan(scene,"NOTE-2b "+name+" order "+index)).on,scene,"NOTE-2b "+name+" order "+index);
+ for(const [index,scene] of p8Orders(P8_TWO).entries())check((await p8Scan(scene,"NOTE-2b P8_TWO order "+index)).on,scene,"NOTE-2b P8_TWO order "+index);
+ for(const [name,scene] of P8_NATIVE)check((await p8Scan(scene,"NOTE-2b "+name)).on,scene,"NOTE-2b "+name);
+ for(const [name,owners,objects] of A9_SCENES)for(const [index,[order,ordered]] of mhpOrders(objects,owners).entries())
+  check((await a9Scan(order,ordered)).on,{owners:ordered,objects:order},"NOTE-2b "+name+" order "+index);
+ for(const [id,visionName,label] of CONFIRMED)for(const geometry of [R0,shift(R0,.02)]){
+  const {on}=await scan([vision(visionName,.9,R0)],[proposal(label,geometry)]);
+  check(on,{owners:[vision(visionName,.9,R0)],objects:[proposal(label,geometry)]},"NOTE-2b "+id);
+ }
+ assert.ok(scenes>=300&&marked>scenes&&covered>0,"NOTE-2b coverage: "+scenes+" scenes, "+marked+" notices, "+covered+" on Vision cards");
+});
+
+test("NOTE-3 a used battery: its own Used Battery Special Waste card carries the notice; the enclosing vetoed owner does not",async()=>{
+ const lone={owners:[],objects:[proposal("used battery",[.3,.3,.4,.45])]};
+ const why="NOTE-3 lone battery",{on,logs}=await p8Scan(lone,why);
+ assert.deepEqual(on.detectedItems.map(item=>[item.itemName,item.category,item.hazardNotice]),[["Used Battery","Special Waste",NOTICE]],why);
+ noteAssert(on,{...lone,logs},why);
+ assert.equal(sortingEligible(on.detectedItems[0]),sortingEligible(bare(on.detectedItems[0])),why+": Sorting eligibility is unchanged by the notice");
+ const [name,scene,cards]=P8_NATIVE[0],nested="NOTE-3 "+name,result=await p8Scan(scene,nested);
+ assert.deepEqual(iaCards(result.on),cards,nested+": the P-8 cards");
+ const battery=geminiItems(result.on)[0];
+ assert.deepEqual([battery.itemName,battery.category],["Used Battery","Special Waste"],nested);
+ assert.deepEqual(noted(result.on),[battery.itemId],nested+": the battery has its own card, so only that card is marked");
+ noteAssert(result.on,{...scene,logs:result.logs},nested);
+});
+
+test("NOTE-4 controls: P8-4 hazards keep the notice on their own cards only, the G1-promoted owner never carries one, and non-hazard scenes carry none",async()=>{
+ const scenes=[["own card",{owners:P8_MIN.owners,objects:P8_MIN.objects.filter(object=>object.label!=="power bank")}],
+  ["non-hazard relabel",{owners:P8_MIN.owners,objects:P8_MIN.objects.map(object=>object.label==="power bank"?{...object,label:"snack wrapper"}:object)}],
+  ["no cap pressure",{owners:P8_MIN.owners.filter(owner=>["Packaged goods","Paper"].includes(owner.name)),objects:P8_MIN.objects}]];
+ for(const [name,scene] of scenes){
+  const why="NOTE-4 "+name,{on,logs}=await p8Scan(scene,why);
+  const owner=visionOwners(on).find(item=>item.canonicalItem==="packaged goods");
+  assert.deepEqual([owner.category,hasNotice(owner)],["Recyclable",false],why+": the G1-promoted ordinary owner has no notice");
+  assert.ok(noted(on).every(id=>geminiItems(on).some(item=>item.itemId===id)),why+": only hazards' own Gemini cards are marked");
+  noteAssert(on,{...scene,logs},why);
+ }
+ const benign=[[[vision("Bottle",.91,R0)],[proposal("plastic bottle",shift(R0,.02))]],[[vision("Packaged goods",.8,R0)],[proposal("plastic bottle",shift(R0,.02))]],
+  [[],[proposal("banana peel",R0),proposal("instant noodle packet",FAR)]],[MIXED_VISION.slice(1,3),[proposal("plastic bottle",shift([.22,.05,.37,.45],.01))]]];
+ for(const [index,[owners,objects]] of benign.entries()){
+  const {on,off}=await scan(owners,objects);
+  assert.ok(!JSON.stringify(on).includes("hazardNotice"),"NOTE-4 non-hazard "+index+": no field anywhere");
+  assert.ok(!JSON.stringify(off).includes("hazardNotice"),"NOTE-4 non-hazard "+index+": OFF has no field");
+ }
+});
+
+test("NOTE-5 the notice is exactly one key with one fixed value, bounded, without proposal text, and nothing else on the card changes",async()=>{
+ const {on}=await p8Scan(P8_MIN,"NOTE-5");
+ const marked=on.detectedItems.filter(hasNotice);
+ assert.equal(marked.length,2,"NOTE-5 precondition");
+ for(const item of marked){
+  assert.deepEqual(Object.keys(item.hazardNotice),["code"],"NOTE-5 one key");
+  assert.equal(item.hazardNotice.code,"possible_hazard_confirmation_required","NOTE-5 the fixed code");
+  assert.ok(JSON.stringify(item.hazardNotice).length<=64,"NOTE-5 bounded size");
+  for(const text of ["power bank","bleach","phone","Plastic","confidence","category","label"])
+   assert.ok(!JSON.stringify(item.hazardNotice).includes(text),"NOTE-5 no "+text+" in the notice");
+ }
+ assert.notEqual(marked[0].hazardNotice,marked[1].hazardNotice,"NOTE-5 a new object per card");
+ const service=fs.readFileSync(path.join(__dirname,"../services/wasteAnalysisService.js"),"utf8");
+ assert.equal(service.split("hazardNotice:").length-1,1,"NOTE-5 the service writes the field in exactly one place");
+ assert.match(service,/hazardNotice: \{ code: PROPOSAL_HAZARD_NOTICE_CODE \}/,"NOTE-5 only the fixed constant is written");
+ assert.equal(service.split('"possible_hazard_confirmation_required"').length-1,1,"NOTE-5 one constant definition");
+ const start=service.indexOf("async function analyzeWasteWithObjectProposals("),end=service.indexOf("\nasync function analyzeWaste(",start);
+ const at=service.indexOf("hazardNotice:");
+ assert.ok(start>0&&end>start&&at>start&&at<end,"NOTE-5 the field is written only inside the A9 proposal path");
+});
+
+test("NOTE-6 feature OFF, near-miss flags, discovery mode and every fallback carry no notice and stay byte-identical to legacy",async()=>{
+ const OFF_ENVS=[{},{WMO_CLASSIFY_OBJECT_PROPOSALS_ENABLED:"TRUE",CLASSIFY_OBJECT_PROPOSALS_SHARED_TOKEN:TOKEN},
+  {WMO_CLASSIFY_OBJECT_PROPOSALS_ENABLED:"1",CLASSIFY_OBJECT_PROPOSALS_SHARED_TOKEN:TOKEN},{WMO_CLASSIFY_OBJECT_PROPOSALS_ENABLED:"true"},
+  {...BACKEND_ON,WHOLE_IMAGE_DISCOVERY_ENABLED:"true"}];
+ for(const [name,scene] of [["min-g1a",P8_MIN],["two G1 regions",P8_TWO],["lone power bank",{owners:[],objects:[proposal("power bank",[.3,.3,.5,.6])]}]]){
+  const reply=envelope({objects:scene.objects}),legacy=await backend({visionObjects:scene.owners,reply}).run();
+  assert.ok(!JSON.stringify(legacy).includes("hazardNotice"),"NOTE-6 "+name+": legacy has no field");
+  for(const env of OFF_ENVS){
+   const why="NOTE-6 "+name+" "+JSON.stringify(env),be=backend({env,visionObjects:scene.owners,reply}),result=await be.run();
+   assert.deepEqual(result,legacy,why+": byte-identical to legacy");assert.ok(!JSON.stringify(result).includes("hazardNotice"),why+": no field");
+   assert.deepEqual(p8Calls(be.calls),[1,1,0,0,0],why+": no extra provider call");
+  }
+  const absent=backend({env:BACKEND_ON,visionObjects:scene.owners,reply:envelope()}),absentResult=await absent.run();
+  assert.equal(p8Status(absent.logs),"absent","NOTE-6 "+name+": precondition, no proposal field");
+  assert.ok(!JSON.stringify(absentResult).includes("hazardNotice"),"NOTE-6 "+name+": the absent fallback has no field");
+ }
+ const off=await backend({visionObjects:P8_MIN.owners,reply:envelope({objects:P8_MIN.objects})}).run();
+ const fallback=await p8Patched(P8_MIN,p8Paper(P8_BLEACH));
+ assert.equal(p8Status(fallback.logs),"merge_failed","NOTE-6 precondition, the P8-6 native fallback");
+ assert.deepEqual(fallback.on,off,"NOTE-6 the P8-6 fallback is byte-identical to feature OFF, so it has no field");
+});
+
+test("NOTE-7 fail-closed: a hazard's own card made ordinary while a safe card still covers it returns the exact feature-OFF result",async()=>{
+ const [,scene]=P8_NATIVE[0],off=await backend({visionObjects:scene.owners,reply:envelope({objects:scene.objects})}).run();
+ const control=await p8Patched(scene,item=>item);
+ assert.equal(p8Status(control.logs),"accepted","NOTE-7 control: the identity patch keeps the A9 result");
+ assert.equal(noted(control.on).length,1,"NOTE-7 control: the battery's own card is marked");
+ const ordinary=item=>item.analysisSource==="gemini_whole_image"&&item.observedIdentity==="used battery"?{...item,category:"Recyclable"}:item;
+ const {on,logs,calls}=await p8Patched(scene,ordinary);
+ assert.deepEqual(on,off,"NOTE-7 byte-identical to feature OFF");
+ assert.ok(!JSON.stringify(on).includes("hazardNotice"),"NOTE-7 no field on the fallback");
+ assert.equal(p8Status(logs),"merge_failed","NOTE-7 the existing fallback status");
+ assert.deepEqual(p8Calls(calls),[1,1,0,0,0],"NOTE-7 no extra provider call");
+});
+
+test("NOTE-8 route serialization: the notice reaches body.detectedItems unchanged, history and the primary are unchanged, and a client without the capability is refused exactly as before",async()=>{
+ const reply=envelope({objects:P8_MIN.objects}),off=await backend({visionObjects:P8_MIN.owners,reply}).run();
+ const on=await backend({env:BACKEND_ON,visionObjects:P8_MIN.owners,reply}).run();
+ const [savedOff,savedOn]=[await route(off,{capability:P8_CAPABILITY}),await route(on,{capability:P8_CAPABILITY})];
+ assert.deepEqual([savedOff.status,savedOn.status],[200,200],"NOTE-8 capability-aware client");
+ assert.deepEqual(savedOn.body.detectedItems,plain(on.detectedItems),"NOTE-8 detectedItems serialized unchanged");
+ assert.deepEqual(noted(savedOn.body),["item_2",geminiItems(on)[0].itemId],"NOTE-8 the notices reach the client");
+ for(const item of savedOn.body.detectedItems.filter(hasNotice))assert.deepEqual(item.hazardNotice,NOTICE,"NOTE-8 exact value on the wire");
+ assert.deepEqual(Object.keys(savedOn.body).sort(),Object.keys(savedOff.body).sort(),"NOTE-8 no new top-level field (no scan-level flag)");
+ assert.deepEqual(savedOn.body.result,savedOff.body.result,"NOTE-8 serialized primary unchanged");
+ assert.deepEqual(savedOn.writes,savedOff.writes,"NOTE-8 the same scan_history insert");
+ assert.ok(!JSON.stringify(savedOn.writes).includes("hazardNotice"),"NOTE-8 nothing about the notice is stored");
+ const [legacyOff,legacyOn]=[await route(off),await route(on)];
+ assert.deepEqual([legacyOn.status,legacyOn.body,legacyOn.writes],[legacyOff.status,legacyOff.body,legacyOff.writes],"NOTE-8 no capability: 503 exactly as before");
+ const lone=await backend({env:BACKEND_ON,visionObjects:[],reply:envelope({objects:[proposal("used battery",[.3,.3,.4,.45])]})}).run();
+ const old=await route(lone);
+ assert.equal(old.status,200,"NOTE-8 precondition, a Special Waste-only result needs no capability");
+ assert.deepEqual(old.body.detectedItems.map(item=>[item.itemName,item.category,item.hazardNotice]),[["Used Battery","Special Waste",NOTICE]],
+  "NOTE-8 an older client receives the additive optional field on its existing card");
 });
