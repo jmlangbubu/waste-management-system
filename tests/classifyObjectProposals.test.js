@@ -397,7 +397,10 @@ test("T33/T34/T35 the primary-object link is diagnostic only and fails closed",a
  const ambiguous=await link([vision("Bottle",.9,A)],{objects:[proposal("plastic bottle",A),proposal("water bottle",[.052,.1,.302,.8])],primaryObjectIndex:0});
  assert.equal(ambiguous.link,"ambiguous");
  const wrongCategory=await link([vision("Battery",.9,A)],{objects:[proposal("battery",A)],primaryObjectIndex:0});
- assert.equal(wrongCategory.link,"category_conflict");assert.equal(wrongCategory.result.category,"Recyclable");
+ assert.equal(wrongCategory.link,"category_conflict");
+ // Primary hold (case B, PRIM-2): the classifier itself placed its Recyclable primary on the battery claim, so the ordinary
+ // stream is withheld in the existing Unknown text. The link diagnostic is unchanged and nothing becomes Special Waste.
+ assert.deepEqual(primText(wrongCategory.result),primText(FB_UNKNOWN_PRIMARY),"the anchored ordinary primary is held");
  assert.equal(wrongCategory.result.detectedItems[0].category,"Special Waste","the primary category is never copied to the candidate");
  const identityOnly=await link([],{objects:[{label:"plastic water bottle"},proposal("banana peel",C)],primaryObjectIndex:0});
  assert.equal(identityOnly.link,"unresolved");assert.equal(identityOnly.result.detectedItems.length,1);
@@ -697,7 +700,9 @@ test("F2-18/19/20 primary link, scan summary and display names follow the final 
  assert.ok(!JSON.stringify(agree.on).includes("region_"),"no removed proposal ID anywhere in the response");
  const hazard=await scan([vision("Bottle",.91,R0)],[proposal("bleach bottle",shift(R0,.02))],{primaryObjectIndex:0});
  // The vetoed owner carries the merge's capture-bound conflict, so the link reports it.
- assert.equal(hazard.link,"identity_conflict");assert.deepEqual(withoutItems(hazard.on),withoutItems(hazard.off));
+ assert.equal(hazard.link,"identity_conflict");
+ // Primary hold (case B): the classifier's own index places the primary on the owner sharing the bleach claim's region.
+ assert.deepEqual(withoutItems(hazard.on),primHeld(withoutItems(hazard.off)),"the anchored ordinary primary is held; identity kept");
  for(const result of [agree.on,hazard.on]){
   assert.equal(result.scanSummary.totalItems,result.detectedItems.length);
   assert.deepEqual(result.scanSummary,buildScanSummary(result.detectedItems));
@@ -865,9 +870,10 @@ test("G1 permutations: reversing Vision owners and proposals preserves every own
 test("G1 primary, history, summary and diagnostic link stay valid after the conflict veto",async()=>{
  const objects=[proposal("instant noodle packet",G1_OWNER),proposal("bleach bottle",G1_NEAR)],visionObjects=[vision("Packaged goods",.8,G1_OWNER)];
  const off=await backend({visionObjects}).run(),{on,logs}=await g1Scan(objects,visionObjects,{primaryObjectIndex:0});
- assert.deepEqual(withoutItems(on),withoutItems(off),"primary unchanged");
+ // Primary hold (case B): the classifier's own index is on the disputed owner, which shares the bleach claim's region.
+ assert.deepEqual(withoutItems(on),primHeld(withoutItems(off)),"primary held in the existing Unknown text; identity kept");
  const capability="waste-scan-independent-category-v2",[before,after]=[await route(off,{capability}),await route(on,{capability})];
- assert.deepEqual(after.writes,before.writes,"scan_history insert unchanged");assert.equal(after.writes.length,1);
+ assert.deepEqual(after.writes,[primHistory(before.writes[0])],"scan_history stores the held Unknown primary, otherwise the same row");assert.equal(after.writes.length,1);
  assert.deepEqual(on.scanSummary,buildScanSummary(on.detectedItems));
  assert.match(proposalLogs(logs)[0]||"",/primary_link=identity_conflict/,"the link reports the conflicted owner, never a stale ordinary association");
 });
@@ -1071,12 +1077,15 @@ test("F3B-11 one competing proposal and two Vision owners: both disputed when cr
 
 test("G1-C/F-2/F-3 primary, history, summary and diagnostic link stay valid after the new conflict vetoes",async()=>{
  const visionObjects=[vision("Packaged goods",.8,G1_OWNER)],capability="waste-scan-independent-category-v2";
- for(const objects of [[proposal("plastic water bottle",G1_OWNER),proposal("bleach bottle",NEST89)],
-  [proposal("instant noodle packet",G1_OWNER),proposal("unopened instant noodle packet",ENCLOSING)],[proposal("banana peel",G1_OWNER),proposal("full water bottle",G1_NEAR)]]){
+ // Primary hold (case B) only where the classifier's anchor shares a localized hazard claim's region (the nested bleach
+ // bottle). Unopened and full states are not hazard evidence, so those primaries are unchanged.
+ for(const [objects,held] of [[[proposal("plastic water bottle",G1_OWNER),proposal("bleach bottle",NEST89)],true],
+  [[proposal("instant noodle packet",G1_OWNER),proposal("unopened instant noodle packet",ENCLOSING)],false],[[proposal("banana peel",G1_OWNER),proposal("full water bottle",G1_NEAR)],false]]){
   const off=await backend({visionObjects}).run(),{on,logs}=await g1Scan(objects,visionObjects,{primaryObjectIndex:0});
-  assert.deepEqual(withoutItems(on),withoutItems(off),"primary unchanged");
+  assert.deepEqual(withoutItems(on),held?primHeld(withoutItems(off)):withoutItems(off),held?"primary held; identity kept":"primary unchanged");
   const [before,after]=[await route(off,{capability}),await route(on,{capability})];
-  assert.deepEqual(after.writes,before.writes,"scan_history insert unchanged");assert.equal(after.writes.length,1);
+  assert.deepEqual(after.writes,held?[primHistory(before.writes[0])]:before.writes,held?"scan_history stores the held Unknown primary":"scan_history insert unchanged");
+  assert.equal(after.writes.length,1);
   assert.deepEqual(on.scanSummary,buildScanSummary(on.detectedItems));
   const line=proposalLogs(logs)[0]||"";
   assert.match(line,/primary_link=\w+/);assert.doesNotMatch(line,/primary_link=linked/,"never a stale link to the disputed owner");
@@ -3749,7 +3758,8 @@ const p8Paper=box=>item=>item.analysisSource==="google_vision_object_localizatio
 //   primaryObjectIndex places it on a localized object covering no open claim (an unlocalized primary is the whole image);
 // - P-9 notices follow the accepted-path rule.
 // fbExpected re-derives that response from the feature-OFF result and the scene, independently of the service. Every other
-// fallback, feature OFF and discovery stay byte-identical to legacy (FALLBACK-6, FALLBACK-7).
+// fallback, feature OFF and discovery stay byte-identical to legacy (FALLBACK-6, FALLBACK-7), except that an unexpected
+// failure once accepted hazard claims are known now also takes this fallback (FALLBACK-7, EXC-1).
 // ---------------------------------------------------------------------------
 const FB_UNKNOWN_PRIMARY=Object.freeze({category:"Unknown",
  explanation:"The object's waste category or condition has not been safely established.",
@@ -4179,7 +4189,7 @@ test("FALLBACK-6 feature OFF and near-miss flags stay byte-identical to legacy f
  }
 });
 
-test("FALLBACK-7 discovery mode, a missing capability, absent proposals and an unexpected failure keep the existing result with no hazard-safe rewrite",async()=>{
+test("FALLBACK-7 discovery mode, a missing capability and absent proposals keep the existing result; an unexpected failure takes the hazard-safe fallback only once accepted hazard claims are known",async()=>{
  for(const [name,scene,transform] of FB_SCENES){
   const why="FALLBACK-7 "+name,legacy=await fbOff(scene);
   const disc=await fbPatched(scene,transform,{env:{...BACKEND_ON,WHOLE_IMAGE_DISCOVERY_ENABLED:"true"}});
@@ -4189,10 +4199,15 @@ test("FALLBACK-7 discovery mode, a missing capability, absent proposals and an u
    ["[WasteScanProposals] status=ineligible reason=capability_missing"]],why+": no capability");
   const absent=backend({env:BACKEND_ON,visionObjects:scene.owners});
   assert.deepEqual([await absent.run(),p8Status(absent.logs)],[await backend({visionObjects:scene.owners}).run(),"absent"],why+": absent proposals");
-  // Not a confirmed safety conflict: an unexpected failure keeps the existing feature-OFF fallback (classified, reported).
+  // An unexpected failure after this request's accepted, localized hazard claims are known takes the hazard-safe
+  // fallback, never the feature-OFF guidance (EXC-1 ... EXC-5 pin the other exception classes).
   const failure=await fbPatched(scene,()=>{throw new Error("synthetic merge failure");});
-  assert.deepEqual([failure.on,p8Status(failure.logs)],[legacy,"merge_failed"],why+": an unexpected failure keeps the existing fallback");
+  assert.deepEqual([failure.on,p8Status(failure.logs)],[fbExpected(legacy,scene),"merge_failed"],why+": an unexpected failure after accepted hazard claims takes the hazard-safe fallback");
  }
+ // Without a localized hazard claim, the same failure keeps the existing feature-OFF fallback.
+ const plainScene={owners:FB_S1.owners,objects:[FB_S1.objects[0]]};
+ const failure=await fbPatched(plainScene,()=>{throw new Error("synthetic merge failure");});
+ assert.deepEqual([failure.on,p8Status(failure.logs)],[await fbOff(plainScene),"merge_failed"],"FALLBACK-7 no hazard claim: an unexpected failure keeps the existing fallback");
 });
 
 test("FALLBACK-8 invalid or untrusted proposal evidence cannot force a hazard-safe downgrade",async()=>{
@@ -4266,4 +4281,265 @@ test("FALLBACK-10 route serialization: the hazard-safe fallback reaches the clie
  }finally{names.withDisplayNames=real;}
  const thrown=await route(off,{capability:P8_CAPABILITY,throws:true});
  assert.deepEqual([thrown.status,thrown.writes],[503,[]],"FALLBACK-10 a failed analysis is refused and nothing is stored");
+});
+
+// ---------------------------------------------------------------------------
+// PRIM-1 ... PRIM-10, EXC-1 ... EXC-5: classifier-anchored primary hold and post-evidence exception safety (owner-approved
+// scope on e4334826; gate review "WMO A9 final primary safety and exception gate").
+// - Primary hold, case B only: on the accepted path, when the classifier's own validated primaryObjectIndex places its
+//   ordinary primary on a localized proposal sharing the region of an accepted, localized hazard claim (>= 50 % coverage
+//   in either direction), the primary is held in the existing Unknown text. Identity and provenance fields are kept;
+//   cards, notices, summary and diagnostics are unchanged; nothing becomes Special Waste.
+// - Case A (anchored clear of every claim) and case C (no index, or an index on an unlocalized proposal) keep the
+//   independent-primary contract unchanged. Case C with a hazard is a documented residual, not a hold.
+// - Exceptions: an unexpected failure once accepted, localized hazard claims are known takes the hazard-safe fallback,
+//   whose primary rule uses the same two-way anchor test; a failure while building it rejects the request. A failure
+//   inside the first reconciliation (before claims exist, the documented residual), without claims, or before proposals
+//   are accepted keeps the existing behaviour.
+// fbExpected (above) re-derives the fallback with the one-way anchor test. Both tests agree for every scene it checks (no
+// anchor lies inside an open claim there); EXC-1 pins the scene where they differ.
+// ---------------------------------------------------------------------------
+const PRIM_FAR=[.65,.1,.9,.45],PRIM_ADJACENT_BATTERY=[.55,.35,.7,.5];
+const PRIM_S1=FB_S1;   // Vision Water bottle (.9) and a plastic water bottle proposal at [.2,.2,.6,.8]; used battery at [.3,.35,.4,.5]
+const PRIM_CARDBOARD={...PRIMARY,itemName:"Cardboard box"},PRIM_CAP={...PRIMARY,itemName:"Plastic cap"};
+const PRIM_SPRAY={owners:[],objects:[proposal("spray paint can",[.2,.1,.6,.9]),proposal("plastic cap",[.35,.15,.45,.25])],primary:PRIM_CAP};
+const PRIM_FAR_CARDBOARD={owners:[...PRIM_S1.owners,vision("Cardboard",.85,PRIM_FAR)],objects:[...PRIM_S1.objects,proposal("cardboard box",PRIM_FAR)],
+ primary:PRIM_CARDBOARD};
+const PRIM_FAR_BOTTLE={owners:[vision("Water bottle",.9,PRIM_FAR)],objects:[proposal("plastic water bottle",PRIM_FAR),PRIM_S1.objects[1]]};
+const primText=result=>[result.category,result.explanation,result.action,result.warning];
+const primHeld=primary=>({...primary,...FB_UNKNOWN_PRIMARY});
+// scan_history columns: item_name, category, explanation, action_text, warning_text, then the unchanged rest.
+const primHistory=row=>[row[0],...primText(FB_UNKNOWN_PRIMARY),...row.slice(5)];
+const primLine=logs=>proposalLogs(logs)[0]||"";
+const primThrow=()=>{throw new Error("synthetic merge failure");};
+// Proposal card IDs are bound to each request's capture, so two separate runs are compared with every region_ ID renamed
+// by order of first appearance (the same ID always maps to the same name within one value).
+const primNorm=value=>{const ids=new Map();
+ return JSON.parse(JSON.stringify(value).replace(/region_[0-9a-f]+/g,id=>{if(!ids.has(id))ids.set(id,"region_#"+ids.size);return ids.get(id);}));};
+// One accepted-path scan of a scene ({owners, objects, primaryObjectIndex?, primary?}), its feature-OFF result and the
+// same scene without primaryObjectIndex. On the accepted path the index feeds only the link diagnostic and the hold, so the
+// unanchored run is the pre-hold result for the same evidence.
+async function primScan(scene){
+ const {primaryObjectIndex:_index,...unanchored}=scene;
+ const be=backend({env:BACKEND_ON,visionObjects:scene.owners,reply:fbReply(scene)}),on=await be.run();
+ const ref=backend({env:BACKEND_ON,visionObjects:scene.owners,reply:fbReply(unanchored)}),noIndex=await ref.run();
+ return {on,logs:be.logs,calls:be.calls,status:p8Status(be.logs),link:(primLine(be.logs).match(/primary_link=(\w+)/)||[])[1],
+  noIndex,noIndexLogs:ref.logs,noIndexCalls:ref.calls,off:await fbOff(scene)};
+}
+const primAnchor=scene=>x2Box(scene.objects[scene.primaryObjectIndex]);
+const primShares=scene=>fbClaims(scene).some(claim=>p8Covers(primAnchor(scene),claim.box)||p8Covers(claim.box,primAnchor(scene)));
+function primAssertHeld(r,scene,why){
+ assert.ok(primShares(scene),why+": precondition, the classifier's anchor shares a localized hazard claim's region");
+ assert.equal(r.status,"accepted",why+": the accepted A9 result, not a fallback");
+ assert.ok(ORDINARY.includes(r.off.category),why+": precondition, an ordinary classifier primary");
+ assert.deepEqual(withoutItems(r.noIndex),withoutItems(r.off),why+": precondition, unanchored the classifier primary is returned unchanged");
+ assert.deepEqual(withoutItems(r.on),primHeld(withoutItems(r.noIndex)),why+": held in exactly the existing Unknown text; identity and provenance kept");
+ assert.deepEqual([r.on.itemName,r.on.detectedObject,r.on.aiLabel,r.on.aiConfidence,r.on.analysisSource],
+  [r.off.itemName,r.off.detectedObject,r.off.aiLabel,r.off.aiConfidence,r.off.analysisSource],why+": the classifier's identity fields");
+ assert.deepEqual(primNorm([r.on.detectedItems,r.on.scanSummary]),primNorm([r.noIndex.detectedItems,r.noIndex.scanSummary]),why+": cards, notices and summary unchanged");
+ assert.equal(primLine(r.logs).replace(/ primary_link=\w+/,""),primLine(r.noIndexLogs).replace(/ primary_link=\w+/,""),
+  why+": the diagnostics line is unchanged apart from the link the index already reported");
+ assert.notEqual(r.on.category,"Special Waste",why+": the primary is never granted Special Waste");
+ for(const text of [r.off.explanation,r.off.action,r.off.warning])assert.ok(!JSON.stringify(withoutItems(r.on)).includes(text),why+": no classifier stream text in the primary");
+ assert.deepEqual(p8Calls(r.calls),[1,1,0,0,0],why+": no extra provider call");
+ assert.deepEqual(callSummary(r.calls),callSummary(r.noIndexCalls),why+": the same classifier request and budget");
+}
+// A kept primary: the response is byte-identical to the unanchored (pre-hold) one, and the primary is the classifier's.
+function primAssertKept(r,why){
+ assert.deepEqual(primNorm(r.on),primNorm(r.noIndex),why+": byte-identical to the unanchored result");
+ assert.deepEqual(withoutItems(r.on),withoutItems(r.off),why+": the classifier primary is kept");
+}
+
+test("PRIM-1 battery inside a bottle, classifier primary on the bottle: the Recyclable primary is held; cards, notices, summary and diagnostics are unchanged",async()=>{
+ const scene={...PRIM_S1,primaryObjectIndex:0},why="PRIM-1",r=await primScan(scene);
+ assert.deepEqual([r.off.category,r.off.action],["Recyclable",PRIMARY.action],why+": precondition, the classifier recommends recycling the bottle");
+ primAssertHeld(r,scene,why);
+ assert.equal(r.link,"identity_conflict",why+": the existing link diagnostic");
+ assert.deepEqual(iaCards(r.on),P8_NATIVE[0][2],why+": the bottle card stays Unknown, the battery keeps its Special Waste card");
+ assert.deepEqual(noted(r.on),[r.on.detectedItems[1].itemId],why+": the P-9 notice stays on the battery's own card");
+ assert.equal(r.on.scanSummary.categories.recyclable,0,why+": nothing is counted as Recyclable");
+});
+
+test("PRIM-2 battery inside a bottle, classifier primary on the battery itself: held, never Special Waste; the category-conflict link is unchanged",async()=>{
+ const scene={...PRIM_S1,primaryObjectIndex:1},why="PRIM-2",r=await primScan(scene);
+ primAssertHeld(r,scene,why);
+ assert.equal(r.link,"category_conflict",why+": the existing link diagnostic");
+ assert.deepEqual(iaCards(r.on),P8_NATIVE[0][2],why+": the battery card keeps its own category; the primary never takes it");
+});
+
+test("PRIM-3 two-way: a primary anchored on a small non-hazard object inside a large hazard claim (cap inside a spray-paint can) is held",async()=>{
+ const scene={...PRIM_SPRAY,primaryObjectIndex:1},why="PRIM-3",r=await primScan(scene),[can]=fbClaims(scene);
+ assert.ok(!p8Covers(primAnchor(scene),can.box)&&p8Covers(can.box,primAnchor(scene)),why+": precondition, only the claim-covers-anchor direction holds");
+ primAssertHeld(r,scene,why);
+});
+
+test("PRIM-4 case A: a primary the classifier anchors clear of every hazard claim keeps its ordinary stream, byte-identical",async()=>{
+ for(const [name,scene] of [["far cardboard beside the battery-in-bottle",{...PRIM_FAR_CARDBOARD,primaryObjectIndex:2}],
+  ["lone battery with a far bottle",{...PRIM_FAR_BOTTLE,primaryObjectIndex:0}],
+  ["adjacent bottle covering a third of the battery",{owners:PRIM_S1.owners,objects:[PRIM_S1.objects[0],proposal("used battery",PRIM_ADJACENT_BATTERY)],primaryObjectIndex:0}]]){
+  const why="PRIM-4 "+name,r=await primScan(scene);
+  assert.ok(fbClaims(scene).length>0&&!primShares(scene),why+": precondition, a localized hazard claim, under half shared in both directions");
+  assert.equal(r.status,"accepted",why+": the accepted A9 result");
+  primAssertKept(r,why);
+  assert.ok(ORDINARY.includes(r.on.category),why+": the ordinary stream is kept");
+ }
+});
+
+test("PRIM-5 case C: no primaryObjectIndex, or one naming an unlocalized proposal, keeps the existing independent-primary contract",async()=>{
+ for(const [name,scene,link] of [["battery inside a bottle, no index",PRIM_S1,"none"],
+  ["battery inside a bottle, index on an unlocalized proposal",{owners:PRIM_S1.owners,objects:[{label:"plastic water bottle"},PRIM_S1.objects[1]],primaryObjectIndex:0},"unresolved"],
+  ["lone battery with a far bottle, no index",PRIM_FAR_BOTTLE,"none"]]){
+  const why="PRIM-5 "+name,r=await primScan(scene);
+  assert.deepEqual([r.status,r.link],["accepted",link],why+": the existing status and link");
+  primAssertKept(r,why);
+  assert.equal(r.on.category,"Recyclable",why+": the documented case-C residual, unchanged (card-level P-8 / P-9 safety still applies)");
+ }
+});
+
+test("PRIM-6 a classifier primary that is already Special Waste or Unknown is never changed by the hold",async()=>{
+ const special={...PRIM_S1,primaryObjectIndex:0,primary:{...PRIMARY,itemName:"Used battery",category:"Special Waste"}};
+ const r=await primScan(special);
+ primAssertKept(r,"PRIM-6 Special Waste primary");assert.equal(r.on.category,"Special Waste","PRIM-6 Special Waste primary: kept");
+ const unknown={...PRIM_S1,primaryObjectIndex:0,primary:{...PRIMARY,category:"Unknown"}};
+ const be=backend({env:BACKEND_ON,visionObjects:unknown.owners,reply:fbReply(unknown)});
+ assert.deepEqual(await be.run(),await fbOff(unknown),"PRIM-6 Unknown primary: the existing legacy result");
+ assert.deepEqual(proposalLogs(be.logs),["[WasteScanProposals] status=primary_unavailable"],"PRIM-6 Unknown primary: never reaches A9");
+});
+
+test("PRIM-7 without a localized hazard claim the anchored primary is unchanged (non-hazard states, a hazard label without a box)",async()=>{
+ const packaged=[vision("Packaged goods",.8,G1_OWNER)];
+ for(const [name,scene] of [
+  ["unopened noodle packet",{owners:packaged,objects:[proposal("instant noodle packet",G1_OWNER),proposal("unopened instant noodle packet",ENCLOSING)],primaryObjectIndex:1}],
+  ["full water bottle",{owners:packaged,objects:[proposal("plastic water bottle",G1_OWNER),proposal("full water bottle",G1_NEAR)],primaryObjectIndex:1}],
+  ["unlocalized battery label, index on the bottle",{owners:PRIM_S1.owners,objects:[PRIM_S1.objects[0],{label:"used battery"}],primaryObjectIndex:0}],
+  ["bottle only",{owners:PRIM_S1.owners,objects:[PRIM_S1.objects[0]],primaryObjectIndex:0}]]){
+  const why="PRIM-7 "+name,r=await primScan(scene);
+  assert.deepEqual(fbClaims(scene),[],why+": precondition, no localized hazard claim");
+  assert.equal(r.status,"accepted",why+": the accepted A9 result");
+  primAssertKept(r,why);
+ }
+});
+
+test("PRIM-8 feature OFF, near-miss flags, discovery mode and a missing capability stay byte-identical to legacy for an anchored hazard scene",async()=>{
+ const scene={...PRIM_S1,primaryObjectIndex:0},legacy=await fbOff(scene),keep=items=>items;
+ for(const env of [{},{WMO_CLASSIFY_OBJECT_PROPOSALS_ENABLED:"TRUE",CLASSIFY_OBJECT_PROPOSALS_SHARED_TOKEN:TOKEN},
+  {WMO_CLASSIFY_OBJECT_PROPOSALS_ENABLED:"1",CLASSIFY_OBJECT_PROPOSALS_SHARED_TOKEN:TOKEN},{WMO_CLASSIFY_OBJECT_PROPOSALS_ENABLED:"true"}]){
+  const why="PRIM-8 "+JSON.stringify(env),{on,merges,calls}=await fbPatched(scene,keep,{env});
+  assert.deepEqual([on,merges],[legacy,0],why+": byte-identical to legacy, no merge");
+  assert.deepEqual(p8Calls(calls),[1,1,0,0,0],why+": the existing provider budget");
+ }
+ assert.equal(legacy.category,"Recyclable","PRIM-8 precondition: legacy keeps the classifier primary");
+ const disc=await fbPatched(scene,keep,{env:{...BACKEND_ON,WHOLE_IMAGE_DISCOVERY_ENABLED:"true"}});
+ assert.deepEqual([disc.on,disc.merges,proposalLogs(disc.logs)],[legacy,0,["[WasteScanProposals] status=ineligible reason=discovery_mode"]],"PRIM-8 discovery mode");
+ const noCap=await fbPatched(scene,keep,{input:{independentCategoryV2:false}});
+ assert.deepEqual([noCap.on,noCap.merges,proposalLogs(noCap.logs)],[await fbOff(scene,{independentCategoryV2:false}),0,
+  ["[WasteScanProposals] status=ineligible reason=capability_missing"]],"PRIM-8 a client without the capability never receives the held primary");
+});
+
+test("PRIM-9 route: the held primary reaches a capability client and scan_history with no new field and no ordinary text",async()=>{
+ const r=await primScan({...PRIM_S1,primaryObjectIndex:0});
+ const [saved,unanchored]=[await route(r.on,{capability:P8_CAPABILITY}),await route(r.noIndex,{capability:P8_CAPABILITY})];
+ assert.deepEqual([saved.status,unanchored.status],[200,200],"PRIM-9 capability-aware client");
+ assert.deepEqual(saved.body.detectedItems,plain(r.on.detectedItems),"PRIM-9 detectedItems serialized unchanged");
+ const {result:heldResult,...heldRest}=saved.body,{result:refResult,...refRest}=unanchored.body;
+ assert.deepEqual(primNorm(heldRest),primNorm(refRest),"PRIM-9 everything outside the primary is identical (no new top-level field, no raw proposal label)");
+ assert.deepEqual(Object.keys(heldResult).sort(),Object.keys(refResult).sort(),"PRIM-9 the same primary fields");
+ assert.deepEqual(Object.keys(heldResult).filter(key=>JSON.stringify(heldResult[key])!==JSON.stringify(refResult[key])).sort(),
+  ["action","category","explanation","warning"],"PRIM-9 only the held stream fields differ");
+ assert.deepEqual(primText(heldResult),primText(FB_UNKNOWN_PRIMARY),"PRIM-9 the serialized primary is held");
+ assert.deepEqual(saved.writes,[primHistory(unanchored.writes[0])],"PRIM-9 scan_history stores the held Unknown primary, otherwise the same row");
+ for(const text of [PRIMARY.explanation,PRIMARY.action,PRIMARY.warning]){
+  assert.ok(!JSON.stringify(heldResult).includes(text),"PRIM-9 no classifier recycling text in the primary");
+  assert.ok(!JSON.stringify(saved.writes).includes(text),"PRIM-9 no classifier recycling text in scan_history");
+ }
+ const old=await route(r.on);
+ assert.deepEqual([old.status,old.writes],[503,[]],"PRIM-9 the route refuses an Unknown primary without the capability exactly as before (A9 itself requires it, PRIM-8)");
+});
+
+test("PRIM-10 proposal and owner order never change the hold outcome",async()=>{
+ const outcome=r=>[withoutItems(r.on),[...iaCards(r.on)].sort()];
+ for(const [name,scene] of [["PRIM-1",{...PRIM_S1,primaryObjectIndex:0}],["PRIM-2",{...PRIM_S1,primaryObjectIndex:1}],
+  ["PRIM-3",{...PRIM_SPRAY,primaryObjectIndex:1}],["PRIM-4 far cardboard",{...PRIM_FAR_CARDBOARD,primaryObjectIndex:2}],
+  ["PRIM-4 far bottle",{...PRIM_FAR_BOTTLE,primaryObjectIndex:0}]]){
+  const anchor=scene.objects[scene.primaryObjectIndex],expected=outcome(await primScan(scene));
+  for(const order of p8Orders(scene)){
+   const permuted={...scene,...order,primaryObjectIndex:order.objects.indexOf(anchor)};
+   assert.deepEqual(outcome(await primScan(permuted)),expected,"PRIM-10 "+name+": the same primary and cards in every order");
+  }
+ }
+});
+
+test("EXC-1 an unexpected failure after accepted hazard claims returns the hazard-safe fallback, never the feature-OFF guidance",async()=>{
+ for(const [name,scene] of [["no primaryObjectIndex",PRIM_S1],["primary on the bottle",{...PRIM_S1,primaryObjectIndex:0}],
+  ["primary on the battery",{...PRIM_S1,primaryObjectIndex:1}]]){
+  const why="EXC-1 "+name,off=await fbOff(scene),{on,logs,calls,merges}=await fbPatched(scene,primThrow);
+  assert.deepEqual([off.category,iaCards(off)],["Recyclable",["V:water bottle=Recyclable"]],why+": precondition, feature OFF recommends recycling the bottle over the battery");
+  assert.deepEqual([p8Status(logs),p8Calls(calls),merges],["merge_failed",[1,1,0,0,0],1],why+": the existing status and provider budget; the first merge failed");
+  assert.deepEqual(on,fbExpected(off,scene),why+": the hazard-safe fallback");
+  assert.deepEqual([iaCards(on),noted(on)],[["V:water bottle=Unknown"],[off.detectedItems[0].itemId]],why+": the bottle over the battery is held with the notice");
+  assert.deepEqual(primText(on),primText(FB_UNKNOWN_PRIMARY),why+": the primary is held");
+  assert.ok(!JSON.stringify(on).includes("Special Waste"),why+": nothing is granted Special Waste");
+ }
+ // Case A in the fallback: an anchor clear of every open claim keeps the classifier primary.
+ const far={...PRIM_FAR_CARDBOARD,primaryObjectIndex:2},farOff=await fbOff(far),farFailed=await fbPatched(far,primThrow);
+ assert.deepEqual(farFailed.on,fbExpected(farOff,far),"EXC-1 far cardboard: the hazard-safe fallback");
+ assert.deepEqual(withoutItems(farFailed.on),withoutItems(farOff),"EXC-1 far cardboard: the primary anchored elsewhere is kept");
+ // The fallback's two-way anchor test: a primary anchored on a cap inside an open spray-paint-can claim is held, where
+ // fbExpected's one-way test keeps it.
+ const cap={...PRIM_SPRAY,primaryObjectIndex:1},capOff=await fbOff(cap),capFailed=await fbPatched(cap,primThrow),oneWay=fbExpected(capOff,cap);
+ assert.deepEqual(withoutItems(oneWay),withoutItems(capOff),"EXC-1 cap: precondition, the one-way test would keep the ordinary primary");
+ assert.equal(p8Status(capFailed.logs),"merge_failed","EXC-1 cap: the existing status");
+ assert.deepEqual(capFailed.on,primHeld(oneWay),"EXC-1 cap: the fallback holds the primary; cards as the fallback oracle");
+});
+
+test("EXC-2 without a localized hazard claim an unexpected failure keeps the exact feature-OFF result",async()=>{
+ for(const [name,scene] of [["bottle only",{owners:PRIM_S1.owners,objects:[PRIM_S1.objects[0]],primaryObjectIndex:0}],
+  ["unlocalized battery label",{owners:PRIM_S1.owners,objects:[PRIM_S1.objects[0],{label:"used battery"}],primaryObjectIndex:0}],
+  ["full water bottle",{owners:[vision("Packaged goods",.8,G1_OWNER)],objects:[proposal("plastic water bottle",G1_OWNER),proposal("full water bottle",G1_NEAR)]}]]){
+  const why="EXC-2 "+name,{on,logs,calls}=await fbPatched(scene,primThrow);
+  assert.deepEqual(fbClaims(scene),[],why+": precondition, no localized hazard claim");
+  assert.deepEqual([on,p8Status(logs),p8Calls(calls)],[await fbOff(scene),"merge_failed",[1,1,0,0,0]],why+": the existing fallback");
+ }
+});
+
+test("EXC-3 a failure while building the hazard-safe fallback from the generic catch rejects the request; nothing is stored",async()=>{
+ const names=require("../services/wasteDisplayNameService"),real=names.withDisplayNames;
+ names.withDisplayNames=result=>{
+  if((result.detectedItems||[]).some(item=>hasNotice(item)))throw new Error("synthetic fallback failure");
+  return real(result);
+ };
+ try{
+  const plainScene={owners:PRIM_S1.owners,objects:[PRIM_S1.objects[0]]},control=await fbPatched(plainScene,primThrow);
+  assert.deepEqual([control.on,p8Status(control.logs)],[await fbOff(plainScene),"merge_failed"],"EXC-3 control: the instrumented display step does not affect the feature-OFF fallback");
+  for(const scene of [PRIM_S1,{...PRIM_S1,primaryObjectIndex:0}])
+   await assert.rejects(fbPatched(scene,primThrow),/synthetic fallback failure/,"EXC-3 the request fails closed, never feature OFF");
+ }finally{names.withDisplayNames=real;}
+ const thrown=await route(null,{capability:P8_CAPABILITY,throws:true});
+ assert.deepEqual([thrown.status,thrown.writes],[503,[]],"EXC-3 a failed analysis is refused and nothing is stored");
+});
+
+test("EXC-4 documented residual: a failure inside the first reconciliation, before any hazard claim exists, keeps the feature-OFF result",async()=>{
+ const mapper=require("../services/automaticWasteCategoryMapper"),real=mapper.physicalSpecialWasteIdentity;
+ const scene={...PRIM_S1,primaryObjectIndex:0},legacy=await fbOff(scene);
+ mapper.physicalSpecialWasteIdentity=function(item){
+  if(item&&item.analysisSource==="gemini_whole_image")throw new Error("synthetic reconciliation failure");
+  return real.apply(this,arguments);
+ };
+ let result;
+ try{result=await fbPatched(scene,items=>items);}finally{mapper.physicalSpecialWasteIdentity=real;}
+ assert.deepEqual([p8Status(result.logs),result.merges],["merge_failed",0],"EXC-4 the failure is inside the try, before the first merge");
+ assert.deepEqual(result.on,legacy,"EXC-4 the existing feature-OFF result (today's production behaviour; not claimed as fixed)");
+ assert.deepEqual(p8Calls(result.calls),[1,1,0,0,0],"EXC-4 the existing provider budget");
+});
+
+test("EXC-5 classifier unavailable, absent proposals and a rejected proposal set keep the existing results",async()=>{
+ const scene={...PRIM_S1,primaryObjectIndex:0};
+ for(const [name,options,status] of [["unsuccessful classifier",{reply:{success:false,result:null}},"primary_unavailable"],
+  ["classifier HTTP 500",{status:500,reply:fbReply(scene)},"primary_unavailable"],["absent proposals",{reply:envelope()},"absent"],
+  ["out-of-range primaryObjectIndex",{reply:fbReply({...scene,primaryObjectIndex:2})},"rejected"]]){
+  const on=backend({env:BACKEND_ON,visionObjects:scene.owners,...options}),off=backend({visionObjects:scene.owners,...options});
+  assert.deepEqual(await on.run(),await off.run(),"EXC-5 "+name+": byte-identical to legacy");
+  assert.deepEqual(proposalLogs(on.logs),["[WasteScanProposals] status="+status],"EXC-5 "+name+": the existing status");
+  assert.deepEqual(p8Calls(on.calls),p8Calls(off.calls),"EXC-5 "+name+": the existing provider budget");
+ }
 });

@@ -189,7 +189,8 @@ function withDetectedItems(legacyResult, detectedItems, preserveLegacyPrimary = 
   return response;
 }
 
-// The existing Unknown primary wording. The A9 hazard-safe fallback holds a primary with exactly this text.
+// The existing Unknown primary wording. The A9 primary holds (accepted path and hazard-safe fallback) use exactly
+// this text.
 const UNKNOWN_PRIMARY_GUIDANCE = Object.freeze({
   explanation: "The object's waste category or condition has not been safely established.",
   action: "Confirm identity, material, contents and condition with WMO before choosing a disposal stream.",
@@ -1305,7 +1306,9 @@ async function analyzeWasteWithObjectProposals(input, context) {
   try { proposals = normalizeObjectProposals(context.capture, context.raw); }
   catch (_) { proposalDiagnostics({ status: "rejected" }); return legacyResult(); }
   // hazardConflict: set only when this request's own A9 result shows a safety conflict with accepted hazard claims.
-  let detectedItems, reconciled, noticed = new Set(), hazardConflict = false;
+  // hazardSafeFallback is assigned inside the try (it uses its helpers) and also serves the generic catch below.
+  // anchoredOnHazard: the classifier's own primary anchor shares the region of an accepted, localized hazard claim.
+  let detectedItems, reconciled, noticed = new Set(), hazardConflict = false, hazardSafeFallback = null, anchoredOnHazard = false;
   const discovery = require("./wholeImageRecognitionService");
   try {
     // A9 (owner policy D-A / D-B / D-C): the base is Candidate H's own tiers with the P-2c matcher. A fixed, bounded list
@@ -1338,26 +1341,35 @@ async function analyzeWasteWithObjectProposals(input, context) {
       }
       return ids;
     };
-    // Hazard-safe exceptional fallback, used only by the two guards below, where this request's own A9 result shows a
-    // safety conflict with accepted, localized hazard claims (validated, capture-bound proposals). It returns the
-    // feature-OFF cards and primary, but fails closed for every "open" claim, one that no Unknown or Special Waste
-    // feature-OFF card covers:
+    // The classifier's own validated primaryObjectIndex anchor box (null when the index is absent or names an
+    // unlocalized proposal). It is the only link between the independent primary and a region: labels and categories
+    // never link them.
+    const anchor = proposals.primaryIndex === null ? null : proposals.objects[proposals.primaryIndex];
+    const anchorBox = anchor && anchor.boundingBox ? anchor.boundingBox : null;
+    // Two-way region test (coversClaim in either direction): the anchor covers >= 50 % of a claim, or a claim covers
+    // >= 50 % of the anchor (a small object inside a large hazard region).
+    const anchorShares = (claims) => !!anchorBox && claims.some((claim) => coversClaim(anchorBox, claim.boundingBox)
+      || coversClaim(claim.boundingBox, anchorBox));
+    // Hazard-safe exceptional fallback, used by the two guards below, where this request's own A9 result shows a
+    // safety conflict with accepted, localized hazard claims (validated, capture-bound proposals), and by the generic
+    // catch once such claims are known. It returns the feature-OFF cards and primary, but fails closed for every "open"
+    // claim, one that no Unknown or Special Waste feature-OFF card covers:
     // - each ordinary feature-OFF card covering an open claim is held in the P-8 downgrade shape;
     // - an ordinary classifier primary is held in the existing Unknown primary shape, unless the classifier's own
-    //   primaryObjectIndex places it on a localized object that covers no open claim. An unlocalized primary describes
-    //   the whole image, which covers every claim; matching labels or categories never link it to a card.
+    //   primaryObjectIndex places it on a localized object sharing no open claim's region (the two-way test above). An
+    //   unlocalized primary describes the whole image, which covers every claim; matching labels or categories never
+    //   link it to a card.
     // P-9 notices follow the accepted-path rule. No card, category grant, identity, confidence, field or provider call is
     // added; card IDs, order, names and geometry are kept. Every other card is unchanged.
-    const hazardSafeFallback = () => {
+    hazardSafeFallback = () => {
       const items = legacy.detectedItems || [];
       const open = reconciled.localizedHazards.filter((claim) => !items.some((item) => item.boundingBox && safeCard(item)
         && coversClaim(item.boundingBox, claim.boundingBox)));
       const coversOpen = (box) => !!box && open.some((claim) => coversClaim(box, claim.boundingBox));
       const cards = items.map((item) => (ORDINARY_CATEGORIES.includes(item.category) && coversOpen(item.boundingBox)
         ? holdCard(item) : item));
-      const anchor = proposals.primaryIndex === null ? null : proposals.objects[proposals.primaryIndex];
       let primary = reconcilePrimary(legacy, cards);
-      if (open.length && ORDINARY_CATEGORIES.includes(primary.category) && !(anchor && anchor.boundingBox && !coversOpen(anchor.boundingBox))) {
+      if (open.length && ORDINARY_CATEGORIES.includes(primary.category) && (!anchorBox || anchorShares(open))) {
         primary = { ...primary, category: "Unknown", ...UNKNOWN_PRIMARY_GUIDANCE };
       }
       return withDisplayNames({ ...primary, detectedItems: withNotices(cards, noticeIds(cards)), scanSummary: buildScanSummary(cards) });
@@ -1461,15 +1473,20 @@ async function analyzeWasteWithObjectProposals(input, context) {
       hazardConflict = true;
       return hazardSafeFallback();
     }
+    anchoredOnHazard = anchorShares(reconciled.localizedHazards);
   } catch (error) {
     // A failure while building the hazard-safe fallback must not return the feature-OFF result it replaces: the
-    // request fails closed (the route answers ANALYSIS_UNAVAILABLE). Every other failure keeps the existing fallback.
+    // request fails closed (the route answers ANALYSIS_UNAVAILABLE).
     if (hazardConflict) throw error;
     proposalDiagnostics({ status: "merge_failed" });
+    // Any other unexpected failure once this request's accepted, localized hazard claims are known takes the
+    // hazard-safe fallback; a failure while building it propagates (fails closed, as above). Without such claims, or
+    // before the first reconciliation has produced them, the existing feature-OFF fallback is kept.
+    if (hazardSafeFallback && reconciled && reconciled.localizedHazards.length) return hazardSafeFallback();
     return legacyResult();
   }
   const primary = reconcilePrimary(legacy, detectedItems);
-  // A valid classifier primary is returned unchanged; proposals never create one.
+  // A valid classifier primary is returned unchanged (except for the anchored hold below); proposals never create one.
   if (primary !== legacy) { proposalDiagnostics({ status: "merge_failed" }); return legacyResult(); }
   let primaryLink = "not_evaluated";
   try {
@@ -1487,7 +1504,15 @@ async function analyzeWasteWithObjectProposals(input, context) {
   // P-9: the notice is attached last, on request-local copies (as withDisplayNames makes), so the primary check and
   // the diagnostics above read exactly the P-8 cards and their capture-bound evidence.
   detectedItems = withNotices(detectedItems, noticed);
-  return withDisplayNames({ ...primary, detectedItems, scanSummary: buildScanSummary(detectedItems) });
+  // Classifier-anchored primary hold, the one narrow exception to the independent-primary contract: when the
+  // classifier's own validated primaryObjectIndex places its primary on a localized object sharing the region of an
+  // accepted, localized hazard claim (the two-way test), an ordinary stream is withheld with the existing Unknown
+  // primary text. It is applied after the primary check and the diagnostics, so logs and primary_link are unchanged.
+  // Identity and provenance are kept; it never grants Special Waste and changes no card. An unanchored primary (no
+  // index, or an index on an unlocalized proposal) keeps the existing contract.
+  const shown = anchoredOnHazard && ORDINARY_CATEGORIES.includes(primary.category)
+    ? { ...primary, category: "Unknown", ...UNKNOWN_PRIMARY_GUIDANCE } : primary;
+  return withDisplayNames({ ...shown, detectedItems, scanSummary: buildScanSummary(detectedItems) });
 }
 
 async function analyzeWaste(input) {
