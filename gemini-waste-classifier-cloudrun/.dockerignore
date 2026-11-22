@@ -1,0 +1,9 @@
+**
+!Dockerfile
+!.dockerignore
+!package.json
+!package-lock.json
+!server.js
+!cropRecognition.js
+!wholeImageRecognition.js
+!wasteItemAssessment.js
