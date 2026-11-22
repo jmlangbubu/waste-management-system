@@ -3736,7 +3736,80 @@ async function p8Patched(scene,patch){
 }
 const P8_BLEACH={left:.355,top:.762,right:.583,bottom:.958},P8_EMPTY={left:.75,top:.03,right:.95,bottom:.2};
 const p8Paper=box=>item=>item.analysisSource==="google_vision_object_localization"&&item.confidence===.88?{...item,boundingBox:box}:item;
-test("P8-6 HOLD-4 native guard: an ordinary cover whose stream did not come from G1 is never rewritten; the request falls back to the exact feature-OFF result",async()=>{
+
+// ---------------------------------------------------------------------------
+// Exceptional hazard-safe fallback (owner-authorized fix on P-9 6eb5650: P8-6, NOTE-6, NOTE-7, FALLBACK-1 ... FALLBACK-10).
+// The two A9 guards that find a safety conflict with accepted, localized hazard claims (the P-8 native-cover guard and the
+// P-9 noticed-card guard) used to return the bare feature-OFF result. That result can show an ordinary, actionable card
+// and primary for a region that holds validated hazard evidence (a battery inside a bottle shown as a Recyclable bottle).
+// They now return the feature-OFF cards and primary, failing closed on every open claim (one that no Unknown or Special
+// Waste feature-OFF card covers):
+// - an ordinary feature-OFF card covering an open claim is held in the P-8 downgrade shape;
+// - an ordinary classifier primary is held in the existing Unknown primary shape, unless the classifier's own
+//   primaryObjectIndex places it on a localized object covering no open claim (an unlocalized primary is the whole image);
+// - P-9 notices follow the accepted-path rule.
+// fbExpected re-derives that response from the feature-OFF result and the scene, independently of the service. Every other
+// fallback, feature OFF and discovery stay byte-identical to legacy (FALLBACK-6, FALLBACK-7).
+// ---------------------------------------------------------------------------
+const FB_UNKNOWN_PRIMARY=Object.freeze({category:"Unknown",
+ explanation:"The object's waste category or condition has not been safely established.",
+ action:"Confirm identity, material, contents and condition with WMO before choosing a disposal stream.",
+ warning:"Keep separate until identity, contents and condition are established. Do not choose a disposal stream from an uncertain result."});
+const fbReply=scene=>envelope({objects:scene.objects,...(scene.primaryObjectIndex===undefined?{}:{primaryObjectIndex:scene.primaryObjectIndex})},scene.primary);
+const fbClaims=({owners,objects})=>x2Hazards(objects,owners).filter(hazard=>hazard.src==="G");
+const fbOpen=(off,scene)=>fbClaims(scene).filter(claim=>!off.detectedItems.some(item=>item.boundingBox&&P8_SAFE.includes(item.category)&&p8Covers(item.boundingBox,claim.box)));
+function fbExpected(off,scene){
+ const claims=fbClaims(scene),open=fbOpen(off,scene),coversOpen=box=>!!box&&open.some(claim=>p8Covers(box,claim.box));
+ const cards=off.detectedItems.map(item=>{
+  if(!ORDINARY.includes(item.category)||!coversOpen(item.boundingBox))return item;
+  const held={...item,category:"Unknown",requiresConfirmation:true};for(const key of P8_STRIPPED)delete held[key];return held;
+ });
+ const anchor=Number.isInteger(scene.primaryObjectIndex)?scene.objects[scene.primaryObjectIndex]:null;
+ const anchorBox=anchor&&anchor.box_2d?x2Box(anchor):null,primary=withoutItems(off);
+ const holdPrimary=open.length>0&&ORDINARY.includes(primary.category)&&!(anchorBox&&!coversOpen(anchorBox));
+ return {...primary,...(holdPrimary?FB_UNKNOWN_PRIMARY:{}),scanSummary:buildScanSummary(cards),detectedItems:cards.map(item=>
+  item.boundingBox&&P8_SAFE.includes(item.category)&&claims.some(claim=>p8Covers(item.boundingBox,claim.box))?{...item,hazardNotice:NOTICE}:item)};
+}
+// The merge result is altered in the test realm only (as p8Patched), with an optional primaryObjectIndex and primary.
+async function fbPatched(scene,transform,{env=BACKEND_ON,input={}}={}){
+ const real=discovery.merge;let merges=0;
+ discovery.merge=function(...args){merges++;return transform(real.apply(this,args));};
+ try{const be=backend({env,visionObjects:scene.owners,reply:fbReply(scene)});return {on:await be.run(input),logs:be.logs,calls:be.calls,merges};}
+ finally{discovery.merge=real;}
+}
+const fbOff=(scene,input={})=>backend({visionObjects:scene.owners,reply:fbReply(scene)}).run(input);
+// Every hazard-safe fallback: the existing status and provider budget, the oracle's response, and an independent safety
+// reading of the whole response (cards and primary); no card, ID, box or Special Waste is added.
+async function fbCheck(scene,transform,why){
+ const off=await fbOff(scene),{on,logs,calls}=await fbPatched(scene,transform),open=fbOpen(off,scene);
+ assert.equal(p8Status(logs),"merge_failed",why+": the existing fallback status, no new diagnostic vocabulary");
+ assert.deepEqual(p8Calls(calls),[1,1,0,0,0],why+": no extra provider call");
+ assert.deepEqual(on,fbExpected(off,scene),why+": the hazard-safe fallback");
+ const pick=item=>[item.itemId,item.itemName,item.confidence,JSON.stringify(item.boundingBox),item.analysisSource].join("|");
+ assert.deepEqual(on.detectedItems.map(pick),off.detectedItems.map(pick),why+": the feature-OFF cards, IDs, names, scores, boxes and order");
+ for(const claim of open)for(const item of on.detectedItems.filter(item=>item.boundingBox&&p8Covers(item.boundingBox,claim.box))){
+  assert.ok(P8_SAFE.includes(item.category),why+": no ordinary card over the open claim "+claim.id);
+  if(item.category==="Unknown")for(const key of P8_STRIPPED)assert.ok(!(key in item)||!ORDINARY.includes(off.detectedItems.find(prior=>prior.itemId===item.itemId).category),why+": a held card has no "+key);
+ }
+ for(const item of on.detectedItems.filter(item=>item.category==="Special Waste"))
+  assert.equal(off.detectedItems.find(prior=>prior.itemId===item.itemId).category,"Special Waste",why+": no Special Waste granted");
+ assert.ok([off.category,"Unknown"].includes(on.category)&&on.category!=="Special Waste"||off.category==="Special Waste",why+": the primary is the classifier's own or held Unknown");
+ if(on.category!==off.category)assert.deepEqual([on.category,on.explanation,on.action,on.warning],
+  [FB_UNKNOWN_PRIMARY.category,FB_UNKNOWN_PRIMARY.explanation,FB_UNKNOWN_PRIMARY.action,FB_UNKNOWN_PRIMARY.warning],why+": a held primary uses exactly the existing Unknown text");
+ assert.deepEqual([on.itemName,on.detectedObject,on.aiLabel,on.aiConfidence,on.analysisSource],[off.itemName,off.detectedObject,off.aiLabel,off.aiConfidence,off.analysisSource],
+  why+": the primary keeps the classifier's identity fields");
+ return {on,off,open,logs,calls};
+}
+
+// P8-6 change (owner-authorized fallback fix). Original: both forced conflicts returned assert.deepEqual(on,off), the bare
+// feature-OFF result. Why that was unsafe: the request had validated, localized hazard claims; returning feature OFF
+// unconditionally discards them, and in general feature OFF can show an ordinary actionable card or primary over such a
+// claim (FALLBACK-1). New expectation: the hazard-safe fallback (fbExpected). In min-g1a no feature-OFF card covers the
+// cardless bleach bottle, so every card keeps its feature-OFF category and guidance (the Vision-native Paper is still never
+// rewritten), the G1-derived Unknown Bottle that covers the power bank and the phone gets the P-9 notice, and the
+// unlocalized Recyclable primary is held Unknown. Category authority is not weakened: the A9 result is still never
+// rewritten (control below), no category is granted, and only cards and the primary over an open claim change.
+test("P8-6 HOLD-4 native guard: an ordinary cover whose stream did not come from G1 is never rewritten in the A9 result; the request takes the hazard-safe fallback",async()=>{
  const off=await backend({visionObjects:P8_MIN.owners,reply:envelope({objects:P8_MIN.objects})}).run();
  const control=await p8Patched(P8_MIN,p8Paper(P8_EMPTY));
  assert.equal(p8Status(control.logs),"accepted","control: moving Paper to an empty region does not by itself force a fallback");
@@ -3745,7 +3818,12 @@ test("P8-6 HOLD-4 native guard: an ordinary cover whose stream did not come from
  for(const [name,patch] of [["Vision-native Paper moved onto the cardless bleach bottle",p8Paper(P8_BLEACH)],
   ["every Gemini card made ordinary",item=>item.analysisSource==="gemini_whole_image"?{...item,category:"Recyclable"}:item]]){
   const {on,logs,calls}=await p8Patched(P8_MIN,patch);
-  assert.deepEqual(on,off,name+": byte-identical to feature OFF");
+  assert.deepEqual(on,fbExpected(off,P8_MIN),name+": the hazard-safe fallback (feature-OFF cards and primary, failing closed on open claims)");
+  assert.notDeepEqual(on,off,name+": no longer the bare feature-OFF result");
+  assert.deepEqual(bareItems(on.detectedItems,name),off.detectedItems,name+": every card keeps its feature-OFF category and fields (no feature-OFF card covers the bleach bottle)");
+  assert.deepEqual(noted(on),["item_2"],name+": the notice only on the Unknown card covering the power bank and the phone");
+  assert.deepEqual([on.category,on.action],[FB_UNKNOWN_PRIMARY.category,FB_UNKNOWN_PRIMARY.action],name+": the unlocalized primary is held, not Recyclable");
+  assert.equal(visionOwners(on).find(item=>item.confidence===.88).category,"Recyclable",name+": the Vision-native Paper is not rewritten");
   assert.equal(p8Status(logs),"merge_failed",name+": the existing fallback status, no new diagnostic vocabulary");
   assert.deepEqual(p8Calls(calls),[1,1,0,0,0],name+": no extra provider call");
  }
@@ -3911,7 +3989,13 @@ test("NOTE-5 the notice is exactly one key with one fixed value, bounded, withou
  assert.ok(start>0&&end>start&&at>start&&at<end,"NOTE-5 the field is written only inside the A9 proposal path");
 });
 
-test("NOTE-6 feature OFF, near-miss flags, discovery mode and every fallback carry no notice and stay byte-identical to legacy",async()=>{
+// NOTE-6 change (owner-authorized fallback fix). Only the last assertion changes. Original: the P8-6 native fallback was
+// required to equal feature OFF byte for byte, and so to carry no notice. Why that was unsafe: that fallback is taken
+// because the A9 result shows a safety conflict with validated, localized hazard claims, and the bare feature-OFF result
+// can leave such a claim under ordinary guidance. New expectation: the hazard-safe fallback (fbExpected), whose notices
+// follow the accepted-path P-9 rule (only Unknown or Special Waste cards covering a claim). Feature OFF, the near-miss
+// flags, discovery mode and the absent fallback are unchanged and still byte-identical to legacy with no field.
+test("NOTE-6 feature OFF, near-miss flags, discovery mode and every fallback without a hazard conflict carry no notice and stay byte-identical to legacy",async()=>{
  const OFF_ENVS=[{},{WMO_CLASSIFY_OBJECT_PROPOSALS_ENABLED:"TRUE",CLASSIFY_OBJECT_PROPOSALS_SHARED_TOKEN:TOKEN},
   {WMO_CLASSIFY_OBJECT_PROPOSALS_ENABLED:"1",CLASSIFY_OBJECT_PROPOSALS_SHARED_TOKEN:TOKEN},{WMO_CLASSIFY_OBJECT_PROPOSALS_ENABLED:"true"},
   {...BACKEND_ON,WHOLE_IMAGE_DISCOVERY_ENABLED:"true"}];
@@ -3930,18 +4014,31 @@ test("NOTE-6 feature OFF, near-miss flags, discovery mode and every fallback car
  const off=await backend({visionObjects:P8_MIN.owners,reply:envelope({objects:P8_MIN.objects})}).run();
  const fallback=await p8Patched(P8_MIN,p8Paper(P8_BLEACH));
  assert.equal(p8Status(fallback.logs),"merge_failed","NOTE-6 precondition, the P8-6 native fallback");
- assert.deepEqual(fallback.on,off,"NOTE-6 the P8-6 fallback is byte-identical to feature OFF, so it has no field");
+ assert.deepEqual(fallback.on,fbExpected(off,P8_MIN),"NOTE-6 the P8-6 hazard-conflict fallback is the hazard-safe fallback");
+ assert.deepEqual(noted(fallback.on),["item_2"],"NOTE-6 its notice sits only on the Unknown card covering the power bank and the phone");
+ assert.ok(!fallback.on.detectedItems.some(item=>hasNotice(item)&&!P8_SAFE.includes(item.category)),"NOTE-6 no notice on an ordinary card");
 });
 
-test("NOTE-7 fail-closed: a hazard's own card made ordinary while a safe card still covers it returns the exact feature-OFF result",async()=>{
+// NOTE-7 change (owner-authorized fallback fix). Original: assert.deepEqual(on,off) and no field, so the request returned
+// the feature-OFF Recyclable water bottle with its guidance and the Recyclable primary, over the used battery. Why that was
+// unsafe: it is the confirmed defect, ordinary actionable guidance for a region with validated hazard evidence. New
+// expectation: the hazard-safe fallback. The water bottle is held Unknown with confirmation, no guidance and the P-9
+// notice; the unlocalized primary is held in the existing Unknown text; nothing is Special Waste (the battery's own card
+// is not in the feature-OFF result, and no category is granted). Unrelated protections are unchanged: the control keeps
+// the A9 result, the guard and its status are the same, and the provider budget is unchanged.
+test("NOTE-7 fail-closed: a hazard's own card made ordinary while a safe card still covers it takes the hazard-safe fallback, never ordinary guidance",async()=>{
  const [,scene]=P8_NATIVE[0],off=await backend({visionObjects:scene.owners,reply:envelope({objects:scene.objects})}).run();
  const control=await p8Patched(scene,item=>item);
  assert.equal(p8Status(control.logs),"accepted","NOTE-7 control: the identity patch keeps the A9 result");
  assert.equal(noted(control.on).length,1,"NOTE-7 control: the battery's own card is marked");
  const ordinary=item=>item.analysisSource==="gemini_whole_image"&&item.observedIdentity==="used battery"?{...item,category:"Recyclable"}:item;
  const {on,logs,calls}=await p8Patched(scene,ordinary);
- assert.deepEqual(on,off,"NOTE-7 byte-identical to feature OFF");
- assert.ok(!JSON.stringify(on).includes("hazardNotice"),"NOTE-7 no field on the fallback");
+ assert.deepEqual(on,fbExpected(off,scene),"NOTE-7 the hazard-safe fallback");
+ assert.deepEqual(on.detectedItems.map(item=>[item.itemId,item.category,item.requiresConfirmation,hasNotice(item),"guidance" in item,"action" in item]),
+  [["item_1","Unknown",true,true,false,false]],"NOTE-7 the water bottle over the battery is held, confirmation required, noticed, with no guidance");
+ assert.deepEqual([off.detectedItems[0].category,off.category],["Recyclable","Recyclable"],"NOTE-7 precondition, feature OFF shows a Recyclable bottle and primary");
+ assert.deepEqual([on.category,on.action],[FB_UNKNOWN_PRIMARY.category,FB_UNKNOWN_PRIMARY.action],"NOTE-7 the primary is held, not Recyclable");
+ assert.ok(!JSON.stringify(on).includes("Special Waste"),"NOTE-7 no Special Waste granted");
  assert.equal(p8Status(logs),"merge_failed","NOTE-7 the existing fallback status");
  assert.deepEqual(p8Calls(calls),[1,1,0,0,0],"NOTE-7 no extra provider call");
 });
@@ -3965,4 +4062,208 @@ test("NOTE-8 route serialization: the notice reaches body.detectedItems unchange
  assert.equal(old.status,200,"NOTE-8 precondition, a Special Waste-only result needs no capability");
  assert.deepEqual(old.body.detectedItems.map(item=>[item.itemName,item.category,item.hazardNotice]),[["Used Battery","Special Waste",NOTICE]],
   "NOTE-8 an older client receives the additive optional field on its existing card");
+});
+
+// ---------------------------------------------------------------------------
+// FALLBACK-1 ... FALLBACK-10: the hazard-safe exceptional fallback (see fbExpected above P8-6). No saved or synthetic scene
+// reaches either guard, so the merge result is altered in the test realm only: the battery's own card made ordinary (the
+// P-9 guard), every Gemini card made ordinary, or the existing veto on a Vision-native owner lifted (the P-8 guard).
+// ---------------------------------------------------------------------------
+const FB_S1=P8_NATIVE[0][1],FB_S2=P8_NATIVE[1][1];
+const fbBatteryOrdinary=items=>items.map(item=>item.analysisSource==="gemini_whole_image"&&item.observedIdentity==="used battery"?{...item,category:"Recyclable"}:item);
+const fbGeminiOrdinary=items=>items.map(item=>item.analysisSource==="gemini_whole_image"?{...item,category:"Recyclable"}:item);
+// S2's vetoed Water bottle (0.9) given back its feature-OFF stream in the A9 result: the P-8 G1 hold catches it (its
+// pre-merge category is Unknown), so the accepted path stands.
+const fbVetoLifted=items=>items.map(item=>item.analysisSource==="google_vision_object_localization"&&item.confidence===.9?{...item,category:"Recyclable"}:item);
+// The same, with the Vision-native Recyclable Tin can (0.89) also moved onto the battery: a native ordinary cover, the P-8
+// native guard.
+const fbNativeOnBattery=items=>fbVetoLifted(items).map(item=>item.analysisSource==="google_vision_object_localization"&&item.confidence===.89
+ ?{...item,boundingBox:{left:.02,top:.02,right:.22,bottom:.28}}:item);
+const FB_SCENES=[["battery inside a bottle",FB_S1,fbBatteryOrdinary],["eight native owners, native cover on the battery",FB_S2,fbNativeOnBattery],
+ ["min-g1a, every Gemini card ordinary",P8_MIN,fbGeminiOrdinary],["lone power bank",{owners:[],objects:[proposal("power bank",[.3,.3,.5,.6])]},fbGeminiOrdinary]];
+
+test("FALLBACK-1 battery inside a bottle: the former fallback returned the Recyclable bottle and primary with their guidance; the hazard-safe fallback returns neither",async()=>{
+ for(const [name,primaryObjectIndex] of [["no primaryObjectIndex",undefined],["primary on the bottle",0],["primary on the battery",1]]){
+  const scene={...FB_S1,primaryObjectIndex},why="FALLBACK-1 "+name,{on,off}=await fbCheck(scene,fbBatteryOrdinary,why);
+  // The former fallback was exactly the feature-OFF result (P-9 6eb5650, NOTE-7): the reproduction.
+  assert.deepEqual([off.category,off.action,off.detectedItems.map(item=>item.category)],["Recyclable",PRIMARY.action,["Recyclable"]],
+   why+": precondition, feature OFF recommends recycling the bottle");
+  assert.ok(P8_STRIPPED.some(key=>off.detectedItems[0][key]),why+": precondition, the feature-OFF bottle carries stream guidance");
+  const battery=fbClaims(scene)[0].box;
+  const over=on.detectedItems.filter(item=>p8Covers(item.boundingBox,battery));
+  assert.deepEqual(over.map(item=>[item.category,item.requiresConfirmation,P8_STRIPPED.filter(key=>key in item),item.hazardNotice]),[["Unknown",true,[],NOTICE]],
+   why+": the bottle over the battery is held: confirmation required, no stream or guidance, the fixed notice");
+  assert.deepEqual([on.category,on.explanation,on.action,on.warning],[FB_UNKNOWN_PRIMARY.category,FB_UNKNOWN_PRIMARY.explanation,FB_UNKNOWN_PRIMARY.action,
+   FB_UNKNOWN_PRIMARY.warning],why+": the primary is held in the existing Unknown text");
+  for(const text of [PRIMARY.explanation,PRIMARY.action,PRIMARY.warning])assert.ok(!JSON.stringify(on).includes(text),why+": no classifier recycling text remains");
+  assert.equal(on.scanSummary.categories.recyclable,0,why+": nothing is counted as Recyclable");
+ }
+});
+
+test("FALLBACK-2 native ordinary-cover conflict: the Vision-native cover is never rewritten in the A9 result; the fallback holds only the feature-OFF card over the open claim",async()=>{
+ const control=await fbPatched(FB_S2,items=>items);
+ assert.equal(p8Status(control.logs),"accepted","FALLBACK-2 control: the existing veto keeps the A9 result");
+ assert.deepEqual(iaCards(control.on),P8_NATIVE[1][2],"FALLBACK-2 control: the P8-5 cards");
+ // Category-authority boundary: an owner that entered the merge Unknown is held on the accepted path (P-8), not by the fallback.
+ const lifted=await fbPatched(FB_S2,fbVetoLifted);
+ assert.deepEqual([p8Status(lifted.logs),iaCards(lifted.on)],["accepted",P8_NATIVE[1][2]],"FALLBACK-2 control: the lifted veto is held by the P-8 G1 hold");
+ for(const [name,primaryObjectIndex] of [["no primaryObjectIndex",undefined],["primary on the battery",0]]){
+  const scene={...FB_S2,primaryObjectIndex},why="FALLBACK-2 "+name,{on,off}=await fbCheck(scene,fbNativeOnBattery,why);
+  assert.deepEqual(iaCards(off)[0],"V:water bottle=Recyclable",why+": precondition, the native owner is Recyclable with the feature OFF");
+  assert.deepEqual(iaCards(on),["V:water bottle=Unknown",...iaCards(off).slice(1)],why+": only the feature-OFF water bottle over the battery is held, not made Special Waste");
+  assert.deepEqual(bareItems(on.detectedItems.slice(1),why),off.detectedItems.slice(1),why+": the seven other native cards keep their category and guidance");
+  assert.deepEqual(noted(on),[off.detectedItems[0].itemId],why+": the held card carries the notice");
+  assert.equal(on.category,"Unknown",why+": the primary over the battery is held");
+ }
+});
+
+test("FALLBACK-3 hazard own-card corruption: a hazard card forced ordinary fails the whole response closed without granting Special Waste",async()=>{
+ const scenes=[...FB_SCENES.filter(([,,transform])=>transform!==fbNativeOnBattery),
+  ["lone used battery",{owners:[],objects:[proposal("used battery",[.3,.3,.4,.45])]},fbGeminiOrdinary]];
+ for(const [name,scene,transform] of scenes){
+  const why="FALLBACK-3 "+name,control=await fbPatched(scene,items=>items);
+  assert.equal(p8Status(control.logs),"accepted",why+": control, the A9 result without the corruption");
+  const {on}=await fbCheck(scene,transform,why);
+  assert.ok(!on.detectedItems.some(item=>item.category==="Special Waste")&&on.category!=="Special Waste",why+": nothing is Special Waste");
+  assert.ok(!ORDINARY.includes(on.category),why+": the unlocalized primary is held");
+ }
+});
+
+test("FALLBACK-4 primary safety: a held card never coexists with an ordinary primary for the same open region; a primary the classifier places elsewhere, or a Special Waste primary, is kept",async()=>{
+ const cases=[
+  ["unlocalized primary",{...FB_S1},"Unknown"],
+  ["primary on the bottle that holds the battery",{...FB_S1,primaryObjectIndex:0},"Unknown"],
+  ["primary on the battery itself",{...FB_S1,primaryObjectIndex:1},"Unknown"],
+  ["primary on an unrelated cardboard box",{...FB_S1,objects:[...FB_S1.objects,proposal("cardboard box",FAR)],primaryObjectIndex:2,
+   primary:{...PRIMARY,itemName:"Cardboard box"}},"Recyclable"],
+  ["Special Waste primary",{...FB_S1,primary:{...PRIMARY,itemName:"Used battery",category:"Special Waste"}},"Special Waste"]];
+ for(const [name,scene,category] of cases){
+  const why="FALLBACK-4 "+name,{on,off,open}=await fbCheck(scene,fbBatteryOrdinary,why);
+  assert.equal(on.category,category,why+": the primary category");
+  if(category===off.category)assert.deepEqual(withoutItems(on),withoutItems(off),why+": the primary is byte-identical to feature OFF");
+  assert.ok(on.detectedItems.some(item=>item.category==="Unknown"&&open.some(claim=>p8Covers(item.boundingBox,claim.box))),why+": precondition, a card over the open claim is held");
+  if(ORDINARY.includes(on.category))assert.ok(Number.isInteger(scene.primaryObjectIndex)
+   &&!open.some(claim=>p8Covers(x2Box(scene.objects[scene.primaryObjectIndex]),claim.box)),
+   why+": an ordinary primary is kept only where the classifier itself places it on an object covering no open claim");
+ }
+});
+
+test("FALLBACK-5 unrelated ordinary items keep their category and guidance; a neighbour covering under half of the claim is not held",async()=>{
+ const scene={owners:FB_S2.owners,objects:[...FB_S2.objects,proposal("cardboard box",p8Grid(8)[2])],primaryObjectIndex:1,primary:{...PRIMARY,itemName:"Cardboard box"}};
+ const why="FALLBACK-5 eight native owners, primary on the cardboard",{on,off,open}=await fbCheck(scene,fbNativeOnBattery,why);
+ assert.deepEqual(withoutItems(on),withoutItems(off),why+": the classifier's cardboard primary is byte-identical to feature OFF");
+ const unrelated=on.detectedItems.filter(item=>!open.some(claim=>p8Covers(item.boundingBox,claim.box)));
+ assert.equal(unrelated.length,7,why+": precondition, seven cards do not cover the battery");
+ for(const item of unrelated)assert.deepEqual(item,off.detectedItems.find(prior=>prior.itemId===item.itemId),why+": "+item.canonicalItem+" byte-identical to feature OFF");
+ // The existing 50 % rule: a neighbour holding a third of the battery is not its cover, so it is not held. The claim stays
+ // open and unrepresented (the reported cardless limitation); with the classifier's primary on that neighbour it is kept.
+ const beside={owners:[vision("Water bottle",.9,[.2,.2,.6,.8])],objects:[proposal("plastic water bottle",[.2,.2,.6,.8]),proposal("used battery",[.55,.35,.7,.5])],primaryObjectIndex:0};
+ const near="FALLBACK-5 neighbour",result=await fbCheck(beside,fbBatteryOrdinary,near);
+ assert.deepEqual(result.on.detectedItems,result.off.detectedItems,near+": the neighbour keeps its feature-OFF card");
+ assert.deepEqual(withoutItems(result.on),withoutItems(result.off),near+": and the primary the classifier placed on it");
+ assert.equal(result.open.length,1,near+": the battery claim stays open (unrepresented)");
+});
+
+test("FALLBACK-6 feature OFF and near-miss flags stay byte-identical to legacy for every fallback scene, with no merge and no field",async()=>{
+ const OFF_ENVS=[{},{WMO_CLASSIFY_OBJECT_PROPOSALS_ENABLED:"TRUE",CLASSIFY_OBJECT_PROPOSALS_SHARED_TOKEN:TOKEN},
+  {WMO_CLASSIFY_OBJECT_PROPOSALS_ENABLED:"1",CLASSIFY_OBJECT_PROPOSALS_SHARED_TOKEN:TOKEN},{WMO_CLASSIFY_OBJECT_PROPOSALS_ENABLED:"true"}];
+ for(const [name,scene,transform] of FB_SCENES){
+  const legacy=await fbOff(scene);
+  assert.deepEqual(legacy,await backend({visionObjects:scene.owners}).run(),"FALLBACK-6 "+name+": precondition, OFF ignores the proposal field");
+  for(const env of OFF_ENVS){
+   const why="FALLBACK-6 "+name+" "+JSON.stringify(env),{on,merges,calls}=await fbPatched(scene,transform,{env});
+   assert.deepEqual([on,merges],[legacy,0],why+": byte-identical to legacy, no merge");
+   assert.ok(!JSON.stringify(on).includes("hazardNotice"),why+": no field");
+   assert.deepEqual(p8Calls(calls),[1,1,0,0,0],why+": the existing provider budget");
+  }
+ }
+});
+
+test("FALLBACK-7 discovery mode, a missing capability, absent proposals and an unexpected failure keep the existing result with no hazard-safe rewrite",async()=>{
+ for(const [name,scene,transform] of FB_SCENES){
+  const why="FALLBACK-7 "+name,legacy=await fbOff(scene);
+  const disc=await fbPatched(scene,transform,{env:{...BACKEND_ON,WHOLE_IMAGE_DISCOVERY_ENABLED:"true"}});
+  assert.deepEqual([disc.on,disc.merges,proposalLogs(disc.logs)],[legacy,0,["[WasteScanProposals] status=ineligible reason=discovery_mode"]],why+": discovery mode");
+  const noCap=await fbPatched(scene,transform,{input:{independentCategoryV2:false}});
+  assert.deepEqual([noCap.on,noCap.merges,proposalLogs(noCap.logs)],[await fbOff(scene,{independentCategoryV2:false}),0,
+   ["[WasteScanProposals] status=ineligible reason=capability_missing"]],why+": no capability");
+  const absent=backend({env:BACKEND_ON,visionObjects:scene.owners});
+  assert.deepEqual([await absent.run(),p8Status(absent.logs)],[await backend({visionObjects:scene.owners}).run(),"absent"],why+": absent proposals");
+  // Not a confirmed safety conflict: an unexpected failure keeps the existing feature-OFF fallback (classified, reported).
+  const failure=await fbPatched(scene,()=>{throw new Error("synthetic merge failure");});
+  assert.deepEqual([failure.on,p8Status(failure.logs)],[legacy,"merge_failed"],why+": an unexpected failure keeps the existing fallback");
+ }
+});
+
+test("FALLBACK-8 invalid or untrusted proposal evidence cannot force a hazard-safe downgrade",async()=>{
+ const [bottle,battery]=FB_S1.objects,legacy=await fbOff(FB_S1);
+ for(const [name,objects,extra] of [["a box outside 0..1000",[bottle,{...battery,box_2d:[350,300,500,1001]}],{}],
+  ["a remote category field",[bottle,{...battery,category:"Special Waste"}],{}],["a remote confidence field",[bottle,{...battery,confidence:.99}],{}],
+  ["an out-of-range primaryObjectIndex",FB_S1.objects,{primaryObjectIndex:2}]]){
+  const {on,logs}=await fbPatched({...FB_S1,objects,...extra},fbBatteryOrdinary);
+  assert.deepEqual([on,p8Status(logs)],[legacy,"rejected"],"FALLBACK-8 "+name+": the whole proposal set is rejected exactly as before");
+ }
+ // No localized hazard claim, no conflict: a non-hazard label or an unlocalized hazard label cannot reach the fallback.
+ for(const [name,objects] of [["non-hazard label",[bottle]],["unlocalized hazard label",[bottle,{label:"used battery"}]]]){
+  const scene={owners:FB_S1.owners,objects},control=await fbPatched(scene,items=>items),forced=await fbPatched(scene,fbGeminiOrdinary);
+  assert.equal(p8Status(forced.logs),"accepted","FALLBACK-8 "+name+": no guard is reached");
+  assert.deepEqual(visionOwners(forced.on),visionOwners(control.on),"FALLBACK-8 "+name+": no Vision card is held by a fallback");
+ }
+ // A far claim holds nothing it does not cover; a far ordinary card is kept.
+ const far={owners:[...FB_S1.owners,vision("Cardboard",.85,[.65,.55,.95,.95])],objects:[...FB_S1.objects,proposal("syringe",[.7,.05,.8,.3])]};
+ const {on,off}=await fbCheck(far,fbBatteryOrdinary,"FALLBACK-8 far claim");
+ const cardboard=on.detectedItems.find(item=>item.confidence===.85);
+ assert.deepEqual(cardboard,off.detectedItems.find(item=>item.confidence===.85),"FALLBACK-8 far claim: the unrelated Cardboard card is byte-identical to feature OFF");
+ assert.equal(on.detectedItems.filter(item=>item.category==="Unknown"&&!P8_SAFE.includes(off.detectedItems.find(prior=>prior.itemId===item.itemId).category)).length,1,
+  "FALLBACK-8 far claim: only the bottle over the battery is held");
+});
+
+test("FALLBACK-9 the hazard-safe fallback adds no provider call, retry or classifier request change",async()=>{
+ for(const [name,scene,transform] of FB_SCENES){
+  const control=await fbPatched(scene,items=>items),forced=await fbPatched(scene,transform),why="FALLBACK-9 "+name;
+  assert.deepEqual([p8Status(control.logs),p8Status(forced.logs)],["accepted","merge_failed"],why+": precondition");
+  assert.deepEqual(callSummary(forced.calls),callSummary(control.calls),why+": the same single classifier request and budget, one Vision call, no direct Gemini, discovery or assessment");
+  assert.deepEqual(p8Calls(forced.calls),[1,1,0,0,0],why+": the existing provider budget");
+ }
+});
+
+test("FALLBACK-10 route serialization: the hazard-safe fallback reaches the client and history with no ordinary guidance for the open region and no schema change",async()=>{
+ const off=await fbOff(FB_S1),{on}=await fbPatched(FB_S1,fbBatteryOrdinary);
+ const [savedOff,savedOn]=[await route(off,{capability:P8_CAPABILITY}),await route(on,{capability:P8_CAPABILITY})];
+ assert.deepEqual([savedOff.status,savedOn.status],[200,200],"FALLBACK-10 capability-aware client");
+ assert.deepEqual(savedOn.body.detectedItems,plain(on.detectedItems),"FALLBACK-10 detectedItems serialized unchanged");
+ assert.deepEqual(Object.keys(savedOn.body).sort(),Object.keys(savedOff.body).sort(),"FALLBACK-10 no new top-level field (no scan-level flag)");
+ assert.deepEqual(Object.keys(savedOn.body.result).sort(),Object.keys(savedOff.body.result).sort(),"FALLBACK-10 the same primary fields");
+ assert.deepEqual([savedOn.body.result.category,savedOn.body.result.action],["Unknown",FB_UNKNOWN_PRIMARY.action],"FALLBACK-10 the serialized primary is held");
+ const [heldCard,offCard]=[savedOn.body.detectedItems[0],savedOff.body.detectedItems[0]];
+ assert.ok(Object.keys(heldCard).every(key=>key in offCard||key==="hazardNotice"),"FALLBACK-10 no card field beyond the P-9 notice (Android-compatible)");
+ assert.deepEqual([heldCard.category,heldCard.requiresConfirmation,heldCard.hazardNotice],["Unknown",true,NOTICE],"FALLBACK-10 the held card on the wire");
+ for(const text of [PRIMARY.explanation,PRIMARY.action,PRIMARY.warning]){
+  assert.ok(!JSON.stringify(savedOn.body).includes(text),"FALLBACK-10 no classifier recycling text in the response");
+  assert.ok(!JSON.stringify(savedOn.writes).includes(text),"FALLBACK-10 no classifier recycling text in scan_history");
+ }
+ assert.equal(savedOn.writes.length,1,"FALLBACK-10 one scan_history insert");
+ assert.ok(savedOn.writes[0].includes("Unknown")&&!savedOn.writes[0].includes("Recyclable"),"FALLBACK-10 history stores the held Unknown primary");
+ assert.ok(!JSON.stringify(savedOn.writes).includes("hazardNotice"),"FALLBACK-10 nothing about the notice is stored");
+ const old=await route(on);
+ assert.deepEqual([old.status,old.writes],[503,[]],"FALLBACK-10 an older client is refused an Unknown primary exactly as before (A9 itself requires the capability)");
+ // No feature-OFF card at all: the held primary has no items, which the route refuses (fail closed, nothing stored).
+ const alone=await fbPatched({owners:[],objects:[proposal("used battery",[.3,.3,.4,.45])]},fbGeminiOrdinary);
+ assert.deepEqual([p8Status(alone.logs),alone.on.category,alone.on.detectedItems],["merge_failed","Unknown",[]],"FALLBACK-10 precondition, a held primary without cards");
+ const refused=await route(alone.on,{capability:P8_CAPABILITY});
+ assert.deepEqual([refused.status,refused.writes],[503,[]],"FALLBACK-10 the route refuses it and stores nothing");
+ assert.ok(refused.logs.includes("[WasteScanRejection] reason=UNKNOWN_PRIMARY_WITHOUT_ITEMS status=503 scan_capability=true"),"FALLBACK-10 the existing rejection code");
+ // A failure while building the hazard-safe fallback fails the request closed instead of returning the feature-OFF result.
+ const names=require("../services/wasteDisplayNameService"),real=names.withDisplayNames;
+ names.withDisplayNames=result=>{
+  if((result.detectedItems||[]).some(item=>item.analysisSource==="google_vision_object_localization"&&item.hazardNotice))throw new Error("synthetic fallback failure");
+  return real(result);
+ };
+ try{
+  const control=await fbPatched(FB_S1,items=>items);
+  assert.equal(p8Status(control.logs),"accepted","FALLBACK-10 control: the instrumented display step does not affect the accepted path");
+  await assert.rejects(fbPatched(FB_S1,fbBatteryOrdinary),/synthetic fallback failure/,"FALLBACK-10 the request fails closed, never feature OFF");
+ }finally{names.withDisplayNames=real;}
+ const thrown=await route(off,{capability:P8_CAPABILITY,throws:true});
+ assert.deepEqual([thrown.status,thrown.writes],[503,[]],"FALLBACK-10 a failed analysis is refused and nothing is stored");
 });

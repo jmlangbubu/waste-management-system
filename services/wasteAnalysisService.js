@@ -189,6 +189,13 @@ function withDetectedItems(legacyResult, detectedItems, preserveLegacyPrimary = 
   return response;
 }
 
+// The existing Unknown primary wording. The A9 hazard-safe fallback holds a primary with exactly this text.
+const UNKNOWN_PRIMARY_GUIDANCE = Object.freeze({
+  explanation: "The object's waste category or condition has not been safely established.",
+  action: "Confirm identity, material, contents and condition with WMO before choosing a disposal stream.",
+  warning: "Keep separate until identity, contents and condition are established. Do not choose a disposal stream from an uncertain result."
+});
+
 function reconcilePrimary(result, detectedItems) {
   const owner = primaryOwners.get(result);
   const noClassification = result.analysisSource === "fallback_no_ai_result" || !isValidCategory(result.category);
@@ -208,10 +215,7 @@ function reconcilePrimary(result, detectedItems) {
     aiConfidence: toSafeNumberText(safe.confidence), analysisSource: safe.analysisSource,
     explanation: safe.explanation, action: safe.action, warning: safe.warning }), itemName: safe.itemName };
   // Do not pass Unknown through the legacy createSafeResult Residual default.
-  return { ...result, ...(noClassification ? { itemName: "Unidentified item" } : {}), category: "Unknown",
-    explanation: "The object's waste category or condition has not been safely established.",
-    action: "Confirm identity, material, contents and condition with WMO before choosing a disposal stream.",
-    warning: "Keep separate until identity, contents and condition are established. Do not choose a disposal stream from an uncertain result." };
+  return { ...result, ...(noClassification ? { itemName: "Unidentified item" } : {}), category: "Unknown", ...UNKNOWN_PRIMARY_GUIDANCE };
 }
 
 async function localizeObjectsBestEffort(image) {
@@ -1285,12 +1289,23 @@ async function analyzeWasteWithObjectProposals(input, context) {
   // discovery path. Vision keeps its existing single bounded call and schedule.
   const legacy = await analyzeWasteLegacy({ ...input, boundedDiscovery: true }, context);
   const legacyResult = () => withDisplayNames(reconcilePrimary(legacy, legacy.detectedItems || []));
+  // P-8 downgrade shape for a held card (a request-local copy): Unknown, confirmation required, no guidance, model,
+  // hotspot or text fields; ID, name, geometry, confidence and provenance are kept.
+  const holdCard = (item) => {
+    const copy = { ...item, category: "Unknown", requiresConfirmation: true };
+    for (const field of ["guidance", "modelKey", "modelHotspots", "explanation", "action", "warning"]) delete copy[field];
+    return copy;
+  };
+  // P-9: the only place the fixed-code notice is written, on request-local copies; nothing else on a card changes.
+  const withNotices = (items, ids) => (ids.size ? items.map((item) => (ids.has(item.itemId)
+    ? { ...item, hazardNotice: { code: PROPOSAL_HAZARD_NOTICE_CODE } } : item)) : items);
   if (!context.primaryValid) { proposalDiagnostics({ status: "primary_unavailable" }); return legacyResult(); }
   if (context.raw === undefined) { proposalDiagnostics({ status: "absent" }); return legacyResult(); }
   let proposals;
   try { proposals = normalizeObjectProposals(context.capture, context.raw); }
   catch (_) { proposalDiagnostics({ status: "rejected" }); return legacyResult(); }
-  let detectedItems, reconciled, noticed = new Set();
+  // hazardConflict: set only when this request's own A9 result shows a safety conflict with accepted hazard claims.
+  let detectedItems, reconciled, noticed = new Set(), hazardConflict = false;
   const discovery = require("./wholeImageRecognitionService");
   try {
     // A9 (owner policy D-A / D-B / D-C): the base is Candidate H's own tiers with the P-2c matcher. A fixed, bounded list
@@ -1310,6 +1325,43 @@ async function analyzeWasteWithObjectProposals(input, context) {
         if (hazardRegionOverlap(hazards[i].boundingBox, hazards[j].boundingBox)) parent[find(i)] = find(j);
       return new Map(hazards.map((claim, i) => [claim.itemId, find(i)])); };
     const safeCard = (item) => item.category === "Unknown" || item.category === "Special Waste";
+    // P-9 notice selection: a localized hazard claim marks its own retained card; a claim without one marks every
+    // Unknown or Special Waste card covering it (the coverState rule below). Claims that no card covers stay unmarked
+    // (they are not attributed to an unrelated card).
+    const noticeIds = (items) => {
+      const ids = new Set(), retained = new Set(items.map((item) => item.itemId));
+      for (const claim of reconciled.localizedHazards) {
+        if (retained.has(claim.itemId)) { ids.add(claim.itemId); continue; }
+        for (const item of items) {
+          if (item.boundingBox && safeCard(item) && coversClaim(item.boundingBox, claim.boundingBox)) ids.add(item.itemId);
+        }
+      }
+      return ids;
+    };
+    // Hazard-safe exceptional fallback, used only by the two guards below, where this request's own A9 result shows a
+    // safety conflict with accepted, localized hazard claims (validated, capture-bound proposals). It returns the
+    // feature-OFF cards and primary, but fails closed for every "open" claim, one that no Unknown or Special Waste
+    // feature-OFF card covers:
+    // - each ordinary feature-OFF card covering an open claim is held in the P-8 downgrade shape;
+    // - an ordinary classifier primary is held in the existing Unknown primary shape, unless the classifier's own
+    //   primaryObjectIndex places it on a localized object that covers no open claim. An unlocalized primary describes
+    //   the whole image, which covers every claim; matching labels or categories never link it to a card.
+    // P-9 notices follow the accepted-path rule. No card, category grant, identity, confidence, field or provider call is
+    // added; card IDs, order, names and geometry are kept. Every other card is unchanged.
+    const hazardSafeFallback = () => {
+      const items = legacy.detectedItems || [];
+      const open = reconciled.localizedHazards.filter((claim) => !items.some((item) => item.boundingBox && safeCard(item)
+        && coversClaim(item.boundingBox, claim.boundingBox)));
+      const coversOpen = (box) => !!box && open.some((claim) => coversClaim(box, claim.boundingBox));
+      const cards = items.map((item) => (ORDINARY_CATEGORIES.includes(item.category) && coversOpen(item.boundingBox)
+        ? holdCard(item) : item));
+      const anchor = proposals.primaryIndex === null ? null : proposals.objects[proposals.primaryIndex];
+      let primary = reconcilePrimary(legacy, cards);
+      if (open.length && ORDINARY_CATEGORIES.includes(primary.category) && !(anchor && anchor.boundingBox && !coversOpen(anchor.boundingBox))) {
+        primary = { ...primary, category: "Unknown", ...UNKNOWN_PRIMARY_GUIDANCE };
+      }
+      return withDisplayNames({ ...primary, detectedItems: withNotices(cards, noticeIds(cards)), scanSummary: buildScanSummary(cards) });
+    };
     const coverState = (items, hazards, regionOf) => {
       const hazardIds = new Set(hazards.map((claim) => claim.itemId)), rep = new Set(), act = new Set(), own = new Set(), hazardCover = new Set(), labelCover = new Set(), regions = new Map();
       const covering = (claim, list) => list.filter((item) => item.boundingBox && (item.itemId === claim.itemId || coversClaim(item.boundingBox, claim.boundingBox)));
@@ -1380,8 +1432,9 @@ async function analyzeWasteWithObjectProposals(input, context) {
     // a claim fails closed. If its stream came from G1 (the owner entered the merge Unknown), it becomes a
     // request-local copy in the merge's own downgrade shape: Unknown, confirmation required, no guidance, model,
     // hotspot or text fields; ID, name, geometry, confidence and provenance are kept. Any other ordinary cover is
-    // never rewritten: the whole request falls back to the feature-OFF result. A claim that already has a safe card
-    // changes nothing (G1 controls E/F). Selection and every other card are unchanged; no category is granted.
+    // never rewritten in the A9 result: the whole request takes the hazard-safe fallback (feature-OFF cards and primary,
+    // failing closed on open claims). A claim that already has a safe card changes nothing (G1 controls E/F). Selection
+    // and every other card are unchanged; no category is granted.
     const premerge = new Map(reconciled.owners.filter((owner) => owner.analysisSource === "google_vision_object_localization")
       .map((owner) => [owner.itemId, owner]));
     const held = new Set();
@@ -1392,34 +1445,26 @@ async function analyzeWasteWithObjectProposals(input, context) {
       for (const item of cover) {
         if (item.analysisSource !== "google_vision_object_localization" || premerge.get(item.itemId)?.category !== "Unknown") {
           proposalDiagnostics({ status: "merge_failed" });
-          return legacyResult();
+          hazardConflict = true;
+          return hazardSafeFallback();
         }
         held.add(item.itemId);
       }
     }
-    if (held.size) detectedItems = detectedItems.map((item) => {
-      if (!held.has(item.itemId)) return item;
-      const copy = { ...item, category: "Unknown", requiresConfirmation: true };
-      for (const field of ["guidance", "modelKey", "modelHotspots", "explanation", "action", "warning"]) delete copy[field];
-      return copy;
-    });
-    // P-9 hazard notice, chosen on the final cards after the hold. A localized hazard claim marks its own retained
-    // card; a claim without one marks every Unknown or Special Waste card covering it (the coverState rule above).
-    // The notice is one fixed code: no proposal label, provider text, confidence or category; nothing else on the
-    // card changes. A marked card must be non-actionable: an ordinary own card falls back to the feature-OFF result.
-    // Claims that no card covers stay unmarked (they are not attributed to an unrelated card).
-    const retained = new Set(detectedItems.map((item) => item.itemId));
-    for (const claim of reconciled.localizedHazards) {
-      if (retained.has(claim.itemId)) { noticed.add(claim.itemId); continue; }
-      for (const item of detectedItems) {
-        if (item.boundingBox && safeCard(item) && coversClaim(item.boundingBox, claim.boundingBox)) noticed.add(item.itemId);
-      }
-    }
+    if (held.size) detectedItems = detectedItems.map((item) => (held.has(item.itemId) ? holdCard(item) : item));
+    // P-9 hazard notice, chosen on the final cards after the hold (noticeIds above). The notice is one fixed code: no
+    // proposal label, provider text, confidence or category; nothing else on the card changes. A marked card must be
+    // non-actionable: an ordinary own card takes the hazard-safe fallback.
+    noticed = noticeIds(detectedItems);
     if (detectedItems.some((item) => noticed.has(item.itemId) && !safeCard(item))) {
       proposalDiagnostics({ status: "merge_failed" });
-      return legacyResult();
+      hazardConflict = true;
+      return hazardSafeFallback();
     }
-  } catch (_) {
+  } catch (error) {
+    // A failure while building the hazard-safe fallback must not return the feature-OFF result it replaces: the
+    // request fails closed (the route answers ANALYSIS_UNAVAILABLE). Every other failure keeps the existing fallback.
+    if (hazardConflict) throw error;
     proposalDiagnostics({ status: "merge_failed" });
     return legacyResult();
   }
@@ -1441,8 +1486,7 @@ async function analyzeWasteWithObjectProposals(input, context) {
     finalUnknown: detectedItems.filter((item) => item.category === "Unknown").length, primaryLink });
   // P-9: the notice is attached last, on request-local copies (as withDisplayNames makes), so the primary check and
   // the diagnostics above read exactly the P-8 cards and their capture-bound evidence.
-  if (noticed.size) detectedItems = detectedItems.map((item) => (noticed.has(item.itemId)
-    ? { ...item, hazardNotice: { code: PROPOSAL_HAZARD_NOTICE_CODE } } : item));
+  detectedItems = withNotices(detectedItems, noticed);
   return withDisplayNames({ ...primary, detectedItems, scanSummary: buildScanSummary(detectedItems) });
 }
 
