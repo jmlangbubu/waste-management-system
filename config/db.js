@@ -1,15 +1,18 @@
 const mysql = require("mysql2");
 require("dotenv").config();
 
-const db = mysql.createPool({
-  uri: process.env.DATABASE_URL,
+const { databasePolicy, guardDatabase } = require("./stagingSafety");
+const policy = databasePolicy();
+const db = guardDatabase(mysql.createPool({
+  uri: policy.uri,
+  ...(policy.staging ? { ...require("./railwayStaging").privateDatabaseOptions(policy), multipleStatements: false } : {}),
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
   enableKeepAlive: true,
   keepAliveInitialDelay: 0,
   connectTimeout: 10000
-});
+}), policy);
 
 const TRANSIENT_DATABASE_ERROR_CODES = new Set([
   "PROTOCOL_CONNECTION_LOST",

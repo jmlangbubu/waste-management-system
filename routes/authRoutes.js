@@ -1,9 +1,10 @@
+const wasteScanOnly = globalThis.process?.env?.WMO_DEPLOYMENT_MODE === "staging";
 const express = require("express");
 const router = express.Router();
 const db = require("../config/db");
 const bcrypt = require("bcrypt");
 const crypto = require("crypto");
-const multer = require("multer");
+const multer = wasteScanOnly ? null : require("multer");
 const path = require("path");
 const fs = require("fs");
 const mobileSessionService = require("../services/mobileSessionService");
@@ -12,6 +13,7 @@ const mobileAuthRoutes = require("./mobileAuthRoutes");
 let nodemailer = null;
 let ResendSDK = null;
 
+if (!wasteScanOnly) {
 try {
   nodemailer = require("nodemailer");
 } catch (err) {
@@ -25,6 +27,8 @@ try {
   console.warn("⚠️ resend is not installed. Run: npm install resend");
 }
 
+}
+
 console.log("✅ authRoutes.js file executed");
 
 /* =========================================================
@@ -35,11 +39,11 @@ const ROOT_DIR = path.join(__dirname, "..");
 const UPLOADS_DIR = path.join(ROOT_DIR, "uploads");
 const PROFILE_UPLOADS_DIR = path.join(UPLOADS_DIR, "profiles");
 
-if (!fs.existsSync(PROFILE_UPLOADS_DIR)) {
+if (!wasteScanOnly && !fs.existsSync(PROFILE_UPLOADS_DIR)) {
   fs.mkdirSync(PROFILE_UPLOADS_DIR, { recursive: true });
 }
 
-const profileStorage = multer.diskStorage({
+const profileStorage = wasteScanOnly ? null : multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, PROFILE_UPLOADS_DIR);
   },
@@ -51,7 +55,7 @@ const profileStorage = multer.diskStorage({
   }
 });
 
-const profileUpload = multer({
+const profileUpload = wasteScanOnly ? null : multer({
   storage: profileStorage,
   limits: {
     fileSize: 5 * 1024 * 1024
@@ -257,6 +261,9 @@ function ensureUsersProfileColumns(callback) {
 }
 
 function ensureUserProfileReady(callback) {
+  // Login reads the existing schema. Missing columns fail at the SELECT below;
+  // staging never attempts to repair the database during authentication.
+  if (wasteScanOnly) return callback(null);
   ensureUsersEmailColumns((emailErr) => {
     if (emailErr) {
       return callback(emailErr);
@@ -708,6 +715,7 @@ function logSmtpConfigStatus() {
    ROUTES
    ========================================================= */
 
+if (!wasteScanOnly) {
 router.get("/test", (req, res) => {
   res.json({
     success: true,
@@ -1454,6 +1462,8 @@ router.post("/resend-verification", (req, res) => {
   });
 });
 
+}
+
 /*
   LOGIN:
   Pending signups are not in users table, so they cannot login yet.
@@ -1525,6 +1535,10 @@ router.post("/login", (req, res) => {
       const resolvedRole = (user.role || user.mobile_role || "").toString().trim();
       const resolvedBarangay = (user.barangay || user.assigned_source_name || "").toString().trim();
       const resolvedStatus = (user.status || "active").toString().trim().toLowerCase();
+
+      if (wasteScanOnly && (resolvedRole.toLowerCase() !== "citizen" || resolvedStatus !== "active")) {
+        return res.status(403).json({ success: false, code: "STAGING_CITIZEN_REQUIRED", message: "An active citizen account is required." });
+      }
 
       if (!resolvedRole) {
         return res.status(500).json({
@@ -1628,6 +1642,6 @@ router.post("/login", (req, res) => {
 router.use("/mobile", mobileAuthRoutes);
 
 // WMO Forgot Password: dedicated recovery routes (Citizen verified emails only).
-router.use(require("./passwordResetRoutes"));
+if (!wasteScanOnly) router.use(require("./passwordResetRoutes"));
 
 module.exports = router;

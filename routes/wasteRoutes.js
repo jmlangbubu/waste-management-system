@@ -1,3 +1,4 @@
+const wasteScanOnly = globalThis.process?.env?.WMO_DEPLOYMENT_MODE === "staging";
 const express = require("express");
 const router = express.Router();
 const { requireMobileSession } = require("../middleware/mobileSessionAuth");
@@ -5,9 +6,9 @@ const path = require("path");
 const fs = require("fs");
 const db = require("../config/db");
 const { analyzeWaste, buildScanSummary } = require("../services/wasteAnalysisService");
-const wasteController = require("../controllers/wasteController");
-const wasteCorrectionController = require("../controllers/wasteCorrectionController");
-const { requireWebCapability, requireCsrf } = require("../middleware/webSessionAuth");
+const wasteController = wasteScanOnly ? null : require("../controllers/wasteController");
+const wasteCorrectionController = wasteScanOnly ? null : require("../controllers/wasteCorrectionController");
+const { requireWebCapability, requireCsrf } = wasteScanOnly ? {} : require("../middleware/webSessionAuth");
 
 /* =========================================
    SCAN IMAGE STORAGE HELPERS
@@ -18,7 +19,7 @@ const { requireWebCapability, requireCsrf } = require("../middleware/webSessionA
 const UPLOADS_DIR = path.join(__dirname, "..", "uploads");
 const WASTE_SCAN_UPLOADS_DIR = path.join(UPLOADS_DIR, "waste-scans");
 
-if (!fs.existsSync(WASTE_SCAN_UPLOADS_DIR)) {
+if (!wasteScanOnly && !fs.existsSync(WASTE_SCAN_UPLOADS_DIR)) {
   fs.mkdirSync(WASTE_SCAN_UPLOADS_DIR, { recursive: true });
 }
 
@@ -344,7 +345,7 @@ function ensureScanHistoryOptionalColumns(callback) {
   return getScanHistoryColumnSet(callback);
 }
 
-ensureScanHistoryOptionalColumns((err) => {
+if (!wasteScanOnly) ensureScanHistoryOptionalColumns((err) => {
   if (err) {
     console.warn(
       "[DB] scan_history optional column check failed:",
@@ -394,6 +395,7 @@ function inferImageExtension(buffer, rawImage) {
 }
 
 function saveScanImageFromBase64(image) {
+  if (wasteScanOnly) return null; // No staging image files or public image URLs.
   try {
     const payload = getBase64Payload(image);
 
@@ -442,6 +444,7 @@ function getFirstAvailableString(row, keys) {
    VALIDATED WASTE RECORDS (NEW SYSTEM)
 ========================================= */
 // Web-only read boundary. The legacy route below remains unchanged for Android.
+if (!wasteScanOnly) {
 router.get("/web/validated-records", requireWebCapability("waste.view"), wasteController.getValidatedWasteRecords);
 router.get("/web/correction-requests", requireWebCapability("waste.correction.view"), wasteCorrectionController.listCorrections);
 router.get("/web/validated-records/:id/correction-history", requireWebCapability("waste.correction.view"), wasteCorrectionController.getCorrectionHistory);
@@ -665,6 +668,8 @@ router.get("/analytics/barangay/monthly", (req, res) => {
 });
 
 
+}
+
 /* =========================================
    ANALYZE REJECTION DIAGNOSTICS
    Privacy-safe, fixed reason codes for the EXISTING rejection decisions only.
@@ -681,7 +686,9 @@ const ANALYZE_REJECTION_REASONS = new Set([
   "UNKNOWN_PRIMARY_WITHOUT_ITEMS",
   "ASSESSMENT_INVALID",
   "ASSESSMENT_CONTRACT_MISMATCH",
-  "ROUTE_FAILED"
+  "ROUTE_FAILED",
+  "STAGING_HISTORY_SCHEMA_UNAVAILABLE",
+  "STAGING_HISTORY_SAVE_FAILED"
 ]);
 
 function logAnalyzeRejection(reason, status, scanCapability) {
@@ -695,6 +702,11 @@ function logAnalyzeRejection(reason, status, scanCapability) {
    AI ANALYZE
 ========================================= */
 router.post("/analyze", (req, res, next) => {
+  if (wasteScanOnly) {
+    const citizen = require("../middleware/stagingApiPolicy").requireStagingCitizen;
+    if (req[Symbol.for("wmo.staging.analysisAuthenticated")] === true) return citizen(req, res, next);
+    return requireMobileSession(req, res, () => citizen(req, res, next));
+  }
   if (process.env.WHOLE_IMAGE_DISCOVERY_ENABLED !== "true" || !req.body?.objectDiscovery) return next();
   return requireMobileSession(req, res, next);
 }, async (req, res) => {
@@ -738,13 +750,14 @@ router.post("/analyze", (req, res, next) => {
     res.once?.("finish", () => { req.removeListener?.("aborted", cancelDiscovery); res.removeListener?.("close", cancelDiscovery); });
 
     try {
-      analysisResult = await analyzeWaste({
+      const analyze = () => analyzeWaste({
         image,
         detectedObject,
         mlKitLabels: Array.isArray(mlKitLabels) ? mlKitLabels : [],
         objectDiscovery: req.body.objectDiscovery, principal: req.mobileUser?.id, signal: discoveryController.signal,
         independentCategoryV2: compatibleScan
       });
+      analysisResult = await (wasteScanOnly ? req.stagingAnalysisScope.run(analyze) : analyze());
     } catch (_) {
       console.error("[SERVICE] Waste analysis unavailable.");
       return rejectScan("ANALYSIS_UNAVAILABLE");
@@ -817,6 +830,7 @@ router.post("/analyze", (req, res, next) => {
     ensureScanHistoryOptionalColumns((columnErr, columnSet) => {
       if (stopped()) return;
       if (columnErr) {
+        if (wasteScanOnly) return rejectScan("STAGING_HISTORY_SCHEMA_UNAVAILABLE");
         console.error("[DB] Failed to inspect scan_history columns before insert.");
       }
 
@@ -871,6 +885,7 @@ router.post("/analyze", (req, res, next) => {
       db.query(insertSql, values, (err, result) => {
         if (stopped()) return;
         if (err) {
+          if (wasteScanOnly) return rejectScan("STAGING_HISTORY_SAVE_FAILED");
           console.error("[DB] Failed to save scan history.");
           console.error("[DB] Returning success anyway for app stability.");
 
@@ -930,6 +945,7 @@ router.post("/analyze", (req, res, next) => {
    GET SCAN HISTORY
    Includes captured scan image URL for Android detail preview.
 ========================================= */
+if (!wasteScanOnly) {
 router.get("/history", (req, res) => {
   ensureScanHistoryOptionalColumns((columnErr, columnSet) => {
     if (columnErr) {
@@ -1277,5 +1293,7 @@ router.get("/pending-records/:id", (req, res) => {
     });
   });
 });
+
+}
 
 module.exports = router;
