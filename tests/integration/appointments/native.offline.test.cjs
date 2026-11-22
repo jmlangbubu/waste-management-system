@@ -1,7 +1,7 @@
 "use strict";
 
 const test = require("node:test"), assert = require("node:assert/strict"), crypto = require("node:crypto");
-// RFC 8032 test seed, TEST ONLY. The real factory has no trust anchor and cannot accept this key.
+// RFC 8032 test seed, TEST ONLY. It is not the pinned owner key and cannot authorize real execution.
 const testKey = crypto.createPrivateKey({ key: Buffer.from("302e020100300506032b6570042204209d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60", "hex"), format: "der", type: "pkcs8" });
 const testPublic = crypto.createPublicKey(testKey).export({ format: "pem", type: "spki" });
 const publicCA = require("node:tls").rootCertificates.find(p => {
@@ -23,7 +23,7 @@ function traps() {
   for (const api of [fs, fs.promises]) for (const key of ["open", "openSync"]) if (api[key]) { const original = api[key]; patch(api, key, function(p, flags, ...rest) {
     if (typeof flags !== "string" || !/^r[s]?$/.test(flags)) return deny("write")(); return original.call(this, p, flags, ...rest);
   }); }
-  const read = fs.readFileSync; patch(fs, "readFileSync", function(p, ...rest) { if (typeof p === "string" && /(?:^|[/\\])(?:\.env(?:\.|$)|root-password$|root-client$)/i.test(p)) return deny("secretRead")(); return read.call(this, p, ...rest); });
+  const read = fs.readFileSync; patch(fs, "readFileSync", function(p, ...rest) { if (typeof p === "string" && /(?:^|[/\\])(?:\.env(?:\.|$)|root-password$|root-client$|owner-(?:public|private)(?:[.-]|$))/i.test(p)) return deny("secretRead")(); return read.call(this, p, ...rest); });
   const load = module._load; patch(module, "_load", function(name, parent, main) {
     if (/^(?:mysql2|dotenv)(?:\/|$)/.test(name) || /(?:^|[/\\])(?:routes[/\\]|config[/\\]db|server[/\\]server)/.test(name)) return deny("production")();
     return load.call(this, name, parent, main);
@@ -256,7 +256,7 @@ async function rejects(operation, code) {
 async function provision(f) { const life = f.lifecycle(); await life.provision(life.scope("provision")); return life; }
 async function reconciled(f) { const life = await provision(f); await life.verify(life.scope("verify")); return life; }
 
-test("real entry and real factory refuse missing owner key before any effect or input consumption", async () => {
+test("real entry and real factory refuse locked native activation before any effect or input consumption", async () => {
   assert.throws(() => native.createNativeChallenge({}), { code: "NATIVE_TRUST_UNAVAILABLE" });
   assert.throws(() => native.createNativeLifecycle({}, {}), { code: "NATIVE_TRUST_UNAVAILABLE" });
   let stdout = "", stderr = "";
@@ -540,12 +540,12 @@ test("sensitive adapter exceptions are replaced without retaining their identity
   assert.equal(kinds(f, "directory").length, 0); assert.equal(kinds(f, "registry").length, 0);
 });
 
-// Private wrapper probes and defect mutations exist only in memory. OWNER_TRUST is never changed.
+// Private probes and defect mutations exist only in memory. Native activation is never enabled.
 function memoryModule(name, mutate = text => text, overrides = {}) {
   const path = require("node:path"), Module = require("node:module"), file = path.join(__dirname, "helpers", name + ".cjs");
   assert.ok(["nativeHost", "nativeDocker", "nativeMysql", "nativeLifecycle"].includes(name));
   const original = require("node:fs").readFileSync(file, "utf8"), source = mutate(original), m = { exports: {} }, local = Module.createRequire(file);
-  const extra = name === "nativeHost" ? "module.exports.probePrivate={runChild};" : name === "nativeDocker" ? "module.exports.probePrivate={requestBytes};" : "";
+  const extra = name === "nativeHost" ? "module.exports.probePrivate={runChild,verifiedOwnerTrust,nativeActivation:NATIVE_ACTIVATION_ENABLED};" : name === "nativeDocker" ? "module.exports.probePrivate={requestBytes};" : "";
   new Function("require", "module", "exports", "__dirname", source + "\n" + extra)(n => Object.hasOwn(overrides, n) ? overrides[n] : local(n), m, m.exports, path.dirname(file));
   return m.exports;
 }
@@ -1091,4 +1091,114 @@ for (const stream of ["stdout", "stderr"]) test("SENSITIVITY removing " + stream
   await pipeErrorSpec(stream);
   await assert.rejects(pipeErrorSpec(stream, {}, source => replaceOnce(source,
     '      child.' + stream + '.on("error", caught => stop(caught));', '      /* in-memory mutation: pipe error listener removed */')), { code: "ERR_ASSERTION" });
+});
+
+const OWNER_FINGERPRINT = "4349e07a097600d70940fa3ab4438339217e9442e7e5270773389dd828006700";
+function pinnedHostWithPublicKey(pem) {
+  const original = memoryModule("nativeHost").probePrivate.verifiedOwnerTrust();
+  return memoryModule("nativeHost", source => replaceOnce(source, JSON.stringify(original.publicKey), JSON.stringify(pem)));
+}
+
+test("TRUST rotated source pin is canonical Ed25519 SPKI with the exact DER fingerprint", () => {
+  const host = memoryModule("nativeHost"), trust = host.probePrivate.verifiedOwnerTrust();
+  assert.equal(trust.owner, "wmo-appointment-owner-v1"); assert.ok(Object.isFrozen(trust));
+  const key = crypto.createPublicKey(trust.publicKey), der = key.export({ type: "spki", format: "der" });
+  assert.equal(key.asymmetricKeyType, "ed25519"); assert.equal(h.hash(der), OWNER_FINGERPRINT);
+  assert.notEqual(h.hash(trust.publicKey), OWNER_FINGERPRINT); assert.notEqual(trust.publicKey, testPublic);
+  assert.equal(host.probePrivate.nativeActivation, false);
+  assert.equal(h.probePrivate, undefined); assert.equal(h.OWNER_TRUST, undefined); assert.equal(h.NATIVE_ACTIVATION_ENABLED, undefined);
+  assert.throws(() => host.requireOwnerTrust(), { code: "NATIVE_TRUST_UNAVAILABLE" });
+});
+
+test("TRUST mismatched source fingerprint fails without native admission", () => {
+  const host = memoryModule("nativeHost", source => replaceOnce(source, OWNER_FINGERPRINT, "0".repeat(64)));
+  assert.throws(() => host.probePrivate.verifiedOwnerTrust(), { code: "NATIVE_TRUST_UNAVAILABLE" });
+  assert.throws(() => host.createNativeChallenge({}), { code: "NATIVE_TRUST_UNAVAILABLE" });
+});
+
+for (const [name, key] of [
+  ["invalid SPKI", "-----BEGIN PUBLIC KEY-----\nAA==\n-----END PUBLIC KEY-----\n"],
+  ["non-pinned synthetic key (retired-key equivalent)", testPublic],
+  ["non-Ed25519 public key", publicCertificate.publicKey.export({ type: "spki", format: "pem" })],
+  ["ambiguous multiple PEM blocks", testPublic + testPublic],
+  ["unexpected PEM prefix", "unexpected\n" + testPublic]
+]) test("TRUST rejects " + name + " without reading any owner key file", () => {
+  const host = pinnedHostWithPublicKey(key);
+  assert.throws(() => host.probePrivate.verifiedOwnerTrust(), { code: "NATIVE_TRUST_UNAVAILABLE" });
+  assert.throws(() => host.requireOwnerTrust(), { code: "NATIVE_TRUST_UNAVAILABLE" });
+});
+
+test("TRUST refuses appended DER bytes even if a parser accepts the SPKI prefix", () => {
+  const pinned = memoryModule("nativeHost").probePrivate.verifiedOwnerTrust();
+  const der = crypto.createPublicKey(pinned.publicKey).export({ type: "spki", format: "der" });
+  const pem = "-----BEGIN PUBLIC KEY-----\n" + Buffer.concat([der, Buffer.from([0])]).toString("base64") + "\n-----END PUBLIC KEY-----\n";
+  const host = pinnedHostWithPublicKey(pem);
+  assert.throws(() => host.probePrivate.verifiedOwnerTrust(), { code: "NATIVE_TRUST_UNAVAILABLE" });
+});
+
+test("TRUST synthetic canonical signatures remain isolated from the pinned real owner", () => {
+  const f = setup(), reversed = Object.fromEntries(Object.entries(f.payload).reverse());
+  assert.equal(h.testing.verifyReceipt(f.c, sign(reversed), policy).owner, "offline-owner");
+  const owner = memoryModule("nativeHost").probePrivate.verifiedOwnerTrust();
+  const forged = sign({ ...f.payload, owner: owner.owner });
+  assert.throws(() => h.testing.verifyReceipt(f.c, forged, { ...policy, owner: owner.owner, publicKey: owner.publicKey }), { code: "NATIVE_AUTH_INVALID" });
+  assert.throws(() => native.createNativeLifecycle(h.testing.challenge(f.c, policy, f.fake), forged), { code: "NATIVE_TRUST_UNAVAILABLE" });
+  assert.equal(f.state.events.length, 0);
+});
+
+test("ADMISSION lock refuses before inspecting supplied configuration, receipt or stdin", async () => {
+  let reads = 0;
+  const opaque = new Proxy({}, { get() { reads++; throw new Error("SECRET_CANARY unexpected input access"); }, ownKeys() { reads++; throw new Error("SECRET_CANARY unexpected enumeration"); } });
+  assert.throws(() => h.requireOwnerTrust(opaque), { code: "NATIVE_TRUST_UNAVAILABLE" });
+  assert.throws(() => h.createNativeChallenge(opaque), { code: "NATIVE_TRUST_UNAVAILABLE" });
+  assert.throws(() => native.createNativeLifecycle(opaque, opaque), { code: "NATIVE_TRUST_UNAVAILABLE" });
+  await rejects(require("./helpers/runtime.cjs").nativeSmoke(opaque, opaque), "TRUST_UNAVAILABLE");
+  assert.equal(reads, 0);
+});
+
+for (const variable of ["OWNER_TRUST", "NATIVE_ACTIVATION_ENABLED", "WMO_APPOINTMENT_OWNER_PUBLIC_KEY", "WMO_APPOINTMENT_OWNER_ID", "WMO_APPOINTMENT_NATIVE_ACTIVATION"])
+  test("ADMISSION environment cannot override source trust/activation: " + variable, () => {
+    const previous = process.env[variable];
+    try {
+      process.env[variable] = variable.includes("KEY") ? testPublic : "true";
+      const host = memoryModule("nativeHost");
+      assert.equal(host.probePrivate.verifiedOwnerTrust().owner, "wmo-appointment-owner-v1");
+      assert.equal(host.probePrivate.nativeActivation, false);
+      assert.throws(() => host.requireOwnerTrust(), { code: "NATIVE_TRUST_UNAVAILABLE" });
+      assert.throws(() => host.createNativeChallenge({}), { code: "NATIVE_TRUST_UNAVAILABLE" });
+    } finally { if (previous === undefined) delete process.env[variable]; else process.env[variable] = previous; }
+  });
+
+test("ADMISSION caller JSON and mutable test metadata cannot enable the private gate", () => {
+  const host = memoryModule("nativeHost"); host.probePrivate.nativeActivation = true; // A copied diagnostic value, never the private source constant.
+  for (const input of [{ nativeActivation: true }, { OWNER_TRUST: { publicKey: testPublic }, NATIVE_ACTIVATION_ENABLED: true }]) {
+    assert.throws(() => host.requireOwnerTrust(input), { code: "NATIVE_TRUST_UNAVAILABLE" });
+    assert.throws(() => host.createNativeChallenge(input), { code: "NATIVE_TRUST_UNAVAILABLE" });
+  }
+  assert.ok(!Object.keys(h).some(k => /enable|unlock|set.*trust|set.*activation/i.test(k)));
+});
+
+for (const args of [["--native-smoke"], ["--native-smoke", "--enable-native"], ["--native-smoke", "--owner-public-key=synthetic"], ["--provision"]])
+  test("ADMISSION CLI cannot authorize native execution: " + args.join(" "), async () => {
+    let stdout = "", stderr = "";
+    assert.equal(await launcher.main(args, { stdout: { write: v => { stdout += v; } }, stderr: { write: v => { stderr += v; } } }), 2);
+    assert.equal(stdout, "");
+    assert.doesNotMatch(stderr, /SECRET_CANARY|PRIVATE KEY|CREDENTIAL/);
+    if (args.length === 1 && args[0] === "--native-smoke") assert.match(stderr, /NATIVE_TRUST_UNAVAILABLE/);
+  });
+
+test("ADMISSION mock scope cannot be admitted as native even with a pinned owner identity", () => {
+  const f = setup(), owner = memoryModule("nativeHost").probePrivate.verifiedOwnerTrust();
+  const challenge = h.testing.challenge(f.c, policy, f.fake), receipt = sign({ ...f.payload, owner: owner.owner });
+  assert.throws(() => h.activate(challenge, receipt), { code: "NATIVE_AUTH_INVALID" });
+  assert.throws(() => native.createNativeLifecycle(challenge, receipt), { code: "NATIVE_TRUST_UNAVAILABLE" });
+  assert.equal(f.state.events.length, 0);
+});
+
+test("ADMISSION public key integration leaves the offline plan non-executable", async () => {
+  let output = "";
+  assert.equal(await launcher.main(["--plan"], { stdout: { write: v => { output += v; } }, stderr: { write() { assert.fail("unexpected plan error"); } } }), 0);
+  const plan = JSON.parse(output);
+  assert.equal(plan.performsExternalOperations, false); assert.equal(plan.writeAccess, false);
+  assert.equal(plan.capabilities.nativeExecutionAvailable, false);
 });

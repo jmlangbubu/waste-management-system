@@ -1,9 +1,10 @@
 # Appointment disposable MySQL harness
 
 Native adapters are implemented for offline review. **Real execution remains
-blocked:** source-owned OWNER_TRUST is null. No owner key/signing procedure,
-approved immutable image digests, Node22 verification or installed dependency
-tree is available. Offline success proves no Docker isolation, connectivity,
+blocked:** the rotated owner's public key is source-pinned, but the private
+source-owned NATIVE_ACTIVATION_ENABLED gate is false. A valid public key alone
+confers no execution authority. Approved immutable image digests and an installed
+dependency tree remain separate prerequisites. Offline success proves no Docker isolation, connectivity,
 booking correctness, durability or production parity.
 
 ## Safe commands
@@ -16,7 +17,11 @@ booking correctness, durability or production parity.
 The eight Phase4A checks, pure five-table contract, fingerprints, assertions and
 controls remain intact. Individual provision/verify/attest/teardown modes and
 unknown/bypass arguments still refuse. --native-smoke refuses before stdin,
-native transports or challenge randomness while the owner key is missing.
+native transports or challenge randomness while native activation is disabled.
+The compatibility refusal remains NATIVE_TRUST_UNAVAILABLE, exit 2. The offline
+plan retains its legacy blocked-owner-trust-anchor-unavailable label for the
+unavailable native admission boundary; it does not mean the public pin is absent
+and cannot authorize execution.
 
 Both test suites intercept network/process/filesystem/production-module effects.
 The native tests additionally intercept credential generation. Fixed synthetic
@@ -39,9 +44,28 @@ Docker command tokens and adapter identities are private and session-bound.
 Public scope guards disclose no mutable state. Mock sessions cannot become native
 sessions. The real factory rejects test challenges and caller-supplied trust keys.
 
-A separately authorized source change must establish the owner's Ed25519 public
-key and signing procedure. No flag, environment variable or receipt configures
-that trust anchor. Receipt format is {payload,signature}, signature canonical
+The fixed logical owner is wmo-appointment-owner-v1. Its rotated Ed25519 public
+SPKI key is pinned in nativeHost.cjs. SHA-256 of its DER/SPKI bytes is:
+
+    4349e07a097600d70940fa3ab4438339217e9442e7e5270773389dd828006700
+
+This is not the hash of PEM text. Only the pinned key is trusted; retired and
+synthetic test keys confer no native authority. No flag, environment variable,
+receipt or runtime key-file discovery can replace the pin or enable activation.
+The private key remains encrypted locally outside Git. Neither the private key
+nor its passphrase may enter Codex, ChatGPT, logs or this repository.
+
+A future owner signing ceremony requires separate authorization. The owner must
+independently review the exact run/schema, daemon, image digests, dependencies,
+source commit/manifest, binaries, fixture and explicit action scope before
+signing. Use a fresh challenge nonce and a short expiry (at most fifteen minutes).
+Never automatically sign arbitrary launcher requests. The receipt belongs to
+the exact final reviewed commit: any new source commit invalidates previously
+prepared source-bound approvals. No signer or owner-signed live receipt is
+created here. A separately reviewed source change and commit must authorize
+native activation, and separate GO EXECUTE is still required before any run.
+
+Receipt format remains {payload,signature}, signature canonical
 base64 over UTF-8 JSON with recursively sorted object keys and retained array
 order. Exact payload fields:
 - version:1; trusted owner; fresh challenge nonce (64 lowercase hex).
@@ -185,14 +209,15 @@ There is no generic repair/recovery SQL interface.
 ## Separate execution gates
 
 Before real execution: focused independent review of effectful boundaries;
-approved owner key/signing procedure; clean reviewed commit; exact Node22.23.5
+separately reviewed activation and owner signing ceremony; clean reviewed commit; exact Node22.23.5
 binary and locked dependencies; passing offline/self-check/refusal and all nine
 appointment/orientation regressions under Node22; approved daemon/context/image
 digests/run/schema/actions/credentials/isolation probes/cleanup.
 
-Node22, installed-driver behavior, registry redirects, server startup/host-address
-observation, Windows ACL/firewall behavior, TLS and internal-network host access
-remain real-environment gates. Node24/mock success does not establish them.
+Offline Node22 tests do not verify installed-driver behavior, registry redirects,
+server startup/host-address observation, Windows ACL/firewall behavior, TLS or
+internal-network host access. These remain real-environment gates. Mock success
+on any Node version does not establish them.
 
 Phase4C is separate: real booking capacity/races, cancellation/rescheduling,
 idempotency, fault/uncertain-commit settlement, durability/recovery, Philippine

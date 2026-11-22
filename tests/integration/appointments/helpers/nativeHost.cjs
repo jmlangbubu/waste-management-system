@@ -1,10 +1,14 @@
 "use strict";
 
-// Importing this file is inert. The trust anchor has deliberately NOT been provisioned.
+// Importing this file is inert. A public trust pin does not authorize native execution.
 const crypto = require("node:crypto");
 const e = require("./environment.cjs");
 const schema = require("./schema.cjs");
-const OWNER_TRUST = null; // A future source-reviewed change, never a receipt/CLI/environment input.
+const OWNER_KEY_SPKI_SHA256 = "4349e07a097600d70940fa3ab4438339217e9442e7e5270773389dd828006700";
+const OWNER_TRUST = Object.freeze({ owner: "wmo-appointment-owner-v1", publicKey:
+  "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEArJujNNHCPoXEkOCu4i8/35G8b6wQ+wXsCrXemWX/SQ4=\n-----END PUBLIC KEY-----\n" });
+// Changing this requires separate owner authorization, source review and a new reviewed commit. No input can enable it.
+const NATIVE_ACTIVATION_ENABLED = false;
 const challenges = new WeakMap(), sessions = new WeakMap(), scopes = new WeakMap();
 const ACTIONS = Object.freeze(["provision", "verify", "attest", "connect-check", "teardown"]);
 const WRITES = new Set(["provision", "attest", "teardown"]);
@@ -36,6 +40,19 @@ function canonical(value) {
   return JSON.stringify(value);
 }
 const hash = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
+function verifiedOwnerTrust() {
+  try {
+    exact(OWNER_TRUST, ["owner", "publicKey"], "TRUST_UNAVAILABLE");
+    check(OWNER_TRUST.owner === "wmo-appointment-owner-v1" && typeof OWNER_TRUST.publicKey === "string", "TRUST_UNAVAILABLE");
+    const match = /^-----BEGIN PUBLIC KEY-----\r?\n([A-Za-z0-9+/=]+(?:\r?\n[A-Za-z0-9+/=]+)*)\r?\n-----END PUBLIC KEY-----(?:\r?\n)?$/.exec(OWNER_TRUST.publicKey);
+    check(match, "TRUST_UNAVAILABLE");
+    const base64 = match[1].replace(/\r?\n/g, ""), decoded = Buffer.from(base64, "base64");
+    check(decoded.toString("base64") === base64, "TRUST_UNAVAILABLE");
+    const key = crypto.createPublicKey(OWNER_TRUST.publicKey), der = key.export({ format: "der", type: "spki" });
+    check(key.asymmetricKeyType === "ed25519" && der.equals(decoded) && hash(der) === OWNER_KEY_SPKI_SHA256, "TRUST_UNAVAILABLE");
+    return OWNER_TRUST;
+  } catch (_) { throw new NativeError("TRUST_UNAVAILABLE"); }
+}
 function verifyReceipt(configuration, receipt, policy) {
   try {
     const c = e.validatePhase4BConfiguration(configuration), r = data(receipt);
@@ -74,11 +91,14 @@ function challenge(configuration, policy, kind, fake) {
   challenges.set(handle, { c, policy, nonce, kind, fake, consumed: false }); return handle;
 }
 function createNativeChallenge(c) {
-  check(OWNER_TRUST !== null, "TRUST_UNAVAILABLE");
+  requireOwnerTrust();
   check(process.execArgv.length === 0 && ["NODE_OPTIONS", "NODE_PATH", "NODE_EXTRA_CA_CERTS", "NODE_TLS_REJECT_UNAUTHORIZED", "SSL_CERT_FILE", "SSL_CERT_DIR", "NODE_USE_SYSTEM_CA", "NODE_USE_ENV_PROXY"].every(k => !process.env[k]), "HOST_INVALID");
   return challenge(c, OWNER_TRUST, "native");
 }
-function requireOwnerTrust() { check(OWNER_TRUST !== null, "TRUST_UNAVAILABLE"); }
+function requireOwnerTrust() {
+  check(NATIVE_ACTIVATION_ENABLED === true, "TRUST_UNAVAILABLE");
+  verifiedOwnerTrust();
+}
 function activate(handle, receipt, nativeOnly = true) {
   const ch = challenges.get(handle);
   check(ch && !ch.consumed && (!nativeOnly || ch.kind === "native"), "AUTH_INVALID");
