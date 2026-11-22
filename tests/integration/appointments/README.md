@@ -104,6 +104,22 @@ proxies. Windows system PowerShell/Git paths are fixed; other layouts stop.
 
 Require native architecture, Linux Engine>=28, reviewed executable hashes and
 stable approved daemon ID. Reject remote contexts, mirrors and unreviewed proxies.
+The owner's read-only inspection reported Docker Desktop Engine 29.8.0,
+linux/amd64, desktop-linux, no registry mirrors, and identical HTTPProxy and
+HTTPSProxy values of http.docker.internal:3128 without embedded credentials.
+Daemon admission accepts both proxy fields absent/empty, or both exactly
+http.docker.internal:3128, or both exactly http://http.docker.internal:3128.
+Nonempty fields must be identical; mixed representations, external endpoints,
+credentials, other ports, paths, whitespace and unexpected types refuse. No
+DNS resolution, URL normalization, environment or CLI override expands this list.
+Registry mirrors still refuse. These are daemon metadata checks: they do not
+configure Node's direct registry HTTPS transport or allow arbitrary environment
+proxies. A recognized Docker Desktop endpoint does not prove safe upstream
+routing or LAN isolation. Windows Firewall admission and actual internal,
+isolated-network/loopback connectivity remain separate verification gates.
+Native execution remains disabled; separate activation review and GO EXECUTE
+remain mandatory.
+
 HTTPS registry/token origins and library/mysql:pull scope are fixed. Hash bounded
 raw manifest bytes before parsing, then reuse descriptor/platform validators.
 Redirects remain refused except for the authenticated, exact MySQL config-blob
@@ -141,7 +157,7 @@ production digest pin is separately asserted and has no caller override. These
 tests do not prove real CDN compatibility or image-byte provenance. No live
 registry/CDN access occurs during these tests. Native activation remains false;
 Windows isolation and actual MySQL connectivity remain separate gates requiring
-activation review and GO EXECUTE. Proxy/firewall policies are unchanged.
+activation review and GO EXECUTE. Firewall policy is unchanged.
 
 Pull only the approved platform digest. Creation uses --pull=never. Create one
 labelled container/network/local volume. Verify full container/network IDs;

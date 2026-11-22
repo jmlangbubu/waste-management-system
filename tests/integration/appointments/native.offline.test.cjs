@@ -132,7 +132,7 @@ function setup(options = {}) {
       assert.equal(executable, c.docker.executable); assert.deepEqual(allArgs.slice(0, 4), ["--config", c.secretDirectory, "--host", c.docker.endpoint]);
       const args = allArgs.slice(4); assert.ok(!args.some(v => /SECRET_CANARY|password=|[ABCD]{43}|--force|prune|compose/.test(v))); record("docker", args.join(" "));
       if (args[0] === "version") return JSON.stringify({ Version: options.oldEngine ? "27.0.0" : "28.0.0", Os: "linux", Arch: "amd64" });
-      if (args[0] === "info") { const info = nativeInfo(); if (options.changedDaemon && state.seeded) info.ID = "other-daemon"; return JSON.stringify(info); }
+      if (args[0] === "info") { const info = nativeInfo(); if (options.changedDaemon && state.seeded) info.ID = "other-daemon"; options.daemonInfo?.(info); return JSON.stringify(info); }
       if (args[1] === "ls") return state.created.has(args[0]) ? JSON.stringify({ Name: names[args[0]] }) : "";
       if (args[0] === "image") return args[1] === "pull" ? "downloaded" : JSON.stringify([{ Id: c.image.configDigest, Os: "linux", Architecture: "amd64", RepoDigests: ["mysql@" + c.image.platformDigest] }]);
       if (args[1] === "create") { if (options.partialCreation && args[0] === "container") fail(); state.created.add(args[0]); return args[0] === "container" ? CONTAINER : args[0] === "network" ? NETWORK : names.volume; }
@@ -1425,4 +1425,117 @@ test("307 sensitivity catches accidental authenticated-header reuse", async () =
   await assert.rejects(spec(source => replaceOnce(source,
     'transport.request(target.url, { "Accept-Encoding": "identity" }, budget, target.permit)',
     'transport.request(target.url, { "Accept-Encoding": "identity", ...headers }, budget, target.permit)')), { code: "NATIVE_REGISTRY_INVALID" });
+});
+
+const DESKTOP_PROXY = "http.docker.internal:3128";
+const proxyInfo = (httpProxy, httpsProxy) => info => { info.HTTPProxy = httpProxy; info.HTTPSProxy = httpsProxy; };
+function noProxyDownstream(context) {
+  noUnverifiedResources(context);
+  for (const name of ["fake-dependency", "fake-probe", "root", "connect", "pool", "sql"])
+    assert.equal(kinds(context.f, name).length, 0, name);
+  assert.equal(context.f.state.directory, false); assert.equal(context.f.state.files.size, 0);
+  assert.equal(context.f.state.connections, 0); assert.equal(context.f.state.pool, false);
+}
+async function rejectedProxyHost(fixture, mutate) {
+  const context = redirectFixture({ direct: true, productionPin: true, fixture }, mutate);
+  try {
+    await faultReject(context.life.provision(context.life.scope("provision")), "HOST_INVALID");
+    assert.equal(context.calls.length, 0); assert.equal(kinds(context.f, "registry").length, 0);
+    noProxyDownstream(context);
+    assert.ok(kinds(context.f, "docker").every(event => /^(?:version|info) --format /.test(event.value)));
+  } finally { await context.close(); }
+}
+for (const [name, httpProxy, httpsProxy] of [
+  ["absent", undefined, undefined], ["empty", "", ""], ["absent and empty", undefined, ""], ["empty and absent", "", undefined],
+  ["bare internal", DESKTOP_PROXY, DESKTOP_PROXY], ["HTTP internal", "http://" + DESKTOP_PROXY, "http://" + DESKTOP_PROXY]
+]) test("PROXY accepts " + name + " metadata and still verifies registry bytes", async () => {
+  const f = setup({ daemonInfo: proxyInfo(httpProxy, httpsProxy) }), life = f.lifecycle();
+  try {
+    await life.provision(life.scope("provision")); assert.equal(life.describe().stage, "fixtures-unready");
+    assert.ok(kinds(f, "registry").length >= 3); assert.equal(life.describe().nativeVerified, false);
+  } finally { await life.dispose(); }
+});
+for (const value of [DESKTOP_PROXY, "http://" + DESKTOP_PROXY])
+  test("PROXY approved " + value + " preserves the synthetic authenticated 307 flow", async () => {
+    const context = redirectFixture({ fixture: { daemonInfo: proxyInfo(value, value) }, sensitiveRegistryHeaders: true });
+    try {
+      await context.life.provision(context.life.scope("provision"));
+      assert.equal(context.life.describe().stage, "fixtures-unready"); assert.equal(context.life.describe().nativeVerified, false);
+      const cdn = context.calls.filter(call => new URL(call.url).origin === CDN_ORIGIN); assert.equal(cdn.length, 1);
+      assert.deepEqual(cdn[0].headers, { "Accept-Encoding": "identity" }); assert.equal(context.timers.size, 0);
+    } finally { await context.close(); }
+  });
+for (const [name, httpProxy, httpsProxy] of [
+  ["HTTP external", "http://proxy.example.invalid:3128", DESKTOP_PROXY],
+  ["HTTPS external", DESKTOP_PROXY, "http://proxy.example.invalid:3128"],
+  ["both external", "http://proxy.example.invalid:3128", "http://proxy.example.invalid:3128"],
+  ["empty HTTP", "", DESKTOP_PROXY], ["empty HTTPS", DESKTOP_PROXY, ""],
+  ["absent HTTP", undefined, DESKTOP_PROXY], ["absent HTTPS", DESKTOP_PROXY, undefined],
+  ["mixed representations", DESKTOP_PROXY, "http://" + DESKTOP_PROXY],
+  ["reverse mixed representations", "http://" + DESKTOP_PROXY, DESKTOP_PROXY],
+  ...Object.entries({
+    wrong_port: "http.docker.internal:3129", missing_port: "http.docker.internal", default_port: "http://http.docker.internal:80",
+    userinfo: "http://user:password@http.docker.internal:3128", username: "http://user@http.docker.internal:3128",
+    query: "http://http.docker.internal:3128?route=internal", fragment: "http://http.docker.internal:3128#internal",
+    path: "http://http.docker.internal:3128/proxy", slash: "http://http.docker.internal:3128/",
+    leading_space: " " + DESKTOP_PROXY, trailing_space: DESKTOP_PROXY + " ", control: DESKTOP_PROXY + "\r\n",
+    spoof_suffix: "http.docker.internal.untrusted.invalid:3128", spoof_prefix: "sub.http.docker.internal:3128",
+    substring: "http://untrusted.invalid:3128/docker.internal", alternate_hostname: "host.docker.internal:3128",
+    trailing_dot: "http.docker.internal.:3128", uppercase: "HTTP.DOCKER.INTERNAL:3128",
+    localhost: "localhost:3128", ipv4: "127.0.0.1:3128", ipv6: "[::1]:3128",
+    https_scheme: "https://http.docker.internal:3128", socks: "socks5://http.docker.internal:3128",
+    malformed: "http:/http.docker.internal:3128", encoded_host: "http://%68ttp.docker.internal:3128",
+    list: [DESKTOP_PROXY], object: { host: DESKTOP_PROXY }, null_value: null, boolean: false, number: 0
+  }).map(([name, value]) => [name, value, value]),
+  ["HTTP object", {}, DESKTOP_PROXY], ["HTTPS array", DESKTOP_PROXY, []]
+]) test("PROXY rejects " + name + " before registry, secrets, resources or SQL", async () => {
+  await rejectedProxyHost({ daemonInfo: proxyInfo(httpProxy, httpsProxy) });
+});
+for (const [name, fixture] of Object.entries({
+  mirrors: { daemonInfo: info => { proxyInfo(DESKTOP_PROXY, DESKTOP_PROXY)(info); info.RegistryConfig.Mirrors = ["https://mirror.example.invalid"]; } },
+  daemon_identity: { daemonInfo: info => { proxyInfo(DESKTOP_PROXY, DESKTOP_PROXY)(info); info.ID = "d".repeat(64); } },
+  architecture: { daemonInfo: info => { proxyInfo(DESKTOP_PROXY, DESKTOP_PROXY)(info); info.Architecture = "aarch64"; } },
+  insecure_registry: { daemonInfo: info => { proxyInfo(DESKTOP_PROXY, DESKTOP_PROXY)(info); info.RegistryConfig.IndexConfigs["docker.io"].Secure = false; } },
+  context: { wrongContext: true }, named_pipe: { remote: true }, engine: { oldEngine: true }, executable_hash: { hashMismatch: true }
+})) test("PROXY approved endpoint cannot bypass host " + name, async () => {
+  await rejectedProxyHost({ daemonInfo: proxyInfo(DESKTOP_PROXY, DESKTOP_PROXY), ...fixture });
+});
+for (const [name, options, code] of [
+  ["registry redirect", { direct: true, productionPin: true, fixture: { registryRedirect: true } }, "REGISTRY_INVALID"],
+  ["raw image digest", { direct: true, productionPin: true, fixture: { digestMismatch: true } }, "IMAGE_INVALID"],
+  ["CDN raw digest", { cdnBody: Buffer.from("not JSON") }, "IMAGE_INVALID"],
+  ["CDN second hop", { cdnStatus: 307, secondLocation: CDN_LOCATION }, "REGISTRY_INVALID"],
+  ["image startup", { fixture: { imageDefaults: image => { image.Entrypoint = []; } } }, "IMAGE_INVALID"]
+]) test("PROXY approved endpoint still rejects invalid " + name + " before provisioning", async () => {
+  const context = redirectFixture({ ...options, fixture: { daemonInfo: proxyInfo(DESKTOP_PROXY, DESKTOP_PROXY), ...options.fixture } });
+  try {
+    await faultReject(context.life.provision(context.life.scope("provision")), code);
+    assert.ok(context.calls.length > 0); noProxyDownstream(context);
+  } finally { await context.close(); }
+});
+test("PROXY approved endpoint cannot bypass registry origin verification", async () => {
+  const f = setup({ daemonInfo: proxyInfo(DESKTOP_PROXY, DESKTOP_PROXY), wrongOrigin: true }), life = f.lifecycle();
+  try {
+    await faultReject(life.provision(life.scope("provision")), "REGISTRY_INVALID");
+    assert.ok(kinds(f, "registry").length > 0); noProxyDownstream({ f, timers: new Set() });
+  } finally { await life.dispose(); }
+});
+for (const [name, fixture, code] of [
+  ["resource ownership", { resources: r => { r.container.Config.Labels["wmo.test.run"] = UUID; } }, "RESOURCE_INVALID"],
+  ["internal network", { resources: r => { r.network.Internal = false; } }, "RESOURCE_INVALID"],
+  ["localhost binding", { resources: r => { r.container.HostConfig.PortBindings["3306/tcp"][0].HostIp = "0.0.0.0"; } }, "RESOURCE_INVALID"],
+  ["Windows Firewall", { firewall: true }, "ISOLATION_UNVERIFIED"]
+]) test("PROXY approved endpoint preserves " + name + " admission", async () => {
+  const context = redirectFixture({ fixture: { daemonInfo: proxyInfo(DESKTOP_PROXY, DESKTOP_PROXY), ...fixture } });
+  try {
+    await faultReject(context.life.provision(context.life.scope("provision")), code);
+    assert.equal(kinds(context.f, "root").length, 0); assert.equal(kinds(context.f, "connect").length, 0);
+    assert.equal(kinds(context.f, "sql").length, 0); assert.equal(context.life.describe().nativeVerified, false);
+  } finally { await context.close(); }
+});
+test("PROXY rejection assertions detect permissive daemon-proxy acceptance", async () => {
+  const fixture = { daemonInfo: proxyInfo("http://proxy.example.invalid:3128", "http://proxy.example.invalid:3128") };
+  await rejectedProxyHost(fixture);
+  await assert.rejects(rejectedProxyHost(fixture, source => replaceOnce(source,
+    "approvedDaemonProxy(info.HTTPProxy, info.HTTPSProxy)", "true")), { code: "ERR_ASSERTION" });
 });

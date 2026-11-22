@@ -8,6 +8,12 @@ const REGISTRY = "https://registry-1.docker.io", AUTH = "https://auth.docker.io"
 const CONFIG_CDN = "https://production.cloudfront.docker.com";
 const REDIRECT_CONFIG_DIGEST = "sha256:3121b912b942b8b46646b1f64c955958b8353e8902693ba962a2e37d2d3224bd";
 const configRedirects = new WeakMap();
+// Daemon metadata only; this does not configure Node transport or attest upstream routing/isolation.
+function approvedDaemonProxy(httpProxy, httpsProxy) {
+  const empty = value => value === undefined || value === "";
+  return empty(httpProxy) && empty(httpsProxy) || typeof httpProxy === "string" && httpProxy === httpsProxy &&
+    (httpProxy === "http.docker.internal:3128" || httpProxy === "http://http.docker.internal:3128");
+}
 function remaining(deadline) {
   const ms = Math.floor(deadline - performance.now()); h.check(ms > 0, "TIMEOUT"); return Math.min(ms, 10000);
 }
@@ -175,7 +181,7 @@ function createDocker(session) {
     h.check(info.ID === x.daemonId && info.OSType === "linux" && version.Os === "linux" &&
       ({ x86_64: "amd64", aarch64: "arm64", amd64: "amd64", arm64: "arm64" })[info.Architecture] === c.image.architecture &&
       version.Arch === c.image.architecture && /^\d+\.\d+\.\d+$/.test(version.Version) && Number(version.Version.split(".")[0]) >= 28, "HOST_INVALID");
-    h.check(!info.RegistryConfig?.Mirrors?.length && !info.HTTPProxy && !info.HTTPSProxy, "HOST_INVALID");
+    h.check(!info.RegistryConfig?.Mirrors?.length && approvedDaemonProxy(info.HTTPProxy, info.HTTPSProxy), "HOST_INVALID");
     h.check(!info.RegistryConfig?.IndexConfigs?.["docker.io"] || info.RegistryConfig.IndexConfigs["docker.io"].Secure === true, "HOST_INVALID");
     hostVerified = true; return { daemonId: info.ID, engineVersion: version.Version };
   }
