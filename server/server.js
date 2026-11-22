@@ -1,11 +1,17 @@
 require("dotenv").config();
+const wasteScanOnly = require("../config/startupMode").isWasteScanOnly();
+if (wasteScanOnly) {
+  require("../services/railwayCallerBootstrap").prepareRuntimeCredentials();
+  require("../config/stagingCloudRun").assertStagingCloudRun();
+}
+const { stagingApiPolicy, preAuthenticateAnalysis, requireStagingCitizen, denyUpgrade, stagingError } = require("../middleware/stagingApiPolicy");
 
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
 const fs = require("fs");
 const http = require("http");
-const { Server } = require("socket.io");
+const { Server } = wasteScanOnly ? {} : require("socket.io");
 
 const app = express();
 const server = http.createServer(app);
@@ -17,7 +23,7 @@ if (process.env.NODE_ENV === "production") {
 /* =========================
    SOCKET.IO REAL-TIME SERVER
 ========================= */
-const io = new Server(server, {
+const io = wasteScanOnly ? null : new Server(server, {
   cors: {
     origin: "*",
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE"]
@@ -26,6 +32,7 @@ const io = new Server(server, {
 });
 
 app.set("io", io);
+if (wasteScanOnly) server.on("upgrade", denyUpgrade);
 
 function cleanRoomText(value) {
   if (value === null || value === undefined) return "";
@@ -48,7 +55,7 @@ function getCitizenRoomName(value) {
   return id ? `citizen:${id}` : "";
 }
 
-io.on("connection", (socket) => {
+if (!wasteScanOnly) io.on("connection", (socket) => {
   console.log("Realtime client connected:", socket.id);
 
   socket.on("join:wmo", () => {
@@ -91,22 +98,22 @@ io.on("connection", (socket) => {
 const db = require("../config/db");
 const wasteRoutes = require("../routes/wasteRoutes");
 const authRoutes = require("../routes/authRoutes");
-const webAuthRoutes = require("../routes/webAuthRoutes");
-const webUserRoutes = require("../routes/webUserRoutes");
-const appointmentRoutes = require("../routes/appointmentRoutes");
-const trackingRoutes = require("../routes/trackingRoutes");
-const dispatchRoutes = require("../routes/dispatchRoutes");
-const mobileDispatchPlanRoutes = require("../routes/mobileDispatchPlanRoutes");
-const dispatchPlanRoutes = require("../routes/dispatchPlanRoutes");
-const fleetRoutes = require("../routes/fleetRoutes");
-const vehicleIssueRoutes = require("../routes/vehicleIssueRoutes");
-const notificationRoutes = require("../routes/notificationRoutes");
-const complaintRoutes = require("../routes/complaintRoutes");
-const { createCitizenAssistantRouter } = require("../routes/citizenAssistantRoutes");
-const { createAppVersionRouter } = require("../routes/appVersionRoutes");
-const certificateRoutes = require("../routes/certificateRoutes");
-const invoiceRoutes = require("../routes/invoiceRoutes");
-const dispatchMonitorService = require("../services/dispatchMonitorService");
+const webAuthRoutes = wasteScanOnly ? null : require("../routes/webAuthRoutes");
+const webUserRoutes = wasteScanOnly ? null : require("../routes/webUserRoutes");
+const appointmentRoutes = wasteScanOnly ? null : require("../routes/appointmentRoutes");
+const trackingRoutes = wasteScanOnly ? null : require("../routes/trackingRoutes");
+const dispatchRoutes = wasteScanOnly ? null : require("../routes/dispatchRoutes");
+const mobileDispatchPlanRoutes = wasteScanOnly ? null : require("../routes/mobileDispatchPlanRoutes");
+const dispatchPlanRoutes = wasteScanOnly ? null : require("../routes/dispatchPlanRoutes");
+const fleetRoutes = wasteScanOnly ? null : require("../routes/fleetRoutes");
+const vehicleIssueRoutes = wasteScanOnly ? null : require("../routes/vehicleIssueRoutes");
+const notificationRoutes = wasteScanOnly ? null : require("../routes/notificationRoutes");
+const complaintRoutes = wasteScanOnly ? null : require("../routes/complaintRoutes");
+const { createCitizenAssistantRouter } = wasteScanOnly ? {} : require("../routes/citizenAssistantRoutes");
+const { createAppVersionRouter } = wasteScanOnly ? {} : require("../routes/appVersionRoutes");
+const certificateRoutes = wasteScanOnly ? null : require("../routes/certificateRoutes");
+const invoiceRoutes = wasteScanOnly ? null : require("../routes/invoiceRoutes");
+const dispatchMonitorService = wasteScanOnly ? null : require("../services/dispatchMonitorService");
 
 /* =========================
    PATHS
@@ -119,18 +126,30 @@ const COMPLAINT_UPLOADS_DIR = path.join(UPLOADS_DIR, "complaints");
 /* =========================
    ENSURE UPLOAD FOLDERS EXIST
 ========================= */
-if (!fs.existsSync(UPLOADS_DIR)) {
+if (!wasteScanOnly && !fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 
-if (!fs.existsSync(COMPLAINT_UPLOADS_DIR)) {
+if (!wasteScanOnly && !fs.existsSync(COMPLAINT_UPLOADS_DIR)) {
   fs.mkdirSync(COMPLAINT_UPLOADS_DIR, { recursive: true });
 }
 
 /* =========================
    CORE MIDDLEWARE
 ========================= */
-app.use(cors());
+if (wasteScanOnly) {
+  const abuse = require("../middleware/stagingAbuseLimits").createStagingAbuseControls();
+  const { requireMobileSession } = require("../middleware/mobileSessionAuth");
+  app.use(stagingApiPolicy);
+  app.use(abuse.loginIp);
+  app.use(abuse.beforeAuth);
+  app.use(preAuthenticateAnalysis((req, res, next) =>
+    requireMobileSession(req, res, () => requireStagingCitizen(req, res, next))));
+  app.use(abuse.analysis);
+  app.use("/api/auth/login", express.json({ limit: "16kb", strict: true }),
+    express.urlencoded({ limit: "16kb", extended: false }));
+  app.use(abuse.loginUsername);
+} else app.use(cors());
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
@@ -139,11 +158,12 @@ app.use(express.urlencoded({ extended: true, limit: "50mb" }));
    REQUEST LOGGER
 ========================= */
 app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl}`);
+  console.log(`[${new Date().toISOString()}] ${req.method} ${wasteScanOnly ? req.path : req.originalUrl}`);
   next();
 });
 
 // Public browser-consumable key; restrict its allowed domains in CARTO.
+if (!wasteScanOnly) {
 app.get("/runtime-config.js", (req, res) => {
   res.setHeader("Content-Type", "application/javascript; charset=utf-8");
   res.setHeader("Cache-Control", "no-store");
@@ -178,13 +198,15 @@ app.get("/download/app", (req, res) => {
   res.sendFile(path.join(FRONTEND_DIR, "download-app.html"));
 });
 
+}
+
 app.get("/health", (req, res) => {
   db.healthCheck((error) => {
     if (error) {
       console.warn(
         "[Health] Database check failed:",
         error.code || "UNKNOWN_DB_ERROR",
-        error.message
+        wasteScanOnly ? "Database unavailable." : error.message
       );
 
       return res.status(503).json({
@@ -202,6 +224,7 @@ app.get("/health", (req, res) => {
   });
 });
 
+if (!wasteScanOnly) {
 app.get("/api/test", (req, res) => {
   return res.status(200).json({
     success: true,
@@ -276,9 +299,12 @@ app.get("/api/debug/file-exists", (req, res) => {
 /* =========================
    API ROUTES
 ========================= */
+}
+
 app.use("/api/auth", authRoutes);
-app.use("/api/app-version", createAppVersionRouter());
+if (!wasteScanOnly) app.use("/api/app-version", createAppVersionRouter());
 app.use("/api/waste", wasteRoutes);
+if (!wasteScanOnly) {
 app.use("/api/web-auth", webAuthRoutes);
 app.use("/api/web-users", webUserRoutes);
 app.use("/api/appointments", appointmentRoutes);
@@ -302,6 +328,7 @@ if (typeof complaintRoutes.startOverdueAcceptedComplaintScheduler === "function"
 }
 
 dispatchMonitorService.start(io);
+}
 
 
 /* =========================
@@ -310,7 +337,7 @@ dispatchMonitorService.start(io);
 app.use((req, res) => {
   return res.status(404).json({
     success: false,
-    message: `Route not found: ${req.method} ${req.originalUrl}`
+    message: wasteScanOnly ? "Not found" : `Route not found: ${req.method} ${req.originalUrl}`
   });
 });
 
@@ -318,6 +345,7 @@ app.use((req, res) => {
    GLOBAL ERROR HANDLER
 ========================= */
 app.use((err, req, res, next) => {
+  if (wasteScanOnly) return stagingError(err, req, res, next);
   console.error("=== GLOBAL EXPRESS ERROR ===");
   console.error(err);
   console.error(err.stack);
@@ -333,12 +361,14 @@ app.use((err, req, res, next) => {
    PROCESS-LEVEL ERROR HANDLERS
 ========================= */
 process.on("uncaughtException", (error) => {
+  if (wasteScanOnly) { console.error("[Staging] Uncaught exception."); process.exit(1); }
   console.error("=== UNCAUGHT EXCEPTION ===");
   console.error(error);
   console.error(error.stack);
 });
 
 process.on("unhandledRejection", (reason) => {
+  if (wasteScanOnly) { console.error("[Staging] Unhandled rejection."); process.exit(1); }
   console.error("=== UNHANDLED REJECTION ===");
   console.error(reason);
 });
@@ -350,6 +380,7 @@ const PORT = process.env.PORT || 8081;
 const HOST = "0.0.0.0";
 
 server.listen(PORT, HOST, () => {
+  if (wasteScanOnly) { console.log("Staging Waste Scan API listening; realtime disabled."); return; }
   console.log("======================================");
   console.log(`Server running on port ${PORT}`);
   console.log(`Server host binding: ${HOST}`);
