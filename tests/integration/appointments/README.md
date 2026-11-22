@@ -106,8 +106,42 @@ Require native architecture, Linux Engine>=28, reviewed executable hashes and
 stable approved daemon ID. Reject remote contexts, mirrors and unreviewed proxies.
 HTTPS registry/token origins and library/mysql:pull scope are fixed. Hash bounded
 raw manifest bytes before parsing, then reuse descriptor/platform validators.
-All redirects, including CDN redirects, are refused. An encountered redirect is
-a compatibility STOP, not authority to widen transport. No digest is invented.
+Redirects remain refused except for the authenticated, exact MySQL config-blob
+GET described below. No digest is invented.
+
+### Exact config-blob 307 exception
+
+Docker Hub was observed returning HTTP 307 for the config blob with digest:
+
+    sha256:3121b912b942b8b46646b1f64c955958b8353e8902693ba962a2e37d2d3224bd
+
+Only that authenticated request at registry-1.docker.io may delegate one GET to
+the exact HTTPS host production.cloudfront.docker.com. The generic transport
+whitelist is unchanged: a private session/URL/deadline-bound, single-use permit
+is required for the CDN request. No other blob, manifest, token endpoint,
+redirect status or additional hop is eligible. Duplicate/missing Location,
+userinfo, fragments, controls, malformed URLs and non-default ports refuse.
+Signed query parameters are permitted but never included in evidence or errors.
+URLs embedding the registry token also refuse.
+
+The CDN receives fresh minimal headers, containing only Accept-Encoding:
+identity. Authorization, Cookie, Proxy-Authorization and registry credentials
+are never forwarded. TLS certificate/hostname validation stays enabled. The
+original blob request and CDN hop share one ten-second response deadline;
+earlier registry/authentication steps retain their existing response bounds.
+EOF, complete-message and request-close evidence, the 65,536-byte cap,
+cancellation, bounded cleanup and uncertain-outcome quarantine remain required.
+An empty 307 body is allowed; the final response must be HTTP 200, nonempty,
+identity-encoded and without Location. Raw SHA-256 verification still precedes
+JSON interpretation; manifest size and OCI/platform validation remain mandatory.
+
+Offline positive controls substitute a synthetic digest only in an in-memory
+mock module copy, then use real hashing/OCI validation on synthetic bytes. The
+production digest pin is separately asserted and has no caller override. These
+tests do not prove real CDN compatibility or image-byte provenance. No live
+registry/CDN access occurs during these tests. Native activation remains false;
+Windows isolation and actual MySQL connectivity remain separate gates requiring
+activation review and GO EXECUTE. Proxy/firewall policies are unchanged.
 
 Pull only the approved platform digest. Creation uses --pull=never. Create one
 labelled container/network/local volume. Verify full container/network IDs;

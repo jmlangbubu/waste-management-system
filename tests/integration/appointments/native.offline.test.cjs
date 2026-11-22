@@ -765,7 +765,7 @@ function childProbe(options = {}, mutate) {
 async function faultReject(work, code) {
   await assert.rejects(work, caught => {
     assert.equal(caught.code, "NATIVE_" + code);
-    assert.doesNotMatch(caught.message + caught.stack + JSON.stringify(caught), /SECRET_CANARY|password@|ORI-secret/); return true;
+    assert.doesNotMatch(caught.message + caught.stack + JSON.stringify(caught), /SECRET_CANARY|password@|ORI-secret|SIGNED_URL_CANARY|REGISTRY_TOKEN_CANARY|COOKIE_CANARY|PROXY_CANARY/); return true;
   });
 }
 test("FIX historical revocation during spawn terminates before sending input", async () => {
@@ -819,7 +819,7 @@ function requestProbe(options = {}) {
       stats.ends++; if (options.hang) return;
       queueMicrotask(() => {
         if (options.asyncError) return this.emit("error", new Error("SECRET_CANARY response"));
-        const response = new EventEmitter(); response.statusCode = 200; response.headers = {};
+        const response = new EventEmitter(); response.statusCode = 200; response.headers = {}; response.rawHeaders = []; response.complete = true;
         response.destroy = () => response.emit("close"); receive(response);
         response.emit("data", Buffer.from("{}")); response.emit("end");
         if (!options.eofOnly) { stats.closes++; this.emit("close"); }
@@ -1201,4 +1201,228 @@ test("ADMISSION public key integration leaves the offline plan non-executable", 
   const plan = JSON.parse(output);
   assert.equal(plan.performsExternalOperations, false); assert.equal(plan.writeAccess, false);
   assert.equal(plan.capabilities.nativeExecutionAvailable, false);
+});
+
+const APPROVED_REDIRECT_CONFIG = "sha256:3121b912b942b8b46646b1f64c955958b8353e8902693ba962a2e37d2d3224bd";
+const CDN_ORIGIN = "https://production.cloudfront.docker.com";
+const CDN_LOCATION = CDN_ORIGIN + "/registry-v2/config/data?X-Amz-Credential=synthetic%2Fscope&X-Amz-Signature=SIGNED_URL_CANARY";
+const REGISTRY_TEST_TOKEN = "REGISTRY_TOKEN_CANARY_" + "a".repeat(24);
+
+function redirectFixture(options = {}, mutate = source => source) {
+  const f = setup(options.fixture || {}), Emitter = require("node:events"), clock = { now: 0 }, calls = [], rawRequests = [], timers = new Set();
+  let changedManifest, changedIndex;
+  if (options.descriptorSizeMismatch) {
+    const manifest = JSON.parse(f.manifestRaw); manifest.config.size++;
+    changedManifest = JSON.stringify(manifest); f.c.image.platformDigest = "sha256:" + h.hash(changedManifest);
+    const index = JSON.parse(f.indexRaw); index.manifests[0].digest = f.c.image.platformDigest; index.manifests[0].size = Buffer.byteLength(changedManifest);
+    changedIndex = JSON.stringify(index); f.c.image.indexDigest = "sha256:" + h.hash(changedIndex); f.payload.configuration = clone(f.c);
+  }
+  let dockerModule, session, authenticated = false;
+  const bridge = { ...h, describe: s => { session = s; return h.describe(s); }, dockerInvoke: async (s, token) => {
+    const request = dockerModule.readCommand(s, token); return h.testDriver(s, "host").processCall(request.executable, request.args, request.input, request.timeout);
+  } };
+  // Only this in-memory mock module substitutes a synthetic digest so real hashing can verify synthetic bytes.
+  // The production constant remains pinned above; no real image/CDN byte verification is claimed.
+  dockerModule = memoryModule("nativeDocker", source => mutate(options.productionPin ? source : replaceOnce(source, APPROVED_REDIRECT_CONFIG, f.c.image.configDigest)),
+    { "./nativeHost.cjs": bridge, ...options.realClock ? {} : { "node:perf_hooks": { performance: { now: () => clock.now } } } });
+  const mysqlModule = memoryModule("nativeMysql", source => source, { "./nativeDocker.cjs": dockerModule });
+  const coordinator = memoryModule("nativeLifecycle", source => source, { "./nativeDocker.cjs": dockerModule, "./nativeMysql.cjs": mysqlModule });
+  const original = f.fake.registry.request;
+  async function reply(url, headers) {
+    const u = new URL(url), config = u.pathname.includes("/blobs/"), cdn = u.origin === CDN_ORIGIN;
+    if (cdn) {
+      clock.now += options.cdnElapsed || 0;
+      return { origin: CDN_ORIGIN, status: options.cdnStatus || 200,
+        headers: { ...(options.cdnHeaders || {}), ...options.secondLocation ? { location: options.secondLocation } : {} },
+        body: options.cdnBody === undefined ? Buffer.from(f.configRaw) : options.cdnBody };
+    }
+    if (!authenticated && !options.noAuthentication && u.origin === "https://registry-1.docker.io" && u.pathname.endsWith("/9.7.2-oraclelinux9"))
+      return { origin: u.origin, status: 401, headers: { "www-authenticate": 'Bearer realm="https://auth.docker.io/token",service="registry.docker.io",scope="repository:library/mysql:pull"' }, body: Buffer.from("{}") };
+    if (u.origin === "https://auth.docker.io") {
+      authenticated = true;
+      return options.tokenRedirect ? { origin: u.origin, status: 307, headers: { location: CDN_LOCATION }, body: Buffer.alloc(0) } :
+        { origin: u.origin, status: 200, headers: {}, body: Buffer.from(JSON.stringify({ token: REGISTRY_TEST_TOKEN })) };
+    }
+    if (options.manifestRedirect && u.pathname.endsWith(f.c.image.platformDigest))
+      return { origin: u.origin, status: 307, headers: { location: CDN_LOCATION }, body: Buffer.alloc(0) };
+    if (config && !options.direct) {
+      clock.now += options.initialElapsed || 0;
+      const location = Object.hasOwn(options, "location") ? options.location : CDN_LOCATION;
+      return { origin: u.origin, status: options.status || 307,
+        headers: { "set-cookie": "COOKIE_CANARY", ...(location === undefined ? {} : { location }), ...(options.redirectHeaders || {}) }, body: Buffer.alloc(0) };
+    }
+    const result = await original(url, headers);
+    if (changedManifest && u.pathname.endsWith(f.c.image.platformDigest)) result.body = Buffer.from(changedManifest);
+    if (changedIndex && u.pathname.endsWith("/9.7.2-oraclelinux9")) result.body = Buffer.from(changedIndex);
+    return result;
+  }
+  f.fake.registry.request = (url, headers, timeout, permit) => {
+    const cdn = new URL(url).origin === CDN_ORIGIN;
+    if (!cdn && options.sensitiveRegistryHeaders) { headers.Cookie = "COOKIE_CANARY"; headers["Proxy-Authorization"] = "PROXY_CANARY"; }
+    calls.push({ url, headers: { ...headers }, timeout, permit });
+    let response, closed = false;
+    const request = new Emitter(); rawRequests.push(request); request.destroys = 0;
+    request.destroy = () => { request.destroys++; if (!(cdn && options.noClose) && !closed) { closed = true; request.emit("close"); } };
+    const transport = {
+      agent: { destroy() {} }, registerCancel: fn => h.onCancel(session, fn),
+      setTimer(fn, ms) {
+        const fast = cdn && (options.hang || options.eofOnly || options.noClose);
+        const timer = setTimeout(() => { timers.delete(timer); fn(); }, fast ? Math.min(ms, 15) : ms); timers.add(timer); return timer;
+      },
+      clearTimer(timer) { clearTimeout(timer); timers.delete(timer); },
+      request(u, settings, receive) {
+        assert.equal(settings.method, "GET"); assert.equal(settings.rejectUnauthorized, true);
+        request.end = () => queueMicrotask(async () => {
+          try {
+            const r = await reply(u.href, settings.headers); response = new Emitter();
+            response.statusCode = r.status; response.headers = r.headers; response.complete = !(cdn && options.incomplete);
+            response.rawHeaders = Object.entries(r.headers).flatMap(([key, value]) => [key, value]);
+            if (!cdn && u.pathname.includes("/blobs/") && options.locations) {
+              response.rawHeaders = ["Location", options.locations[0], "location", options.locations[1]]; response.headers.location = options.locations[0];
+            }
+            response.destroy = () => response.emit("close"); receive(response);
+            if (cdn && options.cancel) { h.revoke(session); return; }
+            if (cdn && options.hang) return;
+            if (cdn && options.premature) { response.emit("close"); return; }
+            if (cdn && options.asyncError) { request.emit("error", new Error("SIGNED_URL_CANARY SECRET_CANARY")); return; }
+            response.emit("data", r.body); response.emit("end");
+            if (!(cdn && (options.eofOnly || options.noClose)) && !closed) { closed = true; request.emit("close"); }
+          } catch (_) { request.emit("error", new Error("SIGNED_URL_CANARY SECRET_CANARY transport")); }
+        });
+        return request;
+      }
+    };
+    return dockerModule.probePrivate.requestBytes(session, url, headers, transport, timeout, 30, permit);
+  };
+  const life = coordinator.testing.createLifecycle(h.testing.challenge(f.c, policy, f.fake), sign(f.payload));
+  return { f, life, calls, rawRequests, timers, dockerModule, get session() { return session; }, clock,
+    async close() { await life.dispose(); for (const timer of timers) clearTimeout(timer); timers.clear(); } };
+}
+function noUnverifiedResources(context) {
+  assert.equal(kinds(context.f, "directory").length, 0); assert.equal(kinds(context.f, "file").length, 0);
+  assert.equal(kinds(context.f, "fake-credentials").length, 0);
+  assert.ok(!kinds(context.f, "docker").some(v => /^(?:image pull|network create|volume create|container create)/.test(v.value)));
+  assert.equal(context.f.state.created.size, 0); assert.equal(context.timers.size, 0);
+}
+async function rejectedRedirect(options, code = "REGISTRY_INVALID", mutate) {
+  const context = redirectFixture(options, mutate);
+  try {
+    await faultReject(context.life.provision(context.life.scope("provision")), code);
+    noUnverifiedResources(context);
+    for (const request of context.rawRequests) assert.doesNotThrow(() => request.emit("error", new Error("SIGNED_URL_CANARY late")));
+    return context.calls.filter(c => new URL(c.url).origin === CDN_ORIGIN).length;
+  } finally { await context.close(); }
+}
+
+test("307 valid authenticated config redirect verifies synthetic bytes with credential-free CDN headers", async () => {
+  const context = redirectFixture({ sensitiveRegistryHeaders: true, realClock: true });
+  try {
+    await context.life.provision(context.life.scope("provision")); assert.equal(context.life.describe().stage, "fixtures-unready");
+    const cdn = context.calls.filter(c => new URL(c.url).origin === CDN_ORIGIN); assert.equal(cdn.length, 1);
+    assert.deepEqual(cdn[0].headers, { "Accept-Encoding": "identity" }); assert.ok(cdn[0].timeout > 0 && cdn[0].timeout <= 10000);
+    assert.ok(context.calls.filter(c => new URL(c.url).pathname.includes("/blobs/")).every(c => c.headers.Authorization === "Bearer " + REGISTRY_TEST_TOKEN));
+    assert.doesNotMatch(JSON.stringify(context.life.describe()), /SIGNED_URL_CANARY|REGISTRY_TOKEN_CANARY|COOKIE_CANARY|PROXY_CANARY|cloudfront/);
+    assert.equal(context.life.describe().nativeVerified, false); assert.equal(context.life.describe().durableVerified, false); assert.equal(context.timers.size, 0);
+  } finally { await context.close(); }
+});
+
+test("307 policy preserves the exact production digest and refuses other blobs", async () => {
+  const source = require("node:fs").readFileSync(require("node:path").join(__dirname, "helpers", "nativeDocker.cjs"), "utf8");
+  assert.ok(source.includes('const REDIRECT_CONFIG_DIGEST = "' + APPROVED_REDIRECT_CONFIG + '";'));
+  assert.equal(await rejectedRedirect({ productionPin: true }), 0);
+});
+test("307 direct HTTP 200 config behavior remains valid", async () => {
+  const context = redirectFixture({ direct: true, productionPin: true });
+  try { await context.life.provision(context.life.scope("provision")); assert.equal(context.life.describe().stage, "fixtures-unready");
+    assert.equal(context.calls.filter(c => new URL(c.url).origin === CDN_ORIGIN).length, 0); }
+  finally { await context.close(); }
+});
+test("307 accepts an explicit default HTTPS port and legitimate signed-query escapes", async () => {
+  const context = redirectFixture({ location: CDN_ORIGIN + ":443/config?credential=synthetic%2Fscope&literalPercent=%25&signature=SIGNED_URL_CANARY" });
+  try { await context.life.provision(context.life.scope("provision")); assert.equal(context.life.describe().stage, "fixtures-unready"); }
+  finally { await context.close(); }
+});
+test("307 rejects descriptor-size disagreement even when every raw digest matches", async () => {
+  assert.equal(await rejectedRedirect({ descriptorSizeMismatch: true }, "IMAGE_INVALID"), 1);
+});
+test("307 checks raw digest before interpreting malformed configuration JSON", async () => {
+  const original = JSON.parse; let parsedUnverifiedConfig = 0;
+  JSON.parse = function(value, ...args) { if (value === "not JSON") parsedUnverifiedConfig++; return original.call(this, value, ...args); };
+  try { await rejectedRedirect({ cdnBody: Buffer.from("not JSON") }, "IMAGE_INVALID"); assert.equal(parsedUnverifiedConfig, 0); }
+  finally { JSON.parse = original; }
+});
+
+for (const [name, location] of Object.entries({
+  wrong_host: "https://untrusted.invalid/config", subdomain: "https://sub.production.cloudfront.docker.com/config",
+  deceptive_host: "https://production.cloudfront.docker.com.untrusted.invalid/config", downgrade: "http://production.cloudfront.docker.com/config",
+  port: "https://production.cloudfront.docker.com:444/config", userinfo: "https://user:password@production.cloudfront.docker.com/config",
+  fragment: CDN_LOCATION + "#fragment", empty_fragment: CDN_LOCATION + "#", relative: "/config", malformed: "https://[invalid",
+  missing: undefined, array: [CDN_LOCATION], control: CDN_LOCATION + "\r\n", encoded_control: CDN_LOCATION + "%0a",
+  backslash: "https://production.cloudfront.docker.com\\config", encoded_backslash: CDN_LOCATION + "%5c",
+  invalid_escape: CDN_LOCATION + "%zz", trailing_dot: "https://production.cloudfront.docker.com./config",
+  normalized_path: CDN_ORIGIN + "/unapproved/../config", encoded_normalized_path: CDN_ORIGIN + "/unapproved/%2e%2e/config",
+  token_in_query: CDN_ORIGIN + "/config?token=" + REGISTRY_TEST_TOKEN,
+  encoded_token: CDN_ORIGIN + "/config?token=" + [...REGISTRY_TEST_TOKEN].map(c => "%" + c.charCodeAt(0).toString(16)).join(""),
+  double_encoded_token: CDN_ORIGIN + "/config?token=" + [...REGISTRY_TEST_TOKEN].map(c => "%25" + c.charCodeAt(0).toString(16)).join("")
+})) test("307 rejects " + name + " before contacting CDN", async () => assert.equal(await rejectedRedirect({ location }), 0));
+for (const status of [301, 302, 303, 308]) test("307 rejects redirect status " + status, async () => assert.equal(await rejectedRedirect({ status }), 0));
+for (const [name, options] of [
+  ["duplicate Location", { locations: [CDN_LOCATION, CDN_LOCATION] }], ["conflicting Location", { locations: [CDN_LOCATION, CDN_ORIGIN + "/other"] }],
+  ["manifest redirect", { manifestRedirect: true }], ["token redirect", { tokenRedirect: true }], ["unauthenticated blob", { noAuthentication: true }],
+  ["encoded 307 body", { redirectHeaders: { "content-encoding": "gzip" } }]
+]) test("307 rejects " + name, async () => assert.equal(await rejectedRedirect(options), 0));
+for (const [name, options, code] of [
+  ["extra redirect hop", { cdnStatus: 307, secondLocation: CDN_LOCATION }, "REGISTRY_INVALID"],
+  ["extra 302 hop", { cdnStatus: 302, secondLocation: CDN_LOCATION }, "REGISTRY_INVALID"],
+  ["Location on final 200", { secondLocation: CDN_LOCATION }, "REGISTRY_INVALID"],
+  ["wrong raw digest", { cdnBody: Buffer.from("not JSON") }, "IMAGE_INVALID"],
+  ["truncated bytes", { cdnBody: Buffer.from("{") }, "IMAGE_INVALID"],
+  ["empty final body", { cdnBody: Buffer.alloc(0) }, "REGISTRY_INVALID"],
+  ["excessive body", { cdnBody: Buffer.alloc(65537) }, "REGISTRY_INVALID"],
+  ["content encoding", { cdnHeaders: { "content-encoding": "gzip" } }, "REGISTRY_INVALID"],
+  ["incomplete message", { incomplete: true }, "REGISTRY_INVALID"],
+  ["premature close", { premature: true }, "REGISTRY_INVALID"],
+  ["late transport error", { asyncError: true }, "REGISTRY_INVALID"],
+  ["timeout", { hang: true }, "TIMEOUT"], ["cancellation", { cancel: true }, "CANCELLED"],
+  ["missing close", { eofOnly: true, noClose: true }, "QUARANTINED"]
+]) test("307 CDN fails closed for " + name, async () => assert.equal(await rejectedRedirect(options, code), 1));
+
+test("307 sequence shares the original deadline rather than granting a fresh CDN budget", async () => {
+  const good = redirectFixture({ initialElapsed: 6000, cdnElapsed: 3999 });
+  try { await good.life.provision(good.life.scope("provision"));
+    assert.equal(good.calls.find(c => new URL(c.url).origin === CDN_ORIGIN).timeout, 4000); }
+  finally { await good.close(); }
+  assert.equal(await rejectedRedirect({ initialElapsed: 6000, cdnElapsed: 4001 }, "TIMEOUT"), 1);
+  assert.equal(await rejectedRedirect({ initialElapsed: 10001 }, "TIMEOUT"), 0);
+});
+
+test("307 generic CDN transport refuses absent or forged redirect capabilities", () => {
+  const f = setup(), session = sessionFor(f), module = memoryModule("nativeDocker"); let attempts = 0;
+  const transport = { request() { attempts++; throw Error("unexpected dispatch"); } };
+  try {
+    for (const permit of [undefined, {}, Object.freeze({ session, url: CDN_LOCATION })])
+      assert.throws(() => module.probePrivate.requestBytes(session, CDN_LOCATION, { "Accept-Encoding": "identity" }, transport, 10000, 1000, permit), { code: "NATIVE_REGISTRY_INVALID" });
+    assert.equal(attempts, 0);
+  } finally { h.end(session); h.revoke(session); }
+});
+
+test("307 capability cannot be reused after its single dispatch", async () => {
+  const context = redirectFixture();
+  try {
+    await context.life.provision(context.life.scope("provision")); const call = context.calls.find(c => new URL(c.url).origin === CDN_ORIGIN);
+    h.begin(context.session, h.scope(context.session, "verify"), "verify"); let attempts = 0;
+    assert.throws(() => context.dockerModule.probePrivate.requestBytes(context.session, call.url, { "Accept-Encoding": "identity" }, { request() { attempts++; } }, 100, 30, call.permit), { code: "NATIVE_REGISTRY_INVALID" });
+    assert.equal(attempts, 0); h.end(context.session);
+  } finally { await context.close(); }
+});
+
+test("307 sensitivity catches accidental authenticated-header reuse", async () => {
+  const spec = async mutate => { const context = redirectFixture({}, mutate);
+    try { await context.life.provision(context.life.scope("provision"));
+      assert.deepEqual(context.calls.find(c => new URL(c.url).origin === CDN_ORIGIN).headers, { "Accept-Encoding": "identity" }); }
+    finally { await context.close(); } };
+  await spec(source => source);
+  await assert.rejects(spec(source => replaceOnce(source,
+    'transport.request(target.url, { "Accept-Encoding": "identity" }, budget, target.permit)',
+    'transport.request(target.url, { "Accept-Encoding": "identity", ...headers }, budget, target.permit)')), { code: "NATIVE_REGISTRY_INVALID" });
 });

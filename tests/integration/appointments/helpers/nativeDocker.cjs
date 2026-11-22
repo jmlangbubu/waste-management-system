@@ -1,9 +1,39 @@
 "use strict";
 
 const h = require("./nativeHost.cjs"), e = require("./environment.cjs"), recipes = require("./disposable.cjs");
+const { performance } = require("node:perf_hooks");
 const commands = new WeakMap(), adapters = new WeakMap();
 const ID = /^[0-9a-f]{64}$/, DIGEST = /^sha256:[0-9a-f]{64}$/;
 const REGISTRY = "https://registry-1.docker.io", AUTH = "https://auth.docker.io";
+const CONFIG_CDN = "https://production.cloudfront.docker.com";
+const REDIRECT_CONFIG_DIGEST = "sha256:3121b912b942b8b46646b1f64c955958b8353e8902693ba962a2e37d2d3224bd";
+const configRedirects = new WeakMap();
+function remaining(deadline) {
+  const ms = Math.floor(deadline - performance.now()); h.check(ms > 0, "TIMEOUT"); return Math.min(ms, 10000);
+}
+function configRedirect(session, reply, authorization, deadline) {
+  try {
+    const location = reply.headers.location;
+    h.check(reply.locationCount === 1 && typeof location === "string" && location.length <= 16384 &&
+      !/[^\x21-\x7e]|\\|#/.test(location) && !/%(?![0-9a-f]{2})/i.test(location) &&
+      typeof authorization === "string" && authorization.startsWith("Bearer "), "REGISTRY_INVALID");
+    const u = new URL(location), authority = /^https:\/\/([^/?#]+)/.exec(location);
+    h.check(u.origin === CONFIG_CDN && u.protocol === "https:" && u.hostname === "production.cloudfront.docker.com" &&
+      !u.username && !u.password && !u.hash && !u.port && authority &&
+      [u.hostname, u.hostname + ":443"].includes(authority[1]), "REGISTRY_INVALID");
+    // Do not reinterpret a signed URL through parser-normalized paths; only explicit default-port normalization is allowed.
+    h.check(u.href === CONFIG_CDN + location.slice(authority[0].length), "REGISTRY_INVALID");
+    // Do not delegate URLs embedding registry credentials, including percent-encoded forms.
+    const token = authorization.slice(7); let decoded = location, complete = false;
+    for (let i = 0; i < 4; i++) {
+      h.check(!decoded.includes(token) && !/[\\\x00-\x1f\x7f]/.test(decoded), "REGISTRY_INVALID");
+      const next = decoded.replace(/%([0-9a-f]{2})/ig, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+      if (next === decoded) { complete = true; break; } decoded = next;
+    }
+    h.check(complete, "REGISTRY_INVALID"); remaining(deadline);
+    const permit = Object.freeze({}); configRedirects.set(permit, { session, url: u.href, deadline }); return { url: u.href, permit };
+  } catch (caught) { throw h.error(caught, "REGISTRY_INVALID"); }
+}
 function readCommand(session, token) { const v = commands.get(token); h.check(v && v.session === session, "SCOPE_INVALID"); return v.request; }
 function parse(text, code = "RESOURCE_INVALID") { try { return JSON.parse(text); } catch (_) { throw new h.NativeError(code); } }
 function singleton(text) { const v = parse(text); h.check(Array.isArray(v) && v.length === 1, "RESOURCE_INVALID"); return v[0]; }
@@ -39,11 +69,15 @@ function startupSettings(config, code) {
     ArgsEscaped: config.ArgsEscaped ?? false, Healthcheck: healthcheck };
 }
 // The request is not complete until its close event and response EOF have been observed.
-function requestBytes(session, url, headers, transport, timeout = 10000, cleanupMs = 1000) {
+function requestBytes(session, url, headers, transport, timeout = 10000, cleanupMs = 1000, permit) {
   h.access(session);
-  const u = new URL(url);
-  h.check([REGISTRY, AUTH].includes(u.origin) && u.protocol === "https:" && !u.username && !u.password &&
+  let u; try { u = new URL(url); } catch (_) { throw new h.NativeError("REGISTRY_INVALID"); }
+  const delegated = configRedirects.get(permit);
+  const allowed = u.origin === CONFIG_CDN ? delegated && delegated.session === session && delegated.url === url &&
+    headers && Object.keys(headers).length === 1 && headers["Accept-Encoding"] === "identity" : [REGISTRY, AUTH].includes(u.origin) && permit === undefined;
+  h.check(allowed && u.protocol === "https:" && !u.username && !u.password &&
     Number.isInteger(timeout) && timeout > 0 && timeout <= 10000 && Number.isInteger(cleanupMs) && cleanupMs > 0 && cleanupMs <= 5000, "REGISTRY_INVALID");
+  if (delegated) { timeout = Math.min(timeout, remaining(delegated.deadline)); configRedirects.delete(permit); }
   return new Promise((resolve, reject) => {
     let req, response, timer, stopTimer, settled = false, guarded = false, ready = false, dispatching = false, attempted = false;
     let closed = false, ended = false, responseClosed = false, stopping = false, failure, size = 0, unregister = () => {};
@@ -59,7 +93,9 @@ function requestBytes(session, url, headers, transport, timeout = 10000, cleanup
     const complete = () => {
       if (!ready || !closed || settled) return;
       if (failure && (!response || ended || responseClosed)) finish(failure);
-      else if (!failure && ended) finish(null, { origin: u.origin, status: response.statusCode, headers: response.headers, body: Buffer.concat(parts) });
+      else if (!failure && ended) finish(null, { origin: u.origin, status: response.statusCode, headers: response.headers,
+        locationCount: Array.isArray(response.rawHeaders) && response.rawHeaders.length % 2 === 0 && response.rawHeaders.every(v => typeof v === "string") ?
+          response.rawHeaders.reduce((n, v, i) => n + (i % 2 === 0 && v.toLowerCase() === "location" ? 1 : 0), 0) : -1, body: Buffer.concat(parts) });
     };
     const stop = caught => {
       if (settled) return; failure ||= h.error(caught, "REGISTRY_INVALID");
@@ -79,7 +115,7 @@ function requestBytes(session, url, headers, transport, timeout = 10000, cleanup
       response.on("close", () => { responseClosed = true; if (!ended) stop(new h.NativeError("REGISTRY_INVALID")); complete(); });
       response.on("data", b => { if (settled) return; size += b.length;
         if (size > 65536) stop(new h.NativeError("REGISTRY_INVALID")); else parts.push(b); });
-      response.on("end", () => { ended = true; complete(); });
+      response.on("end", () => { if (response.complete !== true) { stop(new h.NativeError("REGISTRY_INVALID")); return; } ended = true; complete(); });
     };
     try {
       unregister = transport.registerCancel(() => stop(new h.NativeError("CANCELLED")));
@@ -101,11 +137,11 @@ function requestBytes(session, url, headers, transport, timeout = 10000, cleanup
   });
 }
 function realRegistry(session) {
-  return { async request(url, headers) {
+  return { async request(url, headers, timeout = 10000, permit) {
     const https = require("node:https");
     return requestBytes(session, url, headers, { request: (...a) => https.request(...a),
       agent: new https.Agent({ keepAlive: false, rejectUnauthorized: true }), registerCancel: fn => h.onCancel(session, fn),
-      setTimer: setTimeout, clearTimer: clearTimeout });
+      setTimer: setTimeout, clearTimer: clearTimeout }, timeout, 1000, permit);
   } };
 }
 function createDocker(session) {
@@ -146,12 +182,30 @@ function createDocker(session) {
   async function registry() {
     h.access(session, ["provision"]); h.check(hostVerified, "STAGE_INVALID");
     const transport = kind === "mock" ? h.testDriver(session, "registry") : realRegistry(session);
-    async function get(url, headers = {}) {
+    const acceptable = (r, origin, statuses, empty = false) => {
+      h.check(r.origin === origin && statuses.includes(r.status) && (!r.headers["content-encoding"] || r.headers["content-encoding"] === "identity") &&
+        Buffer.isBuffer(r.body) && (empty || r.body.length > 0) && r.body.length <= 65536, "REGISTRY_INVALID");
+    };
+    async function get(url, headers = {}, deadline = performance.now() + 10000, configOnly = false) {
       h.check((url.startsWith(REGISTRY + "/v2/library/mysql/") || url.startsWith(AUTH + "/token?")) && !url.includes("#"), "REGISTRY_INVALID");
-      const request = () => transport.request(url, { "Accept-Encoding": "identity", ...headers });
-      const r = kind === "mock" ? await h.bounded(session, request, 10000) : await request(); h.access(session);
-      h.check(r.origin === new URL(url).origin && [200, 401].includes(r.status) && !r.headers.location &&
-        (!r.headers["content-encoding"] || r.headers["content-encoding"] === "identity") && Buffer.isBuffer(r.body) && r.body.length > 0 && r.body.length <= 65536, "REGISTRY_INVALID"); return r;
+      const timeout = remaining(deadline), request = () => transport.request(url, { "Accept-Encoding": "identity", ...headers }, timeout);
+      const r = kind === "mock" ? await h.bounded(session, request, timeout) : await request(); h.access(session); remaining(deadline);
+      if (r.status === 307) {
+        h.check(configOnly && c.image.configDigest === REDIRECT_CONFIG_DIGEST && url === REGISTRY + "/v2/library/mysql/blobs/" + REDIRECT_CONFIG_DIGEST &&
+          authorization && headers.Authorization === authorization, "REGISTRY_INVALID");
+        acceptable(r, REGISTRY, [307], true);
+        const target = configRedirect(session, r, authorization, deadline);
+        try {
+          const budget = remaining(deadline);
+          // Fresh minimal headers. Registry authentication and cookies never cross the origin boundary.
+          const fetch = () => transport.request(target.url, { "Accept-Encoding": "identity" }, budget, target.permit);
+          const blob = kind === "mock" ? await h.bounded(session, fetch, budget) : await fetch(); h.access(session); remaining(deadline);
+          acceptable(blob, CONFIG_CDN, [200]);
+          h.check(!blob.headers.location && (blob.locationCount ?? 0) === 0, "REGISTRY_INVALID"); return blob;
+        } finally { configRedirects.delete(target.permit); }
+      }
+      acceptable(r, new URL(url).origin, [200, 401]);
+      h.check(!r.headers.location && (r.locationCount ?? 0) === 0, "REGISTRY_INVALID"); return r;
     }
     const accept = "application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json";
     const indexURL = REGISTRY + "/v2/library/mysql/manifests/9.7.2-oraclelinux9";
@@ -167,7 +221,7 @@ function createDocker(session) {
     h.check(initial.status === 200, "REGISTRY_INVALID");
     const headers = authorization ? { Accept: accept, Authorization: authorization } : { Accept: accept };
     const manifest = await get(REGISTRY + "/v2/library/mysql/manifests/" + c.image.platformDigest, headers);
-    const config = await get(REGISTRY + "/v2/library/mysql/blobs/" + c.image.configDigest, headers);
+    const config = await get(REGISTRY + "/v2/library/mysql/blobs/" + c.image.configDigest, headers, performance.now() + 10000, true);
     h.check(manifest.status === 200 && config.status === 200, "REGISTRY_INVALID");
     const responses = [initial, manifest, config], digests = [c.image.indexDigest, c.image.platformDigest, c.image.configDigest];
     const texts = responses.map((r, i) => {
