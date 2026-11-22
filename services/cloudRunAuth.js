@@ -3,8 +3,32 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { createPrivateKey } = require("node:crypto");
 const diagnostics = require("./cloudRunDiagnostics");
+const { assertRailwayStaging } = require("../config/railwayStaging");
 const AUTH_TIMEOUT_MS = 2000;
 const STAGING_CALLER_EMAIL = "wmo-render-staging-caller@gen-lang-client-0282087033.iam.gserviceaccount.com";
+const STAGING_AUDIENCE = "https://gemini-waste-classifier-staging-2lzk3t3i7q-uc.a.run.app";
+const STAGING_TAGGED_ENDPOINT = "https://a9-43847bc---gemini-waste-classifier-staging-2lzk3t3i7q-uc.a.run.app/classify-waste";
+// Pure policy shared by startup and token acquisition; never reads credentials.
+function validateCloudRunTarget(endpoint, env = process.env) {
+  const audience = new URL(env.CLOUD_RUN_AUDIENCE), target = new URL(endpoint);
+  if (audience.protocol !== "https:" || !audience.hostname.endsWith(".run.app")
+      || audience.username || audience.password || audience.search || audience.hash
+      || audience.pathname !== "/" || audience.port
+      || target.username || target.password || target.search || target.hash)
+    throw unavailable("configuration_validation");
+  if (env.WMO_DEPLOYMENT_MODE === "staging") {
+    assertRailwayStaging(env);
+    // Exact raw URLs also reject parser-normalized ports, escapes and userinfo.
+    if (![STAGING_AUDIENCE, STAGING_AUDIENCE + "/"].includes(env.CLOUD_RUN_AUDIENCE)
+        || ![STAGING_AUDIENCE + "/classify-waste", STAGING_TAGGED_ENDPOINT].includes(endpoint)
+        || env.WMO_CLASSIFY_OBJECT_PROPOSALS_ENABLED === "true" && endpoint !== STAGING_TAGGED_ENDPOINT)
+      throw unavailable("configuration_validation");
+    // A shadowed or malformed alias must not select a different destination.
+    for (const name of ["GEMINI_CLASSIFIER_URL", "CLOUD_RUN_GEMINI_CLASSIFIER_URL"])
+      if (env[name] !== undefined && env[name] !== endpoint) throw unavailable("configuration_validation");
+  } else if (target.origin !== audience.origin) throw unavailable("audience_origin_mismatch");
+  return { audience, target };
+}
 function parseCallerCredentials(raw, env) {
   if (typeof raw !== "string" || Buffer.byteLength(raw) > 32768) throw unavailable("credential_format_validation");
   let credentials;
@@ -34,13 +58,7 @@ function createCloudRunAuth({ env = process.env, readFile = fs.readFileSync,
     const abort = reason => { if (!controller.signal.aborted) { abortError = unavailable(reason); controller.abort(); } };
     const cancel = () => abort("cancelled");
     const work = async () => {
-      const audience = new URL(env.CLOUD_RUN_AUDIENCE), target = new URL(endpoint);
-      if (audience.protocol !== "https:" || !audience.hostname.endsWith(".run.app")
-          || audience.username || audience.password || audience.search || audience.hash
-          || audience.pathname !== "/" || audience.port
-          || target.username || target.password || target.search || target.hash)
-        throw unavailable("configuration_validation");
-      if (target.origin !== audience.origin) throw unavailable("audience_origin_mismatch");
+      const { audience } = validateCloudRunTarget(endpoint, env);
       const file = env.CLOUD_RUN_CALLER_CREDENTIALS_FILE;
       if (!file || !path.isAbsolute(file)) throw unavailable("configuration_validation");
       const relative = path.relative(path.resolve(__dirname, ".."), path.resolve(file));
@@ -87,4 +105,4 @@ function createCloudRunAuth({ env = process.env, readFile = fs.readFileSync,
     finally { clearTimeout(timer); signal?.removeEventListener("abort", cancel); }
   };
 }
-module.exports = { AUTH_TIMEOUT_MS, STAGING_CALLER_EMAIL, parseCallerCredentials, createCloudRunAuth, invocationHeaders: createCloudRunAuth() };
+module.exports = { AUTH_TIMEOUT_MS, STAGING_CALLER_EMAIL, validateCloudRunTarget, parseCallerCredentials, createCloudRunAuth, invocationHeaders: createCloudRunAuth() };

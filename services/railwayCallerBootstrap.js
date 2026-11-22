@@ -4,7 +4,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { privateDatabaseOptions } = require("../config/railwayStaging");
 const { databasePolicy } = require("../config/stagingSafety");
-const { parseCallerCredentials } = require("./cloudRunAuth");
+const { parseCallerCredentials, validateCloudRunTarget } = require("./cloudRunAuth");
 function unavailable() {
   const error = new Error("Staging caller credential bootstrap unavailable.");
   error.code = "STAGING_CALLER_BOOTSTRAP_UNAVAILABLE";
@@ -27,6 +27,8 @@ function prepareRuntimeCredentials({
     privateDatabaseOptions(databasePolicy(env), env);
     if (platform !== "linux" || env.STAGING_DATABASE_TRANSPORT !== "railway_private"
         || env.CLOUD_RUN_AUTH_MODE !== "iam" || env.CLOUD_RUN_CALLER_CREDENTIALS_FILE) throw unavailable();
+    // Reject destinations before consuming JSON or creating any credential file.
+    validateCloudRunTarget(env.GEMINI_CLASSIFIER_URL || env.CLOUD_RUN_GEMINI_CLASSIFIER_URL, env);
     const raw = env.CLOUD_RUN_CALLER_CREDENTIALS_JSON;
     delete env.CLOUD_RUN_CALLER_CREDENTIALS_JSON;
     parseCallerCredentials(raw, env);

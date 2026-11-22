@@ -13,7 +13,8 @@ const { prepareRuntimeCredentials } = require("../services/railwayCallerBootstra
 const { createStagingAbuseControls } = require("../middleware/stagingAbuseLimits");
 const root = path.resolve(__dirname, ".."), plain = value => JSON.parse(JSON.stringify(value));
 const TOKEN = "a".repeat(43), secret = "synthetic-private-material-never-valid";
-const audience = "https://gemini-waste-classifier-staging-example.us-central1.run.app";
+const audience = "https://gemini-waste-classifier-staging-2lzk3t3i7q-uc.a.run.app";
+const taggedEndpoint = "https://a9-43847bc---gemini-waste-classifier-staging-2lzk3t3i7q-uc.a.run.app/classify-waste";
 const caller = "wmo-render-staging-caller@gen-lang-client-0282087033.iam.gserviceaccount.com";
 const credentials = JSON.stringify({ type: "service_account", client_email: caller, private_key: secret });
 const valid = extra => ({ WMO_DEPLOYMENT_MODE: "staging", STAGING_WASTE_SCAN_ONLY: "true",
@@ -198,6 +199,45 @@ for (const file of ["config/db.js", "config/dbPromise.js"]) {
     assert.equal(created[1].uri, env.DATABASE_URL); assert.equal(created[1].ssl, undefined); assert.equal(created[1].multipleStatements, undefined);
   });
 }
+test("tagged staging startup accepts the approved destination with canonical audience", () => {
+  assert.doesNotThrow(() => assertStagingCloudRun(valid({ GEMINI_CLASSIFIER_URL: taggedEndpoint }), cloudOptions));
+});
+
+test("startup URL policy rejects unreviewed identities and destinations before credential access", () => {
+  const variants = [
+    { RAILWAY_PROJECT_ID: "wrong" }, { RAILWAY_ENVIRONMENT_ID: "wrong" }, { RAILWAY_SERVICE_ID: "f72af026-d49f-4833-b126-72de120962a5" },
+    { RAILWAY_SERVICE_ID: undefined }, { STAGING_WASTE_SCAN_ONLY: "false" }, { STAGING_ALLOW_SCHEMA_CHANGES: "true" },
+    { STAGING_DATABASE_TRANSPORT: "external_tls" }, { STAGING_DATABASE_ISOLATION_CONFIRMED: "false" }, { NODE_TLS_REJECT_UNAUTHORIZED: "0" },
+    { CLOUD_RUN_AUDIENCE: new URL(taggedEndpoint).origin }, { CLOUD_RUN_AUDIENCE: "https://gemini-waste-classifier-staging-other.run.app" },
+    { GEMINI_CLASSIFIER_URL: taggedEndpoint.replace("a9-43847bc---", "other-tag---") },
+    { GEMINI_CLASSIFIER_URL: taggedEndpoint.replace("staging-2lzk", "production-2lzk") },
+    { GEMINI_CLASSIFIER_URL: taggedEndpoint + "?override=1" }, { GEMINI_CLASSIFIER_URL: taggedEndpoint + "#override" },
+    { GEMINI_CLASSIFIER_URL: taggedEndpoint.replace("https:", "http:") },
+    { GEMINI_CLASSIFIER_URL: taggedEndpoint.replace("/classify-waste", "/discover-objects") },
+    { GEMINI_CLASSIFIER_URL: taggedEndpoint.replace(".app/", ".app:443/") },
+    { GEMINI_CLASSIFIER_URL: "not a URL" }, { CLOUD_RUN_GEMINI_CLASSIFIER_URL: audience + "/classify-waste" },
+    { CLOUD_RUN_GEMINI_CLASSIFIER_URL: "" }
+  ];
+  for (const patch of variants) {
+    let reads = 0;
+    assert.throws(() => assertStagingCloudRun(valid({ GEMINI_CLASSIFIER_URL: taggedEndpoint, ...patch }), {
+      ...cloudOptions, readFile() { reads++; return credentials; }
+    }), { code: "STAGING_CLOUD_RUN_CONFIGURATION_INVALID" });
+    assert.equal(reads, 0, JSON.stringify(patch));
+  }
+});
+
+test("startup preserves approved canonical compatibility and validates both URL aliases", () => {
+  for (const destination of [audience + "/classify-waste", taggedEndpoint]) {
+    for (const aliases of [{ GEMINI_CLASSIFIER_URL: destination },
+      { GEMINI_CLASSIFIER_URL: undefined, CLOUD_RUN_GEMINI_CLASSIFIER_URL: destination },
+      { GEMINI_CLASSIFIER_URL: destination, CLOUD_RUN_GEMINI_CLASSIFIER_URL: destination }])
+      assert.doesNotThrow(() => assertStagingCloudRun(valid(aliases), cloudOptions));
+  }
+  assert.throws(() => assertStagingCloudRun(valid({ WMO_CLASSIFY_OBJECT_PROPOSALS_ENABLED: "true",
+    CLASSIFY_OBJECT_PROPOSALS_SHARED_TOKEN: "s".repeat(32) }), cloudOptions));
+});
+
 test("IAM staging validates caller, endpoint and credentials without acquiring a token", () => {
   assert.doesNotThrow(() => assertStagingCloudRun(valid(), cloudOptions));
   assert.doesNotThrow(() => assertStagingCloudRun({ WMO_DEPLOYMENT_MODE: "production" }));
@@ -214,9 +254,9 @@ test("IAM staging validates caller, endpoint and credentials without acquiring a
 test("feature OFF remains the default; only explicit proposal ON requires its own staging token", () => {
   for (const value of [undefined, "false", "TRUE", "1", "true "])
     assert.doesNotThrow(() => assertStagingCloudRun(valid({ WMO_CLASSIFY_OBJECT_PROPOSALS_ENABLED: value }), cloudOptions));
-  assert.throws(() => assertStagingCloudRun(valid({ WMO_CLASSIFY_OBJECT_PROPOSALS_ENABLED: "true" }), cloudOptions));
-  assert.doesNotThrow(() => assertStagingCloudRun(valid({ WMO_CLASSIFY_OBJECT_PROPOSALS_ENABLED: "true", CLASSIFY_OBJECT_PROPOSALS_SHARED_TOKEN: "s".repeat(32) }), cloudOptions));
-  assert.throws(() => assertStagingCloudRun(valid({ WMO_CLASSIFY_OBJECT_PROPOSALS_ENABLED: "true", CLASSIFY_OBJECT_PROPOSALS_SHARED_TOKEN: "s".repeat(32), WHOLE_IMAGE_DISCOVERY_ENABLED: "true" }), cloudOptions));
+  assert.throws(() => assertStagingCloudRun(valid({ GEMINI_CLASSIFIER_URL: taggedEndpoint, WMO_CLASSIFY_OBJECT_PROPOSALS_ENABLED: "true" }), cloudOptions));
+  assert.doesNotThrow(() => assertStagingCloudRun(valid({ GEMINI_CLASSIFIER_URL: taggedEndpoint, WMO_CLASSIFY_OBJECT_PROPOSALS_ENABLED: "true", CLASSIFY_OBJECT_PROPOSALS_SHARED_TOKEN: "s".repeat(32) }), cloudOptions));
+  assert.throws(() => assertStagingCloudRun(valid({ GEMINI_CLASSIFIER_URL: taggedEndpoint, WMO_CLASSIFY_OBJECT_PROPOSALS_ENABLED: "true", CLASSIFY_OBJECT_PROPOSALS_SHARED_TOKEN: "s".repeat(32), WHOLE_IMAGE_DISCOVERY_ENABLED: "true" }), cloudOptions));
 });
 function bootstrapFixture(extra = {}, failing = "") {
   const events = {}, calls = [], env = valid({ CLOUD_RUN_CALLER_CREDENTIALS_FILE: undefined, CLOUD_RUN_CALLER_CREDENTIALS_JSON: credentials, ...extra });
@@ -533,4 +573,72 @@ test("HTTP non-staging retains the general app, realtime, schedulers and legacy 
   const scan = await f.request("POST", "/api/waste/analyze", { image: "c3ludGhldGlj" });
   assert.equal(scan.status, 200); assert.equal(scan.body.result.id, 0); assert.match(scan.body.result.analysisSource, /_db_save_failed$/);
   assert.equal(f.effects.socket, 1); assert.equal(f.effects.scheduler, 1); assert.ok(f.effects.modules.includes("complaintRoutes"));
+});
+
+function realStartupBootstrapFixture(extra = {}) {
+  const f = bootstrapFixture(extra), order = [], effects = { credentialReads: 0, tokenRequests: 0, databaseInitializations: 0, appInitializations: 0 };
+  const sdk = {};
+  Object.defineProperty(sdk, "google-auth-library", { get() { effects.tokenRequests++; throw Error("Startup must not request a token"); } });
+  const auth = load("services/cloudRunAuth.js", f.env, sdk);
+  const bootstrap = load("services/railwayCallerBootstrap.js", f.env, { "./cloudRunAuth": {
+    ...auth,
+    validateCloudRunTarget(endpoint, env) { order.push("validate-url"); return auth.validateCloudRunTarget(endpoint, env); },
+    parseCallerCredentials(raw, env) { order.push("parse-credentials"); return auth.parseCallerCredentials(raw, env); }
+  } });
+  const cloud = load("config/stagingCloudRun.js", f.env, { "../services/cloudRunAuth": auth });
+  const reachedApp = new Error("Reached application initialization after security preflight");
+  const stubs = {
+    dotenv: { config() {} },
+    "../config/startupMode": { isWasteScanOnly: () => isWasteScanOnly(f.env) },
+    "../services/railwayCallerBootstrap": { prepareRuntimeCredentials: () => bootstrap.prepareRuntimeCredentials(f.options) },
+    "../config/stagingCloudRun": { assertStagingCloudRun: () => cloud.assertStagingCloudRun(f.env, {
+      ...cloudOptions, readFile() { effects.credentialReads++; order.push("read-credentials"); return credentials; }
+    }) }
+  };
+  Object.defineProperty(stubs, "../middleware/stagingApiPolicy", { get() { effects.appInitializations++; throw reachedApp; } });
+  for (const name of ["../config/db", "../config/dbPromise"]) {
+    Object.defineProperty(stubs, name, { get() { effects.databaseInitializations++; throw Error("Invalid startup initialized a database"); } });
+  }
+  return { ...f, effects, order, reachedApp, run: () => load("server/server.js", f.env, stubs) };
+}
+
+test("P2 real startup rejects invalid classifier URLs before credential operations", () => {
+  for (const extra of [
+    { GEMINI_CLASSIFIER_URL: "https://unapproved.invalid/classify-waste" },
+    { GEMINI_CLASSIFIER_URL: taggedEndpoint.replace("a9-43847bc---", "wrong-tag---") },
+    { GEMINI_CLASSIFIER_URL: taggedEndpoint + "?override=1" },
+    { CLOUD_RUN_AUDIENCE: "https://unapproved.run.app" },
+    { RAILWAY_PROJECT_ID: "wrong" }, { RAILWAY_ENVIRONMENT_ID: "wrong" }
+  ]) {
+    const f = realStartupBootstrapFixture(extra);
+    assert.throws(f.run, error => error !== f.reachedApp && !error.message.includes(secret));
+    assert.deepEqual(f.calls, [], "Invalid startup performed credential filesystem operations");
+    assert.deepEqual(f.effects, { credentialReads: 0, tokenRequests: 0, databaseInitializations: 0, appInitializations: 0 });
+    assert.ok(!f.order.includes("parse-credentials"));
+  }
+});
+
+test("P2 real startup rejects conflicting classifier aliases before credential operations", () => {
+  for (const fallback of [audience + "/classify-waste", "", "not-a-url"]) {
+    const f = realStartupBootstrapFixture({ GEMINI_CLASSIFIER_URL: taggedEndpoint, CLOUD_RUN_GEMINI_CLASSIFIER_URL: fallback });
+    assert.throws(f.run, error => error !== f.reachedApp && !error.message.includes(secret));
+    assert.deepEqual(f.calls, [], "Conflicting aliases triggered credential filesystem operations");
+    assert.deepEqual(f.effects, { credentialReads: 0, tokenRequests: 0, databaseInitializations: 0, appInitializations: 0 });
+    assert.ok(!f.order.includes("parse-credentials"));
+  }
+});
+
+test("P2 real startup validates the approved URL before private bootstrap and preserves cleanup", () => {
+  for (const destination of [audience + "/classify-waste", taggedEndpoint]) {
+    const f = realStartupBootstrapFixture({ GEMINI_CLASSIFIER_URL: destination, CLOUD_RUN_GEMINI_CLASSIFIER_URL: destination });
+    assert.throws(f.run, error => error === f.reachedApp);
+    assert.deepEqual(f.order, ["validate-url", "parse-credentials", "read-credentials"]);
+    assert.equal(f.calls.filter(c => c[0] === "write").length, 1);
+    assert.equal(f.calls.find(c => c[0] === "chmod")[1], 0o700);
+    assert.deepEqual(f.calls.find(c => c[0] === "open"), ["open", "wx", 0o600]);
+    assert.deepEqual(f.effects, { credentialReads: 1, tokenRequests: 0, databaseInitializations: 0, appInitializations: 1 });
+    f.events.exit();
+    assert.equal(f.calls.filter(c => c[0] === "unlink").length, 1);
+    assert.equal(f.calls.filter(c => c[0] === "rmdir").length, 1);
+  }
 });

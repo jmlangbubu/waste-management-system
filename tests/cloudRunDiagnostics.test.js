@@ -66,7 +66,7 @@ test("in-flight cancellation is preserved and no late token is forwarded", async
 });
 test("configuration failures and staging caller identity checks remain fail-closed", async () => {
   for (const patch of [{ CLOUD_RUN_AUTH_MODE: "IAM" }, { CLOUD_RUN_AUDIENCE: endpoint }, { CLOUD_RUN_CALLER_CREDENTIALS_FILE: undefined }, { CLOUD_RUN_CALLER_CREDENTIALS_FILE: "relative.json" }]) await rejectStage(fixture({ env: patch }), "configuration_validation");
-  await rejectStage(fixture({ env: { WMO_DEPLOYMENT_MODE: "staging" } }), "credential_format_validation");
+  await rejectStage(fixture({ env: { WMO_DEPLOYMENT_MODE: "staging" } }), "configuration_validation");
 });
 test("only privately tagged fixed metadata may reach the log formatter", () => {
   const unsafe = secretError(); assert.deepEqual(diagnostics.diagnostic(unsafe, "classifier_network_transport"), { stage: "classifier_network_transport", code: "CLASSIFIER_NETWORK_ERROR" });
