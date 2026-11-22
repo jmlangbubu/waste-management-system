@@ -843,6 +843,8 @@ const PROPOSAL_DUPLICATE_SIZE = 0.80;            // min/max width and height
 const PROPOSAL_DUPLICATE_CONTAINED_SIZE = 0.90;  // when one box contains the other
 const PROPOSAL_HAZARD_OVERLAP = 0.50;            // intersection / smaller area
 const PROPOSAL_GEOMETRY_TOLERANCE = 1e-9;
+// P-9: the only value the optional item-level hazardNotice ever carries. Clients own the wording.
+const PROPOSAL_HAZARD_NOTICE_CODE = "possible_hazard_confirmation_required";
 const ORDINARY_CATEGORIES = ["Recyclable", "Residual", "Biodegradable"];
 
 function regionMetrics(a, b) {
@@ -1288,7 +1290,7 @@ async function analyzeWasteWithObjectProposals(input, context) {
   let proposals;
   try { proposals = normalizeObjectProposals(context.capture, context.raw); }
   catch (_) { proposalDiagnostics({ status: "rejected" }); return legacyResult(); }
-  let detectedItems, reconciled;
+  let detectedItems, reconciled, noticed = new Set();
   const discovery = require("./wholeImageRecognitionService");
   try {
     // A9 (owner policy D-A / D-B / D-C): the base is Candidate H's own tiers with the P-2c matcher. A fixed, bounded list
@@ -1401,6 +1403,22 @@ async function analyzeWasteWithObjectProposals(input, context) {
       for (const field of ["guidance", "modelKey", "modelHotspots", "explanation", "action", "warning"]) delete copy[field];
       return copy;
     });
+    // P-9 hazard notice, chosen on the final cards after the hold. A localized hazard claim marks its own retained
+    // card; a claim without one marks every Unknown or Special Waste card covering it (the coverState rule above).
+    // The notice is one fixed code: no proposal label, provider text, confidence or category; nothing else on the
+    // card changes. A marked card must be non-actionable: an ordinary own card falls back to the feature-OFF result.
+    // Claims that no card covers stay unmarked (they are not attributed to an unrelated card).
+    const retained = new Set(detectedItems.map((item) => item.itemId));
+    for (const claim of reconciled.localizedHazards) {
+      if (retained.has(claim.itemId)) { noticed.add(claim.itemId); continue; }
+      for (const item of detectedItems) {
+        if (item.boundingBox && safeCard(item) && coversClaim(item.boundingBox, claim.boundingBox)) noticed.add(item.itemId);
+      }
+    }
+    if (detectedItems.some((item) => noticed.has(item.itemId) && !safeCard(item))) {
+      proposalDiagnostics({ status: "merge_failed" });
+      return legacyResult();
+    }
   } catch (_) {
     proposalDiagnostics({ status: "merge_failed" });
     return legacyResult();
@@ -1421,6 +1439,10 @@ async function analyzeWasteWithObjectProposals(input, context) {
     geminiOwned: detectedItems.filter((item) => item.analysisSource === "gemini_whole_image").length,
     alignedVisionOwners: visionOwned.filter((item) => !!discovery.alignedIdentity(item, context.capture.captureId)).length,
     finalUnknown: detectedItems.filter((item) => item.category === "Unknown").length, primaryLink });
+  // P-9: the notice is attached last, on request-local copies (as withDisplayNames makes), so the primary check and
+  // the diagnostics above read exactly the P-8 cards and their capture-bound evidence.
+  if (noticed.size) detectedItems = detectedItems.map((item) => (noticed.has(item.itemId)
+    ? { ...item, hazardNotice: { code: PROPOSAL_HAZARD_NOTICE_CODE } } : item));
   return withDisplayNames({ ...primary, detectedItems, scanSummary: buildScanSummary(detectedItems) });
 }
 
