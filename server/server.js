@@ -165,6 +165,12 @@ app.use(
   })
 );
 
+// Private, exact legacy mappings are consulted only after local uploads miss.
+app.use(
+  "/uploads/complaints",
+  require("../middleware/legacyComplaintImageRedirect").createLegacyComplaintImageRedirect({ env: process.env })
+);
+
 app.use(express.static(FRONTEND_DIR));
 
 /* =========================
