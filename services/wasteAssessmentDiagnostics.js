@@ -94,5 +94,27 @@ function logAssessment(result,totalItems,logger=console,physicalItems=[]) {
  if(reasons)logger.info(`[WasteScanReasons] ${REASONS.map(reason=>`${reason}=${reasons[reason]}`).join(" ")}`);
  return s;
 }
+// Optional classify-call object proposals: fixed vocabulary and bounded counts only.
+// Never logs labels, coordinates, capture/request IDs, images, users or provider text.
+const PROPOSAL_STATUSES=new Set(["accepted","absent","rejected","merge_failed","primary_unavailable","ineligible"]);
+const PROPOSAL_INELIGIBLE=new Set(["capability_missing","discovery_mode","token_unconfigured","classifier_unconfigured",
+ "classifier_insecure","image"]);
+const PROPOSAL_LINKS=new Set(["linked","none","unresolved","ambiguous","identity_conflict","category_conflict",
+ "safety_conflict","not_evaluated"]);
+function logObjectProposals(summary,logger=console) {
+ try {
+  const status=PROPOSAL_STATUSES.has(summary?.status)?summary.status:"rejected";
+  if(status==="ineligible") {
+   logger.info(`[WasteScanProposals] status=ineligible reason=${PROPOSAL_INELIGIBLE.has(summary?.reason)?summary.reason:"other"}`);
+   return;
+  }
+  if(status!=="accepted") {logger.info(`[WasteScanProposals] status=${status}`);return;}
+  const counts=["proposals","localized","physical","visionOwned","geminiOwned","alignedVisionOwners","finalUnknown"]
+   .map(key=>summary?.[key]);
+  if(!counts.every(n=>Number.isSafeInteger(n)&&n>=0&&n<=8))return;
+  const link=PROPOSAL_LINKS.has(summary?.primaryLink)?summary.primaryLink:"not_evaluated";
+  logger.info(`[WasteScanProposals] status=accepted proposals=${counts[0]} localized=${counts[1]} physical=${counts[2]} vision_owned=${counts[3]} gemini_owned=${counts[4]} aligned_vision_owners=${counts[5]} final_unknown=${counts[6]} primary_link=${link}`);
+ } catch (_) { /* A diagnostic failure cannot fail the scan. */ }
+}
 module.exports={summarizeAssessment,logAssessment,createAssessmentReasons,recordAssessmentReasons,assessmentReasonCounts,
- discoveryFailureStatus,logDiscovery};
+ discoveryFailureStatus,logDiscovery,logObjectProposals};
