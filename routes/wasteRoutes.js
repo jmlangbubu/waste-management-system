@@ -666,24 +666,60 @@ router.get("/analytics/barangay/monthly", (req, res) => {
 
 
 /* =========================================
+   ANALYZE REJECTION DIAGNOSTICS
+   Privacy-safe, fixed reason codes for the EXISTING rejection decisions only.
+   Never includes request data, images, labels, identifiers, headers or bodies.
+   Does not change any status code, message, persistence or provider call.
+========================================= */
+const ANALYZE_REJECTION_REASONS = new Set([
+  "IMAGE_REQUIRED",
+  "ANALYSIS_UNAVAILABLE",
+  "RESULT_INVALID",
+  "UNKNOWN_PRIMARY_REQUIRES_CAPABILITY",
+  "UNKNOWN_ITEM_REQUIRES_CAPABILITY",
+  "ITEM_CATEGORY_INVALID",
+  "UNKNOWN_PRIMARY_WITHOUT_ITEMS",
+  "ASSESSMENT_INVALID",
+  "ASSESSMENT_CONTRACT_MISMATCH",
+  "ROUTE_FAILED"
+]);
+
+function logAnalyzeRejection(reason, status, scanCapability) {
+  try {
+    const code = ANALYZE_REJECTION_REASONS.has(reason) ? reason : "UNSPECIFIED";
+    console.warn(`[WasteScanRejection] reason=${code} status=${status === 400 ? 400 : 503} scan_capability=${scanCapability === true}`);
+  } catch (_) { /* Diagnostics never change the response. */ }
+}
+
+/* =========================================
    AI ANALYZE
 ========================================= */
 router.post("/analyze", (req, res, next) => {
   if (process.env.WHOLE_IMAGE_DISCOVERY_ENABLED !== "true" || !req.body?.objectDiscovery) return next();
   return requireMobileSession(req, res, next);
+}, (req, res, next) => {
+  if (process.env.WMO_CLASSIFY_OBJECT_PROPOSALS_ENABLED !== "true") return next();
+  return require("../middleware/objectProposalCanary").resolveObjectProposalSession(req, res, next);
 }, async (req, res) => {
   const discoveryController = new AbortController();
   const stopped = () => req.aborted || res.destroyed || res.headersSent || res.writableEnded
     || discoveryController.signal.aborted;
-  const fail = (status = 503, message = "Waste analysis could not be completed. Please scan again or ask WMO to confirm the item.") => {
+  // Diagnostic only: protocol header presence, never an authentication signal.
+  let scanCapability = false;
+  const unavailableMessage = "Waste analysis could not be completed. Please scan again or ask WMO to confirm the item.";
+  const fail = (status = 503, message = unavailableMessage, reason = "UNSPECIFIED") => {
     if (stopped()) return;
+    logAnalyzeRejection(reason, status, scanCapability);
     discoveryController.abort();
     return res.status(status).json({ success: false, message });
   };
+  // Identical 503 response to fail(); only the private diagnostic reason differs.
+  const rejectScan = reason => fail(503, unavailableMessage, reason);
   try {
     if (stopped()) return;
     // Protocol negotiation only; never an authentication/authorization signal.
     const compatibleScan = req.headers?.["x-wmo-scan-capability"] === "waste-scan-independent-category-v2";
+    scanCapability = compatibleScan;
     const { image, detectedObject, mlKitLabels } = req.body || {};
 
     console.log("---- /api/waste/analyze START ----");
@@ -691,10 +727,11 @@ router.post("/analyze", (req, res, next) => {
     console.log("hasImage:", !!image);
     console.log("imageLength:", image ? image.length : 0);
     console.log("mlKitLabelCount:", Array.isArray(mlKitLabels) ? mlKitLabels.length : 0);
+    console.log("hasScanCapability:", compatibleScan);
 
     if (!image || typeof image !== "string" || image.trim() === "") {
       console.error("Analyze error: image is missing");
-      return fail(400, "Image is required");
+      return fail(400, "Image is required", "IMAGE_REQUIRED");
     }
 
     let analysisResult;
@@ -710,10 +747,10 @@ router.post("/analyze", (req, res, next) => {
         mlKitLabels: Array.isArray(mlKitLabels) ? mlKitLabels : [],
         objectDiscovery: req.body.objectDiscovery, principal: req.mobileUser?.id, signal: discoveryController.signal,
         independentCategoryV2: compatibleScan
-      });
+      }, { proposalSession: req.objectProposalSession });
     } catch (_) {
       console.error("[SERVICE] Waste analysis unavailable.");
-      return fail();
+      return rejectScan("ANALYSIS_UNAVAILABLE");
     }
 
     if (stopped()) return;
@@ -721,29 +758,33 @@ router.post("/analyze", (req, res, next) => {
         || analysisResult.success === false
         || !["Unknown", "Biodegradable", "Recyclable", "Residual", "Special Waste"].includes(analysisResult.category)) {
       console.error("[API] Waste analysis result invalid.");
-      return fail();
+      return rejectScan("RESULT_INVALID");
     }
 
     // Legacy Android View Details renders an Unknown primary as Residual.
     // Fail closed for every client until compatible clients can be identified.
-    if (analysisResult.category === "Unknown" && !compatibleScan) return fail();
+    if (analysisResult.category === "Unknown" && !compatibleScan) return rejectScan("UNKNOWN_PRIMARY_REQUIRES_CAPABILITY");
 
     // No authenticated client-version signal distinguishes legacy V7, whose
     // secondary learning/history paths can render Unknown as Residual. Do not
     // discard objects or transfer another object's category to make it succeed.
     const owners = Array.isArray(analysisResult.detectedItems) ? analysisResult.detectedItems : [];
     const validCategory = value => isSupportedWasteCategory(value) || compatibleScan && value === "Unknown";
-    if (owners.some(item => !item || !validCategory(item.category))) return fail();
-    if (analysisResult.category === "Unknown" && owners.length === 0) return fail();
+    const invalidOwners = owners.filter(item => !item || !validCategory(item.category));
+    if (invalidOwners.length) {
+      return rejectScan(!compatibleScan && invalidOwners.every(item => item && item.category === "Unknown")
+        ? "UNKNOWN_ITEM_REQUIRES_CAPABILITY" : "ITEM_CATEGORY_INVALID");
+    }
+    if (analysisResult.category === "Unknown" && owners.length === 0) return rejectScan("UNKNOWN_PRIMARY_WITHOUT_ITEMS");
     if (analysisResult.categoryAssessments) {
       const assessments = analysisResult.categoryAssessments.items;
       if (!Array.isArray(assessments)
-          || assessments.some(item => !item || !validCategory(item.category))) return fail();
+          || assessments.some(item => !item || !validCategory(item.category))) return rejectScan("ASSESSMENT_INVALID");
       if (compatibleScan) {
         const ids = new Set(), byId = new Map(owners.map(item => [item.itemId,item]));
         if (byId.size !== owners.length || analysisResult.categoryAssessments.schemaVersion !== 1
             || !["not_requested","complete","unavailable"].includes(analysisResult.categoryAssessments.aiStatus)
-            || analysisResult.categoryAssessments.captureId !== req.body.objectDiscovery?.captureId) return fail();
+            || analysisResult.categoryAssessments.captureId !== req.body.objectDiscovery?.captureId) return rejectScan("ASSESSMENT_CONTRACT_MISMATCH");
         for (const row of assessments) {
           const owner = byId.get(row.itemId);
           if (!owner || ids.has(row.itemId) || row.requiresConfirmation !== true
@@ -752,7 +793,7 @@ router.post("/analyze", (req, res, next) => {
               || row.assessmentSource === "reviewed_identity_rule" && (owner.analysisSource !== "gemini_whole_image" || row.category === "Unknown")
               || row.assessmentSource === "insufficient_evidence" && (owner.analysisSource !== "gemini_whole_image" || row.category !== "Unknown")
               || row.assessmentSource === "existing_category" && (owner.analysisSource === "gemini_whole_image" || row.category !== owner.category)
-              || owner.category !== "Unknown" && owner.category !== row.category) return fail();
+              || owner.category !== "Unknown" && owner.category !== row.category) return rejectScan("ASSESSMENT_CONTRACT_MISMATCH");
           ids.add(row.itemId);
         }
       }
@@ -883,7 +924,7 @@ router.post("/analyze", (req, res, next) => {
     });
   } catch (_) {
     console.error("[API] Waste analysis failed.");
-    return fail();
+    return rejectScan("ROUTE_FAILED");
   }
 });
 
