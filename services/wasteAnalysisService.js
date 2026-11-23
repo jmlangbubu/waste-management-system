@@ -27,8 +27,17 @@ function overlapRatio(a, b) {
 
 // Provider aliases describe the same bottle/container silhouette, not its material.
 const GENERIC_CONTAINER_NAMES = new Set(["bottle", "bottles", "jar", "jars", "container", "can", "bottled and jarred packaged goods"]);
+// Neutral observations carry no more physical specificity than a localized noun.
+const NEUTRAL_OBJECT_NAMES = new Set(["item", "object", "household item", "household object"]);
 // Private only: a normalization conflict must survive the later merge/assessment.
 const normalizationConflicts = new WeakSet();
+function holdNormalizedCategory(item) {
+  item.category = "Unknown"; item.requiresConfirmation = true;
+  item.modelKey = ""; item.modelHotspots = []; item.guidance = {};
+  for (const field of ["explanation", "action", "warning"]) delete item[field];
+  normalizationConflicts.add(item);
+  return item;
+}
 function identityFamily(name) {
   if (name === "bottled and jarred packaged goods") return "packaged-container";
   if (/\bbottles?\b/.test(name)) return "bottle";
@@ -70,9 +79,9 @@ function samePhysicalObject(a, b) {
     && Math.abs((x.left + x.right - y.left - y.right) / 2) <= .08 * Math.min(x.right - x.left, y.right - y.left)
     && Math.abs((x.top + x.bottom - y.top - y.bottom) / 2) <= .08 * Math.min(x.bottom - x.top, y.bottom - y.top);
 }
-// Proposal path only (P-2): samePhysicalObject compares centre offsets without a tolerance, so at an exact
-// boundary it can answer differently for (a, b) and (b, a). The proposal reconciler and its merge use this
-// argument-order-independent form. Thresholds are unchanged; feature-off and discovery keep the original.
+// samePhysicalObject can round differently by argument order at an exact boundary.
+// Normalization and the proposal reconciler use this symmetric form. The public
+// matcher, discovery matching and all numerical thresholds remain unchanged.
 function sameObjectEitherOrder(a, b) {
   return samePhysicalObject(a, b) || samePhysicalObject(b, a);
 }
@@ -129,26 +138,36 @@ function normalizeDetectedItems(objects, analysisSource, allowClassifierCategory
   });
   // Safety and supported specificity precede confidence; geometry decides duplication.
   candidates.sort((a, b) => Number(b.category === "Special Waste") - Number(a.category === "Special Waste")
+    || Number(NEUTRAL_OBJECT_NAMES.has(a.canonicalItem)) - Number(NEUTRAL_OBJECT_NAMES.has(b.canonicalItem))
     || Number(GENERIC_CONTAINER_NAMES.has(a.canonicalItem)) - Number(GENERIC_CONTAINER_NAMES.has(b.canonicalItem))
     || b.confidence - a.confidence
     || b.canonicalItem.split(" ").length - a.canonicalItem.split(" ").length
     || a.index - b.index);
   const retained = [];
+  const corresponds = (a, b) => a === b || sameObjectEitherOrder(a, b);
+  // Closed neighborhoods must agree: a bridging observation cannot collapse
+  // separate regions merely because it was processed first. This also permits
+  // a complete group of mutually matching duplicates to collapse only once.
+  const uniqueCorrespondence = (a, b) => corresponds(a, b)
+    && candidates.every(peer => corresponds(peer, a) === corresponds(peer, b));
   for (const candidate of candidates) {
-    const duplicate = retained.findIndex((other) => samePhysicalObject(candidate, other));
+    const matches = retained.filter((other) => uniqueCorrespondence(candidate, other));
+    const duplicate = matches.length === 1 ? retained.indexOf(matches[0]) : -1;
     if (duplicate !== -1) {
       const other = retained[duplicate];
       // Prefer an observed physical container over an incompatible contents label,
       // without inferring material/category or replacing established safety evidence.
       const container = (item) => /\b(bottles?|jars?|containers?|cans?|cups?|box(?:es)?|bags?)\b/.test(item.canonicalItem);
+      const categoryConflict = isValidCategory(candidate.category) && isValidCategory(other.category)
+        && candidate.category !== other.category;
       if (candidate.category !== "Special Waste" && other.category !== "Special Waste"
-          && !similarObjectNames(candidate.canonicalItem,other.canonicalItem)
-          && container(candidate) !== container(other)) {
-        const survivor=container(candidate)?candidate:other;
-        survivor.category="Unknown";survivor.requiresConfirmation=true;
-        survivor.modelKey="";survivor.modelHotspots=[];survivor.guidance={};
-        for(const field of ["explanation","action","warning"])delete survivor[field];
-        normalizationConflicts.add(survivor);retained[duplicate]=survivor;
+          && (categoryConflict || (!similarObjectNames(candidate.canonicalItem,other.canonicalItem)
+          && container(candidate) !== container(other)))) {
+        // A unique region match grants no authority to reconcile opposing streams.
+        const survivor = NEUTRAL_OBJECT_NAMES.has(other.canonicalItem) && !NEUTRAL_OBJECT_NAMES.has(candidate.canonicalItem)
+          ? candidate : NEUTRAL_OBJECT_NAMES.has(candidate.canonicalItem) && !NEUTRAL_OBJECT_NAMES.has(other.canonicalItem)
+          ? other : container(candidate) && !container(other) ? candidate : other;
+        retained[duplicate] = holdNormalizedCategory(survivor);
         continue;
       }
       if (candidate.category === "Unknown" && other.category === "Unknown"
@@ -157,6 +176,12 @@ function normalizeDetectedItems(objects, analysisSource, allowClassifierCategory
         retained[duplicate].requiresConfirmation = true;
       }
       continue;
+    }
+    // An ambiguous hazardous region remains a separate card. Its competing
+    // ordinary regions retain identity/geometry, but gain no disposal authority.
+    if (candidate.category !== "Special Waste" && retained.some(other =>
+        other.category === "Special Waste" && corresponds(candidate, other))) {
+      holdNormalizedCategory(candidate);
     }
     retained.push(candidate);
     if (retained.length === MAX_DETECTED_ITEMS) break;
