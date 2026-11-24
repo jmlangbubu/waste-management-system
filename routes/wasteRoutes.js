@@ -696,10 +696,18 @@ function logAnalyzeRejection(reason, status, scanCapability) {
 ========================================= */
 router.post("/analyze", (req, res, next) => {
   if (process.env.WHOLE_IMAGE_DISCOVERY_ENABLED !== "true" || !req.body?.objectDiscovery) return next();
-  return requireMobileSession(req, res, next);
+  if (typeof process === "undefined" || process?.env?.WMO_BOTTLE_DIAGNOSTIC_ENABLED !== "true") return requireMobileSession(req, res, next);
+  return requireMobileSession(req, res, () => {
+    try { require("../services/wasteBottleDiagnostic").rememberVerifiedRequest(req); }
+    catch (_) { /* Missing trusted handoff disables diagnostics only. */ }
+    return next();
+  });
 }, (req, res, next) => {
   if (process.env.WMO_CLASSIFY_OBJECT_PROPOSALS_ENABLED !== "true") return next();
   return require("../middleware/objectProposalCanary").resolveObjectProposalSession(req, res, next);
+}, (req, res, next) => {
+  if (typeof process === "undefined" || process?.env?.WMO_BOTTLE_DIAGNOSTIC_ENABLED !== "true") return next();
+  return require("../services/wasteBottleDiagnostic").middleware(req, res, next);
 }, async (req, res) => {
   const discoveryController = new AbortController();
   const stopped = () => req.aborted || res.destroyed || res.headersSent || res.writableEnded
@@ -799,6 +807,11 @@ router.post("/analyze", (req, res, next) => {
       }
     }
 
+    // Observe only the verified result, and never mutate the response.
+    if (typeof process !== "undefined" && process?.env?.WMO_BOTTLE_DIAGNOSTIC_ENABLED === "true") {
+      try { require("../services/wasteBottleDiagnostic").finish(analysisResult); }
+      catch (_) { /* Observation must not affect persistence or response. */ }
+    }
     const category = analysisResult.category;
     const itemName = analysisResult.itemName || category;
     const explanation =

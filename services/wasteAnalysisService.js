@@ -15,6 +15,16 @@ const {
 
 const MIN_OBJECT_CONFIDENCE = 0.40;
 const MAX_DETECTED_ITEMS = 8;
+// Lazy and strictly feature-gated. Feature-OFF retains the original dependencies,
+// request behavior, provider budget, response schema and evaluation order.
+function captureBottleDiagnostic(stage, providerSource, payload) {
+  if (typeof process === "undefined" || process?.env?.WMO_BOTTLE_DIAGNOSTIC_ENABLED !== "true") return;
+  try {
+    const observer = require("./wasteBottleDiagnostic");
+    if (stage === "primary") observer.recordPrimary(providerSource, payload);
+    else observer.recordItems(stage, providerSource, payload);
+  } catch (_) { /* Best effort; never alter classification. */ }
+}
 // Request-local ownership, never serialized into responses or scan history.
 const primaryOwners = new WeakMap();
 
@@ -101,6 +111,7 @@ function createMergeMatcher(owners) {
 
 function normalizeDetectedItems(objects, analysisSource, allowClassifierCategory = false) {
   if (!Array.isArray(objects)) return [];
+  captureBottleDiagnostic("preNormalization", analysisSource, objects);
   const candidates = objects.flatMap((object, index) => {
     if (!object || typeof object !== "object") return [];
     const name = typeof (object.itemName || object.name) === "string"
@@ -186,11 +197,13 @@ function normalizeDetectedItems(objects, analysisSource, allowClassifierCategory
     retained.push(candidate);
     if (retained.length === MAX_DETECTED_ITEMS) break;
   }
-  return retained.sort((a, b) => a.index - b.index).map((candidate, position) => {
+  const normalizedItems = retained.sort((a, b) => a.index - b.index).map((candidate, position) => {
     const {index,...item}=candidate,owner={itemId:`item_${position+1}`,...item};
     if(normalizationConflicts.has(candidate))normalizationConflicts.add(owner);
     return owner;
   });
+  captureBottleDiagnostic("normalized", analysisSource, normalizedItems);
+  return normalizedItems;
 }
 
 function buildScanSummary(detectedItems = []) {
@@ -641,6 +654,7 @@ function buildAiResultFromClassifier(classifierResult, sourceFallback) {
   }
 
   const result = classifierResult.result;
+  captureBottleDiagnostic("primary", classifierResult.source || sourceFallback, result);
   const category = normalizeCategory(result.category);
 
   if (!isValidCategory(category)) {
