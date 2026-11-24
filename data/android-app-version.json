@@ -1,20 +1,20 @@
 {
-    "latestVersionCode":  4,
-    "latestVersionName":  "1.0.3",
+    "latestVersionCode":  14,
+    "latestVersionName":  "1.0.4",
     "minimumSupportedVersionCode":  1,
     "downloadUrl":  "https://wastegensan.com/download/app",
-    "apkUrl":  "https://github.com/jmlangbubu/WMO-Mobile-Releases/releases/download/v1.0.3/WMO-Mobile-v1.0.3.apk",
+    "apkUrl":  "https://github.com/jmlangbubu/WMO-Mobile-Releases/releases/download/v1.0.4/WMO-Mobile-v1.0.4.apk",
     "releaseNotes":  [
-                         "Premium Barangay dashboard",
-                         "Premium Enforcer dashboard",
-                         "Improved Enforcer Assignments, QR Scanner, and Profile UI",
-                         "Updated Barangay navigation and dashboard summaries",
-                         "Improved mobile responsiveness and visual consistency"
+                         "Improved Waste Scan experience.",
+                         "Enhanced Memory Match educational game.",
+                         "Multi-item Sorting Challenge with scoring and learning feedback.",
+                         "Improved email verification interface.",
+                         "Improved mobile usability."
                      ],
-    "publishedAt":  "2026-10-05T07:33:31Z",
+    "publishedAt":  "2026-11-24T21:26:43Z",
     "apk":  {
                 "packageName":  "com.example.aiwastemanagementsystem",
-                "fileSizeBytes":  62505903,
-                "sha256":  "A3FB1494BAF0BB16054411F877EC7D2B479E9A871A0483927CC76BD95A6E244E"
+                "fileSizeBytes":  101953150,
+                "sha256":  "7B6CB88996AAE9353029E16CFDA082FBD95A13B261F1D0A07E0755D054D2BCCF"
             }
 }
