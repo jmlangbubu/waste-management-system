@@ -25,21 +25,21 @@ async function requestVersion(router) {
   }
 }
 
-test("public version endpoint returns only approved v1.0.3 metadata without login", async () => {
+test("public version endpoint returns only approved manifest metadata without login", async () => {
   const response = await requestVersion(createAppVersionRouter());
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type"), /application\/json/);
   assert.equal(response.headers.get("cache-control"), "no-store");
   const body = await response.json();
   assert.deepEqual(body, manifest);
-  assert.equal(body.latestVersionCode, 4);
-  assert.equal(body.latestVersionName, "1.0.3");
+  assert.equal(body.latestVersionCode, manifest.latestVersionCode);
+  assert.equal(body.latestVersionName, manifest.latestVersionName);
   assert.equal(body.minimumSupportedVersionCode, 1);
-  assert.equal(body.apkUrl,
-    "https://github.com/jmlangbubu/WMO-Mobile-Releases/releases/download/v1.0.3/WMO-Mobile-v1.0.3.apk");
+  assert.equal(approvedApkUrl(body.apkUrl), true);
   assert.equal(body.apkUrl, manifest.apkUrl);
   assert.match(body.downloadUrl, /^https:\/\/wastegensan\.com\//);
-  assert.equal(body.apk.fileSizeBytes, 62505903);
+  assert.equal(body.apk.fileSizeBytes, manifest.apk.fileSizeBytes);
+  assert.equal(body.apk.sha256, manifest.apk.sha256);
   assert.match(body.apk.sha256, /^[A-F0-9]{64}$/);
   assert.deepEqual(Object.keys(body).sort(), [
     "apk", "apkUrl", "downloadUrl", "latestVersionCode", "latestVersionName",

@@ -76,22 +76,25 @@ test("download page and landing entry are wired to public routes only", () => {
   assert.doesNotMatch(page, /password|keystore|\.jks|private.key/i);
 });
 
-test("null APK URL keeps download disabled and shows honest release metadata", async () => {
+test("null APK URL keeps download disabled and renders the manifest metadata", async () => {
   const { nodes, ready } = renderWith({
-    ok: true, json: async () => ({ ...manifest, apkUrl: null })
+    ok: true, json: async () => structuredClone({ ...manifest, apkUrl: null })
   });
   await ready();
-  assert.equal(nodes.get("versionName").textContent, "1.0.3");
-  assert.equal(nodes.get("heroVersionName").textContent, "1.0.3");
-  assert.equal(nodes.get("fileVersion").textContent, "1.0.3 (code 4)");
-  assert.equal(nodes.get("fileSize").textContent, "62,505,903 bytes");
-  assert.equal(nodes.get("checksum").textContent, manifest.apk.sha256);
+  assert.equal(nodes.get("versionName").textContent, manifest.latestVersionName);
+  assert.equal(nodes.get("heroVersionName").textContent, manifest.latestVersionName);
+  assert.equal(nodes.get("fileVersion").textContent,
+    `${manifest.latestVersionName} (code ${manifest.latestVersionCode})`);
+  assert.equal(nodes.get("fileSize").textContent,
+    `${new Intl.NumberFormat("en-US").format(manifest.apk.fileSizeBytes)} bytes`);
+  assert.equal(nodes.get("packageName").textContent, manifest.apk.packageName);
+  assert.equal(nodes.get("checksum").textContent, manifest.apk.sha256.toUpperCase());
   assert.equal(nodes.get("downloadPending").hidden, false);
   assert.equal(nodes.get("downloadPending").textContent, "APK Publishing in Progress");
   assert.equal(nodes.get("downloadLink").hidden, true);
   assert.equal(nodes.get("downloadLink").href, undefined);
   assertDownloadActions(nodes, null, "APK Publishing in Progress");
-  assert.equal(nodes.get("releaseNotes").children.length, manifest.releaseNotes.length);
+  assert.deepEqual(nodes.get("releaseNotes").children.map((item) => item.textContent), manifest.releaseNotes);
 });
 
 test("API failure clears version details and leaves no download link", async () => {
@@ -108,14 +111,14 @@ test("API failure clears version details and leaves no download link", async () 
 
 test("verified approved asset URL activates the link but unsafe URLs never do", async () => {
   const approved = manifest.apkUrl;
-  const good = renderWith({ ok: true, json: async () => manifest });
+  const good = renderWith({ ok: true, json: async () => structuredClone(manifest) });
   await good.ready();
   assert.equal(good.nodes.get("downloadLink").href, approved);
   assert.equal(good.nodes.get("downloadLink").hidden, false);
   assert.equal(good.nodes.get("downloadPending").hidden, true);
   assertDownloadActions(good.nodes, approved);
 
-  const bad = renderWith({ ok: true, json: async () => ({
+  const bad = renderWith({ ok: true, json: async () => structuredClone({
     ...manifest, apkUrl: "https://evil.example/app.apk"
   }) });
   await bad.ready();
