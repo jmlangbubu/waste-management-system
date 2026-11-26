@@ -723,7 +723,7 @@
                     <th>Purpose</th>
                     <th>Date</th>
                     <th>Status</th>
-                    <th>Assigned Personnel</th>
+                    <th title="Latest actual approval under the updated workflow; legacy assignment values may be unverified.">Assigned Personnel</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
@@ -2117,7 +2117,7 @@
                   <th>Purpose</th>
                   <th>Date</th>
                   <th>Status</th>
-                  <th>Assigned Personnel</th>
+                  <th title="Latest actual approval under the updated workflow; legacy assignment values may be unverified.">Assigned Personnel</th>
                   <th>Updated At</th>
                 </tr>
               </thead>
@@ -2153,6 +2153,7 @@
 
     <div class="form-group">
       <label for="rescheduleAppointmentTime">New Appointment Time</label>
+      <p id="rescheduleAvailabilityStatus" role="status" aria-live="polite">Select a date to check availability.</p>
       <select id="rescheduleAppointmentTime">
         <option value="">Select time</option>
         <option value="09:00">9:00 AM</option>
@@ -3669,6 +3670,7 @@
 <script src="js/admin/admin-dashboard-analytics.js"></script>
 <script src="js/admin/admin-dashboard-palette.js"></script>
 <script src="js/admin/admin-complaints.js"></script>
+<script src="js/appointment-slots.js"></script>
 <script src="js/admin/admin-appointments.js"></script>
 <script src="js/admin/admin-orientation.js"></script>
 <script src="js/admin/admin-dispatch.js"></script>

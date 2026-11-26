@@ -148,6 +148,48 @@ function setupAppointmentForm() {
   const appointmentTimeInput = document.getElementById("appointmentTime");
 
   let appointmentModalInstance = null;
+  let bookingPicker = null, inFlight = false, checkingReview = false, reviewedPayload = null, bookingAttempt = null;
+  const pendingRequestStorageKey = "wmo_appointment_pending_request_key";
+  try {
+    const savedKey = window.sessionStorage?.getItem(pendingRequestStorageKey);
+    if (savedKey && /^[A-Za-z0-9_-]{20,128}$/.test(savedKey)) bookingAttempt = { key: savedKey, payload: null, restored: true };
+  } catch (_) { /* In-memory retry protection remains when browser storage is unavailable. */ }
+  function clearBookingAttempt() {
+    bookingAttempt = null;
+    try { window.sessionStorage?.removeItem(pendingRequestStorageKey); } catch (_) { /* No citizen details are stored. */ }
+  }
+  const review = document.getElementById("appointmentReview");
+  const editView = document.getElementById("appointmentEditView");
+  const modalBody = document.getElementById("appointmentModalBody");
+  const backBtn = document.getElementById("editAppointmentReview");
+  const cancelBtn = document.getElementById("cancelAppointmentRequest");
+  const refreshControl = document.getElementById("retryAppointmentAvailability");
+  let editScrollTop = 0, editFocus = purposeSelect;
+  function setReviewView(isReview, { focus = false } = {}) {
+    if (isReview && review?.hidden) editScrollTop = modalBody?.scrollTop || 0;
+    if (editView) { editView.hidden = isReview; editView.inert = isReview; }
+    if (review) review.hidden = !isReview;
+    if (backBtn) backBtn.hidden = !isReview;
+    if (cancelBtn) cancelBtn.hidden = isReview;
+    const activeStep = isReview ? 3 : !purposeSelect?.value ? 0 : !preferredDateInput?.value ? 1 : 2;
+    ["Service", "Date", "Time", "Review"].forEach((step, index) => {
+      const indicator = document.getElementById(`appointmentStep${step}`);
+      if (index === activeStep) indicator?.setAttribute("aria-current", "step");
+      else indicator?.removeAttribute("aria-current");
+    });
+    if (focus) {
+      const target = isReview ? document.getElementById("appointmentReviewTitle") : editFocus;
+      (target?.disabled ? purposeSelect : target)?.focus({ preventScroll: true });
+      if (modalBody) modalBody.scrollTop = isReview ? 0 : editScrollTop;
+    }
+  }
+  function editReview() {
+    const wasReviewing = review?.hidden === false;
+    reviewedPayload = null;
+    setReviewView(false, { focus: wasReviewing });
+    setSubmitButtonLoading(inFlight);
+  }
+  editView?.addEventListener("focusin", event => { if (event.target.id) editFocus = event.target; });
 
   if (appointmentModalEl && window.bootstrap) {
     appointmentModalInstance = bootstrap.Modal.getOrCreateInstance(appointmentModalEl);
@@ -156,7 +198,7 @@ function setupAppointmentForm() {
   function showMessage(message, type = "danger") {
     if (!appointmentMessage) return;
 
-    appointmentMessage.innerHTML = message;
+    appointmentMessage.textContent = message;
     appointmentMessage.classList.remove("text-success", "text-danger", "text-secondary");
 
     if (type === "success") {
@@ -178,25 +220,27 @@ function setupAppointmentForm() {
   function setSubmitButtonLoading(isLoading) {
     if (!submitBtn) return;
 
-    submitBtn.disabled = isLoading;
-    submitBtn.textContent = isLoading ? "Submitting..." : "Submit Request";
+    submitBtn.disabled = isLoading || checkingReview;
+    if (backBtn) backBtn.disabled = isLoading || checkingReview;
+    if (cancelBtn) cancelBtn.disabled = isLoading || checkingReview;
+    submitBtn.textContent = isLoading ? "Submitting..." : checkingReview ? "Checking time…" : reviewedPayload
+      ? bookingAttempt ? "Recover Reference" : "Confirm Request"
+      : bookingAttempt ? "Review Recovery Details" : "Review Request";
   }
 
   function setMinimumPreferredDate() {
     if (!preferredDateInput) return;
 
-    const today = new Date();
-    const yyyy = today.getFullYear();
-    const mm = String(today.getMonth() + 1).padStart(2, "0");
-    const dd = String(today.getDate()).padStart(2, "0");
-
-    preferredDateInput.min = `${yyyy}-${mm}-${dd}`;
+    // Recovery validates the original payload, which may now describe an elapsed slot.
+    preferredDateInput.min = bookingAttempt ? "" : window.AppointmentSlots.today();
   }
 
   function resetAppointmentFormState() {
     if (!appointmentForm) return;
 
     appointmentForm.reset();
+    bookingPicker?.reset();
+    editReview();
     clearMessage();
 
     if (appointmentTimeInput) {
@@ -323,29 +367,23 @@ function setupAppointmentForm() {
     });
   }
 
-  if (customTimeDropdown && customTimeSelected && customTimeMenu && appointmentTimeInput) {
-    customTimeSelected.addEventListener("click", (event) => {
-      event.stopPropagation();
-      customTimeDropdown.classList.toggle("open");
+  if (window.AppointmentSlots && preferredDateInput && appointmentTimeInput) {
+    bookingPicker = window.AppointmentSlots.picker({
+      service: () => purposeSelect.value, date: preferredDateInput, input: appointmentTimeInput,
+      container: customTimeMenu, status: document.getElementById("appointmentAvailabilityStatus"),
+      base: getAppApiBase, recovery: () => Boolean(bookingAttempt), changed: editReview, refreshControl
     });
-
-    customTimeMenu.querySelectorAll("button").forEach((button) => {
-      button.addEventListener("click", () => {
-        const selectedTime = button.dataset.time || "";
-        const selectedLabel = button.textContent.trim();
-
-        appointmentTimeInput.value = selectedTime;
-        customTimeSelected.innerHTML = `${selectedLabel} <span>⌄</span>`;
-        customTimeDropdown.classList.remove("open");
-      });
+    preferredDateInput.addEventListener("change", () => bookingPicker.refresh());
+    purposeSelect.addEventListener("change", () => bookingPicker.refresh());
+    refreshControl?.addEventListener("click", () => {
+      if (!refreshControl.disabled) return bookingPicker.refresh();
     });
-
-    document.addEventListener("click", (event) => {
-      if (!customTimeDropdown.contains(event.target)) {
-        customTimeDropdown.classList.remove("open");
-      }
-    });
+    bookingPicker.refresh();
   }
+  for (const id of ["fullName", "barangay", "contactNumber", "emailAddress", "notes", "purpose", "preferredDate", "appointmentTime"]) {
+    document.getElementById(id)?.addEventListener("input", editReview);
+  }
+  backBtn?.addEventListener("click", () => { if (!inFlight && !checkingReview) editReview(); });
 
   setMinimumPreferredDate();
 
@@ -357,17 +395,26 @@ function setupAppointmentForm() {
 
   if (!appointmentForm) return;
 
+  function readBookingPayload() {
+    return {
+      full_name: document.getElementById("fullName")?.value.trim() || "",
+      barangay: document.getElementById("barangay")?.value || "",
+      contact_number: contactNumberInput?.value.trim() || "",
+      email: document.getElementById("emailAddress")?.value.trim() || "",
+      purpose: purposeSelect?.value || "",
+      preferred_date: `${preferredDateInput?.value || ""} ${appointmentTimeInput?.value || ""}:00`,
+      notes: notesInput?.value.trim() || ""
+    };
+  }
+
   appointmentForm.addEventListener("submit", async (event) => {
     event.preventDefault();
+    if (inFlight || checkingReview) return;
 
-    const fullName = document.getElementById("fullName")?.value.trim() || "";
-    const barangay = document.getElementById("barangay")?.value || "";
-    const contactNumber = document.getElementById("contactNumber")?.value.trim() || "";
-    const emailAddress = document.getElementById("emailAddress")?.value.trim() || "";
-    const purpose = document.getElementById("purpose")?.value || "";
+    const payload = readBookingPayload();
+    const { full_name: fullName, barangay, contact_number: contactNumber, email: emailAddress, purpose, notes } = payload;
     const preferredDate = document.getElementById("preferredDate")?.value || "";
     const preferredTime = document.getElementById("appointmentTime")?.value || "";
-    const notes = document.getElementById("notes")?.value.trim() || "";
 
     if (!fullName || !barangay || !contactNumber || !emailAddress || !purpose || !preferredDate || !preferredTime) {
       showMessage("Please fill in all required fields.");
@@ -396,18 +443,63 @@ function setupAppointmentForm() {
       return;
     }
 
-    const preferredDateTime = `${preferredDate} ${preferredTime}:00`;
-
-    const payload = {
-      full_name: fullName,
-      barangay,
-      contact_number: contactNumber,
-      email: emailAddress,
-      purpose,
-      preferred_date: preferredDateTime,
-      notes
-    };
-
+    const recovering = Boolean(bookingAttempt);
+    if (!bookingPicker?.selected()) {
+      showMessage("Check availability and choose an available time before submitting."); return;
+    }
+    const serialized = JSON.stringify(payload);
+    if (bookingAttempt && bookingAttempt.payload !== null && bookingAttempt.payload !== serialized) {
+      showMessage("Your previous submission outcome is uncertain. Restore its details and retry, or contact WMO before creating another request."); return;
+    }
+    if (reviewedPayload !== serialized) {
+      if (!recovering) {
+        checkingReview = true;
+        setSubmitButtonLoading(false);
+        try {
+          await bookingPicker.refresh({ preserveSelection: true });
+        } finally {
+          checkingReview = false;
+          setSubmitButtonLoading(false);
+        }
+        if (!bookingPicker.selected()) {
+          showMessage("Check availability and choose an available time before reviewing."); return;
+        }
+        if (JSON.stringify(readBookingPayload()) !== serialized) {
+          showMessage("Your details changed while checking availability. Please review them again."); return;
+        }
+      }
+      reviewedPayload = serialized;
+      const summary = {
+        Service: purpose,
+        Date: new Date(`${preferredDate}T00:00:00+08:00`).toLocaleDateString("en-PH", { timeZone: "Asia/Manila", year: "numeric", month: "long", day: "numeric" }),
+        Time: window.AppointmentSlots.label(preferredTime), Name: fullName, Barangay: barangay,
+        Contact: contactNumber, Email: emailAddress, Notes: notes
+      };
+      for (const [field, value] of Object.entries(summary)) {
+        const element = document.getElementById(`appointmentReview${field}`);
+        if (element) element.textContent = value;
+      }
+      const notesSection = document.getElementById("appointmentReviewNotesSection");
+      if (notesSection) notesSection.hidden = !notes;
+      const reviewTitle = document.getElementById("appointmentReviewTitle");
+      if (reviewTitle) reviewTitle.textContent = recovering ? "Review original request details for recovery" : "Review your appointment";
+      const reviewNotice = document.getElementById("appointmentReviewNotice");
+      if (reviewNotice) reviewNotice.textContent = recovering
+        ? "Recovery checks your original request key and matching details. It cannot create a booking or reserve another slot. If no booking is found, retry recovery or contact WMO."
+        : "A successful request reserves this service and time pending WMO approval. Save your reference code after submission.";
+      clearMessage();
+      setReviewView(true, { focus: true });
+      setSubmitButtonLoading(false);
+      return;
+    }
+    if (!bookingAttempt) {
+      if (!window.crypto?.randomUUID) { showMessage("Secure booking identifiers are unavailable. Use an up-to-date browser over HTTPS."); return; }
+      bookingAttempt = { payload: serialized, key: window.crypto.randomUUID() };
+      try { window.sessionStorage?.setItem(pendingRequestStorageKey, bookingAttempt.key); } catch (_) { /* Retry in this tab remains supported. */ }
+    }
+    inFlight = true;
+    const controller = window.AbortController ? new window.AbortController() : null;
+    const submissionTimeout = controller ? setTimeout(() => controller.abort(), 20000) : null;
     showMessage("Submitting appointment request...", "neutral");
     setSubmitButtonLoading(true);
 
@@ -416,9 +508,12 @@ function setupAppointmentForm() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Accept: "application/json"
+          Accept: "application/json",
+          "Idempotency-Key": bookingAttempt.key,
+          ...(recovering ? { "Idempotency-Recovery": "true" } : {})
         },
-        body: JSON.stringify(payload)
+        body: serialized,
+        ...(controller ? { signal: controller.signal } : {})
       });
 
       const rawText = await response.text();
@@ -433,9 +528,11 @@ function setupAppointmentForm() {
         return;
       }
 
-      if (!response.ok || !data.success) {
+      if (!response.ok || data.success !== true) {
         showMessage(data.message || "Failed to submit appointment request.");
-        setSubmitButtonLoading(false);
+        if (!recovering && (response.status === 400 || data.code === "SLOT_UNAVAILABLE")) {
+          clearBookingAttempt(); editReview(); await bookingPicker.refresh();
+        }
         return;
       }
 
@@ -445,6 +542,8 @@ function setupAppointmentForm() {
         data.reference_code ||
         "Not generated";
 
+      if (!/^APT-\d{6,20}$/.test(appointmentCode)) throw new Error("The server did not confirm a reference. Retry the same request or contact WMO.");
+      clearBookingAttempt();
       clearMessage();
 
       if (appointmentModalInstance) {
@@ -460,7 +559,12 @@ function setupAppointmentForm() {
       }, 350);
     } catch (error) {
       console.error("Appointment submit error:", error);
-      showMessage("Unable to connect to the server. Please try again.");
+      showMessage("The submission could not be confirmed. Retry without changing details to recover the same request, or contact WMO.");
+    } finally {
+      if (submissionTimeout !== null) clearTimeout(submissionTimeout);
+      inFlight = false;
+      setMinimumPreferredDate();
+      bookingPicker?.syncRecovery();
       setSubmitButtonLoading(false);
     }
   });

@@ -4,7 +4,54 @@ const db = require("../config/db");
 const { Resend } = require("resend");
 const resend = new Resend(process.env.RESEND_API_KEY);
 const { buildAppointmentUpdateEmail } = require("../utils/appointmentUpdateEmail");
-const { requireWebAuth, requireWebRole, requireCsrf } = require("../middleware/webSessionAuth");
+const { requireWebAuth, requireWebRole, requireWebCapability, requireCsrf } = require("../middleware/webSessionAuth");
+const { AppointmentSchedulingService } = require("../services/appointmentSchedulingService");
+const { manilaNow, validateDate } = require("../services/appointmentPolicy");
+const scheduling = new AppointmentSchedulingService(db);
+const appointmentTimeSnapshot = Symbol("appointmentTimeSnapshot");
+function appointmentRequestTime(req) {
+  if (!req[appointmentTimeSnapshot]) {
+    try {
+      const instant = new Date();
+      if (!Number.isFinite(instant.getTime())) throw new Error("Invalid application clock");
+      const timestamp = manilaNow(instant);
+      req[appointmentTimeSnapshot] = Object.freeze({ timestamp, date: validateDate(timestamp.slice(0, 10)) });
+    } catch (_) { throw new Error("Appointment clock unavailable"); }
+  }
+  return req[appointmentTimeSnapshot];
+}
+const staffView = requireWebCapability("appointments.view");
+const staffManage = [...requireWebCapability("appointments.manage"), requireCsrf];
+const orientationView = requireWebCapability("orientation.view");
+const orientationManage = [...requireWebCapability("orientation.manage"), requireCsrf];
+const reservationSchema = async (req, res, next) => {
+  if (!scheduling.enabled()) return next();
+  try { await scheduling.ready(); next(); } catch (error) { return actionError(res, error); }
+};
+const reservationWrite = async (req, res, next) => {
+  try { await scheduling.ready(); next(); } catch (error) { return actionError(res, error); }
+};
+const privateResponse = (req, res, next) => { res.set?.("Cache-Control", "no-store"); next(); };
+const actionError = (res, error) => res.status(error.statusCode || 503).json({ success: false,
+  code: error.statusCode ? error.code : "APPOINTMENT_UNAVAILABLE",
+  message: error.statusCode ? error.message : "Appointment operation unavailable. No successful change is confirmed." });
+router.get("/availability", publicRateLimit, privateResponse, async (req, res) => {
+  try { return res.json(await scheduling.availability(req.query.service, req.query.date)); }
+  catch (error) { return actionError(res, error); }
+});
+// Bounded process-local abuse protection; reverse-proxy/shared rate limiting remains a rollout requirement.
+const publicAttempts = new Map();
+function publicRateLimit(req, res, next) {
+  const now = Date.now(), key = `${req.ip || req.socket?.remoteAddress || "unknown"}:${req.path || req.url}`;
+  for (const [ip, value] of publicAttempts) if (value.until <= now) publicAttempts.delete(ip);
+  let state = publicAttempts.get(key);
+  if (!state) {
+    if (publicAttempts.size >= 10000) return res.status(503).json({ success: false, message: "Appointment requests are temporarily busy." });
+    state = { count: 0, until: now + 60000 }; publicAttempts.set(key, state);
+  }
+  if (++state.count > 20) { res.set?.("Retry-After", "60"); return res.status(429).json({ success: false, message: "Too many requests. Please wait before trying again." }); }
+  next();
+}
 const {
   ORIENTATION_PURPOSE,
   normalizeOrientationStatus,
@@ -19,19 +66,26 @@ const requireOrientationWebMutation = [
 
 console.log("appointmentRoutes loaded");
 
-// Reconcile attendance on the database's calendar date, not a rolling timer.
-function reconcileOverdueOrientationNoShows(req, res, next) {
+// Reconcile on the request's Philippine calendar date, not a rolling timer.
+async function reconcileOverdueOrientationNoShows(req, res, next) {
+  // Maintenance reads must not become unguarded writes or skip revisions.
+  let today;
+  try {
+    today = appointmentRequestTime(req).date;
+    if (!scheduling.enabled()) return next();
+    await scheduling.ready();
+  } catch (error) { return actionError(res, error); }
   db.query(
     `UPDATE appointments
-     SET orientation_status = 'no_show', updated_at = NOW()
+     SET orientation_status = 'no_show', updated_at = NOW(), appointment_revision = appointment_revision + 1
      WHERE purpose = ?
        AND LOWER(TRIM(status)) = 'approved'
-       AND preferred_date < CURDATE()
+       AND preferred_date < ?
        AND orientation_started_at IS NULL
        AND orientation_completed_at IS NULL
        AND COALESCE(orientation_completed, 0) = 0
        AND LOWER(COALESCE(NULLIF(TRIM(orientation_status), ''), 'approved')) = 'approved'`,
-    [ORIENTATION_PURPOSE],
+    [ORIENTATION_PURPOSE, today],
     (error) => {
       if (error) {
         console.error("orientation no-show reconciliation error:", error);
@@ -47,8 +101,7 @@ function generateAppointmentCode(appointmentId) {
 }
 
 function generateOrientationToken(appointmentId) {
-  const timestamp = Date.now();
-  return `ORI-${appointmentId}-${timestamp}`;
+  return `ORI-${appointmentId}-${Date.now()}`;
 }
 
 
@@ -57,14 +110,16 @@ function generateOrientationToken(appointmentId) {
 /* =========================================
    GET ALL APPOINTMENTS
 ========================================= */
-router.get("/", (req, res) => {
+router.get("/", ...staffView, privateResponse, reservationSchema, (req, res) => {
   const sql = `
     SELECT
       id,
+      ${scheduling.enabled() ? "appointment_revision," : ""}
       full_name,
       barangay,
       purpose,
       preferred_date,
+      DATE_FORMAT(preferred_date, '%Y-%m-%d %H:%i:%s') AS slot_schedule,
       status,
       assigned_to,
       created_at,
@@ -93,10 +148,11 @@ router.get("/", (req, res) => {
 /* =========================================
    GET ACTIVE APPOINTMENTS
 ========================================= */
-router.get("/active", reconcileOverdueOrientationNoShows, (req, res) => {
+router.get("/active", ...staffView, privateResponse, reservationSchema, reconcileOverdueOrientationNoShows, (req, res) => {
   const sql = `
     SELECT
       id,
+      ${scheduling.enabled() ? "appointment_revision," : ""}
       appointment_code,
       full_name,
       barangay,
@@ -104,9 +160,9 @@ router.get("/active", reconcileOverdueOrientationNoShows, (req, res) => {
       email,
       purpose,
       preferred_date,
+      DATE_FORMAT(preferred_date, '%Y-%m-%d %H:%i:%s') AS slot_schedule,
       status,
       assigned_to,
-      orientation_token,
       orientation_qr_status,
       orientation_completed,
       orientation_status,
@@ -121,7 +177,7 @@ router.get("/active", reconcileOverdueOrientationNoShows, (req, res) => {
       OR TRIM(status) = ''
       OR LOWER(TRIM(status)) IN ('pending', 'approved', 'rescheduled')
     )
-    AND preferred_date >= CURDATE()
+    AND preferred_date >= ?
     AND NOT (
       purpose = 'SWM Orientation & Clearance'
       AND (
@@ -141,7 +197,7 @@ router.get("/active", reconcileOverdueOrientationNoShows, (req, res) => {
     ORDER BY preferred_date ASC, id DESC
   `;
 
-  db.query(sql, (err, results) => {
+  db.query(sql, [appointmentRequestTime(req).date], (err, results) => {
     if (err) {
       console.error("get active appointments error:", err);
       return res.status(500).json({
@@ -161,10 +217,11 @@ router.get("/active", reconcileOverdueOrientationNoShows, (req, res) => {
 /* =========================================
    GET APPOINTMENT HISTORY
 ========================================= */
-router.get("/history", reconcileOverdueOrientationNoShows, (req, res) => {
+router.get("/history", ...staffView, privateResponse, reservationSchema, reconcileOverdueOrientationNoShows, (req, res) => {
   const sql = `
     SELECT
       id,
+      ${scheduling.enabled() ? "appointment_revision," : ""}
       appointment_code,
       full_name,
       barangay,
@@ -172,6 +229,7 @@ router.get("/history", reconcileOverdueOrientationNoShows, (req, res) => {
       email,
       purpose,
       preferred_date,
+      DATE_FORMAT(preferred_date, '%Y-%m-%d %H:%i:%s') AS slot_schedule,
       CASE
         WHEN purpose = 'SWM Orientation & Clearance'
           AND LOWER(TRIM(COALESCE(orientation_status, ''))) IN ('no_show', 'no-show', 'noshow')
@@ -198,7 +256,6 @@ router.get("/history", reconcileOverdueOrientationNoShows, (req, res) => {
         ELSE status
       END AS status,
       assigned_to,
-      orientation_token,
       orientation_qr_status,
       orientation_completed,
       orientation_status,
@@ -212,7 +269,7 @@ router.get("/history", reconcileOverdueOrientationNoShows, (req, res) => {
       LOWER(TRIM(status)) IN ('rejected', 'cancelled', 'completed')
       OR (
         LOWER(TRIM(status)) IN ('approved', 'rescheduled')
-        AND preferred_date < CURDATE()
+        AND preferred_date < ?
         AND NOT (
           purpose = 'SWM Orientation & Clearance'
           AND LOWER(TRIM(COALESCE(orientation_status, ''))) IN
@@ -238,7 +295,7 @@ router.get("/history", reconcileOverdueOrientationNoShows, (req, res) => {
     ORDER BY updated_at DESC, id DESC
   `;
 
-  db.query(sql, (err, results) => {
+  db.query(sql, [appointmentRequestTime(req).date], (err, results) => {
     if (err) {
       console.error("get appointment history error:", err);
       return res.status(500).json({
@@ -259,7 +316,7 @@ router.get("/history", reconcileOverdueOrientationNoShows, (req, res) => {
    GET ORIENTATION APPOINTMENTS
    Approved orientation records only
 ========================================= */
-router.get("/orientation", reconcileOverdueOrientationNoShows, (req, res) => {
+router.get("/orientation", ...orientationView, privateResponse, reconcileOverdueOrientationNoShows, (req, res) => {
   const sql = `
   SELECT
     id,
@@ -267,9 +324,9 @@ router.get("/orientation", reconcileOverdueOrientationNoShows, (req, res) => {
     barangay,
     purpose,
     preferred_date,
+    DATE_FORMAT(preferred_date, '%Y-%m-%d %H:%i:%s') AS slot_schedule,
     status,
     assigned_to,
-    orientation_token,
     orientation_qr_status,
     orientation_completed,
     orientation_status,
@@ -325,7 +382,7 @@ function loadOrientationForWebAction(id, res, callback) {
   );
 }
 
-router.post("/orientation/:id/allow-retake", requireOrientationWebMutation, reconcileOverdueOrientationNoShows, (req, res) => {
+router.post("/orientation/:id/allow-retake", requireOrientationWebMutation, reservationWrite, reconcileOverdueOrientationNoShows, (req, res) => {
   loadOrientationForWebAction(req.params.id, res, (record) => {
     const current = normalizeOrientationStatus(record.orientation_status);
     if (current === "ready_for_retake") {
@@ -336,7 +393,7 @@ router.post("/orientation/:id/allow-retake", requireOrientationWebMutation, reco
     }
 
     db.query(
-      `UPDATE appointments SET orientation_status = 'ready_for_retake', updated_at = NOW()
+      `UPDATE appointments SET orientation_status = 'ready_for_retake', updated_at = NOW(), appointment_revision = appointment_revision + 1
        WHERE id = ? AND purpose = ? AND status = 'approved'
          AND orientation_status = 'failed_orientation'`,
       [record.id, ORIENTATION_PURPOSE],
@@ -354,7 +411,7 @@ router.post("/orientation/:id/allow-retake", requireOrientationWebMutation, reco
   });
 });
 
-router.post("/orientation/:id/mark-incomplete", requireOrientationWebMutation, reconcileOverdueOrientationNoShows, (req, res) => {
+router.post("/orientation/:id/mark-incomplete", requireOrientationWebMutation, reservationWrite, reconcileOverdueOrientationNoShows, (req, res) => {
   loadOrientationForWebAction(req.params.id, res, (record) => {
     const current = normalizeOrientationStatus(record.orientation_status);
     if (current === "incomplete_orientation") {
@@ -369,10 +426,10 @@ router.post("/orientation/:id/mark-incomplete", requireOrientationWebMutation, r
 
     db.query(
       `UPDATE appointments SET orientation_status = 'incomplete_orientation',
-         orientation_completed = 0, orientation_completed_at = NOW(), updated_at = NOW()
+         orientation_completed = 0, orientation_completed_at = ?, updated_at = NOW(), appointment_revision = appointment_revision + 1
        WHERE id = ? AND purpose = ? AND status = 'approved'
          AND COALESCE(orientation_status, 'approved') = ?`,
-      [record.id, ORIENTATION_PURPOSE, current],
+      [appointmentRequestTime(req).timestamp, record.id, ORIENTATION_PURPOSE, current],
       (error, result) => {
         if (error) {
           console.error("mark orientation incomplete error:", error);
@@ -391,7 +448,7 @@ router.post("/orientation/:id/mark-incomplete", requireOrientationWebMutation, r
    VERIFY ORIENTATION TOKEN
    For mobile QR scan verification
 ========================================= */
-router.get("/orientation/verify/:token", reconcileOverdueOrientationNoShows, (req, res) => {
+router.get("/orientation/verify/:token", privateResponse, reservationSchema, reconcileOverdueOrientationNoShows, (req, res) => {
   const { token } = req.params;
 
   if (!token || !String(token).trim()) {
@@ -484,7 +541,7 @@ router.get("/orientation/verify/:token", reconcileOverdueOrientationNoShows, (re
 /* =========================================
    GENERATE ORIENTATION QR TOKEN
 ========================================= */
-router.post("/:id/generate-orientation-qr", reconcileOverdueOrientationNoShows, (req, res) => {
+router.post("/:id/generate-orientation-qr", ...orientationManage, privateResponse, reservationWrite, reconcileOverdueOrientationNoShows, (req, res) => {
   const { id } = req.params;
 
   const checkSql = `
@@ -552,11 +609,12 @@ router.post("/:id/generate-orientation-qr", reconcileOverdueOrientationNoShows, 
   orientation_token = ?,
   orientation_qr_status = 'generated',
   orientation_status = COALESCE(orientation_status, 'approved'),
-  updated_at = NOW()
-      WHERE id = ?
+  updated_at = NOW(), appointment_revision = appointment_revision + 1
+      WHERE id = ? AND status = 'approved' AND orientation_token <=> ?
+        AND COALESCE(orientation_status, 'approved') IN ('approved', 'pending_orientation', 'ready_for_retake')
     `;
 
-    db.query(updateSql, [tokenToUse, id], (updateErr, updateResult) => {
+    db.query(updateSql, [tokenToUse, id, appointment.orientation_token ?? null], (updateErr, updateResult) => {
       if (updateErr) {
         console.error("generate orientation qr update error:", updateErr);
         return res.status(500).json({
@@ -582,7 +640,7 @@ router.post("/:id/generate-orientation-qr", reconcileOverdueOrientationNoShows, 
           barangay: appointment.barangay || "",
           preferred_date: appointment.preferred_date || null,
           token: tokenToUse,
-          qr_url: `http://192.168.100.70:8081/orientation-quiz.html?token=${encodeURIComponent(tokenToUse)}`
+          qr_url: `/orientation-quiz.html?token=${encodeURIComponent(tokenToUse)}`
         }
       });
     });
@@ -593,234 +651,7 @@ router.post("/:id/generate-orientation-qr", reconcileOverdueOrientationNoShows, 
    ACCEPT / REJECT APPOINTMENT
    Auto-generate orientation QR when approved
 ========================================= */
-router.put("/:id/decision", (req, res) => {
-  const { id } = req.params;
-  const { action, personnel_name } = req.body;
-
-  if (!id) {
-    return res.status(400).json({
-      success: false,
-      message: "Appointment ID is required"
-    });
-  }
-
-  if (!action || !["accept", "reject"].includes(String(action).toLowerCase())) {
-    return res.status(400).json({
-      success: false,
-      message: "Invalid action. Use accept or reject"
-    });
-  }
-
-  if (!personnel_name || !String(personnel_name).trim()) {
-    return res.status(400).json({
-      success: false,
-      message: "Personnel name is required"
-    });
-  }
-
-  const normalizedAction = String(action).toLowerCase();
-  const newStatus = normalizedAction === "accept" ? "approved" : "rejected";
-  const cleanPersonnelName = String(personnel_name).trim();
-
-  const checkSql = `
-    SELECT id, status, purpose, orientation_token
-    FROM appointments
-    WHERE id = ?
-    LIMIT 1
-  `;
-
-  db.query(checkSql, [id], (checkErr, checkResults) => {
-    if (checkErr) {
-      console.error("check appointment before decision error:", checkErr);
-      return res.status(500).json({
-        success: false,
-        message: "Failed to validate appointment",
-        error: checkErr.message
-      });
-    }
-
-    if (!checkResults || checkResults.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Appointment not found"
-      });
-    }
-
-    const appointment = checkResults[0];
-    const existingStatus = String(appointment.status || "").toLowerCase().trim();
-    const purpose = String(appointment.purpose || "").trim();
-    const existingOrientationToken = String(appointment.orientation_token || "").trim();
-
-    if (existingStatus === "approved" || existingStatus === "rejected") {
-      return res.status(400).json({
-        success: false,
-        message: "Appointment already processed"
-      });
-    }
-
-    const isOrientation = purpose === "SWM Orientation & Clearance";
-    const shouldGenerateOrientationQr = newStatus === "approved" && isOrientation;
-
-    const tokenToUse = shouldGenerateOrientationQr
-      ? (existingOrientationToken || generateOrientationToken(id))
-      : null;
-
-    let updateSql = "";
-    let updateParams = [];
-
-    if (shouldGenerateOrientationQr) {
-      updateSql = `
-        UPDATE appointments
-       SET
-  status = ?,
-  assigned_to = ?,
-  orientation_token = ?,
-  orientation_qr_status = 'generated',
-  orientation_status = 'approved',
-  updated_at = NOW()
-        WHERE id = ?
-      `;
-      updateParams = [newStatus, cleanPersonnelName, tokenToUse, id];
-    } else {
-      updateSql = `
-        UPDATE appointments
-        SET
-          status = ?,
-          assigned_to = ?,
-          updated_at = NOW()
-        WHERE id = ?
-      `;
-      updateParams = [newStatus, cleanPersonnelName, id];
-    }
-
-    db.query(updateSql, updateParams, (updateErr, updateResult) => {
-      if (updateErr) {
-        console.error("appointment decision update error:", updateErr);
-        return res.status(500).json({
-          success: false,
-          message: "Failed to update appointment decision",
-          error: updateErr.message
-        });
-      }
-
-      if (!updateResult || updateResult.affectedRows === 0) {
-        return res.status(404).json({
-          success: false,
-          message: "Appointment not found or no changes made"
-        });
-      }
-
-      return res.json({
-        success: true,
-        message:
-          newStatus === "approved"
-            ? "Appointment accepted successfully"
-            : "Appointment rejected successfully",
-        data: {
-          id: Number(id),
-          status: newStatus,
-          assigned_to: cleanPersonnelName,
-          orientation_token: shouldGenerateOrientationQr ? tokenToUse : null,
-          orientation_qr_status: shouldGenerateOrientationQr ? "generated" : null
-        }
-      });
-    });
-  });
-});
-
-/* =========================================
-   RESCHEDULE APPOINTMENT
-========================================= */
-router.put("/:id/reschedule", (req, res) => {
-  const { id } = req.params;
-  const { new_date, personnel_name } = req.body;
-
-  if (!id) {
-    return res.status(400).json({
-      success: false,
-      message: "Appointment ID is required"
-    });
-  }
-
-  if (!new_date) {
-    return res.status(400).json({
-      success: false,
-      message: "New date is required"
-    });
-  }
-
-  if (!personnel_name || !String(personnel_name).trim()) {
-    return res.status(400).json({
-      success: false,
-      message: "Personnel name is required"
-    });
-  }
-
-  const cleanPersonnelName = String(personnel_name).trim();
-
-  const checkSql = `
-    SELECT
-      id,
-      appointment_code,
-      status,
-      preferred_date,
-      email,
-      full_name,
-      barangay,
-      purpose
-    FROM appointments
-    WHERE id = ?
-    LIMIT 1
-  `;
-
-  db.query(checkSql, [id], (checkErr, checkResults) => {
-    if (checkErr) {
-      console.error("check appointment before reschedule error:", checkErr);
-      return res.status(500).json({
-        success: false,
-        message: "Failed to validate appointment",
-        error: checkErr.message
-      });
-    }
-
-    if (!checkResults || checkResults.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Appointment not found"
-      });
-    }
-
-    const appointment = checkResults[0];
-    const existingStatus = String(appointment.status || "").toLowerCase().trim();
-
-    if (["rejected", "cancelled", "completed"].includes(existingStatus)) {
-      return res.status(400).json({
-        success: false,
-        message: "Cannot reschedule rejected, cancelled, or completed appointments"
-      });
-    }
-
-    const updateSql = `
-      UPDATE appointments
-      SET
-        preferred_date = ?,
-        status = 'rescheduled',
-        assigned_to = ?,
-        assigned_at = NOW(),
-        updated_at = NOW()
-      WHERE id = ?
-    `;
-
-    db.query(updateSql, [new_date, cleanPersonnelName, id], async (updateErr, result) => {
-      if (updateErr) {
-        console.error("reschedule appointment error:", updateErr);
-        return res.status(500).json({
-          success: false,
-          message: "Failed to reschedule appointment",
-          error: updateErr.message
-        });
-      }
-
+async function sendRescheduleEmail(appointment, newDate) {
 const email = appointment.email;
 const fullName = appointment.full_name;
 
@@ -829,7 +660,7 @@ if (email) {
     const emailDetails = {
       fullName,
       oldDate: appointment.preferred_date,
-      newDate: new_date,
+      newDate: newDate,
       purpose: appointment.purpose,
       appointmentCode: appointment.appointment_code || generateAppointmentCode(appointment.id),
       status: "rescheduled"
@@ -858,203 +689,36 @@ if (email) {
   }
 }
 
-      return res.json({
-        success: true,
-        message: "Appointment successfully rescheduled",
-        data: {
-          id: Number(id),
-          status: "rescheduled",
-          new_date,
-          assigned_to: cleanPersonnelName
-        }
-      });
-    });
+}
+async function manageAppointment(req, res, action) {
+  try {
+    const result = await scheduling.change(req.params.id, action, req.user, req.body);
+    if (action === "reschedule") await sendRescheduleEmail(result.previous, result.data.new_date);
+    delete result.previous;
+    return res.json(result);
+  } catch (error) { return actionError(res, error); }
+}
+router.put("/:id/decision", ...staffManage, privateResponse,
+  (req, res) => {
+    const action = String(req.body?.action || "").toLowerCase();
+    if (!["accept", "reject"].includes(action)) return res.status(400).json({ success: false, message: "Invalid action. Use accept or reject" });
+    return manageAppointment(req, res, action);
   });
-});
-
-/* =========================================
-   CANCEL APPOINTMENT
-========================================= */
-router.put("/:id/cancel", (req, res) => {
-  const { id } = req.params;
-  const { personnel_name } = req.body;
-
-  if (!id) {
-    return res.status(400).json({
-      success: false,
-      message: "Appointment ID is required"
-    });
-  }
-
-  if (!personnel_name || !String(personnel_name).trim()) {
-    return res.status(400).json({
-      success: false,
-      message: "Personnel name is required"
-    });
-  }
-
-  const cleanPersonnelName = String(personnel_name).trim();
-
-  const updateSql = `
-    UPDATE appointments
-    SET
-      status = 'cancelled',
-      assigned_to = ?,
-      assigned_at = NOW(),
-      updated_at = NOW()
-    WHERE id = ?
-      AND LOWER(status) NOT IN ('rejected', 'cancelled', 'completed')
-  `;
-
-  db.query(updateSql, [cleanPersonnelName, id], (err, result) => {
-    if (err) {
-      console.error("cancel appointment error:", err);
-      return res.status(500).json({
-        success: false,
-        message: "Failed to cancel appointment",
-        error: err.message
-      });
-    }
-
-    if (!result || result.affectedRows === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Appointment cannot be cancelled or was not found"
-      });
-    }
-
-    return res.json({
-      success: true,
-      message: "Appointment cancelled successfully",
-      data: {
-        id: Number(id),
-        status: "cancelled"
-      }
-    });
-  });
-});
-
-/* =========================================
-   CREATE APPOINTMENT
-========================================= */
-router.post("/", (req, res) => {
-  const {
-    full_name,
-    barangay,
-    contact_number,
-    email,
-    purpose,
-    preferred_date,
-    notes
-  } = req.body;
-
-  if (!full_name || !barangay || !purpose || !preferred_date) {
-    return res.status(400).json({
-      success: false,
-      message: "Required fields are missing"
-    });
-  }
-
-  const sql = `
-    INSERT INTO appointments (
-      full_name,
-      barangay,
-      contact_number,
-      email,
-      purpose,
-      preferred_date,
-      notes,
-      status,
-      orientation_token,
-      orientation_qr_status,
-      orientation_completed,
-      created_at,
-      updated_at
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', NULL, 'not_generated', 0, NOW(), NOW())
-  `;
-
-  db.query(
-    sql,
-    [
-      full_name,
-      barangay,
-      contact_number || null,
-      email || null,
-      purpose,
-      preferred_date,
-      notes || null
-    ],
-    (err, result) => {
-      if (err) {
-        console.error("create appointment error:", err);
-        return res.status(500).json({
-          success: false,
-          message: "Failed to create appointment",
-          error: err.message
-        });
-      }
-
-      const notifSql = `
-        INSERT INTO notifications (type, title, message)
-        VALUES (?, ?, ?)
-      `;
-
-      const notifValues = [
-        "appointment",
-        "New Appointment Request",
-        `New appointment from ${full_name} (${barangay}) for ${purpose}`
-      ];
-
-     const appointmentId = result.insertId;
-const appointmentCode = generateAppointmentCode(appointmentId);
-
-// UPDATE appointment_code
-const updateCodeSql = `
-  UPDATE appointments
-  SET appointment_code = ?
-  WHERE id = ?
-`;
-
-db.query(updateCodeSql, [appointmentCode, appointmentId], (codeErr) => {
-  if (codeErr) {
-    console.error("appointment code update error:", codeErr);
-  }
-
-  // INSERT NOTIFICATION
-  const notifSql = `
-    INSERT INTO notifications (type, title, message)
-    VALUES (?, ?, ?)
-  `;
-
-  const notifValues = [
-    "appointment",
-    "New Appointment Request",
-    `New appointment from ${full_name} (${barangay}) for ${purpose}`
-  ];
-
-  db.query(notifSql, notifValues, (notifErr) => {
-    if (notifErr) {
-      console.error("notification insert error:", notifErr);
-    }
-
-    // FINAL RESPONSE
-    return res.json({
-      success: true,
-      message: "Appointment request submitted successfully",
-      id: appointmentId,
-      appointment_code: appointmentCode
-    });
-  });
-});
-    }
-  );
+router.put("/:id/reschedule", ...staffManage, privateResponse,
+  (req, res) => manageAppointment(req, res, "reschedule"));
+router.put("/:id/cancel", ...staffManage, privateResponse,
+  (req, res) => manageAppointment(req, res, "cancel"));
+router.post("/", publicRateLimit, privateResponse, async (req, res) => {
+  const recovery = req.headers["idempotency-recovery"];
+  if (recovery !== undefined && recovery !== "true") return res.status(400).json({ success: false, message: "Invalid recovery mode." });
+  try { return res.json(await scheduling.book(req.body, req.headers["idempotency-key"], { recoveryOnly: recovery === "true" })); }
+  catch (error) { return actionError(res, error); }
 });
 
 /* =========================================
    CHECK APPOINTMENT STATUS
 ========================================= */
-router.post("/check-status", (req, res) => {
+router.post("/check-status", publicRateLimit, privateResponse, (req, res) => {
   const { appointment_code, contact } = req.body;
 
   if (!appointment_code || !contact) {
@@ -1119,7 +783,7 @@ router.post("/check-status", (req, res) => {
 
 const QRCode = require("qrcode");
 
-router.get("/:id/orientation-qr-image", (req, res) => {
+router.get("/:id/orientation-qr-image", ...requireWebCapability("orientation.manage"), privateResponse, (req, res) => {
   const { id } = req.params;
 
   const sql = `
@@ -1162,21 +826,21 @@ router.get("/:id/orientation-qr-image", (req, res) => {
 /* =========================================
    START ORIENTATION (QR SCAN)
 ========================================= */
-router.put("/orientation/start/:token", reconcileOverdueOrientationNoShows, (req, res) => {
+router.put("/orientation/start/:token", privateResponse, reservationWrite, reconcileOverdueOrientationNoShows, (req, res) => {
   const { token } = req.params;
 
   const sql = `
     UPDATE appointments
     SET
       orientation_status = 'pending_orientation',
-      orientation_started_at = COALESCE(orientation_started_at, NOW()),
-      updated_at = NOW()
+      orientation_started_at = COALESCE(orientation_started_at, ?),
+      updated_at = NOW(), appointment_revision = appointment_revision + 1
     WHERE orientation_token = ? AND purpose = ? AND status = 'approved'
       AND COALESCE(orientation_status, 'approved') IN
         ('approved', 'pending_orientation', 'ready_for_retake')
   `;
 
-  db.query(sql, [token, ORIENTATION_PURPOSE], (err, result) => {
+  db.query(sql, [appointmentRequestTime(req).timestamp, token, ORIENTATION_PURPOSE], (err, result) => {
     if (err) {
       console.error("start orientation error:", err);
       return res.status(500).json({
@@ -1200,7 +864,7 @@ router.put("/orientation/start/:token", reconcileOverdueOrientationNoShows, (req
 /* =========================================
    COMPLETE ORIENTATION (QUIZ DONE)
 ========================================= */
-router.put("/orientation/complete/:token", reconcileOverdueOrientationNoShows, (req, res) => {
+router.put("/orientation/complete/:token", privateResponse, reservationWrite, reconcileOverdueOrientationNoShows, (req, res) => {
   const { token } = req.params;
   const resultValue = getOrientationQuizResult(req.body?.score, req.body?.total_questions, req.body?.answers);
   if (!resultValue) {
@@ -1252,17 +916,20 @@ router.put("/orientation/complete/:token", reconcileOverdueOrientationNoShows, (
       const nextStatus = resultValue.passed ? "completed_orientation" : "failed_orientation";
       const sql = resultValue.passed
         ? `UPDATE appointments SET status = 'completed', orientation_completed = 1,
-             orientation_status = 'completed_orientation', orientation_completed_at = NOW(),
-             orientation_score = ?, updated_at = NOW()
+             orientation_status = 'completed_orientation', orientation_completed_at = ?,
+             orientation_score = ?, updated_at = NOW(), appointment_revision = appointment_revision + 1
            WHERE id = ? AND purpose = ? AND status = 'approved'
              AND COALESCE(orientation_status, 'approved') = ?`
         : `UPDATE appointments SET orientation_completed = 0,
              orientation_status = 'failed_orientation', orientation_completed_at = NULL,
-             orientation_score = ?, updated_at = NOW()
+             orientation_score = ?, updated_at = NOW(), appointment_revision = appointment_revision + 1
            WHERE id = ? AND purpose = ? AND status = 'approved'
              AND COALESCE(orientation_status, 'approved') = ?`;
 
-      db.query(sql, [resultValue.score, record.id, ORIENTATION_PURPOSE, current], (err, result) => {
+      const values = resultValue.passed
+        ? [appointmentRequestTime(req).timestamp, resultValue.score, record.id, ORIENTATION_PURPOSE, current]
+        : [resultValue.score, record.id, ORIENTATION_PURPOSE, current];
+      db.query(sql, values, (err, result) => {
         if (err) {
           console.error("submit orientation result error:", err);
           return res.status(500).json({

@@ -237,9 +237,26 @@ Module._load = function loadWithMocks(request, parent, isMain) {
         }
       } };
     }
+    if (request === "../services/appointmentSchedulingService") {
+      return { AppointmentSchedulingService: class {
+        enabled() { return false; }
+        async change(id, action, actor, body) {
+          scenario.managementCall = { id, action, actor, body };
+          if (!id || !body.new_date) throw Object.assign(new Error("Required fields are missing"), { statusCode: 400 });
+          if (!actor?.id) throw Object.assign(new Error("Authentication required"), { statusCode: 401 });
+          const query = (sql, values) => new Promise((resolve, reject) => fakeDb.query(sql, values, (error, rows) => error ? reject(error) : resolve(rows)));
+          const rows = await query("SELECT * FROM appointments WHERE id = ?", [id]);
+          if (!rows.length) throw Object.assign(new Error("Appointment not found"), { statusCode: 404 });
+          if (["rejected", "cancelled", "completed"].includes(rows[0].status)) throw Object.assign(new Error("This appointment cannot be changed from its current status."), { statusCode: 409 });
+          await query("UPDATE appointments SET preferred_date = ? WHERE id = ?", [body.new_date, id]);
+          return { success: true, message: "Appointment successfully rescheduled", previous: rows[0],
+            data: { id: Number(id), status: "rescheduled", new_date: body.new_date, assigned_to: actor.full_name } };
+        }
+      } };
+    }
     if (request === "../middleware/webSessionAuth") {
       const next = (_req, _res, done) => done();
-      return { requireWebAuth: next, requireWebRole: () => next, requireCsrf: next };
+      return { requireWebAuth: next, requireWebRole: () => next, requireWebCapability: () => [next], requireCsrf: next };
     }
     if (request === "qrcode") return {};
   }
@@ -250,8 +267,9 @@ try { require(routeFile); } finally { Module._load = originalLoad; }
 function invokeReschedule(overrides = {}) {
   const route = routes.find((entry) => entry.method === "put" && entry.path === "/:id/reschedule");
   assert.ok(route, "existing reschedule route remains registered");
-  assert.equal(route.handlers.length, 1, "existing reschedule handler chain remains unchanged");
+  assert.ok(route.handlers.length > 1, "reschedule now includes staff and CSRF guards");
   const request = {
+    user: { id: 4, full_name: "Fictional WMO Staff", role: "clerk_admin" },
     params: { id: "17" },
     body: { new_date: sample.newDate, personnel_name: "  Fictional WMO Staff  " },
     ...overrides
@@ -266,7 +284,7 @@ function invokeReschedule(overrides = {}) {
         return this;
       }
     };
-    try { route.handlers[0](request, response); } catch (error) { reject(error); }
+    try { Promise.resolve(route.handlers.at(-1)(request, response)).catch(reject); } catch (error) { reject(error); }
   });
 }
 
@@ -317,17 +335,15 @@ function assertNoAcceptanceLog(logs) {
   assert.doesNotMatch(logText(logs), /\b(?:accepted|sent)\b/i);
 }
 
-test("rescheduling preserves SQL, parameters, response, recipient, and DB-before-email ordering", async () => {
+test("rescheduling delegates management and preserves response, recipient, and persistence-before-email ordering", async () => {
   resetScenario();
   const result = await invokeReschedule();
   assertSuccess(result);
   assert.deepEqual(scenario.events, ["select", "update", "email", "response"]);
-  assert.deepEqual(scenario.sqlCalls[0].parameters, ["17"]);
-  assert.match(scenario.sqlCalls[0].sql, /preferred_date[\s\S]*email[\s\S]*full_name[\s\S]*barangay[\s\S]*purpose/);
-  assert.match(scenario.sqlCalls[0].sql, /WHERE id = \?\s+LIMIT 1/);
-  assert.deepEqual(scenario.sqlCalls[1].parameters, [sample.newDate, "Fictional WMO Staff", "17"]);
-  assert.match(scenario.sqlCalls[1].sql.replace(/\s+/g, " ").trim(),
-    /^UPDATE appointments SET preferred_date = \?, status = 'rescheduled', assigned_to = \?, assigned_at = NOW\(\), updated_at = NOW\(\) WHERE id = \?$/);
+  assert.equal(scenario.managementCall.id, "17");
+  assert.equal(scenario.managementCall.action, "reschedule");
+  assert.equal(scenario.managementCall.actor.full_name, "Fictional WMO Staff");
+  assert.equal(scenario.managementCall.body.new_date, sample.newDate);
   assert.equal(scenario.messages.length, 1);
   const message = scenario.messages[0];
   assert.equal(message.from, "WMO System <noreply@wastegensan.com>");
@@ -355,15 +371,15 @@ test("terminal rejection and required input validation still prevent updates and
   for (const status of ["rejected", "cancelled", "completed"]) {
     resetScenario({ record: { ...fixture, status } });
     const result = await invokeReschedule();
-    assert.equal(result.statusCode, 400);
-    assert.equal(result.body.message, "Cannot reschedule rejected, cancelled, or completed appointments");
+    assert.equal(result.statusCode, 409);
+    assert.match(result.body.message, /cannot be changed/);
     assert.deepEqual(scenario.events, ["select", "response"]);
     assert.equal(scenario.messages.length, 0);
   }
   for (const overrides of [
     { params: { id: "" } },
     { body: { personnel_name: "Fictional WMO Staff" } },
-    { body: { new_date: sample.newDate, personnel_name: "  " } }
+    { params: { id: "" }, body: { new_date: sample.newDate, personnel_name: "  " } }
   ]) {
     resetScenario();
     const result = await invokeReschedule(overrides);
@@ -375,9 +391,9 @@ test("terminal rejection and required input validation still prevent updates and
 
 test("database failures and a missing appointment do not send an update email", async () => {
   for (const [options, statusCode] of [
-    [{ selectError: new Error("mock lookup failure") }, 500],
+    [{ selectError: new Error("mock lookup failure") }, 503],
     [{ record: null }, 404],
-    [{ updateError: new Error("mock update failure") }, 500]
+    [{ updateError: new Error("mock update failure") }, 503]
   ]) {
     resetScenario(options);
     const result = await invokeReschedule();
